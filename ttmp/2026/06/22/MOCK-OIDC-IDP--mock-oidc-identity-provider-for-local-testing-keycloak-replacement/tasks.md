@@ -24,12 +24,12 @@
 - [x] P1.5 Validate distinct stable subs
 
 ### Phase 2 — Scenario registry
-- [ ] P2.1 `internal/scenario/scenario.go` struct
-- [ ] P2.2 `Registry` + built-ins
-- [ ] P2.3 Thread `*Scenario` through authCode/accessToken
-- [ ] P2.4 Handlers use `registry.Lookup`
-- [ ] P2.5 `redirectOAuthError` helper
-- [ ] P2.6 Validate one-file scenario add
+- [x] P2.1 `internal/scenario/scenario.go` struct
+- [x] P2.2 `Registry` + built-ins
+- [x] P2.3 Thread `*Scenario` through authCode/accessToken
+- [x] P2.4 Handlers use `registry.Lookup`
+- [x] P2.5 `redirectOAuthError` helper
+- [x] P2.6 Validate one-file scenario add
 
 ### Phase 3 — Login page with selectable scenarios
 - [ ] P3.1 Group scenarios by category
@@ -55,6 +55,14 @@
 - [ ] P12 Go test helper
 
 ## Completed
+
+### Phase 2
+- [x] P2.1 scenario.go struct
+- [x] P2.2 Registry + builtins
+- [x] P2.3 *Scenario threaded through authCode/accessToken
+- [x] P2.4 handlers use registry.Lookup
+- [x] P2.5 redirectOAuthError helper
+- [x] P2.6 validated one-file scenario add
 
 ### Phase 1
 - [x] P1.1 internal/user/user.go + FromLogin

@@ -72,12 +72,12 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 
 **Goal:** adding a failure case is one scenario, not three handler edits.
 
-- [ ] P2.1 Create `internal/scenario/scenario.go` with `Scenario` struct (`Name`, `Description`, `User`, `AuthError`, `TokenError`, `UserInfoError`, `MutateClaims`).
-- [ ] P2.2 Implement `Registry` (`New`, `Lookup`, `All`) backed by a map; pre-register normal scenarios (`alice`, `bob`).
-- [ ] P2.3 Replace `FailureMode string` on `authCode`/`accessToken` with `*scenario.Scenario`; thread scenario through authorize→token→userinfo.
-- [ ] P2.4 Refactor handlers to call `registry.Lookup(login)` once and branch on scenario fields (no per-handler login switches).
-- [ ] P2.5 Add `redirectOAuthError` helper for auth-error scenarios.
-- [ ] P2.6 Validate: add a throwaway scenario, confirm only `scenario.go` changed; unknown logins fall back to derived normal user.
+- [x] P2.1 Create `internal/scenario/scenario.go` with `Scenario` struct (`Name`, `Description`, `User`, `AuthError`, `TokenError`, `UserInfoError`, `MutateClaims`).
+- [x] P2.2 Implement `Registry` (`New`, `Lookup`, `All`) backed by a map; pre-register normal scenarios (`alice`, `bob`).
+- [x] P2.3 Replace `FailureMode string` on `authCode`/`accessToken` with `*scenario.Scenario`; thread scenario through authorize→token→userinfo.
+- [x] P2.4 Refactor handlers to call `registry.Lookup(login)` once and branch on scenario fields (no per-handler login switches).
+- [x] P2.5 Add `redirectOAuthError` helper for auth-error scenarios.
+- [x] P2.6 Validate: add a throwaway scenario, confirm only `scenario.go` changed; unknown logins fall back to derived normal user.
 
 **Exit criteria:** scenario added in one place; all handlers read from the registry.
 

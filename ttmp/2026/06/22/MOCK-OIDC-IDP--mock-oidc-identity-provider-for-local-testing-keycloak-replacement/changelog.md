@@ -31,3 +31,12 @@ Step 3: Phase 1 multiple synthetic users + refactor into internal/server with go
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/authorize.go — GET+POST login flow + parseAuthorizeRequest (commit f9ece67)
 
+
+## 2026-06-22
+
+Step 4: Phase 2 scenario registry — *Scenario threaded through handlers, one-file-add property tested (commit 6454cd3).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go — Scenario + Registry (commit 6454cd3)
+

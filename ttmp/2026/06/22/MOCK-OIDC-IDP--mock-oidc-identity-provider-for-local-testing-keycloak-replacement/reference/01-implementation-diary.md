@@ -16,8 +16,12 @@ RelatedFiles:
       Note: Phase 0 implementation (commit d473d513)
     - Path: cmd/tinyidp/main_test.go
       Note: httptest flow + ID token signature verification (commit d473d513)
+    - Path: internal/scenario/scenario.go
+      Note: Phase 2 scenario registry (commit 6454cd3)
     - Path: internal/server/authorize.go
       Note: Phase 1 authorize flow (commit f9ece67)
+    - Path: internal/server/token.go
+      Note: scenario TokenError + MutateClaims threading (commit 6454cd3)
     - Path: internal/user/user.go
       Note: FromLogin stable sub derivation (commit f9ece67)
 ExternalSources: []
@@ -26,6 +30,8 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
+
 
 
 
@@ -220,3 +226,66 @@ This step added multiple synthetic users and, at the user's invitation, refactor
 - Package layout now: `cmd/tinyidp/main.go`; `internal/server/{server,embed,discovery,jwt,authorize,token,userinfo,helpers}.go` + `static/login.html`; `internal/user/user.go`.
 - Test counts: server (12 tests), user (5 tests).
 - Login page embedded size: ~2 KB.
+
+## Step 4: Phase 2 — scenario registry
+
+This step replaced ad-hoc, login-string switches with a `Scenario` data model and a `Registry`. A scenario bundles a synthetic user with optional failure hooks for each OIDC stage (authorization, token, ID-token claims, userinfo). Handlers now resolve a login to a `*Scenario` once and branch on the scenario's fields, so adding a new failure case (Phase 4) is one registry entry, not edits in three handlers. The "one-file add" property is pinned by a test that injects a custom-claim scenario and asserts the claim surfaces in the issued ID token with zero handler changes.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Continue the phased plan; Phase 2 is the scenario registry that decouples failure behavior from handler code.
+
+**Inferred user intent:** Make the mock extensible so Phase 4's failure scenarios are trivial to add and self-documenting.
+
+**Commit (code):** 6454cd3ab379ed4bab8d6f1db9f911a7784ec882 — "feat(tinyidp): Phase 2 scenario registry"
+
+### What I did
+- Created `internal/scenario/scenario.go`: `Scenario` struct (`Name`, `Description`, `User`, `AuthError`, `TokenError`, `UserInfoError`, `MutateClaims`); `Registry` with `New` (preloads `alice`/`bob`), `Lookup` (with fallback deriving a normal user from any login), `All`, `Register`.
+- Threaded `*scenario.Scenario` through `authCode` and `accessToken` (replacing the placeholder `FailureMode string`).
+- `authorize` POST: `registry.Lookup(login)`, then `AuthError` → `redirectOAuthError` (no code); else `issueCodeAndRedirect(..., sc.User, &sc)`.
+- `token`: applied `TokenError` switch (`invalid_grant`/`server_error`/`slow` 10s sleep) before issuing; applied `MutateClaims` to the claims map after building it; stored `Scenario` on the access token.
+- `userinfo`: applied `UserInfoError` switch (`401`/`500`/`sub_mismatch` returning a different `sub`).
+- Added `Server.Registry()` accessor and a `Registry.Register` method (the single extension point).
+- Tests: `scenario_test.go` (preload, fallback, normalize, All, MutateClaims contract); `TestScenarioHookIsThreadedThroughFlow` in server tests (the one-file-add guarantee).
+
+### Why
+- The Phase 1 design had `user.FromLogin` called directly in `authorize`; without a registry, Phase 4 would require per-handler `switch login` blocks that drift. The registry makes the login→behavior mapping a single source of truth.
+- `MutateClaims` as a `func(claims, now)` keeps ID-token mutations composable and testable in isolation (scenario_test.go calls it directly without an HTTP round-trip).
+- `Register` is deliberately the only mutation entry point so Phase 3 (login page from `All()`) and future config-driven scenarios go through one API.
+
+### What worked
+- `go build/vet/test` green across all four packages (`cmd/tinyidp`, `internal/server`, `internal/scenario`, `internal/user`).
+- `TestScenarioHookIsThreadedThroughFlow` passed first try after fixing the `Register` access — clean evidence that the scenario threads end-to-end through authorize→token→ID-token.
+
+### What didn't work
+- First server test draft reached into `s.registry.m` directly (`vet: cannot refer to unexported field m`) because the test is in `package server` but `m` belongs to `internal/scenario`. Fixed by adding `Registry.Register` and using it — which is actually the better API anyway (tests use the same extension point users will).
+- The scenario unit test's `exp` assertion was initially `v >= 0`, which is always true for a Unix timestamp. Rewrote to compare against `time.Now().Unix()`. Lesson: assert against a meaningful reference, not a sign check.
+
+### What I learned
+- Exposing `Register` (rather than letting callers poke the map) keeps the registry's invariants (keyed by `Name`, fallback preserved) in one place. This matters for Phase 3, which reads `All()` and must stay consistent with what `Lookup` returns.
+- The `*Scenario` pointer is stored on both `authCode` and `accessToken` so the same scenario object drives failures at token time *and* userinfo time from a single login. No re-lookup needed.
+
+### What was tricky to build
+- Ordering in `token`: the `TokenError` switch must run *before* storing the access token and signing the ID token (otherwise a `server_error` scenario would still issue a token). `MutateClaims` must run *after* the base claims are built (including the nonce echo) so mutators can delete/override any field. Both are now in the right order, with comments.
+- `time.Sleep(10 * time.Second)` for `token-slow` is a real 10s block in a handler; acceptable for manual testing but will need a shorter duration or a knob if it lands in CI. Documented as a Phase 4 open item.
+
+### What warrants a second pair of eyes
+- `MutateClaims` can overwrite `iss`/`aud`/`sub`/`nonce` arbitrarily (that's the point — `id-wrong-iss`, `id-bad-nonce`). Confirm the token still *signs* correctly after mutation (it does: signing happens after `MutateClaims`). A reviewer should confirm no mutator accidentally breaks JSON marshalling (e.g., a non-serializable value).
+- `token-slow` sleeps with the mutex *not* held (correct — it's before the lock), but confirm no future refactor moves it inside the critical section.
+
+### What should be done in the future
+- Phase 4: register the actual failure scenarios (`id-expired`, `id-wrong-aud`, `userinfo-401`, etc.) in `builtinScenarios()`. Each is ~5 lines.
+- Consider a `Scenario.Category` field so Phase 3 can group buttons without re-deriving categories from name prefixes.
+- `token-slow` duration should be configurable (env or scenario field) before CI use.
+
+### Code review instructions
+- Start at `internal/scenario/scenario.go`: read `Scenario`, then `Registry.Lookup` (fallback), then `Register`.
+- Then `internal/server/token.go`: the `TokenError` switch + `MutateClaims` call ordering.
+- Validate: `go test ./internal/scenario/ ./internal/server/ -count=1 -run 'Scenario|MutateClaims|Hook' -v`.
+
+### Technical details
+- Packages: 4 (`cmd/tinyidp`, `internal/server`, `internal/scenario`, `internal/user`).
+- Test counts: scenario (5), server (13), user (5).
+- Registry preloads 2 normal scenarios (`alice`, `bob`); fallback covers all other logins.
