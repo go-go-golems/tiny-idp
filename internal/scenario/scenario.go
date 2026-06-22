@@ -1,0 +1,118 @@
+// Package scenario models the behavior of a login in the mock IdP.
+//
+// A Scenario bundles a synthetic user with optional failure hooks for each
+// OIDC stage (authorization, token, ID-token claims, userinfo). The mock
+// IdP resolves a typed login to a Scenario via a Registry, then each
+// handler consults the relevant field on that Scenario instead of branching
+// on the login string. This is what makes adding a new failure case a
+// one-entry change rather than edits in every handler.
+//
+// Normal logins (e.g. "alice", "bob") resolve to a Scenario whose only
+// non-zero field is User. Failure logins (e.g. "id-expired", "userinfo-401")
+// set the matching failure fields.
+package scenario
+
+import (
+	"time"
+
+	"github.com/manuel/tinyidp/internal/user"
+)
+
+// Scenario describes what should happen (or fail) for a given login.
+type Scenario struct {
+	Name        string
+	Description string
+	User        user.User
+
+	// AuthError, when non-empty, is the OAuth error code returned at the
+	// /authorize endpoint via redirect (e.g. "access_denied"). The code is
+	// never issued.
+	AuthError string
+
+	// TokenError, when non-empty, selects a failure at /token:
+	//   "invalid_grant"  -> 400 invalid_grant
+	//   "server_error"   -> 500 server_error
+	//   "slow"            -> sleep 10s, then succeed normally
+	TokenError string
+
+	// UserInfoError, when non-empty, selects a failure at /userinfo:
+	//   "401"            -> 401
+	//   "500"            -> 500
+	//   "sub_mismatch"   -> 200 with a different sub than the ID token
+	UserInfoError string
+
+	// MutateClaims, when non-nil, mutates the ID token claims after they are
+	// built (e.g. set exp in the past for id-expired, wrong aud, etc.).
+	MutateClaims func(claims map[string]any, now time.Time)
+}
+
+// Registry maps a normalized login to a Scenario. The zero value is not
+// usable; construct with New.
+type Registry struct {
+	m     map[string]Scenario
+	fallback func(string) Scenario
+}
+
+// Lookup returns the Scenario for a login and whether an explicit scenario
+// matched. When no explicit scenario matches, a fallback normal user is
+// derived from the login (so any arbitrary username still works).
+func (r *Registry) Lookup(login string) (Scenario, bool) {
+	if sc, ok := r.m[login]; ok {
+		return sc, true
+	}
+	return r.fallback(login), false
+}
+
+// All returns every explicitly registered scenario, in insertion order. Used
+// by the login page (Phase 3) to render selectable buttons.
+func (r *Registry) All() []Scenario {
+	out := make([]Scenario, 0, len(r.m))
+	for _, sc := range r.m {
+		out = append(out, sc)
+	}
+	return out
+}
+
+// Register adds or replaces a scenario keyed by its Name. This is the single
+// entry point for extending the mock's behavior: callers (including tests)
+// add a scenario here rather than editing handlers.
+func (r *Registry) Register(sc Scenario) {
+	r.m[sc.Name] = sc
+}
+
+// New returns a Registry preloaded with the built-in scenarios. Phase 4 will
+// add the failure scenarios; for now this registers the normal users and
+// sets up the fallback so arbitrary logins keep working.
+func New() *Registry {
+	r := &Registry{
+		m: map[string]Scenario{},
+		fallback: func(login string) Scenario {
+			return Scenario{
+				Name:        login,
+				Description: "synthetic user derived from login",
+				User:        user.FromLogin(login),
+			}
+		},
+	}
+	for _, sc := range builtinScenarios() {
+		r.m[sc.Name] = sc
+	}
+	return r
+}
+
+// builtinScenarios returns the explicitly-registered scenarios. Phase 1 ships
+// only the normal users; Phase 4 appends the failure scenarios.
+func builtinScenarios() []Scenario {
+	return []Scenario{
+		{
+			Name:        "alice",
+			Description: "normal user",
+			User:        user.FromLogin("alice"),
+		},
+		{
+			Name:        "bob",
+			Description: "normal user",
+			User:        user.FromLogin("bob"),
+		},
+	}
+}

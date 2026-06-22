@@ -72,10 +72,23 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	access := randomB64(32)
 
+	// Token-error scenarios simulate failures at the token endpoint.
+	switch ac.Scenario.TokenError {
+	case "invalid_grant":
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "simulated invalid_grant during token exchange")
+		return
+	case "server_error":
+		tokenError(w, http.StatusInternalServerError, "server_error", "simulated token endpoint failure")
+		return
+	case "slow":
+		time.Sleep(10 * time.Second)
+	}
+
 	s.mu.Lock()
 	s.tokens[access] = accessToken{
-		User:    ac.User,
-		Expires: now.Add(time.Hour),
+		User:     ac.User,
+		Expires:  now.Add(time.Hour),
+		Scenario: ac.Scenario,
 	}
 	s.mu.Unlock()
 
@@ -92,6 +105,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	}
 	if ac.Nonce != "" {
 		claims["nonce"] = ac.Nonce
+	}
+	if ac.Scenario.MutateClaims != nil {
+		ac.Scenario.MutateClaims(claims, now)
 	}
 
 	idToken, err := s.signJWT(claims)

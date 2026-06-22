@@ -14,7 +14,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/user"
 )
 
@@ -34,6 +36,7 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 		redirectURIs: map[string]bool{"https://app.test/cb": true},
 		key:          key,
 		kid:          "dev-key-1",
+		registry:     scenario.New(),
 		codes:        map[string]authCode{},
 		tokens:       map[string]accessToken{},
 	}
@@ -461,8 +464,33 @@ func TestArbitraryEmailLogin(t *testing.T) {
 		t.Fatalf("userinfo name = %v", ui["name"])
 	}
 }
-
 func sha256sum(s string) []byte {
 	sum := sha256.Sum256([]byte(s))
 	return sum[:]
+}
+
+// --- Phase 2: scenario registry ---
+
+// TestScenarioHookIsThreadedThroughFlow proves the core Phase 2 property:
+// a scenario's MutateClaims hook actually mutates the issued ID token. This
+// is the foundation Phase 4 builds on (id-expired, id-wrong-aud, ...).
+func TestScenarioHookIsThreadedThroughFlow(t *testing.T) {
+	s, ts := newTestServer(t)
+	// Inject a scenario that adds a custom claim. No handler code changed —
+	// only the registry entry. This is the "one-file add" guarantee.
+	s.registry.Register(scenario.Scenario{
+		Name:        "custom-claim",
+		Description: "injects a custom claim",
+		User:        user.FromLogin("dave"),
+		MutateClaims: func(claims map[string]any, now time.Time) {
+			claims["custom"] = "from-scenario"
+		},
+	})
+	_, claims, _ := fullFlow(t, ts, "custom-claim", nil)
+	if claims["custom"] != "from-scenario" {
+		t.Fatalf("scenario MutateClaims did not run: claims = %+v", claims)
+	}
+	if claims["sub"] != user.FromLogin("dave").Sub {
+		t.Fatalf("sub = %v, want dave's sub", claims["sub"])
+	}
 }

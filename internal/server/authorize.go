@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/user"
 )
 
@@ -59,8 +60,16 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "login is required", http.StatusBadRequest)
 			return
 		}
-		u := user.FromLogin(login)
-		s.issueCodeAndRedirect(w, r, ar, u)
+		sc, _ := s.registry.Lookup(login)
+
+		// Auth-error scenarios redirect back to the RP with an OAuth error
+		// instead of issuing a code.
+		if sc.AuthError != "" {
+			redirectOAuthError(w, r, ar.RedirectURI, ar.State, sc.AuthError, "simulated "+sc.AuthError)
+			return
+		}
+
+		s.issueCodeAndRedirect(w, r, ar, sc.User, &sc)
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -110,9 +119,9 @@ func hiddenAuthorizeFields(ar authorizeRequest) []hiddenField {
 	}
 }
 
-// issueCodeAndRedirect stores an auth code for the user and redirects back to
-// the RP with code + state.
-func (s *Server) issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, ar authorizeRequest, u user.User) {
+// issueCodeAndRedirect stores an auth code for the user + scenario and
+// redirects back to the RP with code + state.
+func (s *Server) issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, ar authorizeRequest, u user.User, sc *scenario.Scenario) {
 	code := randomB64(32)
 
 	s.mu.Lock()
@@ -125,6 +134,7 @@ func (s *Server) issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, ar
 		CodeChallengeMethod: ar.CodeChallengeMethod,
 		Expires:             time.Now().Add(5 * time.Minute),
 		User:                u,
+		Scenario:            sc,
 	}
 	s.mu.Unlock()
 
@@ -142,6 +152,24 @@ func (s *Server) issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, ar
 	redirectURL.RawQuery = q.Encode()
 
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
+}
+
+// redirectOAuthError sends an OAuth authorization error back to the RP via
+// redirect (error + error_description + state). Used by AuthError scenarios.
+func redirectOAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state, code, desc string) {
+	u, err := url.Parse(redirectURI)
+	if err != nil {
+		http.Error(w, "bad redirect_uri", http.StatusBadRequest)
+		return
+	}
+	q := u.Query()
+	q.Set("error", code)
+	q.Set("error_description", desc)
+	if state != "" {
+		q.Set("state", state)
+	}
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
 // errText is a string that satisfies error, used for validation messages.

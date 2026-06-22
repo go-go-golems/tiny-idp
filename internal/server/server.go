@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/user"
 )
 
@@ -28,6 +29,8 @@ type Server struct {
 
 	key *rsa.PrivateKey
 	kid string
+
+	registry *scenario.Registry
 
 	mu     sync.Mutex
 	codes  map[string]authCode
@@ -44,12 +47,14 @@ type authCode struct {
 	CodeChallengeMethod string
 	Expires             time.Time
 	User                user.User
+	Scenario            *scenario.Scenario
 }
 
 // accessToken is an opaque bearer token mapped to a user + expiry.
 type accessToken struct {
-	User    user.User
-	Expires time.Time
+	User     user.User
+	Expires  time.Time
+	Scenario *scenario.Scenario
 }
 
 // Options configures a Server at construction time.
@@ -79,6 +84,7 @@ func New(opts Options) (*Server, error) {
 		redirectURIs: redirs,
 		key:          key,
 		kid:          "dev-key-1",
+		registry:     scenario.New(),
 		codes:        map[string]authCode{},
 		tokens:       map[string]accessToken{},
 	}, nil
@@ -102,3 +108,7 @@ func (s *Server) Issuer() string { return s.issuer }
 
 // ClientID returns the configured client ID.
 func (s *Server) ClientID() string { return s.clientID }
+
+// Registry returns the scenario registry (used by tests and, in Phase 3, by
+// the login page to list selectable scenarios).
+func (s *Server) Registry() *scenario.Registry { return s.registry }

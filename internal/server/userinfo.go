@@ -29,6 +29,24 @@ func (s *Server) userinfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// UserInfo-error scenarios simulate failures at the userinfo endpoint.
+	switch at.Scenario.UserInfoError {
+	case "401":
+		http.Error(w, "simulated invalid bearer token", http.StatusUnauthorized)
+		return
+	case "500":
+		http.Error(w, "simulated userinfo server error", http.StatusInternalServerError)
+		return
+	case "sub_mismatch":
+		writeJSON(w, http.StatusOK, map[string]any{
+			"sub":            at.User.Sub + "-different",
+			"email":          at.User.Email,
+			"email_verified": true,
+			"name":           at.User.Name,
+		})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sub":            at.User.Sub,
 		"email":          at.User.Email,
