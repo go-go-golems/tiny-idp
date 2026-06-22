@@ -7,21 +7,78 @@ A minimal mock [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0
 ## Run
 
 ```bash
-go run ./cmd/tinyidp
+go run ./cmd/tinyidp serve
 ```
 
-Defaults:
+The CLI is built on the [Glazed](https://github.com/go-go-golems/glazed) command framework. Configuration is layered with predictable precedence (low → high):
 
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `OIDC_ISSUER` | `http://localhost:5556` | Issuer URL; endpoints are derived from it. |
-| `OIDC_ADDR` | `127.0.0.1:5556` | Listen address (loopback by default). |
-| `OIDC_CLIENT_ID` | `dev-client` | Single client ID. |
-| `OIDC_CLIENT_SECRET` | (empty) | If set, token endpoint enforces it. |
-| `OIDC_REDIRECT_URIS` | `http://localhost:3000/callback,http://127.0.0.1:3000/callback` | CSV allowlist. |
-| `OIDC_USER_SUB` | `user-123` | Fixed user subject (Phase 0 only). |
-| `OIDC_USER_EMAIL` | `dev@example.test` | Fixed user email (Phase 0 only). |
-| `OIDC_USER_NAME` | `Dev User` | Fixed user name (Phase 0 only). |
+1. **Section defaults**
+2. **Config files** (`--config-file`)
+3. **Environment variables** (`TINYIDP_*`)
+4. **Positional arguments**
+5. **CLI flags**
+
+## Configuration
+
+The OIDC provider config is a **reusable Glazed field section** (`internal/sections/oidc`). The same flags are available as CLI flags, env vars, and config-file keys:
+
+| Flag | Env | Config key | Default | Meaning |
+|------|-----|------------|---------|---------|
+| `--issuer` | `TINYIDP_ISSUER` | `oidc.issuer` | `http://localhost:5556` | Issuer URL; endpoints derived from it. |
+| `--addr` | `TINYIDP_ADDR` | `oidc.addr` | `127.0.0.1:5556` | Listen address (loopback by default). |
+| `--client-id` | `TINYIDP_CLIENT_ID` | `oidc.client-id` | `dev-client` | Accepted client ID. |
+| `--client-secret` | `TINYIDP_CLIENT_SECRET` | `oidc.client-secret` | (empty) | If set, `/token` enforces it; if empty, client is public. |
+| `--redirect-uris` | `TINYIDP_REDIRECT_URIS` | `oidc.redirect-uris` | `http://localhost:3000/callback,http://127.0.0.1:3000/callback` | Allowlist (repeatable flag / list in config). |
+
+### Examples
+
+Flags:
+
+```bash
+go run ./cmd/tinyidp serve \
+  --issuer http://localhost:5556 \
+  --client-id dev-client \
+  --redirect-uris http://localhost:8080/callback
+```
+
+Env vars:
+
+```bash
+TINYIDP_CLIENT_ID=my-app \
+TINYIDP_CLIENT_SECRET=dev-secret \
+TINYIDP_REDIRECT_URIS=http://localhost:8080/callback \
+go run ./cmd/tinyidp serve
+```
+
+Config file (`tinyidp.yaml`):
+
+```yaml
+oidc:
+  client-id: my-app
+  client-secret: dev-secret
+  redirect-uris:
+    - http://localhost:8080/callback
+```
+
+```bash
+go run ./cmd/tinyidp serve --config-file tinyidp.yaml
+```
+
+### Introspect the resolved config
+
+```bash
+go run ./cmd/tinyidp serve --print-parsed-fields   # show resolved values + sources
+go run ./cmd/tinyidp serve --print-schema          # show the command's schema
+```
+
+### Profiles (ready for future use)
+
+`--profile` / `--profile-file` (and `TINYIDP_PROFILE` / `TINYIDP_PROFILE_FILE`) are wired. Loading a `profiles.yaml` is a future step; see `tinyidp help profiles`.
+
+```bash
+go run ./cmd/tinyidp help              # browse topics
+go run ./cmd/tinyidp help oidc-config  # the OIDC section explained
+```
 
 ## Configure your app (RP)
 
@@ -34,33 +91,19 @@ client_secret: (empty)
 scopes:        openid profile email
 ```
 
-For a different callback URL:
-
-```bash
-OIDC_REDIRECT_URIS=http://localhost:8080/auth/callback go run ./cmd/tinyidp
-```
-
-For a confidential-client-style test:
-
-```bash
-OIDC_CLIENT_ID=my-app \
-OIDC_CLIENT_SECRET=dev-secret \
-OIDC_REDIRECT_URIS=http://localhost:8080/callback \
-go run ./cmd/tinyidp
-```
-
 ## Endpoints
 
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /.well-known/openid-configuration` | Discovery metadata. |
 | `GET /jwks` | Public signing keys (JWKS). |
-| `GET /authorize` | Authorization endpoint (issues a code). |
+| `GET /authorize` | Authorization endpoint (login form → code). |
 | `POST /token` | Token endpoint (code → ID + access token). |
 | `GET /userinfo` | UserInfo (bearer access token → claims). |
 | `GET /healthz` | Liveness. |
 
 ## Status
 
-- **Phase 0** — baseline OIDC happy path (done).
-- **Phase 1–4** — multiple synthetic users, scenario registry, self-documenting login page, failure scenarios (see `ttmp/.../reference/02-implementation-phases-and-tasks.md`).
+- **Phase 0–4** — baseline OIDC happy path, multiple synthetic users, scenario registry, self-documenting login page, failure scenarios (done).
+- **Glazed CLI** — reusable `oidc` field section, layered config (flags/env/config), profile-ready (done).
+- **Phase 5–12** — multiple clients, sessions, claims, debug UI, refresh tokens, JWKS rotation, logout, Go test helper (deferred; see `ttmp/.../reference/02-implementation-phases-and-tasks.md`).

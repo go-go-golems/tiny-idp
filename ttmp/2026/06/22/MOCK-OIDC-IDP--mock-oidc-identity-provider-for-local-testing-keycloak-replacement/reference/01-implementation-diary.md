@@ -16,6 +16,10 @@ RelatedFiles:
       Note: Phase 0 implementation (commit d473d513)
     - Path: cmd/tinyidp/main_test.go
       Note: httptest flow + ID token signature verification (commit d473d513)
+    - Path: internal/cmds/config.go
+      Note: ConfigFilePlanBuilder wiring --config-file (commit 871eae0)
+    - Path: internal/cmds/serve.go
+      Note: Glazed BareCommand composing the oidc section (commit 871eae0)
     - Path: internal/scenario/scenario.go
       Note: Phase 2 scenario registry (commit 6454cd3)
     - Path: internal/server/authorize.go
@@ -34,6 +38,8 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
+
 
 
 
@@ -470,3 +476,76 @@ This final step validated the ticket with `docmgr doctor`, uploaded the bundled 
 - reMarkable path: `/ai/2026/06/22/MOCK-OIDC-IDP/Mock OIDC IdP — Design, Phases, Diary`.
 - Final test count: 37 (server 26, scenario 5, user 5, cmd 0).
 - Commits: 12 total (1 initial + 11 from this work).
+
+## Step 8: Adopt the Glazed command framework
+
+This step replaced the hand-rolled env-var-only CLI with a Glazed-based CLI, per the user's explicit request. The OIDC provider config is now a **reusable field section** (`internal/sections/oidc`) composed into the `serve` command; the root is wired like `glaze` (logging section, embedded help, `help_cmd.SetupCobraRootCommand`); and the full config precedence chain (defaults < config files < env < args < flags) is wired and verified. Profile *flags* are ready (`--profile`/`--profile-file`); profile *file* loading remains "later down the road" as the user phrased it. This supersedes the original "stdlib only" decision for the CLI layer (the HTTP/JWT/JWKS/PKCE layer stays stdlib-only).
+
+### Prompt Context
+
+**User prompt (verbatim):** "use the glazed command framework and update the current setup. We want proper schema sections we can reuse, and later down the road use profiles and such. (read the skill, potentially use glaze help --all to get more information)"
+
+**Assistant interpretation:** Adopt Glazed for the tinyidp CLI; define the OIDC config as a reusable schema section; leave profiles as a ready-but-future path.
+
+**Inferred user intent:** Stop hand-rolling flags/env vars; get reusable, composable config sections and a documented path to profiles/config files, with proper introspection (`--print-schema`).
+
+**Commit (code):** 871eae01b98f38b7acec57a875f883e86fa815ef — "feat(tinyidp): adopt Glazed command framework with reusable OIDC section"
+
+### What I did
+- Read the `glazed-command-authoring` and `glazed-help-page-authoring` skills; surveyed `glaze help --all` and the key topics (`custom-section-tutorial`, `profiles`, `config-files`, `sections-guide`). Confirmed API details against the glazed v1.3.6 source (`schema.NewSection`, `fields.New`+`TypeStringList`, `cli.WithProfileSettingsSection`, `ConfigPlanBuilder`, `BareCommand`).
+- Added `github.com/go-go-golems/glazed@v1.3.6`.
+- `internal/sections/oidc/{section,settings}.go`: reusable OIDC section (`NewSection` declares issuer/addr/client-id/client-secret/redirect-uris with defaults) + `Settings` decode target + `GetSettings` (normalizes issuer). Decoupled from `internal/server` so it is genuinely reusable.
+- `internal/cmds/serve.go`: `ServeCommand` as a `cmds.BareCommand` (Run, no row emission — a server has no tabular output) composing the OIDC section + Glazed command-settings section.
+- `internal/cmds/config.go`: `ConfigFilePlanBuilder` so `--config-file` actually loads (the flag is otherwise a no-op, confirmed by glazed's own `TestCobraParserDoesNotImplicitlyLoadConfigFileWithoutPlanBuilder`).
+- `cmd/tinyidp/main.go`: Glazed root init (logging section, embedded help, `help_cmd.SetupCobraRootCommand`); `serve` built with `AppName: "tinyidp"` (env loading) + `cli.WithProfileSettingsSection()` + the config-file plan builder.
+- `cmd/tinyidp/doc/{doc.go,pages/*.md}`: embedded help via `go:embed all:pages` (tinyidp overview + oidc-config topic).
+- `internal/sections/oidc/section_test.go`: section shape, defaults round-trip via `sources.Execute`+`FromDefaults`, env override (`TINYIDP_*`), issuer normalization.
+- Updated README (flags/env/config table, precedence, introspection, profiles-ready) and the design doc (superseded "stdlib only" decision; added "Glazed CLI + reusable field sections" decision).
+
+### Why
+- A reusable section means the OIDC config (flags + env + config-file schema) is defined **once**; any future command (`print-config`, `gen-key`, the Phase 12 test helper) composes `oidc.NewSection()` and gets identical config without redefinition. This is the "proper schema sections we can reuse" the user asked for.
+- Glazed's built-in parser chain gives the full precedence (defaults < config < env < args < flags) for free, with a parse log (`--print-parsed-fields`) that proves which source won — far better than the previous opaque env-var resolution.
+- Wiring the root like `glaze` (logging + help) is the canonical pattern from both skills; deviating would leave the CLI in an "incomplete initialization state" per the help skill.
+
+### What worked
+- `go build/vet/test` green across all packages (added 4 OIDC section tests).
+- `tinyidp serve --help` renders grouped sections: OIDC Provider Configuration, General purpose command options (--config-file/--print-parsed-fields/--print-schema/--print-yaml), Profile settings, and inherited Logging flags.
+- `--print-parsed-fields` shows the full parse log with `source:` per value (defaults/env/config) — the introspection the user wanted.
+- **Precedence verified end-to-end:** config-only → `cfg-client`; config+env → `env-cid`; config+env+flag → `flag-cid`. Exactly the documented chain.
+- Full authorize→token→userinfo flow works under env-var-only configuration (`TINYIDP_ADDR/CLIENT_ID/REDIRECT_URIS`), issuing an RS256 ID token verifiable against JWKS.
+
+### What didn't work
+- First `ConfigFilePlanBuilder` draft had the wrong signature (returned a builder-of-builders). The type is `func(*values.Values, *cobra.Command, []string) (*config.Plan, error)`; fixed by matching glazed's own test pattern.
+- Initial live smoke-test appeared to show env vars not loading, but that was a misread: I hadn't actually set `TINYIDP_CLIENT_ID` in that run, so the server correctly rejected `client_id=env-app` as unknown. `--print-parsed-fields` confirmed env loading works. (Recurring lesson from Step 5: trust the in-process assertion over the live-port curl.)
+- `--config-file` did nothing until I wired `ConfigPlanBuilder` — by design, glazed does not implicitly load config files without a builder (there's a dedicated test asserting this). Documented in the decision record.
+
+### What I learned
+- `BareCommand` (Run returns error, no processor/writer) is the right interface for a long-running server command; `GlazeCommand`/`RunIntoGlazeProcessor` is for row-emitting commands. `BuildCobraCommand` detects the interface via type assertion.
+- The env-var prefix is `strings.ToUpper(AppName)` → `TINYIDP_*`. This is a breaking change from the previous `OIDC_*` (documented in the decision record; acceptable pre-release).
+- `go:embed all:pages` (with `all:`) is the safe way to embed a help subdirectory without also embedding the `.go` source file in the same package dir.
+
+### What was tricky to build
+- The `ConfigPlanBuilder` returns a `*config.Plan`. Returning `nil` is risky (unclear how `FromConfigPlanBuilder` handles it); returning an empty `config.NewPlan(config.WithLayerOrder(config.LayerExplicit))` with no `Add` is a clean no-op when `--config-file` is unset.
+- Layer ordering: the built-in chain appends in reverse precedence (last = highest). The resulting order is flags > args > env > config > defaults, matching the documented chain. Getting this wrong would invert precedence silently; verified with the cfg/env/flag triple test.
+- The OIDC section is decoupled from `internal/server` to avoid an import cycle and keep it reusable — `serve.go` bridges section → `server.Options`.
+
+### What warrants a second pair of eyes
+- The env-prefix change (`OIDC_*` → `TINYIDP_*`) is a breaking change for anyone following the pre-Glazed diary smoke-test commands. Confirm this is acceptable (MVP unreleased; I believe it is).
+- `ConfigFilePlanBuilder` reads `--config-file` from `cmd.Flags()`; confirm the flag is registered (by the command-settings section) before the builder runs. It is (ParseCommandSettingsSection runs first), but a future refactor that skips the command-settings section would break config loading silently.
+- Profile *file* loading (`profiles.yaml` resolution via `middlewares.GatherFlagsFromProfiles`) is NOT wired — only the `--profile`/`--profile-file` flags exist. Anyone expecting `--profile dev` to actually apply a profile today will be surprised; the help page says "requires profiles.yaml".
+
+### What should be done in the future
+- Wire `middlewares.GatherFlagsFromProfiles` so `--profile` resolves a `profiles.yaml` (the documented "later down the road" profiles feature). The flag plumbing is already in place.
+- Consider a `print-config` subcommand that composes the same OIDC section and emits the resolved config as rows (a natural use of the reusable section + Glazed output).
+- Re-upload the bundle to reMarkable after this docs update (Step 9 / delivery refresh).
+
+### Code review instructions
+- Start at `internal/sections/oidc/section.go`: the reusable section. Then `internal/cmds/serve.go`: how a command composes it. Then `internal/cmds/config.go`: the `--config-file` loader. Then `cmd/tinyidp/main.go`: the root init.
+- Validate: `go test ./... -count=1`; `go run ./cmd/tinyidp serve --print-parsed-fields`; `go run ./cmd/tinyidp help oidc-config`.
+- Precedence triple-check: the three `--print-parsed-fields` runs in "What worked" (cfg/env/flag).
+
+### Technical details
+- Dependency: `github.com/go-go-golems/glazed v1.3.6` (+ cobra v1.10.2, zerolog v1.35.1).
+- New packages: `internal/sections/oidc`, `internal/cmds`, `cmd/tinyidp/doc`.
+- Test count: 41 (server 26, scenario 5, user 5, oidc 4, + 1 unused).
+- Env prefix: `TINYIDP_*`. Config-file key: `oidc:`. Profile flags: `--profile`/`--profile-file`.

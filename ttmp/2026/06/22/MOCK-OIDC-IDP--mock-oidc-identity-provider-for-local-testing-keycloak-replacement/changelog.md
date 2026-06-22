@@ -67,3 +67,12 @@ Step 7: delivery — docmgr doctor clean (vocab added), bundle uploaded + verifi
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/ttmp/2026/06/22/MOCK-OIDC-IDP--mock-oidc-identity-provider-for-local-testing-keycloak-replacement/reference/01-implementation-diary.md — delivery step
 
+
+## 2026-06-22
+
+Step 8: Adopted Glazed command framework — reusable oidc field section, layered config (defaults<config<env<args<flags), profile-ready, embedded help. stdlib-only decision superseded for CLI layer (commit 871eae0).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/sections/oidc/section.go — reusable OIDC field section (commit 871eae0)
+

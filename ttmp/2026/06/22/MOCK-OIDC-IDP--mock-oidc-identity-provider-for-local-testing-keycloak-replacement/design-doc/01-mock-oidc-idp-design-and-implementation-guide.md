@@ -13,7 +13,9 @@ Intent: long-term
 Owners: []
 RelatedFiles:
     - Path: cmd/tinyidp/main.go
-      Note: Planned server entrypoint (Phase 0)
+      Note: |-
+        Planned server entrypoint (Phase 0)
+        Glazed root init (logging+help+serve) (commit 871eae0)
     - Path: cmd/tinyidp/main.go:Planned server entrypoint
     - Path: internal/client/client.go:Planned client registry
     - Path: internal/jwt/jwt.go:Planned RS256 JWT signing + JWKS
@@ -31,6 +33,7 @@ LastUpdated: 2026-06-22T14:51:07.588631044-04:00
 WhatFor: 'Onboarding an unfamiliar engineer to the mock OIDC IdP: what it is, why it exists, how OIDC works, the architecture, the API surface, and the phased implementation plan.'
 WhenToUse: Read this before implementing or extending the IdP. It is the single source of truth for scope, architecture, and phasing.
 ---
+
 
 
 # Mock OIDC IdP Design and Implementation Guide
@@ -577,6 +580,15 @@ Returns `ok\n`. Use for liveness in tests.
 - **Decision:** Single Go binary, standard library only (mirrors the `go-web-frontend-embed` skill's preference for `net/http` + `http.ServeMux`).
 - **Rationale:** Zero-config `go run .`; no module cache churn; trivial CI; the OIDC surface we need is small enough to implement by hand. External OIDC frameworks pull in real consent/account models we explicitly don't want.
 - **Consequences:** We must implement JWT/JWKS/PKCE by hand (~150 lines). We accept this to keep the dependency surface at zero. Future Phase 12 (test helper) stays importable without heavy deps.
+- **Status:** superseded by "Glazed CLI + reusable field sections" (the HTTP/JWT/JWKS/PKCE layer stays stdlib-only; the CLI layer now depends on Glazed for structured config, help, and profiles).
+
+### Decision: Glazed CLI + reusable field sections
+
+- **Context:** The original env-var-only CLI did not scale to reusable configuration, config-file/profile support, or self-documenting help. The user explicitly requested adopting the Glazed command framework with reusable schema sections and a path to profiles.
+- **Options considered:** (a) keep env vars only; (b) hand-roll a flag parser + a separate config-file loader; (c) adopt Glazed and define the OIDC config as a reusable field section composed into commands.
+- **Decision:** Adopt Glazed (`github.com/go-go-golems/glazed@v1.3.6`). Define the OIDC provider config as a reusable section in `internal/sections/oidc` (issuer/addr/client-id/client-secret/redirect-uris). Implement `serve` as a `cmds.BareCommand` composing that section. Wire the root like `glaze` (logging section, embedded help via `go:embed`, `help_cmd.SetupCobraRootCommand`). Add a `ConfigPlanBuilder` so `--config-file` loads, and `cli.WithProfileSettingsSection()` so `--profile`/`--profile-file` are ready.
+- **Rationale:** Glazed gives the full precedence chain for free (defaults < config < env < args < flags), reusable sections that can be composed into future commands (`print-config`, `gen-key`, etc.), structured help, and a documented path to profiles (`profiles.yaml`). Defining the OIDC config once as a section means flags, env vars, and config-file schema can never drift. The HTTP/JWT/JWKS/PKCE layer remains stdlib-only, so the only added dependency is for CLI plumbing.
+- **Consequences:** `go.mod` now depends on Glazed (which pulls cobra + zerolog). The env-var prefix changed from `OIDC_*` to `TINYIDP_*` (breaking change for the pre-Glazed smoke-test commands in the diary; acceptable since the MVP is unreleased). `--config-file` loads via `internal/cmds.ConfigFilePlanBuilder`. Profile *file* loading (`profiles.yaml` resolution) is wired at the flag level but not yet implemented as a middleware — that remains "later down the road" per the user's phrasing.
 - **Status:** accepted
 
 ### Decision: In-memory state, generated-at-startup RSA key
