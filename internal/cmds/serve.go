@@ -15,6 +15,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"github.com/rs/zerolog/log"
 
+	"github.com/manuel/tinyidp/internal/client"
 	"github.com/manuel/tinyidp/internal/sections/oidc"
 	"github.com/manuel/tinyidp/internal/server"
 )
@@ -79,10 +80,8 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 	}
 
 	srv, err := server.New(server.Options{
-		Issuer:       cfg.Issuer,
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		RedirectURIs: cfg.RedirectURIs,
+		Issuer:  cfg.Issuer,
+		Clients: buildClientRegistry(cfg),
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
@@ -94,7 +93,7 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 	log.Info().
 		Str("addr", cfg.Addr).
 		Str("issuer", srv.Issuer()).
-		Str("client_id", srv.ClientID()).
+		Int("clients", len(srv.Clients().All())).
 		Msg("tinyidp listening")
 
 	errCh := make(chan error, 1)
@@ -111,4 +110,27 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 		}
 	}
 	return nil
+}
+
+// buildClientRegistry returns a client registry seeded with the built-in
+// clients (dev-client, public-spa, web-app) plus a single client configured
+// from the OIDC section's --client-id / --client-secret / --redirect-uris.
+// The configured client defaults to dev-client, so the common case (no extra
+// config) overrides the built-in dev-client with the user's redirect URIs.
+//
+// This preserves the Phase 0-4 single-client UX while adding the multi-client
+// registry: a developer who only sets --redirect-uris gets exactly the
+// behavior they had before; a developer who wants to test multiple clients
+// can point at the built-ins (public-spa, web-app) or register more later.
+func buildClientRegistry(cfg *oidc.Settings) *client.Registry {
+	r := client.NewRegistry()
+	r.Register(client.Client{
+		ID:           cfg.ClientID,
+		Secret:       cfg.ClientSecret,
+		RedirectURIs: cfg.RedirectURIs,
+		// The configured client is permissive (PKCE optional, all scopes) to
+		// preserve the quick-test default. Use the built-in public-spa for a
+		// PKCE-required public client.
+	})
+	return r
 }

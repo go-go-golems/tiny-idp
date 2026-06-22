@@ -64,20 +64,46 @@ oidc:
 go run ./cmd/tinyidp serve --config-file tinyidp.yaml
 ```
 
+### Profiles (switch setups with one flag)
+
+A profile is a named bundle of overrides stored in `~/.config/tinyidp/profiles.yaml`:
+
+```yaml
+dev:
+  oidc:
+    client-id: dev-profile-client
+    addr: 127.0.0.1:6600
+ci:
+  oidc:
+    client-id: ci-runner
+    redirect-uris:
+      - http://localhost:9090/callback
+```
+
+```bash
+go run ./cmd/tinyidp serve --profile dev
+go run ./cmd/tinyidp serve --profile ci --profile-file /path/to/profiles.yaml
+TINYIDP_PROFILE=dev go run ./cmd/tinyidp serve   # or via env
+```
+
+Profiles sit above defaults and below config/env/flags in precedence, so a local override always wins. The default file missing + `default` profile = silent skip (works out of the box). See `tinyidp help profiles`.
+
 ### Introspect the resolved config
 
 ```bash
-go run ./cmd/tinyidp serve --print-parsed-fields   # show resolved values + sources
-go run ./cmd/tinyidp serve --print-schema          # show the command's schema
+go run ./cmd/tinyidp print-config                          # print resolved config (yaml)
+go run ./cmd/tinyidp print-config --profile dev             # what serve would use with --profile dev
+go run ./cmd/tinyidp print-config --output json            # json instead of yaml
+go run ./cmd/tinyidp serve --print-parsed-fields            # show resolved values + sources (incl. profiles)
+go run ./cmd/tinyidp serve --print-schema                   # show the command's schema
 ```
 
-### Profiles (ready for future use)
-
-`--profile` / `--profile-file` (and `TINYIDP_PROFILE` / `TINYIDP_PROFILE_FILE`) are wired. Loading a `profiles.yaml` is a future step; see `tinyidp help profiles`.
+`print-config` composes the same reusable `oidc` section as `serve`, so its output is exactly what `serve` would use.
 
 ```bash
 go run ./cmd/tinyidp help              # browse topics
-go run ./cmd/tinyidp help oidc-config  # the OIDC section explained
+go run ./cmd/tinyidp help oidc-config  # the OIDC section
+go run ./cmd/tinyidp help profiles     # profiles explained
 ```
 
 ## Configure your app (RP)
@@ -105,5 +131,5 @@ scopes:        openid profile email
 ## Status
 
 - **Phase 0–4** — baseline OIDC happy path, multiple synthetic users, scenario registry, self-documenting login page, failure scenarios (done).
-- **Glazed CLI** — reusable `oidc` field section, layered config (flags/env/config), profile-ready (done).
+- **Glazed CLI** — reusable `oidc` field section, layered config (flags/env/config), **profiles** (`--profile` resolves `profiles.yaml`), **`print-config`** command (done).
 - **Phase 5–12** — multiple clients, sessions, claims, debug UI, refresh tokens, JWKS rotation, logout, Go test helper (deferred; see `ttmp/.../reference/02-implementation-phases-and-tasks.md`).

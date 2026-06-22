@@ -30,22 +30,29 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	if clientID == "" {
 		clientID = r.Form.Get("client_id")
 	}
-	if clientID != s.clientID {
+	c, ok := s.clients.Lookup(clientID)
+	if !ok {
 		tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_id")
 		return
 	}
 
-	if s.clientSecret != "" {
+	// Confidential clients (non-empty secret) must present it; public clients
+	// (empty secret) skip the check. This matches the client_secret_basic and
+	// client_secret_post methods advertised in discovery.
+	if c.Secret != "" {
 		secret := r.Form.Get("client_secret")
 		if hasBasic {
 			secret = basicSecret
 		}
-		if secret != s.clientSecret {
+		if secret != c.Secret {
 			tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_secret")
 			return
 		}
 	}
 
+	// The client_id on the code (set at /authorize) must match the client
+	// authenticating at /token. A code issued to one client cannot be
+	// redeemed by another.
 	code := r.Form.Get("code")
 
 	// Pop the code atomically: authorization codes are one-time use, so the

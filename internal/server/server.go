@@ -16,16 +16,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/manuel/tinyidp/internal/client"
 	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/user"
 )
 
 // Server holds all IdP state.
 type Server struct {
-	issuer       string
-	clientID     string
-	clientSecret string
-	redirectURIs map[string]bool
+	issuer   string
+	clients  *client.Registry
 
 	key *rsa.PrivateKey
 	kid string
@@ -59,34 +58,30 @@ type accessToken struct {
 
 // Options configures a Server at construction time.
 type Options struct {
-	Issuer       string
-	ClientID     string
-	ClientSecret string
-	RedirectURIs []string
+	Issuer   string
+	Clients  *client.Registry
 }
 
-// New constructs a Server with a freshly generated RSA signing key.
+// New constructs a Server with a freshly generated RSA signing key. If
+// opts.Clients is nil, the built-in client registry is used (dev-client,
+// public-spa, web-app).
 func New(opts Options) (*Server, error) {
 	key, err := rsa.GenerateKey(cryptoRandReader, 2048)
 	if err != nil {
 		return nil, err
 	}
-	redirs := make(map[string]bool, len(opts.RedirectURIs))
-	for _, u := range opts.RedirectURIs {
-		if u != "" {
-			redirs[u] = true
-		}
+	clients := opts.Clients
+	if clients == nil {
+		clients = client.NewRegistry()
 	}
 	return &Server{
-		issuer:       opts.Issuer,
-		clientID:     opts.ClientID,
-		clientSecret: opts.ClientSecret,
-		redirectURIs: redirs,
-		key:          key,
-		kid:          "dev-key-1",
-		registry:     scenario.New(),
-		codes:        map[string]authCode{},
-		tokens:       map[string]accessToken{},
+		issuer:   opts.Issuer,
+		clients:  clients,
+		key:      key,
+		kid:      "dev-key-1",
+		registry: scenario.New(),
+		codes:    map[string]authCode{},
+		tokens:   map[string]accessToken{},
 	}, nil
 }
 
@@ -106,9 +101,5 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 // Issuer returns the configured issuer URL.
 func (s *Server) Issuer() string { return s.issuer }
 
-// ClientID returns the configured client ID.
-func (s *Server) ClientID() string { return s.clientID }
-
-// Registry returns the scenario registry (used by tests and, in Phase 3, by
-// the login page to list selectable scenarios).
-func (s *Server) Registry() *scenario.Registry { return s.registry }
+// Clients returns the client registry.
+func (s *Server) Clients() *client.Registry { return s.clients }

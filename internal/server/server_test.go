@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/manuel/tinyidp/internal/client"
 	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/user"
 )
@@ -30,16 +31,20 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 		t.Fatalf("rsa keygen: %v", err)
 	}
 	s := &Server{
-		issuer:       "", // filled in after we know the test server URL
-		clientID:     "dev-client",
-		clientSecret: "",
-		redirectURIs: map[string]bool{"https://app.test/cb": true},
-		key:          key,
-		kid:          "dev-key-1",
-		registry:     scenario.New(),
-		codes:        map[string]authCode{},
-		tokens:       map[string]accessToken{},
+		issuer:   "", // filled in after we know the test server URL
+		clients:  client.NewRegistry(),
+		key:      key,
+		kid:      "dev-key-1",
+		registry: scenario.New(),
+		codes:    map[string]authCode{},
+		tokens:   map[string]accessToken{},
 	}
+	// Register a permissive test client that allows the test's redirect URI.
+	// The built-in dev-client uses localhost:3000; tests use https://app.test/cb.
+	s.clients.Register(client.Client{
+		ID:           "dev-client",
+		RedirectURIs: []string{"https://app.test/cb"},
+	})
 	mux := http.NewServeMux()
 	s.RegisterRoutes(mux)
 	ts := httptest.NewServer(WithCORS(mux))
@@ -739,5 +744,171 @@ func TestPhase4_UserInfoSubMismatch(t *testing.T) {
 	}
 	if !strings.HasSuffix(ui["sub"].(string), "-different") {
 		t.Fatalf("userinfo-sub-mismatch: sub = %v, want suffix -different", ui["sub"])
+	}
+}
+
+// --- Phase 5: multiple clients ---
+
+// newTestServerWithBuiltinClients builds a server whose client registry is the
+// builtins (dev-client, public-spa, web-app) plus the test's https://app.test/cb
+// redirect URI on dev-client. Used by Phase 5 multi-client tests.
+func newTestServerWithBuiltinClients(t *testing.T) (*Server, *httptest.Server) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa keygen: %v", err)
+	}
+	clients := client.NewRegistry()
+	// Allow the test's redirect URI on each builtin client so they can all
+	// complete a flow against the test harness.
+	for _, id := range []string{"dev-client", "public-spa", "web-app"} {
+		c, _ := clients.Lookup(id)
+		c.RedirectURIs = append(c.RedirectURIs, "https://app.test/cb")
+		clients.Register(c)
+	}
+	s := &Server{
+		issuer:   "",
+		clients:  clients,
+		key:      key,
+		kid:      "dev-key-1",
+		registry: scenario.New(),
+		codes:    map[string]authCode{},
+		tokens:   map[string]accessToken{},
+	}
+	mux := http.NewServeMux()
+	s.RegisterRoutes(mux)
+	ts := httptest.NewServer(WithCORS(mux))
+	t.Cleanup(ts.Close)
+	s.issuer = ts.URL
+	return s, ts
+}
+
+// TestPhase5_PublicSpaRequiresPKCE verifies that the public-spa client rejects
+// an authorize request with no code_challenge.
+func TestPhase5_PublicSpaRequiresPKCE(t *testing.T) {
+	_, ts := newTestServerWithBuiltinClients(t)
+	q := url.Values{}
+	q.Set("response_type", "code")
+	q.Set("client_id", "public-spa")
+	q.Set("redirect_uri", "https://app.test/cb")
+	q.Set("scope", "openid")
+	resp, err := ts.Client().Get(ts.URL + "/authorize?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("public-spa without PKCE: status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// TestPhase5_PublicSpaAcceptsWithPKCE verifies the public-spa client accepts
+// an authorize POST that includes a code_challenge.
+func TestPhase5_PublicSpaAcceptsWithPKCE(t *testing.T) {
+	_, ts := newTestServerWithBuiltinClients(t)
+	verifier := "a-verifier-long-enough-for-pkce-testing-1234567890"
+	challenge := b64(sha256sum(verifier))
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "public-spa")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid")
+	auth.Set("state", "s")
+	auth.Set("code_challenge", challenge)
+	auth.Set("code_challenge_method", "S256")
+	loc := authorizePostRedirect(t, ts, authorizeForm("alice", auth))
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("public-spa with PKCE should issue a code (redirect=%s)", loc)
+	}
+}
+
+// TestPhase5_WebAppRequiresSecret verifies that the confidential web-app
+// client rejects a token exchange without the correct client_secret.
+func TestPhase5_WebAppRequiresSecret(t *testing.T) {
+	_, ts := newTestServerWithBuiltinClients(t)
+	// Authorize as web-app (no secret needed at /authorize).
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "web-app")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid")
+	auth.Set("state", "s")
+	loc := authorizePostRedirect(t, ts, authorizeForm("alice", auth))
+	code := loc.Query().Get("code")
+
+	// Exchange without the secret -> 401 invalid_client.
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("redirect_uri", "https://app.test/cb")
+	form.Set("client_id", "web-app")
+	tresp, err := ts.Client().PostForm(ts.URL+"/token", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tresp.Body.Close()
+	if tresp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("web-app without secret: status = %d, want 401", tresp.StatusCode)
+	}
+}
+
+// TestPhase5_WebAppSucceedsWithSecret verifies the web-app client succeeds when
+// the correct secret is presented via client_secret_post.
+func TestPhase5_WebAppSucceedsWithSecret(t *testing.T) {
+	_, ts := newTestServerWithBuiltinClients(t)
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "web-app")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid")
+	auth.Set("state", "s")
+	loc := authorizePostRedirect(t, ts, authorizeForm("alice", auth))
+	code := loc.Query().Get("code")
+
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("redirect_uri", "https://app.test/cb")
+	form.Set("client_id", "web-app")
+	form.Set("client_secret", "dev-secret")
+	tresp, err := ts.Client().PostForm(ts.URL+"/token", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tresp.Body.Close()
+	if tresp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(tresp.Body)
+		t.Fatalf("web-app with secret: status = %d, want 200: %s", tresp.StatusCode, body)
+	}
+}
+
+// TestPhase5_CrossClientCodeRejection verifies that a code issued to one
+// client cannot be redeemed by another.
+func TestPhase5_CrossClientCodeRejection(t *testing.T) {
+	_, ts := newTestServerWithBuiltinClients(t)
+	// Issue a code as dev-client.
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "dev-client")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid")
+	auth.Set("state", "s")
+	loc := authorizePostRedirect(t, ts, authorizeForm("alice", auth))
+	code := loc.Query().Get("code")
+
+	// Try to redeem it as web-app (different client).
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("redirect_uri", "https://app.test/cb")
+	form.Set("client_id", "web-app")
+	form.Set("client_secret", "dev-secret")
+	tresp, err := ts.Client().PostForm(ts.URL+"/token", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tresp.Body.Close()
+	if tresp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("cross-client redemption: status = %d, want 400", tresp.StatusCode)
 	}
 }

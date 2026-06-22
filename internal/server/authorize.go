@@ -94,14 +94,21 @@ func (s *Server) parseAuthorizeRequest(v url.Values) (authorizeRequest, error) {
 	if ar.ResponseType != "code" {
 		return ar, errText("unsupported response_type")
 	}
-	if ar.ClientID != s.clientID {
+	c, ok := s.clients.Lookup(ar.ClientID)
+	if !ok {
 		return ar, errText("unknown client_id")
 	}
-	if !s.redirectURIs[ar.RedirectURI] {
-		return ar, errText("redirect_uri not allowed; set OIDC_REDIRECT_URIS")
+	if !c.AllowsRedirectURI(ar.RedirectURI) {
+		return ar, errText("redirect_uri not allowed for this client")
 	}
 	if !hasScope(ar.Scope, "openid") {
 		return ar, errText("scope must include openid")
+	}
+	if !c.AllowsScope(ar.Scope) {
+		return ar, errText("scope not allowed for this client")
+	}
+	if c.RequirePKCE && ar.CodeChallenge == "" {
+		return ar, errText("this client requires PKCE (code_challenge required)")
 	}
 	return ar, nil
 }
