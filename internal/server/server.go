@@ -99,6 +99,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
+	s.debugRoutes(mux)
 }
 
 // Issuer returns the configured issuer URL.
