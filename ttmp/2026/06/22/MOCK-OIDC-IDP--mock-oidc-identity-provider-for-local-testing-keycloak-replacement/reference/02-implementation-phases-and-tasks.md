@@ -111,12 +111,12 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 - [x] P5.3 Predefined clients: `public-spa` (no secret, PKCE required), `web-app` (secret required), `dev-client` (permissive).
 - [x] P5.4 Discovery advertises `token_endpoint_auth_methods_supported` accurately (already correct from Phase 0).
 
-## Phase 6 — Session cookie, prompt, max_age (deferred)
+## Phase 6 — Session cookie, prompt, max_age
 
-- [ ] P6.1 IdP session cookie + store.
-- [ ] P6.2 `prompt=none` (→ `login_required` if no session), `prompt=login` (force form), valid session (skip form).
-- [ ] P6.3 `max_age` handling + `auth_time` claim.
-- [ ] P6.4 `login_hint` prefill.
+- [x] P6.1 IdP session cookie + store.
+- [x] P6.2 `prompt=none` (→ `login_required` if no session), `prompt=login` (force form), valid session (skip form).
+- [x] P6.3 `max_age` handling + `auth_time` claim.
+- [x] P6.4 `login_hint` prefill.
 
 ## Phase 7 — Claims and authorization shapes (deferred)
 

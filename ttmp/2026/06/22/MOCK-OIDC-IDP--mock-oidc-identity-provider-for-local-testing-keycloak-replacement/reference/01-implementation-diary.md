@@ -30,6 +30,7 @@ RelatedFiles:
       Note: |-
         Phase 1 authorize flow (commit f9ece67)
         per-client validation in parseAuthorizeRequest (commit 5fed666)
+        authorizeGET session rules + parseAuthorizeRequest prompt/max_age/login_hint (commit 20d210f)
     - Path: internal/server/server_test.go
       Note: Phase 4 matrix tests (Phase 4)
     - Path: internal/server/static/login.html
@@ -38,6 +39,7 @@ RelatedFiles:
       Note: |-
         scenario TokenError + MutateClaims threading (commit 6454cd3)
         client auth from registry + cross-client rejection (commit 5fed666)
+        auth_time from ac.AuthTime (commit 20d210f)
     - Path: internal/user/user.go
       Note: FromLogin stable sub derivation (commit f9ece67)
 ExternalSources: []
@@ -46,6 +48,8 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
+
 
 
 
@@ -738,3 +742,68 @@ This step resolves the open question from Step 10: when the OIDC-section `--clie
 ### Technical details
 - Merge rule: `out = base; out.ID = override.ID; if override.Secret != "" { out.Secret = override.Secret }; out.RedirectURIs = union(base, override); RequirePKCE/AllowedScopes from base`.
 - Test count: 71 (client 12, cmds 10, server 31, scenario 5, user 5, oidc 4, +4).
+
+## Step 12: Phase 6 — session cookie, prompt, max_age, login_hint, auth_time
+
+This step added the IdP session layer: a session cookie (`tinyidp_session`), an in-memory session store, and the OIDC re-authentication parameters. The authorize endpoint now implements the OIDC session rules: `prompt=none` silently issues when a valid session exists and returns `login_required` when it doesn't; `prompt=login` forces the login form even with a session; `max_age` forces re-auth when the session is stale; `login_hint` prefills the form. The ID token's `auth_time` is now the real login time (carried via the session/authCode), not the token-issuance time — which is what makes silent re-issuance preserve the original authentication time, the property RPs check against `max_age`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 9)
+
+**Assistant interpretation:** Continue the deferred phases; Phase 6 is the session layer (prompt, max_age, login_hint, auth_time).
+
+**Inferred user intent:** Let relying parties test silent login, forced re-authentication, and session-timeout behavior against the mock.
+
+**Commit (code):** 20d210f — "feat(tinyidp): Phase 6 session cookie, prompt, max_age, login_hint, auth_time"
+
+### What I did
+- `internal/server/session.go`: `session` struct (`ID`, `Login`, `User`, `Scenario`, `AuthTime`, `Expires`); `newSession`/`readSession`/`setSessionCookie`; `freshEnough(maxAge)`; `promptHas(prompt, value)` (space-delimited, not substring). Cookie: `tinyidp_session`, HttpOnly, SameSite=Lax, 24h TTL (not Secure because the mock serves plain HTTP on loopback).
+- `server.go`: `sessions` map on Server (guarded by the existing mutex); `authCode` gains `AuthTime`.
+- `authorize.go`: `authorizeRequest` gains `Prompt`/`MaxAge`/`LoginHint`; `parseAuthorizeRequest` extracts them (`max_age` parsed to int seconds, invalid/unset = 0). New `authorizeGET` implements the session rules. POST creates a session, sets the cookie, and threads `AuthTime` into `issueCodeAndRedirect`. `hiddenAuthorizeFields` carries prompt/max_age/login_hint through the form.
+- `token.go`: `claims["auth_time"] = ac.AuthTime.Unix()` (was `now.Unix()`).
+- `embed.go` + `static/login.html`: `loginPageData` gains `LoginHint`; the login input's `value` is prefilled from it.
+- `jwt.go` discovery: advertises `prompt_values_supported = ["none","login"]`.
+- Tests: 7 in `phase6_session_test.go`.
+
+### Why
+- The session layer is what lets an RP test the three behaviors real IdPs expose: silent login (`prompt=none`), forced re-auth (`prompt=login`), and session staleness (`max_age`). Without it, the mock can only test the initial-login path, which is the least interesting part of OIDC session handling.
+- `auth_time` carried on the authCode (not recomputed at token issuance) is the subtle invariant. If `auth_time` were `now()` at token time, a silent re-issue minutes after the original login would report a fresh `auth_time`, and an RP checking `auth_time + max_age >= now` would believe the user just authenticated. Carrying the session's `AuthTime` through the code into the token preserves the real authentication moment.
+
+### What worked
+- 78 tests green (was 71). All 7 Phase 6 tests pass, including the `auth_time` preservation test (sleep 1.5s, silent-issue, assert `auth_time` is the login time not the issue time) and the `max_age` staleness test (sleep 1.1s, `max_age=1` forces the form).
+- Existing tests were unaffected: `ts.Client()` returns a client with a **nil cookie jar**, so the session cookie set by POST is never sent back on a subsequent GET. This means the existing `fullFlow`/`runAuthorizeLogin` tests (which do GET-then-POST, or multiple flows on one server) see no session and behave exactly as before. The Phase 6 tests use a `jarClient` with an explicit cookie jar to exercise the cookie path.
+- Live: discovery advertises `prompt_values_supported:["none","login"]`; `login_hint=alice` renders `value="alice"` in the form.
+
+### What didn't work
+- First run hung for 600s: the test's `newTestServer` constructs `Server` directly (not via `New`), so `s.sessions` was a nil map and `setSessionCookie` panicked ("assignment to entry in nil map") mid-request, which hung the httptest server goroutine. Fixed by adding `sessions: map[string]*session{}` to both `newTestServer` and `newTestServerWithBuiltinClients`. Lesson: when adding a new map to Server, update every test constructor.
+- First Phase 6 test draft used non-existent helpers (`ioReadAll`, `jsonUnmarshal`) and a broken `loginOnce` that did a bad type assertion. Rewrote with `io.ReadAll`/`json.Unmarshal` directly and a clean `establishSession` helper that POSTs on the jar-bearing client so the cookie lands in the right jar.
+
+### What I learned
+- `httptest.Server.Client()` returns a client with a nil `Jar`. This is why existing tests didn't break (no cookie sharing across `ts.Client()` calls), but it also means session behavior is invisible unless a test explicitly sets a jar. The `jarClient` helper is the single entry point for session-stateful tests.
+- `prompt` is space-delimited (`prompt="login none"`), so a substring check (`strings.Contains(prompt, "none")`) would false-match a value like `"nologin"`. `promptHas` splits on whitespace. This is the kind of parsing detail that would cause a real RP to misbehave against a naive mock.
+- `auth_time` being carried on the authCode (set at authorize time from the session) rather than recomputed at token time is the design choice that makes `max_age`-style checks honest. The token endpoint doesn't know when the user authenticated unless the code carries it.
+
+### What was tricky to build
+- The `prompt=none` + `forceReauth` interaction. If `prompt=none` is set AND the session is stale or `prompt=login` is also set, the IdP cannot show a form (`prompt=none` forbids UI), so it must return `login_required` rather than the form. The condition order in `authorizeGET` is: compute `forceReauth`; if `prompt=none` and (no session OR forceReauth) → error; else if `prompt=none` and valid session → silent; else if valid session and not forced → silent; else form. Getting this right matters: a wrong order could show a form for `prompt=none` (violating the spec) or silently issue when re-auth was required (defeating `max_age`).
+- The cookie is not `Secure` because the mock serves `http://localhost`. A `Secure` cookie would not be sent over plain HTTP, so sessions would silently never work. This is the correct tradeoff for a loopback test tool and is documented in the `setSessionCookie` comment.
+
+### What warrants a second pair of eyes
+- The `authorizeGET` condition order (see "tricky"). A reviewer should walk the four cases (no session; valid session; prompt=none; prompt=login/max_age) and confirm each takes the right branch. The 7 tests pin the behavior, but the logic is dense.
+- `max_age` staleness uses `time.Since(sess.AuthTime) > maxAge`. Confirm the boundary is right (the spec says re-auth when `auth_time + max_age < now`, i.e. `now - auth_time > max_age`, which is what's implemented).
+- Sessions never expire from the map (only the cookie expiry / the `freshEnough` check gate them). For a long-running mock this leaks sessions. Acceptable for a test tool; flagged for the future.
+
+### What should be done in the future
+- Add session expiry cleanup (a janitor goroutine, or lazy deletion on read). Low priority for a test tool.
+- Consider `prompt=consent` handling. The mock has no consent step, so it's currently ignored. If an RP sends `prompt=consent`, the mock proceeds as if no prompt was set (shows form or silent-issues). This is fine for most tests but worth documenting.
+- Phase 7 (claims/authorization shapes: groups, roles, tenant) is next; it builds on the user/scenario model rather than the session layer.
+
+### Code review instructions
+- Start at `internal/server/session.go`: `session`, `newSession`, `readSession`, `setSessionCookie`, `freshEnough`, `promptHas`. Then `internal/server/authorize.go`: `authorizeGET` (the session rule ordering) + `parseAuthorizeRequest` (new fields) + POST (session creation). Then `token.go` (`auth_time = ac.AuthTime`).
+- Validate: `go test ./internal/server/ -count=1 -run Phase6 -v`.
+
+### Technical details
+- Cookie: `tinyidp_session`, HttpOnly, SameSite=Lax, 24h MaxAge, Path=/.
+- Session TTL: 24h. Auth code TTL: 5min. Access token TTL: 1h.
+- `prompt_values_supported`: none, login.
+- Test count: 78 (server 38, cmds 10, client 12, scenario 5, user 5, oidc 4, +4).

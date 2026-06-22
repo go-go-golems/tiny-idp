@@ -103,3 +103,12 @@ Step 11: Merge configured client into builtin (resolve Step 10 open question) �
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/client/client.go — Merge(base
 
+
+## 2026-06-22
+
+Step 12: Phase 6 session layer — session cookie + prompt=none/login + max_age + login_hint + auth_time carried from login. 78 tests green (commit 20d210f).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/session.go — session store + cookie + prompt/max_age helpers (commit 20d210f)
+
