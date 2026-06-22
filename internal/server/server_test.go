@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"crypto"
@@ -14,18 +14,20 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/manuel/tinyidp/internal/user"
 )
 
-// newTestServer builds an in-process server with a fresh RSA key and mounts it
-// on an httptest.Server. The issuer is set to the test server's base URL so
+// newTestServer builds a Server with a fresh RSA key and mounts it on an
+// httptest.Server. The issuer is set to the test server's base URL so
 // discovery and JWT iss claims are consistent.
-func newTestServer(t *testing.T) (*server, *httptest.Server) {
+func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("rsa keygen: %v", err)
 	}
-	s := &server{
+	s := &Server{
 		issuer:       "", // filled in after we know the test server URL
 		clientID:     "dev-client",
 		clientSecret: "",
@@ -34,28 +36,23 @@ func newTestServer(t *testing.T) (*server, *httptest.Server) {
 		kid:          "dev-key-1",
 		codes:        map[string]authCode{},
 		tokens:       map[string]accessToken{},
-		user: user{
-			Sub:   "user-123",
-			Email: "dev@example.test",
-			Name:  "Dev User",
-		},
 	}
 	mux := http.NewServeMux()
-	s.registerRoutes(mux)
-	ts := httptest.NewServer(withCORS(mux))
+	s.RegisterRoutes(mux)
+	ts := httptest.NewServer(WithCORS(mux))
 	t.Cleanup(ts.Close)
 	s.issuer = ts.URL
 	return s, ts
 }
 
-// fullFlow drives authorize -> token -> userinfo for the given extra authorize
-// params (code_challenge / code_verifier / etc.) and returns the parsed token
-// response, the verified ID token claims, and the userinfo body. It verifies
-// the ID token signature against the server's JWKS.
-func fullFlow(t *testing.T, ts *httptest.Server, extra url.Values) (tokenResp map[string]any, idClaims map[string]any, userinfo map[string]any) {
+// fullFlow drives authorize (GET form -> POST login) -> token -> userinfo for
+// the given login and extra authorize params (code_challenge / code_verifier /
+// etc.) and returns the parsed token response, the verified ID token claims,
+// and the userinfo body. It verifies the ID token signature against JWKS.
+func fullFlow(t *testing.T, ts *httptest.Server, login string, extra url.Values) (tokenResp map[string]any, idClaims map[string]any, userinfo map[string]any) {
 	t.Helper()
 
-	// 1. authorize
+	// 1. authorize: GET renders the form; POST submits login + hidden params.
 	auth := url.Values{}
 	auth.Set("response_type", "code")
 	auth.Set("client_id", "dev-client")
@@ -68,7 +65,18 @@ func fullFlow(t *testing.T, ts *httptest.Server, extra url.Values) (tokenResp ma
 			auth.Set(k, v)
 		}
 	}
-	loc := authorizeRedirect(t, ts, auth)
+	// Sanity: the form renders and carries the hidden login field.
+	formResp, err := ts.Client().Get(ts.URL + "/authorize?" + auth.Encode())
+	if err != nil {
+		t.Fatalf("authorize GET: %v", err)
+	}
+	formBody, _ := io.ReadAll(formResp.Body)
+	formResp.Body.Close()
+	if formResp.StatusCode != http.StatusOK || !strings.Contains(string(formBody), `name="login"`) {
+		t.Fatalf("authorize GET did not render login form: %d %q", formResp.StatusCode, formBody)
+	}
+
+	loc := authorizePostRedirect(t, ts, authorizeForm(login, auth))
 	q := loc.Query()
 	if q.Get("state") != "st-123" {
 		t.Fatalf("state not echoed: got %q", q.Get("state"))
@@ -136,26 +144,36 @@ func fullFlow(t *testing.T, ts *httptest.Server, extra url.Values) (tokenResp ma
 	return tokenResp, idClaims, userinfo
 }
 
-// authorizeRedirect performs an authorize request without following redirects
-// and returns the Location URL.
-func authorizeRedirect(t *testing.T, ts *httptest.Server, auth url.Values) *url.URL {
+// authorizePostRedirect POSTs the login form without following redirects and
+// returns the Location URL.
+func authorizePostRedirect(t *testing.T, ts *httptest.Server, form url.Values) *url.URL {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/authorize?"+auth.Encode(), nil)
 	c := ts.Client()
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := c.Do(req)
+	resp, err := c.PostForm(ts.URL+"/authorize", form)
 	if err != nil {
-		t.Fatalf("authorize: %v", err)
+		t.Fatalf("authorize POST: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusFound {
-		t.Fatalf("authorize status = %d, want 302", resp.StatusCode)
+		t.Fatalf("authorize POST status = %d, want 302", resp.StatusCode)
 	}
 	loc, err := resp.Location()
 	if err != nil {
 		t.Fatalf("no Location: %v", err)
 	}
 	return loc
+}
+
+// authorizeForm builds a POST form for the given login + authorize params.
+func authorizeForm(login string, auth url.Values) url.Values {
+	f := url.Values{}
+	f.Set("login", login)
+	f.Set("password", "ignored")
+	for k := range auth {
+		f.Set(k, auth.Get(k))
+	}
+	return f
 }
 
 func verifyIDTokenSignature(t *testing.T, ts *httptest.Server, idToken string) map[string]any {
@@ -238,7 +256,7 @@ func TestDiscoveryContainsRequiredFields(t *testing.T) {
 	}
 }
 
-func TestAuthorizeRejectsBadClient(t *testing.T) {
+func TestAuthorizeGETRejectsBadClient(t *testing.T) {
 	_, ts := newTestServer(t)
 	q := url.Values{}
 	q.Set("response_type", "code")
@@ -255,7 +273,7 @@ func TestAuthorizeRejectsBadClient(t *testing.T) {
 	}
 }
 
-func TestAuthorizeRejectsDisallowedRedirectURI(t *testing.T) {
+func TestAuthorizeGETRejectsDisallowedRedirectURI(t *testing.T) {
 	_, ts := newTestServer(t)
 	q := url.Values{}
 	q.Set("response_type", "code")
@@ -272,14 +290,36 @@ func TestAuthorizeRejectsDisallowedRedirectURI(t *testing.T) {
 	}
 }
 
+func TestAuthorizePOSTRequiresLogin(t *testing.T) {
+	_, ts := newTestServer(t)
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "dev-client")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid")
+	auth.Set("state", "s")
+	form := authorizeForm("", auth) // empty login
+	resp, err := ts.Client().PostForm(ts.URL+"/authorize", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for empty login", resp.StatusCode)
+	}
+}
+
 func TestHappyPathNoPKCE(t *testing.T) {
 	_, ts := newTestServer(t)
-	_, claims, ui := fullFlow(t, ts, nil)
-	if claims["sub"] != "user-123" {
+	_, claims, ui := fullFlow(t, ts, "alice", nil)
+	if claims["sub"] != user.FromLogin("alice").Sub {
 		t.Fatalf("sub = %v", claims["sub"])
 	}
-	if ui["email"] != "dev@example.test" {
+	if ui["email"] != "alice@example.test" {
 		t.Fatalf("userinfo email = %v", ui["email"])
+	}
+	if ui["name"] != "alice" {
+		t.Fatalf("userinfo name = %v", ui["name"])
 	}
 }
 
@@ -287,12 +327,12 @@ func TestHappyPathWithPKCE(t *testing.T) {
 	_, ts := newTestServer(t)
 	verifier := "verifier-abc-123-very-long-random-string-for-pkce"
 	challenge := b64(sha256sum(verifier))
-	_, claims, _ := fullFlow(t, ts, url.Values{
+	_, claims, _ := fullFlow(t, ts, "alice", url.Values{
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"code_verifier":         {verifier},
 	})
-	if claims["sub"] != "user-123" {
+	if claims["sub"] != user.FromLogin("alice").Sub {
 		t.Fatalf("sub = %v", claims["sub"])
 	}
 }
@@ -311,7 +351,7 @@ func TestPKCEVerifierMismatchRejected(t *testing.T) {
 	auth.Set("state", "s")
 	auth.Set("code_challenge", challenge)
 	auth.Set("code_challenge_method", "S256")
-	loc := authorizeRedirect(t, ts, auth)
+	loc := authorizePostRedirect(t, ts, authorizeForm("alice", auth))
 	code := loc.Query().Get("code")
 
 	tokForm := url.Values{}
@@ -338,7 +378,7 @@ func TestCodeIsOneTimeUse(t *testing.T) {
 	auth.Set("redirect_uri", "https://app.test/cb")
 	auth.Set("scope", "openid")
 	auth.Set("state", "s")
-	loc := authorizeRedirect(t, ts, auth)
+	loc := authorizePostRedirect(t, ts, authorizeForm("alice", auth))
 	code := loc.Query().Get("code")
 
 	tokForm := url.Values{}
@@ -375,6 +415,50 @@ func TestUserInfoRejectsBadToken(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+// --- Phase 1: multiple synthetic users ---
+
+func TestDistinctUsersHaveDistinctSubs(t *testing.T) {
+	_, ts := newTestServer(t)
+	_, alice, _ := fullFlow(t, ts, "alice", nil)
+	_, bob, _ := fullFlow(t, ts, "bob", nil)
+	if alice["sub"] == bob["sub"] {
+		t.Fatalf("alice and bob share sub %v", alice["sub"])
+	}
+	if alice["sub"] != user.FromLogin("alice").Sub {
+		t.Fatalf("alice sub = %v, want %s", alice["sub"], user.FromLogin("alice").Sub)
+	}
+	if bob["sub"] != user.FromLogin("bob").Sub {
+		t.Fatalf("bob sub = %v, want %s", bob["sub"], user.FromLogin("bob").Sub)
+	}
+}
+
+func TestSubIsStableAcrossLogins(t *testing.T) {
+	_, ts := newTestServer(t)
+	_, first, _ := fullFlow(t, ts, "alice", nil)
+	_, second, _ := fullFlow(t, ts, "alice", nil)
+	if first["sub"] != second["sub"] {
+		t.Fatalf("alice sub not stable: %v vs %v", first["sub"], second["sub"])
+	}
+}
+
+func TestArbitraryEmailLogin(t *testing.T) {
+	_, ts := newTestServer(t)
+	_, claims, ui := fullFlow(t, ts, "carol@example.test", nil)
+	want := user.FromLogin("carol@example.test")
+	if claims["email"] != want.Email {
+		t.Fatalf("email = %v, want %s", claims["email"], want.Email)
+	}
+	if claims["name"] != want.Name {
+		t.Fatalf("name = %v, want %s", claims["name"], want.Name)
+	}
+	if ui["email"] != "carol@example.test" {
+		t.Fatalf("userinfo email = %v", ui["email"])
+	}
+	if ui["name"] != "carol" {
+		t.Fatalf("userinfo name = %v", ui["name"])
 	}
 }
 

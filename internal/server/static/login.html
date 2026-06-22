@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tiny IdP Login</title>
+  <style>
+    body { font-family: sans-serif; max-width: 480px; margin: 4rem auto; padding: 0 1rem; }
+    input, button { font-size: 1rem; padding: .5rem; width: 100%; box-sizing: border-box; }
+    label { display: block; margin: 1rem 0 .4rem; }
+    button { margin-top: 1rem; cursor: pointer; }
+    .hint { color: #666; font-size: .9rem; }
+    .scenarios { margin-top: 2rem; }
+    .scenarios h2 { font-size: 1rem; margin-bottom: .3rem; }
+    .scenarios ul { list-style: none; padding: 0; }
+    .scenarios li { margin: .2rem 0; }
+    .scenarios code { background: #f0f0f0; padding: .1rem .3rem; border-radius: 3px; }
+    .pick { cursor: pointer; color: #06c; text-decoration: underline; border: none; background: none; font: inherit; padding: 0; }
+  </style>
+</head>
+<body>
+  <h1>Tiny IdP</h1>
+  <p class="hint">Enter any login. A local synthetic OIDC user will be created (password is ignored).</p>
+
+  <form id="login-form" method="post" action="/authorize">
+    {{range .Hidden}}
+      <input type="hidden" name="{{.Name}}" value="{{.Value}}">
+    {{end}}
+
+    <label for="login">Login</label>
+    <input id="login" name="login" autocomplete="username" autofocus placeholder="alice or alice@example.test">
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" placeholder="ignored">
+
+    <button type="submit">Sign in</button>
+  </form>
+
+  {{if .Scenarios}}
+  <div class="scenarios">
+    <h2>Quick picks (click to fill)</h2>
+    {{range .Scenarios}}
+    <p>{{.Label}}</p>
+    <ul>
+      {{range .Items}}
+      <li><code>{{.Name}}</code> — {{.Description}} &nbsp;<button type="button" class="pick" data-login="{{.Name}}">use</button></li>
+      {{end}}
+    </ul>
+    {{end}}
+  </div>
+  {{end}}
+
+  <script>
+    document.querySelectorAll('.pick').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var input = document.getElementById('login');
+        input.value = b.dataset.login;
+        input.focus();
+      });
+    });
+  </script>
+</body>
+</html>
