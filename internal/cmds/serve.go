@@ -113,24 +113,31 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 }
 
 // buildClientRegistry returns a client registry seeded with the built-in
-// clients (dev-client, public-spa, web-app) plus a single client configured
-// from the OIDC section's --client-id / --client-secret / --redirect-uris.
-// The configured client defaults to dev-client, so the common case (no extra
-// config) overrides the built-in dev-client with the user's redirect URIs.
+// clients (dev-client, public-spa, web-app) plus a client configured from
+// the OIDC section's --client-id / --client-secret / --redirect-uris.
 //
-// This preserves the Phase 0-4 single-client UX while adding the multi-client
-// registry: a developer who only sets --redirect-uris gets exactly the
-// behavior they had before; a developer who wants to test multiple clients
-// can point at the built-ins (public-spa, web-app) or register more later.
+// If the configured client_id matches a builtin, the configured client is
+// MERGED into the builtin: the builtin's RequirePKCE, Secret, and
+// AllowedScopes are preserved, and the configured redirect URIs are added
+// (deduplicated) to the builtin's. A non-empty configured --client-secret
+// overrides the builtin's. So `--client-id public-spa --redirect-uris X`
+// yields a public-spa client that still requires PKCE but now also accepts X.
+//
+// If the configured client_id does NOT match a builtin, a new permissive
+// client is registered (the Phase 0-4 single-client behavior for custom IDs).
 func buildClientRegistry(cfg *oidc.Settings) *client.Registry {
 	r := client.NewRegistry()
-	r.Register(client.Client{
+	configured := client.Client{
 		ID:           cfg.ClientID,
 		Secret:       cfg.ClientSecret,
 		RedirectURIs: cfg.RedirectURIs,
-		// The configured client is permissive (PKCE optional, all scopes) to
-		// preserve the quick-test default. Use the built-in public-spa for a
-		// PKCE-required public client.
-	})
+	}
+	if base, ok := r.Lookup(cfg.ClientID); ok {
+		// Merge: keep builtin properties, add configured redirect URIs.
+		r.Register(client.Merge(base, configured))
+	} else {
+		// New permissive client (no secret, PKCE optional, all scopes).
+		r.Register(configured)
+	}
 	return r
 }

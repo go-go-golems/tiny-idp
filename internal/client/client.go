@@ -126,6 +126,28 @@ func BuiltinClients() []Client {
 	}
 }
 
+// Merge returns a new Client that starts from base and applies non-empty
+// values from override. RedirectURIs are unioned and deduplicated.
+//
+// This is the merge semantics used when a configured client ID matches a
+// builtin: the builtin's properties (RequirePKCE, Secret, AllowedScopes) are
+// preserved, the configured redirect URIs are added to the builtin's, and a
+// non-empty configured Secret overrides the builtin's. RequirePKCE and
+// AllowedScopes have no configured override in the OIDC section, so they are
+// always taken from base.
+//
+// The override's ID wins (it is the configured client_id).
+func Merge(base, override Client) Client {
+	out := base
+	out.ID = override.ID
+	if override.Secret != "" {
+		out.Secret = override.Secret
+	}
+	out.RedirectURIs = unionStrings(base.RedirectURIs, override.RedirectURIs)
+	// RequirePKCE and AllowedScopes are kept from base (no override fields).
+	return out
+}
+
 func contains(slice []string, s string) bool {
 	for _, x := range slice {
 		if x == s {
@@ -133,4 +155,24 @@ func contains(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// unionStrings returns the deduplicated union of a and b, preserving
+// first-seen order (a's elements first, then b's new elements).
+func unionStrings(a, b []string) []string {
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, s := range a {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	for _, s := range b {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
