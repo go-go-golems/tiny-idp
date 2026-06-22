@@ -1,57 +1,67 @@
-// Command tinyidp runs the mock OIDC Identity Provider.
+// Command tinyidp is a mock OpenID Connect Identity Provider for local
+// development and integration testing. It is NOT production grade (no real
+// login, consent, persistent keys, refresh tokens, or TLS enforcement).
+// Bind to loopback (the default) and never expose it publicly.
 //
-// It is a local development and integration testing tool, NOT production
-// grade (no real login, consent, persistent keys, refresh tokens, or TLS
-// enforcement). Bind to loopback (the default) and never expose it publicly.
-// See the design doc in ttmp/ (ticket MOCK-OIDC-IDP) for full scope.
+// The CLI is built on the Glazed command framework: the root command owns
+// logging and help initialization, and child commands (currently `serve`)
+// compose reusable field sections such as the `oidc` provider-config
+// section. See `tinyidp help` for topics.
 package main
 
 import (
-	"log"
-	"net/http"
-	"os"
-	"strings"
+	"github.com/go-go-golems/glazed/pkg/cli"
+	"github.com/go-go-golems/glazed/pkg/cmds/logging"
+	"github.com/go-go-golems/glazed/pkg/help"
+	help_cmd "github.com/go-go-golems/glazed/pkg/help/cmd"
+	"github.com/spf13/cobra"
 
-	"github.com/manuel/tinyidp/internal/server"
+	"github.com/manuel/tinyidp/cmd/tinyidp/doc"
+	"github.com/manuel/tinyidp/internal/cmds"
 )
 
+// version is overridden at link time (-ldflags "-X main.version=...").
+var version = "dev"
+
 func main() {
-	srv, err := server.New(server.Options{
-		Issuer:       strings.TrimRight(env("OIDC_ISSUER", "http://localhost:5556"), "/"),
-		ClientID:     env("OIDC_CLIENT_ID", "dev-client"),
-		ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
-		RedirectURIs: parseCSV(env("OIDC_REDIRECT_URIS", "http://localhost:3000/callback,http://127.0.0.1:3000/callback")),
-	})
-	if err != nil {
-		log.Fatal(err)
+	rootCmd := &cobra.Command{
+		Use:     "tinyidp",
+		Short:   "tinyidp is a mock OIDC Identity Provider for local testing",
+		Version: version,
+		// PersistentPreRunE initializes structured logging from the logging
+		// section flags (--log-level, --log-format, ...) added below.
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return logging.InitLoggerFromCobra(cmd)
+		},
 	}
 
-	mux := http.NewServeMux()
-	srv.RegisterRoutes(mux)
-
-	addr := env("OIDC_ADDR", "127.0.0.1:5556")
-	log.Printf("tinyidp listening on %s; issuer=%s client_id=%s", addr, srv.Issuer(), srv.ClientID())
-	log.Fatal(http.ListenAndServe(addr, server.WithCORS(mux)))
-}
-
-// env returns the value of k, or dflt if empty/unset.
-func env(k, dflt string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
+	// Add the reusable Glazed logging section to the root so every child
+	// command inherits --log-level / --log-format / --log-file / --verbose.
+	if err := logging.AddLoggingSectionToRootCommand(rootCmd, "tinyidp"); err != nil {
+		cobra.CheckErr(err)
 	}
-	return dflt
-}
 
-// parseCSV splits a comma-separated string into a trimmed slice, dropping
-// empty entries. Used for OIDC_REDIRECT_URIS.
-func parseCSV(s string) []string {
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
+	// Load embedded help pages and wire `tinyidp help` / `tinyidp help <slug>`.
+	helpSystem := help.NewHelpSystem()
+	if err := doc.AddDocToHelpSystem(helpSystem); err != nil {
+		cobra.CheckErr(err)
 	}
-	return out
+	help_cmd.SetupCobraRootCommand(helpSystem, rootCmd)
+
+	// `tinyidp serve` — run the mock IdP HTTP server.
+	serveCmd, err := cmds.NewServeCommand()
+	cobra.CheckErr(err)
+	serveCobraCmd, err := cli.BuildCobraCommand(serveCmd,
+		cli.WithParserConfig(cli.CobraParserConfig{
+			AppName:          "tinyidp", // enables TINYIDP_* env loading on the default parser path
+			ConfigPlanBuilder: cmds.ConfigFilePlanBuilder, // makes --config-file actually load
+		}),
+		// Profile-ready out of the box: adds --profile / --profile-file and
+		// TINYIDP_PROFILE / TINYIDP_PROFILE_FILE. See `tinyidp help profiles`.
+		cli.WithProfileSettingsSection(),
+	)
+	cobra.CheckErr(err)
+	rootCmd.AddCommand(serveCobraCmd)
+
+	cobra.CheckErr(rootCmd.Execute())
 }
