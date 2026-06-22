@@ -105,7 +105,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		"aud":            ac.ClientID,
 		"exp":            now.Add(time.Hour).Unix(),
 		"iat":            now.Unix(),
-		"auth_time":      now.Unix(),
+		"auth_time":      ac.AuthTime.Unix(),
 		"email":          ac.User.Email,
 		"email_verified": true,
 		"name":           ac.User.Name,

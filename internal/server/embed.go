@@ -42,6 +42,7 @@ type scenarioItem struct {
 type loginPageData struct {
 	Hidden    []hiddenField
 	Scenarios []scenarioGroup
+	LoginHint string // prefill for the login input (OIDC login_hint)
 }
 
 // scenarioGroups converts the scenario registry's category groups into the

@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/manuel/tinyidp/internal/scenario"
@@ -20,6 +21,11 @@ type authorizeRequest struct {
 	Nonce               string
 	CodeChallenge       string
 	CodeChallengeMethod string
+
+	// Phase 6: OIDC re-authentication / session parameters.
+	Prompt    string // space-separated: none, login, consent
+	MaxAge    int    // seconds; 0 means unset
+	LoginHint string // prefill for the login field
 }
 
 // authorize implements the authorization endpoint.
@@ -39,11 +45,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = loginPage.Execute(w, loginPageData{
-			Hidden:    hiddenAuthorizeFields(ar),
-			Scenarios: s.scenarioGroups(),
-		})
+		s.authorizeGET(w, r, ar)
 
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
@@ -63,17 +65,62 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		sc, _ := s.registry.Lookup(login)
 
 		// Auth-error scenarios redirect back to the RP with an OAuth error
-		// instead of issuing a code.
+		// instead of issuing a code (no session is created).
 		if sc.AuthError != "" {
 			redirectOAuthError(w, r, ar.RedirectURI, ar.State, sc.AuthError, "simulated "+sc.AuthError)
 			return
 		}
 
-		s.issueCodeAndRedirect(w, r, ar, sc.User, &sc)
+		// Successful login: create an IdP session. The session carries the
+		// scenario and AuthTime so that silent re-issuance (prompt=none) and
+		// the ID token's auth_time behave correctly.
+		sess := newSession(login, sc.User, &sc)
+		s.setSessionCookie(w, sess)
+		s.issueCodeAndRedirect(w, r, ar, sc.User, &sc, sess.AuthTime)
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// authorizeGET implements the OIDC session / re-authentication rules for the
+// GET branch of /authorize:
+//
+//   - prompt=none + no valid session   -> redirect with error=login_required
+//   - prompt=none + valid, fresh session -> silently issue a code (no UI)
+//   - prompt=login or max_age exceeded    -> show the login form (re-auth)
+//   - valid, fresh session (no forced)    -> silently issue a code
+//   - no session (normal flow)            -> show the login form
+//
+// prompt=none forbids any UI, so if re-authentication is required it must
+// surface as a login_required error rather than the form.
+func (s *Server) authorizeGET(w http.ResponseWriter, r *http.Request, ar authorizeRequest) {
+	sess := s.readSession(r)
+	forceReauth := promptHas(ar.Prompt, "login") || (sess != nil && !sess.freshEnough(ar.MaxAge))
+
+	if promptHas(ar.Prompt, "none") {
+		if sess == nil || forceReauth {
+			redirectOAuthError(w, r, ar.RedirectURI, ar.State, "login_required", "simulated login_required (no session or re-auth required)")
+			return
+		}
+		// Valid session and prompt=none: silently issue a code.
+		s.issueCodeAndRedirect(w, r, ar, sess.User, sess.Scenario, sess.AuthTime)
+		return
+	}
+
+	if sess != nil && !forceReauth {
+		// Valid session, no forced re-auth: silently issue a code.
+		s.issueCodeAndRedirect(w, r, ar, sess.User, sess.Scenario, sess.AuthTime)
+		return
+	}
+
+	// Show the login form. login_hint prefills the login field.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = loginPage.Execute(w, loginPageData{
+		Hidden:    hiddenAuthorizeFields(ar),
+		Scenarios: s.scenarioGroups(),
+		LoginHint: ar.LoginHint,
+	})
 }
 
 // parseAuthorizeRequest validates the OAuth/OIDC authorize params from either
@@ -90,6 +137,14 @@ func (s *Server) parseAuthorizeRequest(v url.Values) (authorizeRequest, error) {
 		Nonce:               v.Get("nonce"),
 		CodeChallenge:       v.Get("code_challenge"),
 		CodeChallengeMethod: v.Get("code_challenge_method"),
+		Prompt:              v.Get("prompt"),
+		LoginHint:           v.Get("login_hint"),
+	}
+	// max_age is optional; parse to seconds. Invalid/unset = 0 (no constraint).
+	if ma := v.Get("max_age"); ma != "" {
+		if n, err := strconv.Atoi(ma); err == nil {
+			ar.MaxAge = n
+		}
 	}
 	if ar.ResponseType != "code" {
 		return ar, errText("unsupported response_type")
@@ -123,12 +178,20 @@ func hiddenAuthorizeFields(ar authorizeRequest) []hiddenField {
 		{"nonce", ar.Nonce},
 		{"code_challenge", ar.CodeChallenge},
 		{"code_challenge_method", ar.CodeChallengeMethod},
+		// Phase 6: carry prompt/max_age/login_hint through the form so the
+		// POST reconstructs the original request verbatim.
+		{"prompt", ar.Prompt},
+		{"max_age", strconv.Itoa(ar.MaxAge)},
+		{"login_hint", ar.LoginHint},
 	}
 }
 
 // issueCodeAndRedirect stores an auth code for the user + scenario and
-// redirects back to the RP with code + state.
-func (s *Server) issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, ar authorizeRequest, u user.User, sc *scenario.Scenario) {
+// redirects back to the RP with code + state. authTime is the moment the user
+// authenticated (from the session or the fresh login); it is carried on the
+// code so the token endpoint can set the ID token's auth_time claim to the
+// real authentication time rather than the token-issuance time.
+func (s *Server) issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, ar authorizeRequest, u user.User, sc *scenario.Scenario, authTime time.Time) {
 	code := randomB64(32)
 
 	s.mu.Lock()
@@ -142,6 +205,7 @@ func (s *Server) issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, ar
 		Expires:             time.Now().Add(5 * time.Minute),
 		User:                u,
 		Scenario:            sc,
+		AuthTime:            authTime,
 	}
 	s.mu.Unlock()
 

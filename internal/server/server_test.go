@@ -38,6 +38,7 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 		registry: scenario.New(),
 		codes:    map[string]authCode{},
 		tokens:   map[string]accessToken{},
+		sessions: map[string]*session{},
 	}
 	// Register a permissive test client that allows the test's redirect URI.
 	// The built-in dev-client uses localhost:3000; tests use https://app.test/cb.
@@ -774,6 +775,7 @@ func newTestServerWithBuiltinClients(t *testing.T) (*Server, *httptest.Server) {
 		registry: scenario.New(),
 		codes:    map[string]authCode{},
 		tokens:   map[string]accessToken{},
+		sessions: map[string]*session{},
 	}
 	mux := http.NewServeMux()
 	s.RegisterRoutes(mux)

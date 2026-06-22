@@ -31,9 +31,10 @@ type Server struct {
 
 	registry *scenario.Registry
 
-	mu     sync.Mutex
-	codes  map[string]authCode
-	tokens map[string]accessToken
+	mu       sync.Mutex
+	codes    map[string]authCode
+	tokens   map[string]accessToken
+	sessions map[string]*session
 }
 
 // authCode is a one-time authorization code awaiting exchange at /token.
@@ -47,6 +48,7 @@ type authCode struct {
 	Expires             time.Time
 	User                user.User
 	Scenario            *scenario.Scenario
+	AuthTime            time.Time
 }
 
 // accessToken is an opaque bearer token mapped to a user + expiry.
@@ -82,6 +84,7 @@ func New(opts Options) (*Server, error) {
 		registry: scenario.New(),
 		codes:    map[string]authCode{},
 		tokens:   map[string]accessToken{},
+		sessions: map[string]*session{},
 	}, nil
 }
 
