@@ -131,13 +131,13 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 
 - [ ] P9.1 `offline_access`, `refresh_token` grant, rotation, reuse detection.
 
-## Phase 10 — JWKS/key rotation (deferred)
+## Phase 10 — JWKS/key rotation
 
-- [ ] P10.1 Multiple kids, `kid-not-found`, bad signature, JWKS 500/slow/empty.
+- [x] P10.1 Multiple kids, `kid-not-found`, bad signature, JWKS 500/slow/empty.
 
-## Phase 11 — Logout (deferred)
+## Phase 11 — Logout
 
-- [ ] P11.1 `/end-session`, `id_token_hint`, `post_logout_redirect_uri`, `state`.
+- [x] P11.1 `/end-session`, `id_token_hint`, `post_logout_redirect_uri`, `state`.
 
 ## Phase 12 — Go test helper (deferred)
 

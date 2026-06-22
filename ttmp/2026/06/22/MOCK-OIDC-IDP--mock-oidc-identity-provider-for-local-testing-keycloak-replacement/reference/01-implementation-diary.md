@@ -16,6 +16,8 @@ RelatedFiles:
       Note: Phase 0 implementation (commit d473d513)
     - Path: cmd/tinyidp/main_test.go
       Note: httptest flow + ID token signature verification (commit d473d513)
+    - Path: internal/client/client.go
+      Note: PostLogoutRedirectURIs allowlist + Merge (commit d75aa44)
     - Path: internal/cmds/config.go
       Note: ConfigFilePlanBuilder wiring --config-file (commit 871eae0)
     - Path: internal/cmds/print_config.go
@@ -25,12 +27,18 @@ RelatedFiles:
         Glazed BareCommand composing the oidc section (commit 871eae0)
         buildClientRegistry Lookup-or-merge (commit c9101d8)
     - Path: internal/scenario/scenario.go
-      Note: Phase 2 scenario registry (commit 6454cd3)
+      Note: |-
+        Phase 2 scenario registry (commit 6454cd3)
+        SignKey field + 3 JWKS scenarios (commit d75aa44)
     - Path: internal/server/authorize.go
       Note: |-
         Phase 1 authorize flow (commit f9ece67)
         per-client validation in parseAuthorizeRequest (commit 5fed666)
         authorizeGET session rules + parseAuthorizeRequest prompt/max_age/login_hint (commit 20d210f)
+    - Path: internal/server/jwt.go
+      Note: Phase 10 multi-key signJWT + jwks + shared keys + jwksMode (commit d75aa44)
+    - Path: internal/server/logout.go
+      Note: Phase 11 /end-session handler (commit d75aa44)
     - Path: internal/server/server_test.go
       Note: Phase 4 matrix tests (Phase 4)
     - Path: internal/server/static/login.html
@@ -50,6 +58,7 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
 
 
 
@@ -870,3 +879,122 @@ This step added claim-bearing scenarios so relying parties can test role/tenant 
 - New claims advertised: groups, roles, tenant, preferred_username, locale.
 - New scenarios: admin, viewer, no-groups, many-groups, tenant-a-admin, tenant-b-viewer, unicode-name, no-email, unverified-email (9 total, under "Claim variants").
 - Test count: 86 (server 45, cmds 10, client 12, scenario 5, user 5, oidc 4, +5).
+
+## Step 14: Phase 10 — JWKS/key rotation
+
+This step made the JWKS endpoint publish multiple signing keys and added per-token signing-key selection plus server-level JWKS failure modes, so relying parties can be tested against key rollover, missing kids, bad signatures, and JWKS outages. It also resolved a latent coupling: the test verify helper had hardcoded a single `dev-key-1` kid, which would have broken the moment JWKS gained a second key.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8 — the original "do phases 8-11" request; this step continues that work)
+
+**Assistant interpretation:** Implement Phase 10 (multiple kids, kid-not-found, bad signature, JWKS 500/slow/empty) as the next deferred phase.
+
+**Inferred user intent:** Let RPs be tested against the signature/key-binding failure modes that real key rotation and JWKS outages produce, without standing up a second IdP.
+
+**Commit (code):** d75aa44 — "feat(tinyidp): Phase 10 JWKS rotation + Phase 11 logout"
+
+### What I did
+- Added `Scenario.SignKey` field (default / rotated / unknown-kid / bad-sig) with doc distinguishing it from `MutateClaims` (SignKey corrupts the signature/key binding; MutateClaims corrupts claim values).
+- `jwt.go` now publishes three kids: `dev-key-1` (active, per-server), `rotated-key-2`, and `bad-sig-key`. The rotated and bad-sig keys are generated once via `sync.Once` and shared across all servers; the active key stays per-server for process isolation.
+- `signJWT(claims, sc)` selects the kid and signer from the scenario: rotated signs with the shared rotated key (verifies); unknown-kid signs with the active key under an unpublished kid (kid-not-found); bad-sig signs with the active key but claims kid `bad-sig-key`, whose published public half is a different key (signature verification fails).
+- Added a server-level `jwksMode` (`normal`/`500`/`slow`/`empty`) toggled via `SetJWKSMode` and `POST /debug/jwks-mode`; reset restores normal. JWKS failures are server-level, not per-user scenarios, because `/jwks` is global and fetched independently of any login.
+- Added 3 scenarios (key-rotated, kid-not-found, bad-signature) under "JWKS / key rotation".
+- Generalized the test `verifyIDTokenSignature` helper to build a kid→public-key map from JWKS and look up the token's kid (was hardcoded to a single `dev-key-1`).
+
+### Why
+- A single-key JWKS cannot test key rollover or the "look up the kid" contract that multi-key JWKS imposes. Publishing three kids makes that contract testable.
+- `kid-not-found` and `bad-signature` are distinct, common RP-validation failure modes: the first is "I can't find a key"; the second is "I found a key but the signature doesn't verify." Modeling them separately lets an RP test both code paths.
+- Sharing the extra keys (sync.Once) keeps `Server` construction at one RSA keygen (~135ms) so the ~55-test server suite does not pay for keys it may never use. Generating 5 keys per server would have added ~17s.
+
+### What worked
+- All 97 pre-existing tests passed unchanged after generalizing the verify helper, confirming the multi-key JWKS is backward-compatible with the happy path.
+- The lazy shared-key design added no measurable time to the suite (still ~14s, dominated by the existing token-slow sleep).
+
+### What didn't work
+- First build after the `signJWT` signature change failed on `undefined: scenario` (forgot the import in `jwt.go`) and again on a dropped `discovery` function header + a dropped `issuer` discovery field during edits — fixed by restoring both. The atomic-edit tool rejected a whole 3-edit batch when one `oldText` whitespace didn't match, which silently skipped the struct-field and method edits; I caught it via the build error "unknown field PostLogoutRedirectURIs".
+
+### What I learned
+- The hardest bug was conceptual, not code: an existing test asserted `claims["sub"] == "key-rotated"`, but `sub` is a hash (`user-...`), not the login string. The token *verifies* correctly; the assertion was wrong. Distinguishing "the code is broken" from "the test's expectation is wrong" mattered here.
+- `rsa.VerifyPKCS1v15` returns the error string `"crypto/rsa: verification error"` — not "verification failed". Asserting on the wrong substring fails a test that is actually passing.
+
+### What was tricky to build
+- The bad-signature scenario requires the published public key under `bad-sig-key` to differ from the key used to sign. I sign bad-sig tokens with the active key (`s.key`) but publish `badSigKey.PublicKey` under `bad-sig-key`; because the two keys differ, verification fails even though the kid is found. The mental model is "the token lies about which key signed it."
+- JWKS failure modes are global, so they cannot be per-user `Scenario` fields like `AuthError`/`TokenError`. Making them a server-level mode (toggled via debug + a test helper) was the cleanest fit; I documented the reasoning in the scenario file comment.
+
+### What warrants a second pair of eyes
+- The shared-key `sync.Once` design means all servers in one process publish the same `rotated-key-2`/`bad-sig-key`. This is fine for tests (each server's active key still differs) but means a "rotated" token from server A verifies against server B's JWKS. Acceptable for a test tool; worth confirming no test relies on rotated-key isolation across servers.
+- `jwksSlowDelay` is a package var (default 10s) that the slow test shortens via `t.Cleanup`. If a future test forgets to restore it, subsequent tests could inherit a 10s delay. The cleanup pattern is correct but fragile.
+
+### What should be done in the future
+- Expose JWKS mode via a flag/env (`--jwks-mode`) for manual UI testing, not just the debug endpoint.
+- Add a `kid-revoked` scenario (a key present in JWKS but marked retired) if real rotation semantics need it.
+
+### Code review instructions
+- Start at `internal/server/jwt.go`: `signJWT(claims, sc)`, `jwks()`, `jwkFor`, and the `sharedRotatedKey`/`sharedBadSigKey` `sync.Once` helpers.
+- Then `internal/scenario/scenario.go`: the `SignKey` field doc + the 3 new scenarios.
+- Validate: `go test ./internal/server/ -count=1 -run Phase10 -v`.
+
+### Technical details
+- New `Scenario.SignKey` values: `""`, `"rotated"`, `"unknown-kid"`, `"bad-sig"`.
+- New kids published: `dev-key-1`, `rotated-key-2`, `bad-sig-key` (3 total); `unknown-key` is signed but never published.
+- New server methods: `SetJWKSMode`, `JWKSMode`; new debug endpoint `POST /debug/jwks-mode` (GET to read).
+- New scenarios: key-rotated, kid-not-found, bad-signature.
+- Test count after this step + Phase 11: 113.
+
+## Step 15: Phase 11 — RP-initiated logout
+
+This step added the `/end-session` endpoint so relying parties can initiate logout: end the IdP session, optionally redirect to a registered post-logout URI with forwarded state, and clear the session cookie. It also added a `PostLogoutRedirectURIs` allowlist to the client registry, mirroring the existing redirect-URI allowlist.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8)
+
+**Assistant interpretation:** Implement Phase 11 (`/end-session`, `id_token_hint`, `post_logout_redirect_uri`, `state`) as the final phase of the 8-11 request.
+
+**Inferred user intent:** Let RPs test the full logout round-trip — including the security-critical validation that a `post_logout_redirect_uri` is registered before redirecting to it.
+
+**Commit (code):** d75aa44 — "feat(tinyidp): Phase 10 JWKS rotation + Phase 11 logout"
+
+### What I did
+- Added `client.Client.PostLogoutRedirectURIs` + `AllowsPostLogoutRedirectURI`; the builtins get default post-logout URIs; `Merge` unions them (so a configured client that matches a builtin keeps the builtin's post-logout URIs).
+- Added `end_session_endpoint` to discovery.
+- New `internal/server/logout.go`: `/end-session` validates `post_logout_redirect_uri` against the registry (client-scoped when `client_id` is given, else any client); ends the session — `id_token_hint` decodes the payload (signature not re-verified; the spec treats it as a hint) and deletes sessions by subject, otherwise the caller's own session (from the cookie) is deleted; always clears the session cookie; redirects 302 with forwarded `state`, or returns a logged-out page.
+
+### Why
+- `post_logout_redirect_uri` validation is the security-critical part of RP-initiated logout: an open redirect here lets an attacker send a user to an arbitrary URL after logout. Modeling the allowlist (and the client-scoped check) lets an RP test that it rejects unregistered URIs.
+- Deleting by subject (from `id_token_hint`) rather than only by cookie matters because the hint may be presented from a different browser/tab than the one holding the session cookie. The strongest test proves this: logout from a cookieless client still ends a session whose cookie lives in another client.
+
+### What worked
+- Reusing the existing `jarClient`/`establishSession`/`silentIssue` helpers from the Phase 6 tests kept the logout tests consistent with the session tests and avoided reinventing redirect-handling.
+- The `id_token_hint` deletes-by-subject test passed on the first run, confirming the subject-based deletion path works across clients.
+
+### What didn't work
+- Initial test draft used `ts.Client()` (which follows redirects) for `/end-session`; the 302 to `https://app.test/logout` (unresolvable) would have errored. Fixed by giving `endSession` a `CheckRedirect: ErrUseLastResponse` client that shares the test jar.
+- Dropped the `net/http/httptest` import when rewriting the test file (the `endSession` helper takes `*httptest.Server`); caught by vet.
+
+### What I learned
+- The cleanest logout test for "session really deleted" uses two clients: establish the session on c1, then logout via `id_token_hint` from a cookieless c2, then assert c1's next `prompt=none` returns `login_required`. If only the cookie were cleared, c1's cookie would still work; the fact that it fails proves server-side deletion by subject.
+
+### What was tricky to build
+- `id_token_hint` is decoded without signature verification. This is intentional (the spec allows the IdP to treat it as a hint), but it means a malformed or tampered hint yields an empty `sub` and no session deletion — the cookie-clearing still happens. Documented in the handler comment.
+- The `state` forwarding must preserve any existing query on the `post_logout_redirect_uri`; `withQuery` parses and re-encodes rather than naively appending `?state=`.
+
+### What warrants a second pair of eyes
+- `postLogoutAllowed` with no `client_id` accepts a URI registered for *any* client. This is permissive but matches the spec's allowance; confirm no test relies on cross-client rejection when `client_id` is omitted (the `ClientScopedPostLogout` test covers the scoped case).
+- `subFromIDTokenHint` does not verify the signature, so a hint with a forged `sub` could delete another user's session. For a mock IdP this is acceptable (the threat model is "test your RP", not "harden the IdP"); worth a comment if this is ever reused.
+
+### What should be done in the future
+- Add a `frontchannel_logout_uri` / back-channel logout if an RP needs to test front-/back-channel logout propagation (out of scope for RP-initiated logout).
+- Consider a `post_logout_redirect_uri` without `client_id` being rejected by default (stricter than the spec) if a stricter profile is wanted.
+
+### Code review instructions
+- Start at `internal/server/logout.go`: `endSession`, `postLogoutAllowed`, `deleteSessionsBySub`, `subFromIDTokenHint`, `clearSessionCookie`, `withQuery`.
+- Then `internal/client/client.go`: `PostLogoutRedirectURIs` field + `AllowsPostLogoutRedirectURI` + builtins + `Merge`.
+- Validate: `go test ./internal/server/ -count=1 -run Phase11 -v`.
+
+### Technical details
+- New endpoint: `/end-session` (GET), advertised as `end_session_endpoint`.
+- New `Client.PostLogoutRedirectURIs` field; builtins: dev-client → localhost:3000/127.0.0.1:3000; public-spa & web-app → localhost:8080.
+- `id_token_hint` decoded via `base64.RawURLEncoding` payload parse (no signature check); `sub` drives `deleteSessionsBySub`.
+- Test count: 113 (server 60, cmds 10, client 12, scenario 5, user 5, oidc 4, +5 in doc/main).

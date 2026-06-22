@@ -53,10 +53,10 @@
 - [x] P5 Multiple clients
 - [x] P6 Session cookie, prompt, max_age
 - [x] P7 Claims/authorization shapes
-- [ ] P8 Debug UI
-- [ ] P9 Refresh tokens
-- [ ] P10 JWKS/key rotation
-- [ ] P11 Logout
+- [x] P8 Debug UI
+- [x] P9 Refresh tokens
+- [x] P10 JWKS/key rotation
+- [x] P11 Logout
 - [ ] P12 Go test helper
 
 ## Completed

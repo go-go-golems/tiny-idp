@@ -121,3 +121,21 @@ Step 13: Phase 7 claim variants — ExtraClaims/OmitClaims honored by ID token +
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go — ExtraClaims + OmitClaims fields + 9 claim-variant scenarios (commit b2099d0)
 
+
+
+## 2026-06-22
+
+Step 14: Phase 10 JWKS/key rotation — multi-key JWKS (dev-key-1/rotated-key-2/bad-sig-key, shared via sync.Once), Scenario.SignKey (rotated/unknown-kid/bad-sig), server-level jwksMode (normal/500/slow/empty) + /debug/jwks-mode, 3 new scenarios, generalized test verify helper to look up kid. 105 tests green.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/jwt.go — multi-key signJWT + jwks() + shared keys + jwksMode (commit d75aa44)
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go — SignKey field + 3 JWKS scenarios (commit d75aa44)
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/debug.go — /debug/jwks-mode + reset restores normal (commit d75aa44)
+
+Step 15: Phase 11 RP-initiated logout — /end-session (id_token_hint deletes by subject, post_logout_redirect_uri validated client-scoped, state forwarded, cookie cleared), client.PostLogoutRedirectURIs allowlist + Merge, end_session_endpoint in discovery. 113 tests green (commit d75aa44).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/logout.go — /end-session handler (commit d75aa44)
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/client/client.go — PostLogoutRedirectURIs + AllowsPostLogoutRedirectURI + Merge (commit d75aa44)
