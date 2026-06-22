@@ -5,6 +5,16 @@ topics:
       description: Backend services
     - slug: websocket
       description: WebSocket lifecycle & events
+    - slug: oidc
+      description: OpenID Connect provider/client behavior
+    - slug: go
+      description: Go language and toolchain
+    - slug: testing
+      description: Local dev and integration testing
+    - slug: identity
+      description: Identity, auth, and user principals
+    - slug: auth
+      description: Authentication and authorization
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
