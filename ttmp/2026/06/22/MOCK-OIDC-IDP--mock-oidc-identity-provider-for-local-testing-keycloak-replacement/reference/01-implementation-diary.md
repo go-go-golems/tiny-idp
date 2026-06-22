@@ -20,6 +20,8 @@ RelatedFiles:
       Note: Phase 2 scenario registry (commit 6454cd3)
     - Path: internal/server/authorize.go
       Note: Phase 1 authorize flow (commit f9ece67)
+    - Path: internal/server/server_test.go
+      Note: Phase 4 matrix tests (Phase 4)
     - Path: internal/server/static/login.html
       Note: embedded login form with quick-pick buttons (Phase 3)
     - Path: internal/server/token.go
@@ -32,6 +34,7 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
 
 
 
@@ -349,3 +352,70 @@ This step wired the scenario registry into the login page so the page is self-do
 ### Technical details
 - Login page now ~2.6 KB rendered; 2 quick-pick buttons (alice, bob).
 - Category field added without breaking existing scenario registrations (zero value = uncategorized, skipped by Grouped).
+
+## Step 6: Phase 4 — high-value failure scenarios
+
+This step added the actual failure scenarios as pure data entries in `builtinScenarios()` — the payoff of the Phase 2 registry design. Each scenario is ~5 lines and required zero handler edits. A matrix test asserts every failure surfaces where the spec says it should: auth errors redirect with the OAuth error code, token errors return the right status + error, ID-token mutations produce invalid claims, and userinfo errors return the right status (or a mismatched sub). This completes the MVP cutoff (Phases 0–4).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement Phase 4 — register the high-value failure scenarios and verify each end-to-end.
+
+**Inferred user intent:** Deliver the MVP: a mock IdP that reproduces real OIDC client bugs (auth denial, token exchange failure, invalid ID tokens, broken userinfo).
+
+**Commit (code):** (this step) — "feat(tinyidp): Phase 4 high-value failure scenarios"
+
+### What I did
+- Registered 17 scenarios in `internal/scenario/scenario.go` `builtinScenarios()`, grouped by Category:
+  - Normal users: `alice`, `bob`.
+  - Authorization failures: `fail-access-denied`, `fail-login-required`, `fail-consent-required`, `fail-server-error`.
+  - Token failures: `token-invalid-grant`, `token-server-error`, `token-slow` (uncategorized — 10s sleep, not a quick-pick).
+  - ID token failures: `id-expired`, `id-wrong-aud`, `id-wrong-iss`, `id-missing-email`, `id-email-unverified`, `id-bad-nonce`, `id-future-iat`.
+  - UserInfo failures: `userinfo-401`, `userinfo-500`, `userinfo-sub-mismatch`.
+- Added a Phase 4 matrix test in `internal/server/server_test.go`:
+  - `TestPhase4_AuthErrorScenariosRedirectWithError` (4 subtests) — each redirects with the right `error` + `state`, no code issued.
+  - `TestPhase4_TokenErrorScenarios` (2 subtests) — 400 `invalid_grant`, 500 `server_error`.
+  - `TestPhase4_IDTokenMutations` — 7 ID-token checks (past exp, wrong aud, wrong iss, missing email, unverified email, wrong nonce, future iat).
+  - `TestPhase4_UserInfoFailures` (2 subtests) — 401, 500.
+  - `TestPhase4_UserInfoSubMismatch` — userinfo sub differs from ID token sub (suffix `-different`).
+- Added test helpers `runAuthorizeLogin` and `exchangeCode` to reduce matrix boilerplate.
+
+### Why
+- The whole point of the scenario registry was to make these failures trivial to add. Phase 4 proves it: 17 scenarios, ~120 lines of data, zero handler changes.
+- A matrix test (one per failure) is the only way to confidently say "the mock reproduces this bug." Hand-testing 17 flows manually would drift.
+
+### What worked
+- `go build/vet/test` green; 37 tests total (was 23 before Phase 4).
+- Every ID-token mutation test verified the signature *after* mutation, proving mutations don't break signing (they only change claim values).
+- `id-bad-nonce` correctly only mutates when a nonce was sent (the test always sends one, but the guard keeps it safe when an RP omits nonce).
+
+### What didn't work
+- First draft of `TestPhase4_UserInfoFailures` had a dead `fullFlow("userinfo-401")` call at the top that failed because `fullFlow` asserts userinfo returns 200 (and `userinfo-401` returns 401). Removed the dead call; the real assertions are in the loop below. Lesson: don't reuse a happy-path helper for failure cases — it has incompatible success assumptions.
+
+### What I learned
+- JSON numbers unmarshal to `float64` in Go, so `claims["exp"].(float64)` is the right assertion type, not `int64`. Caught this when the `id-expired` assertion would have panicked on a wrong type.
+- `verifyIDTokenSignature` returns the *parsed claims*, so mutation tests can assert on claim values without a second decode — a nice reuse of the Phase 0 helper.
+
+### What was tricky to build
+- `id-wrong-iss` mutates `iss` by appending `/wrong`, which requires reading the current value: `claims["iss"].(string) + "/wrong"`. If a future mutator runs before `iss` is set, this panics; confirmed the base claims set `iss` first.
+- `userinfo-sub-mismatch` returns 200 (not an error status) but with a *different* `sub`. The test must not treat "200" as success — it asserts the sub differs. This is the subtle one reviewers should eyeball.
+
+### What warrants a second pair of eyes
+- `id-bad-nonce` only mutates `if _, ok := claims["nonce"]; ok`. If an RP sends no nonce, the scenario becomes a no-op (normal token). Confirm that's the desired behavior (vs. always setting a wrong nonce) — I chose "no-op when no nonce" because echoing a nonce the RP didn't send would itself be a different bug class.
+- `token-slow` sleeps a real 10s. It's intentionally not a quick-pick (no Category), but it *is* resolvable via the text input. Confirm no CI test accidentally logs in as `token-slow` (none do).
+
+### What should be done in the future
+- Add a `token-slow` test with a configurable (short) duration, or extract the sleep duration to a scenario field so tests can override it.
+- Phase 5+ (multiple clients, sessions, refresh tokens, etc.) are now the next targets; the MVP (0–4) is complete and shippable.
+
+### Code review instructions
+- Start at `internal/scenario/scenario.go`: `builtinScenarios()` — read each scenario's failure field.
+- Then `internal/server/server_test.go`: the `TestPhase4_*` matrix; focus on `TestPhase4_IDTokenMutations` (7 assertions) and `TestPhase4_UserInfoSubMismatch`.
+- Validate: `go test ./... -count=1 -run Phase4 -v`.
+
+### Technical details
+- Scenarios: 19 total (2 normal + 17 failure; `token-slow` uncategorized).
+- Tests: 37 total across 4 packages (server 26, scenario 5, user 5, cmd 0).
+- MVP (Phases 0–4) exit criteria all met: happy path, multiple users, scenario registry, self-documenting login page, high-value failures.

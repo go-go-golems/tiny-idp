@@ -38,11 +38,11 @@
 - [x] P3.4 Validate one-click scenarios
 
 ### Phase 4 — High-value failure scenarios
-- [ ] P4.1 Auth-error scenarios
-- [ ] P4.2 Token-error scenarios
-- [ ] P4.3 ID-token mutation scenarios
-- [ ] P4.4 UserInfo-error scenarios
-- [ ] P4.5 Validate each end-to-end
+- [x] P4.1 Auth-error scenarios
+- [x] P4.2 Token-error scenarios
+- [x] P4.3 ID-token mutation scenarios
+- [x] P4.4 UserInfo-error scenarios
+- [x] P4.5 Validate each end-to-end
 
 ## Deferred (Phases 5–12)
 - [ ] P5 Multiple clients
@@ -55,6 +55,13 @@
 - [ ] P12 Go test helper
 
 ## Completed
+
+### Phase 4
+- [x] P4.1 auth-error scenarios
+- [x] P4.2 token-error scenarios
+- [x] P4.3 ID-token mutation scenarios
+- [x] P4.4 UserInfo-error scenarios
+- [x] P4.5 validated each end-to-end
 
 ### Phase 3
 - [x] P3.1 group scenarios by category

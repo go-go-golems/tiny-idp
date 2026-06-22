@@ -96,11 +96,11 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 
 **Goal:** reproduce real OIDC client bugs.
 
-- [ ] P4.1 Auth-error scenarios: `fail-access-denied`, `fail-login-required`, `fail-consent-required`, `fail-server-error`.
-- [ ] P4.2 Token-error scenarios: `token-invalid-grant`, `token-server-error`, `token-slow` (10s sleep).
-- [ ] P4.3 ID-token mutation scenarios: `id-expired`, `id-wrong-aud`, `id-wrong-iss`, `id-missing-email`, `id-email-unverified`, `id-bad-nonce`, `id-future-iat`.
-- [ ] P4.4 UserInfo-error scenarios: `userinfo-401`, `userinfo-500`, `userinfo-sub-mismatch`.
-- [ ] P4.5 Validate each scenario end-to-end against a sample RP flow; confirm failure surfaces where expected.
+- [x] P4.1 Auth-error scenarios: `fail-access-denied`, `fail-login-required`, `fail-consent-required`, `fail-server-error`.
+- [x] P4.2 Token-error scenarios: `token-invalid-grant`, `token-server-error`, `token-slow` (10s sleep).
+- [x] P4.3 ID-token mutation scenarios: `id-expired`, `id-wrong-aud`, `id-wrong-iss`, `id-missing-email`, `id-email-unverified`, `id-bad-nonce`, `id-future-iat`.
+- [x] P4.4 UserInfo-error scenarios: `userinfo-401`, `userinfo-500`, `userinfo-sub-mismatch`.
+- [x] P4.5 Validate each scenario end-to-end against a sample RP flow; confirm failure surfaces where expected.
 
 **Exit criteria:** all listed scenarios produce their documented failure.
 

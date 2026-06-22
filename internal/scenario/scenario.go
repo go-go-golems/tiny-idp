@@ -105,6 +105,7 @@ func New() *Registry {
 // only the normal users; Phase 4 appends the failure scenarios.
 func builtinScenarios() []Scenario {
 	return []Scenario{
+		// --- Normal users ---
 		{
 			Name:        "alice",
 			Description: "normal user",
@@ -116,6 +117,153 @@ func builtinScenarios() []Scenario {
 			Description: "normal user",
 			Category:    "Normal users",
 			User:        user.FromLogin("bob"),
+		},
+
+		// --- Authorization endpoint failures (redirect back with OAuth error) ---
+		{
+			Name:        "fail-access-denied",
+			Description: "authorization error: access_denied",
+			Category:    "Authorization failures",
+			User:        user.FromLogin("fail-access-denied"),
+			AuthError:   "access_denied",
+		},
+		{
+			Name:        "fail-login-required",
+			Description: "authorization error: login_required",
+			Category:    "Authorization failures",
+			User:        user.FromLogin("fail-login-required"),
+			AuthError:   "login_required",
+		},
+		{
+			Name:        "fail-consent-required",
+			Description: "authorization error: consent_required",
+			Category:    "Authorization failures",
+			User:        user.FromLogin("fail-consent-required"),
+			AuthError:   "consent_required",
+		},
+		{
+			Name:        "fail-server-error",
+			Description: "authorization error: server_error",
+			Category:    "Authorization failures",
+			User:        user.FromLogin("fail-server-error"),
+			AuthError:   "server_error",
+		},
+
+		// --- Token endpoint failures ---
+		{
+			Name:        "token-invalid-grant",
+			Description: "token exchange fails: invalid_grant",
+			Category:    "Token failures",
+			User:        user.FromLogin("token-invalid-grant"),
+			TokenError:  "invalid_grant",
+		},
+		{
+			Name:        "token-server-error",
+			Description: "token endpoint returns 500: server_error",
+			Category:    "Token failures",
+			User:        user.FromLogin("token-server-error"),
+			TokenError:  "server_error",
+		},
+		// token-slow intentionally omitted from quick-pick (10s sleep is
+		// painful in manual UI); it still resolves via Lookup.
+		{
+			Name:        "token-slow",
+			Description: "token endpoint sleeps 10s then succeeds",
+			User:        user.FromLogin("token-slow"),
+			TokenError:  "slow",
+		},
+
+		// --- ID token claim mutations ---
+		{
+			Name:        "id-expired",
+			Description: "expired ID token (exp in the past)",
+			Category:    "ID token failures",
+			User:        user.FromLogin("id-expired"),
+			MutateClaims: func(claims map[string]any, now time.Time) {
+				claims["exp"] = now.Add(-1 * time.Hour).Unix()
+			},
+		},
+		{
+			Name:        "id-wrong-aud",
+			Description: "wrong audience in ID token",
+			Category:    "ID token failures",
+			User:        user.FromLogin("id-wrong-aud"),
+			MutateClaims: func(claims map[string]any, now time.Time) {
+				claims["aud"] = "some-other-client"
+			},
+		},
+		{
+			Name:        "id-wrong-iss",
+			Description: "wrong issuer in ID token",
+			Category:    "ID token failures",
+			User:        user.FromLogin("id-wrong-iss"),
+			MutateClaims: func(claims map[string]any, now time.Time) {
+				claims["iss"] = claims["iss"].(string) + "/wrong"
+			},
+		},
+		{
+			Name:        "id-missing-email",
+			Description: "ID token omits email claims",
+			Category:    "ID token failures",
+			User:        user.FromLogin("id-missing-email"),
+			MutateClaims: func(claims map[string]any, now time.Time) {
+				delete(claims, "email")
+				delete(claims, "email_verified")
+			},
+		},
+		{
+			Name:        "id-email-unverified",
+			Description: "email_verified = false",
+			Category:    "ID token failures",
+			User:        user.FromLogin("id-email-unverified"),
+			MutateClaims: func(claims map[string]any, now time.Time) {
+				claims["email_verified"] = false
+			},
+		},
+		{
+			Name:        "id-bad-nonce",
+			Description: "nonce mismatch in ID token",
+			Category:    "ID token failures",
+			User:        user.FromLogin("id-bad-nonce"),
+			MutateClaims: func(claims map[string]any, now time.Time) {
+				if _, ok := claims["nonce"]; ok {
+					claims["nonce"] = "wrong-nonce"
+				}
+			},
+		},
+		{
+			Name:        "id-future-iat",
+			Description: "iat/auth_time in the future",
+			Category:    "ID token failures",
+			User:        user.FromLogin("id-future-iat"),
+			MutateClaims: func(claims map[string]any, now time.Time) {
+				future := now.Add(10 * time.Minute).Unix()
+				claims["iat"] = future
+				claims["auth_time"] = future
+			},
+		},
+
+		// --- UserInfo endpoint failures ---
+		{
+			Name:         "userinfo-401",
+			Description:  "userinfo returns 401",
+			Category:     "UserInfo failures",
+			User:         user.FromLogin("userinfo-401"),
+			UserInfoError: "401",
+		},
+		{
+			Name:         "userinfo-500",
+			Description:  "userinfo returns 500",
+			Category:     "UserInfo failures",
+			User:         user.FromLogin("userinfo-500"),
+			UserInfoError: "500",
+		},
+		{
+			Name:         "userinfo-sub-mismatch",
+			Description:  "userinfo sub differs from ID token",
+			Category:     "UserInfo failures",
+			User:         user.FromLogin("userinfo-sub-mismatch"),
+			UserInfoError: "sub_mismatch",
 		},
 	}
 }

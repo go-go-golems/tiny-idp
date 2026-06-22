@@ -49,3 +49,12 @@ Step 5: Phase 3 self-documenting login page — scenarios rendered from registry
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/embed.go — scenarioGroups bridges registry to template (Phase 3)
 
+
+## 2026-06-22
+
+Step 6: Phase 4 high-value failure scenarios — 17 scenarios registered as data, matrix test (37 tests green). MVP (0-4) complete.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go — 17 failure scenarios as data entries (Phase 4)
+

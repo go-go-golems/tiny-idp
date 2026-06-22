@@ -527,3 +527,217 @@ func TestLoginPageListsBuiltinScenarios(t *testing.T) {
 		}
 	}
 }
+
+// --- Phase 4: high-value failure scenarios (matrix) ---
+
+// runAuthorizeLogin does the GET form + POST login and returns the redirect
+// Location (without exchanging the code). Used by failure-scenario tests
+// that stop at /authorize.
+func runAuthorizeLogin(t *testing.T, ts *httptest.Server, login string) *url.URL {
+	t.Helper()
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "dev-client")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid")
+	auth.Set("state", "st")
+	auth.Set("nonce", "nonce-xyz")
+	// GET renders the form (sanity).
+	resp, err := ts.Client().Get(ts.URL + "/authorize?" + auth.Encode())
+	if err != nil {
+		t.Fatalf("authorize GET: %v", err)
+	}
+	resp.Body.Close()
+	return authorizePostRedirect(t, ts, authorizeForm(login, auth))
+}
+
+// exchangeCode POSTs the code to /token and returns (status, parsedBody).
+func exchangeCode(t *testing.T, ts *httptest.Server, code string) (int, map[string]any) {
+	t.Helper()
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("redirect_uri", "https://app.test/cb")
+	form.Set("client_id", "dev-client")
+	resp, err := ts.Client().PostForm(ts.URL+"/token", form)
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var parsed map[string]any
+	_ = json.Unmarshal(body, &parsed)
+	return resp.StatusCode, parsed
+}
+
+func TestPhase4_AuthErrorScenariosRedirectWithError(t *testing.T) {
+	cases := map[string]string{
+		"fail-access-denied":    "access_denied",
+		"fail-login-required":   "login_required",
+		"fail-consent-required": "consent_required",
+		"fail-server-error":     "server_error",
+	}
+	for login, wantErr := range cases {
+		t.Run(login, func(t *testing.T) {
+			_, ts := newTestServer(t)
+			loc := runAuthorizeLogin(t, ts, login)
+			q := loc.Query()
+			if q.Get("error") != wantErr {
+				t.Fatalf("error = %q, want %q (redirect=%s)", q.Get("error"), wantErr, loc)
+			}
+			if q.Get("state") != "st" {
+				t.Fatalf("state = %q, want st", q.Get("state"))
+			}
+			if q.Get("code") != "" {
+				t.Fatalf("auth-error scenario must not issue a code, got %q", q.Get("code"))
+			}
+		})
+	}
+}
+
+func TestPhase4_TokenErrorScenarios(t *testing.T) {
+	t.Run("token-invalid-grant", func(t *testing.T) {
+		_, ts := newTestServer(t)
+		loc := runAuthorizeLogin(t, ts, "token-invalid-grant")
+		status, body := exchangeCode(t, ts, loc.Query().Get("code"))
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", status)
+		}
+		if body["error"] != "invalid_grant" {
+			t.Fatalf("error = %v, want invalid_grant", body["error"])
+		}
+	})
+	t.Run("token-server-error", func(t *testing.T) {
+		_, ts := newTestServer(t)
+		loc := runAuthorizeLogin(t, ts, "token-server-error")
+		status, body := exchangeCode(t, ts, loc.Query().Get("code"))
+		if status != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", status)
+		}
+		if body["error"] != "server_error" {
+			t.Fatalf("error = %v, want server_error", body["error"])
+		}
+	})
+}
+
+func TestPhase4_IDTokenMutations(t *testing.T) {
+	_, ts := newTestServer(t)
+
+	// id-expired -> exp in the past.
+	loc := runAuthorizeLogin(t, ts, "id-expired")
+	status, body := exchangeCode(t, ts, loc.Query().Get("code"))
+	if status != http.StatusOK {
+		t.Fatalf("id-expired exchange status = %d", status)
+	}
+	claims := verifyIDTokenSignature(t, ts, body["id_token"].(string))
+	if exp, _ := claims["exp"].(float64); exp >= float64(time.Now().Unix()) {
+		t.Fatalf("id-expired: exp %v not in the past", claims["exp"])
+	}
+
+	// id-wrong-aud -> aud != dev-client.
+	loc = runAuthorizeLogin(t, ts, "id-wrong-aud")
+	_, body = exchangeCode(t, ts, loc.Query().Get("code"))
+	claims = verifyIDTokenSignature(t, ts, body["id_token"].(string))
+	if claims["aud"] != "some-other-client" {
+		t.Fatalf("id-wrong-aud: aud = %v", claims["aud"])
+	}
+
+	// id-wrong-iss -> iss ends with /wrong.
+	loc = runAuthorizeLogin(t, ts, "id-wrong-iss")
+	_, body = exchangeCode(t, ts, loc.Query().Get("code"))
+	claims = verifyIDTokenSignature(t, ts, body["id_token"].(string))
+	if !strings.HasSuffix(claims["iss"].(string), "/wrong") {
+		t.Fatalf("id-wrong-iss: iss = %v", claims["iss"])
+	}
+
+	// id-missing-email -> email absent.
+	loc = runAuthorizeLogin(t, ts, "id-missing-email")
+	_, body = exchangeCode(t, ts, loc.Query().Get("code"))
+	claims = verifyIDTokenSignature(t, ts, body["id_token"].(string))
+	if _, ok := claims["email"]; ok {
+		t.Fatalf("id-missing-email: email present = %v", claims["email"])
+	}
+
+	// id-email-unverified -> email_verified = false.
+	loc = runAuthorizeLogin(t, ts, "id-email-unverified")
+	_, body = exchangeCode(t, ts, loc.Query().Get("code"))
+	claims = verifyIDTokenSignature(t, ts, body["id_token"].(string))
+	if claims["email_verified"] != false {
+		t.Fatalf("id-email-unverified: email_verified = %v", claims["email_verified"])
+	}
+
+	// id-bad-nonce -> nonce != nonce-xyz.
+	loc = runAuthorizeLogin(t, ts, "id-bad-nonce")
+	_, body = exchangeCode(t, ts, loc.Query().Get("code"))
+	claims = verifyIDTokenSignature(t, ts, body["id_token"].(string))
+	if claims["nonce"] == "nonce-xyz" {
+		t.Fatalf("id-bad-nonce: nonce still matches: %v", claims["nonce"])
+	}
+
+	// id-future-iat -> iat in the future.
+	loc = runAuthorizeLogin(t, ts, "id-future-iat")
+	_, body = exchangeCode(t, ts, loc.Query().Get("code"))
+	claims = verifyIDTokenSignature(t, ts, body["id_token"].(string))
+	if iat, _ := claims["iat"].(float64); iat <= float64(time.Now().Unix()) {
+		t.Fatalf("id-future-iat: iat %v not in the future", claims["iat"])
+	}
+}
+
+func TestPhase4_UserInfoFailures(t *testing.T) {
+	// The full matrix for userinfo failures is exercised with a dedicated
+	// helper, since fullFlow asserts a 200 at userinfo.
+	_, ts := newTestServer(t)
+	for _, tc := range []struct {
+		login     string
+		wantStatus int
+	}{
+		{"userinfo-401", http.StatusUnauthorized},
+		{"userinfo-500", http.StatusInternalServerError},
+	} {
+		t.Run(tc.login, func(t *testing.T) {
+			loc := runAuthorizeLogin(t, ts, tc.login)
+			status, body := exchangeCode(t, ts, loc.Query().Get("code"))
+			if status != http.StatusOK {
+				t.Fatalf("token exchange status = %d", status)
+			}
+			access := body["access_token"].(string)
+			req, _ := http.NewRequest(http.MethodGet, ts.URL+"/userinfo", nil)
+			req.Header.Set("Authorization", "Bearer "+access)
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("userinfo status = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+		})
+	}
+}
+
+func TestPhase4_UserInfoSubMismatch(t *testing.T) {
+	_, ts := newTestServer(t)
+	loc := runAuthorizeLogin(t, ts, "userinfo-sub-mismatch")
+	status, body := exchangeCode(t, ts, loc.Query().Get("code"))
+	if status != http.StatusOK {
+		t.Fatalf("token exchange status = %d", status)
+	}
+	idClaims := verifyIDTokenSignature(t, ts, body["id_token"].(string))
+	access := body["access_token"].(string)
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+access)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var ui map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&ui)
+	if ui["sub"] == idClaims["sub"] {
+		t.Fatalf("userinfo-sub-mismatch: sub matched ID token (%v)", ui["sub"])
+	}
+	if !strings.HasSuffix(ui["sub"].(string), "-different") {
+		t.Fatalf("userinfo-sub-mismatch: sub = %v, want suffix -different", ui["sub"])
+	}
+}
