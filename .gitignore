@@ -1,0 +1,12 @@
+# Compiled binaries
+/tinyidp
+*.exe
+
+# Go test/build cache
+*.test
+*.out
+
+# Editor/OS noise
+.DS_Store
+.idea/
+.vscode/
