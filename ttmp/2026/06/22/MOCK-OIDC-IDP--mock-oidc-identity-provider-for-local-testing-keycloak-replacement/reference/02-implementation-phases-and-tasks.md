@@ -118,10 +118,10 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 - [x] P6.3 `max_age` handling + `auth_time` claim.
 - [x] P6.4 `login_hint` prefill.
 
-## Phase 7 — Claims and authorization shapes (deferred)
+## Phase 7 — Claims and authorization shapes
 
-- [ ] P7.1 Claim-bearing scenarios: `admin`, `viewer`, `no-email`, `unverified-email`, `no-groups`, `many-groups`, `tenant-a-admin`, `unicode-name`.
-- [ ] P7.2 Emit `groups`, `roles`, `tenant`, `preferred_username`, `locale`.
+- [x] P7.1 Claim-bearing scenarios: `admin`, `viewer`, `no-email`, `unverified-email`, `no-groups`, `many-groups`, `tenant-a-admin`, `tenant-b-viewer`, `unicode-name`.
+- [x] P7.2 Emit `groups`, `roles`, `tenant`, `preferred_username`, `locale` (via ExtraClaims, honored by ID token + userinfo).
 
 ## Phase 8 — Debug UI (deferred)
 

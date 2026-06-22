@@ -112,3 +112,12 @@ Step 12: Phase 6 session layer — session cookie + prompt=none/login + max_age 
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/session.go — session store + cookie + prompt/max_age helpers (commit 20d210f)
 
+
+## 2026-06-22
+
+Step 13: Phase 7 claim variants — ExtraClaims/OmitClaims honored by ID token + userinfo; 9 claim-bearing scenarios (admin/viewer/tenant-a-admin/unicode-name/no-email/...). 86 tests green (commit b2099d0).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go — ExtraClaims + OmitClaims fields + 9 claim-variant scenarios (commit b2099d0)
+

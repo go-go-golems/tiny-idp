@@ -52,7 +52,7 @@
 ## Deferred (Phases 5–12)
 - [x] P5 Multiple clients
 - [x] P6 Session cookie, prompt, max_age
-- [ ] P7 Claims/authorization shapes
+- [x] P7 Claims/authorization shapes
 - [ ] P8 Debug UI
 - [ ] P9 Refresh tokens
 - [ ] P10 JWKS/key rotation

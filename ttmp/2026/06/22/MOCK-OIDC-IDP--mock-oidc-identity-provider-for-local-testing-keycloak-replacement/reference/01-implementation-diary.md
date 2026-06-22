@@ -40,6 +40,8 @@ RelatedFiles:
         scenario TokenError + MutateClaims threading (commit 6454cd3)
         client auth from registry + cross-client rejection (commit 5fed666)
         auth_time from ac.AuthTime (commit 20d210f)
+    - Path: internal/server/userinfo.go
+      Note: userinfoClaims helper honors ExtraClaims/OmitClaims (commit b2099d0)
     - Path: internal/user/user.go
       Note: FromLogin stable sub derivation (commit f9ece67)
 ExternalSources: []
@@ -48,6 +50,7 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
 
 
 
@@ -807,3 +810,63 @@ This step added the IdP session layer: a session cookie (`tinyidp_session`), an 
 - Session TTL: 24h. Auth code TTL: 5min. Access token TTL: 1h.
 - `prompt_values_supported`: none, login.
 - Test count: 78 (server 38, cmds 10, client 12, scenario 5, user 5, oidc 4, +4).
+
+## Step 13: Phase 7 — claims and authorization shapes
+
+This step added claim-bearing scenarios so relying parties can test role/tenant mapping and weird claim shapes. The core design choice was a new `ExtraClaims map[string]any` field on `Scenario`, merged into **both** the ID token and the userinfo response, so the two agree under normal scenarios — distinct from the Phase 4 `id-*` `MutateClaims` mutators, which affect the ID token only and test ID-token validation specifically. A companion `OmitClaims []string` field models "this user has no X claim" as a positive scenario honored by both endpoints. Eight new scenarios ship (`admin`, `viewer`, `no-groups`, `many-groups`, `tenant-a-admin`, `tenant-b-viewer`, `unicode-name`, `no-email`, `unverified-email`), and discovery now advertises `groups`/`roles`/`tenant`/`preferred_username`/`locale`.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Resume the deferred phases; Phase 7 is claims/authorization shapes (groups, roles, tenant).
+
+**Inferred user intent:** Let relying parties test authorization logic (role mapping, tenant mapping, missing/weird claims) against the mock.
+
+**Commit (code):** b2099d0 — "feat(tinyidp): Phase 7 claim variants"
+
+### What I did
+- `scenario.Scenario` gained `ExtraClaims map[string]any` (merged into ID token + userinfo) and `OmitClaims []string` (deleted from both).
+- `token.go`: base claims → `ExtraClaims` merge → `OmitClaims` delete → `MutateClaims` (Phase 4 mutators run last and can override/re-add).
+- `userinfo.go`: new `userinfoClaims(at)` helper builds the response from base + ExtraClaims + OmitClaims; the `sub_mismatch` path now returns the same claim set with an overridden `sub` (instead of a hardcoded subset), so it disagrees only on `sub` as documented.
+- `jwt.go` discovery: `claims_supported` now advertises `groups`, `roles`, `tenant`, `preferred_username`, `locale`.
+- 8 new scenarios in `builtinScenarios` under "Claim variants": `admin`, `viewer`, `no-groups`, `many-groups`, `tenant-a-admin`, `tenant-b-viewer`, `unicode-name`, `no-email` (uses `OmitClaims`), `unverified-email` (uses `ExtraClaims` with `email_verified:false`).
+- Tests: 7 in `phase7_claims_test.go` (each asserts both ID token and userinfo carry/match the claims).
+
+### Why
+- Real app bugs are rarely "can I log in?"; they are claim-mapping bugs — a relying party that reads `groups` from the wrong place, mishandles a missing claim, or misroutes a tenant. A mock that only emits `sub`/`email`/`name` cannot exercise these. Phase 7 makes the mock emit the claim shapes real IdPs produce.
+- The `ExtraClaims`/`OmitClaims` design is declarative: adding a claim variant is a data entry, not a closure. This mirrors the Phase 2 scenario-registry payoff — adding `tenant-c-admin` later is one entry, zero handler changes.
+- Honoring ExtraClaims/OmitClaims in **both** the ID token and userinfo is the correctness property. A relying party that validates the ID token and then fetches userinfo expects them to agree on the user's attributes; a mock where they disagree (outside the explicit `userinfo-sub-mismatch` failure scenario) would itself be a bug. The Phase 7 tests assert agreement.
+
+### What worked
+- 86 tests green (was 78). Live: admin's userinfo returns `groups:["admin","engineering"]`; `tenant-a-admin` button on the login page; discovery advertises the new claims.
+- The `ExtraClaims`/`OmitClaims` ordering (ExtraClaims merge, then OmitClaims delete, then MutateClaims) composes cleanly: a future scenario could set a claim via ExtraClaims and then omit a different one, and a Phase 4 mutator can still override either.
+
+### What didn't work
+- First `no-email` implementation used `MutateClaims` (deletes email from the ID token only), but the test asserted userinfo *also* omits email — and it didn't, because `MutateClaims` is ID-token-only by design (Phase 4 mutators test ID-token validation). This exposed the real distinction: Phase 4 `id-*` mutators are *negative* (test that the RP catches a bad ID token), while Phase 7 `no-email` is *positive* (the user genuinely has no email, so userinfo should agree). Fixed by introducing `OmitClaims` (honored by both endpoints) and switching `no-email` to it. This is a cleaner model: ExtraClaims/OmitClaims describe the user's real attributes; MutateClaims describes a token-level failure injection.
+
+### What I learned
+- The Phase 4 `MutateClaims` and Phase 7 `ExtraClaims`/`OmitClaims` serve different purposes and the distinction matters. `MutateClaims` is a *failure injection* hook (make the ID token wrong to test the RP catches it); `ExtraClaims`/`OmitClaims` describe the user's *actual* attributes (and must be consistent across ID token and userinfo). Conflating them — e.g. using MutateClaims to delete email for the positive `no-email` scenario — produces a mock where the ID token and userinfo disagree, which is itself a bug class.
+- `userinfoClaims` centralizing the response body (instead of duplicating the claim set in the normal path and the `sub_mismatch` path) fixed a latent issue: the `sub_mismatch` path previously returned a hardcoded subset (`sub`/`email`/`email_verified`/`name`) that would have dropped any Phase 7 extra claims. Now it returns the full set with an overridden `sub`, so it disagrees only on `sub`.
+
+### What was tricky to build
+- The ExtraClaims/OmitClaims/MutateClaims ordering. MutateClaims must run *last* so the Phase 4 failure mutators (e.g. `id-wrong-aud`) can override anything, including an ExtraClaims value. If MutateClaims ran before ExtraClaims, a scenario that both set `aud` via ExtraClaims and mutated it would silently lose the mutation. The ordering is commented in token.go.
+- The `sub_mismatch` scenario: it must disagree with the ID token on `sub` (that's the failure being tested) but agree on everything else. Before this step it returned a hardcoded subset; now it returns the full `userinfoClaims` set with `sub` overridden. A reviewer should confirm the Phase 4 `TestPhase4_UserInfoSubMismatch` test still passes (it does — it only asserts `sub` differs).
+
+### What warrants a second pair of eyes
+- The claim-agreement property (ID token and userinfo carry the same extra claims under normal scenarios). The 7 Phase 7 tests assert it, but a future scenario that uses `MutateClaims` to set a claim (rather than ExtraClaims) would appear in the ID token only and break agreement silently. Confirm the convention is understood: use ExtraClaims/OmitClaims for positive claim shapes; reserve MutateClaims for ID-token failure injection.
+- `unicode-name` overrides `name` via ExtraClaims (`"Müller Frédéric"`). The base `name` is the derived login name; ExtraClaims overriding a base claim is intentional and works, but confirm no scenario relies on the base name after a `name` override.
+
+### What should be done in the future
+- Consider Keycloak-style nested claim shapes (`realm_access.roles`, `resource_access.<client>.roles`) as a separate scenario class, since some RPs expect that specific structure. The current `groups`/`roles` flat shape covers most apps; the nested shape would be an opt-in scenario (e.g. `keycloak-style`).
+- Phase 8 (debug UI) is next; it will surface issued tokens and their claims, which makes Phase 7 scenarios easier to inspect manually.
+
+### Code review instructions
+- Start at `internal/scenario/scenario.go`: `ExtraClaims`/`OmitClaims` fields + the 8 new "Claim variants" scenarios. Then `internal/server/token.go` (ExtraClaims/OmitClaims/MutateClaims ordering) and `internal/server/userinfo.go` (`userinfoClaims` helper).
+- Validate: `go test ./internal/server/ -count=1 -run Phase7 -v`.
+
+### Technical details
+- New Scenario fields: `ExtraClaims map[string]any`, `OmitClaims []string`.
+- New claims advertised: groups, roles, tenant, preferred_username, locale.
+- New scenarios: admin, viewer, no-groups, many-groups, tenant-a-admin, tenant-b-viewer, unicode-name, no-email, unverified-email (9 total, under "Claim variants").
+- Test count: 86 (server 45, cmds 10, client 12, scenario 5, user 5, oidc 4, +5).
