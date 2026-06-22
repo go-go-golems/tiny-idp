@@ -3,18 +3,18 @@
 ## MVP (Phases 0–4)
 
 ### Phase 0 — Baseline OIDC happy path
-- [ ] P0.1 `go mod init`
-- [ ] P0.2 Scaffold `cmd/tinyidp/main.go` (env, key, ListenAndServe)
-- [ ] P0.3 `server` struct + state
-- [ ] P0.4 `discovery()`
-- [ ] P0.5 `jwks()`
-- [ ] P0.6 `authorize()` GET
-- [ ] P0.7 `token()` POST
-- [ ] P0.8 `userinfo()`
-- [ ] P0.9 Helpers (signJWT, verifyPKCE, etc.)
-- [ ] P0.10 `/healthz`
-- [ ] P0.11 `README.md`
-- [ ] P0.12 Validate build/vet/run + curl
+- [x] P0.1 `go mod init`
+- [x] P0.2 Scaffold `cmd/tinyidp/main.go` (env, key, ListenAndServe)
+- [x] P0.3 `server` struct + state
+- [x] P0.4 `discovery()`
+- [x] P0.5 `jwks()`
+- [x] P0.6 `authorize()` GET
+- [x] P0.7 `token()` POST
+- [x] P0.8 `userinfo()`
+- [x] P0.9 Helpers (signJWT, verifyPKCE, etc.)
+- [x] P0.10 `/healthz`
+- [x] P0.11 `README.md`
+- [x] P0.12 Validate build/vet/run + curl
 
 ### Phase 1 — Multiple synthetic users
 - [ ] P1.1 `internal/user/user.go` + `FromLogin`
@@ -56,7 +56,19 @@
 
 ## Completed
 
-(none yet)
+### Phase 0
+- [x] P0.1 go mod init
+- [x] P0.2 main.go scaffold
+- [x] P0.3 server struct
+- [x] P0.4 discovery()
+- [x] P0.5 jwks()
+- [x] P0.6 authorize() GET
+- [x] P0.7 token() POST
+- [x] P0.8 userinfo()
+- [x] P0.9 helpers
+- [x] P0.10 /healthz
+- [x] P0.11 README.md
+- [x] P0.12 build/vet/test green
 
 ## Notes
 

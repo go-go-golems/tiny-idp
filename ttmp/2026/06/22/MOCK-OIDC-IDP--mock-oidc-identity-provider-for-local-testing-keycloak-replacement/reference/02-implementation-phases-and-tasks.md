@@ -41,18 +41,18 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 
 **Goal:** a normal OIDC client can log in as `alice` and receive an ID token + access token.
 
-- [ ] P0.1 `go mod init github.com/manuel/tinyidp`
-- [ ] P0.2 Scaffold `cmd/tinyidp/main.go`: env parsing (`OIDC_ISSUER`, `OIDC_ADDR`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URIS`), RSA key generation, `ListenAndServe` with `withCORS`.
-- [ ] P0.3 Implement `server` struct with `issuer`, `clientID`, `clientSecret`, `redirectURIs`, `key`, `kid`, `codes`, `tokens`, `sync.Mutex`.
-- [ ] P0.4 Implement `discovery()` returning all required metadata fields.
-- [ ] P0.5 Implement `jwks()` returning the public RSA key as a JWK (`kty/use/kid/alg/n/e`).
-- [ ] P0.6 Implement `authorize()` GET: validate `response_type`, `client_id`, `redirect_uri` allowlist, `scope` includes `openid`; store code; redirect with `code` + `state`.
-- [ ] P0.7 Implement `token()` POST: client auth (Basic + post), code pop + expiry, `client_id`/`redirect_uri` match, PKCE verify, issue access + RS256 ID token; echo `nonce`.
-- [ ] P0.8 Implement `userinfo()` POST/GET: bearer token lookup + expiry, return `sub`/`email`/`email_verified`/`name`.
-- [ ] P0.9 Implement helpers: `signJWT`, `verifyPKCE`, `randomB64`, `b64`, `writeJSON`, `tokenError`, `parseCSV`, `env`, `hasScope`.
-- [ ] P0.10 Add `/healthz` returning `ok`.
-- [ ] P0.11 Write `README.md` with run/config instructions and env var table.
-- [ ] P0.12 Validate: `go build ./...`, `go vet ./...`, `go run .`; `curl` discovery + JWKS; manual authorize→token→userinfo.
+- [x] P0.1 `go mod init github.com/manuel/tinyidp`
+- [x] P0.2 Scaffold `cmd/tinyidp/main.go`: env parsing (`OIDC_ISSUER`, `OIDC_ADDR`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URIS`), RSA key generation, `ListenAndServe` with `withCORS`.
+- [x] P0.3 Implement `server` struct with `issuer`, `clientID`, `clientSecret`, `redirectURIs`, `key`, `kid`, `codes`, `tokens`, `sync.Mutex`.
+- [x] P0.4 Implement `discovery()` returning all required metadata fields.
+- [x] P0.5 Implement `jwks()` returning the public RSA key as a JWK (`kty/use/kid/alg/n/e`).
+- [x] P0.6 Implement `authorize()` GET: validate `response_type`, `client_id`, `redirect_uri` allowlist, `scope` includes `openid`; store code; redirect with `code` + `state`.
+- [x] P0.7 Implement `token()` POST: client auth (Basic + post), code pop + expiry, `client_id`/`redirect_uri` match, PKCE verify, issue access + RS256 ID token; echo `nonce`.
+- [x] P0.8 Implement `userinfo()` POST/GET: bearer token lookup + expiry, return `sub`/`email`/`email_verified`/`name`.
+- [x] P0.9 Implement helpers: `signJWT`, `verifyPKCE`, `randomB64`, `b64`, `writeJSON`, `tokenError`, `parseCSV`, `env`, `hasScope`.
+- [x] P0.10 Add `/healthz` returning `ok`.
+- [x] P0.11 Write `README.md` with run/config instructions and env var table.
+- [x] P0.12 Validate: `go build ./...`, `go vet ./...`, `go run .`; `curl` discovery + JWKS; manual authorize→token→userinfo.
 
 **Exit criteria:** ID token issued for `alice`, signature verifiable against `/jwks`, `iss`/`aud`/`exp`/`nonce` correct.
 
