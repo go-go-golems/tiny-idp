@@ -69,5 +69,21 @@ func main() {
 	cobra.CheckErr(err)
 	rootCmd.AddCommand(serveCobraCmd)
 
+	// `tinyidp print-config` — print the resolved OIDC configuration. Composes
+	// the same reusable oidc section as serve, so it is both a debugging tool
+	// and the second consumer that proves the section is reusable.
+	printConfigCmd, err := cmds.NewPrintConfigCommand()
+	cobra.CheckErr(err)
+	printConfigCobraCmd, err := cli.BuildCobraCommand(printConfigCmd,
+		cli.WithParserConfig(cli.CobraParserConfig{
+			AppName:            "tinyidp",
+			ConfigPlanBuilder:  cmds.ConfigFilePlanBuilder,
+			MiddlewaresFunc:   cmds.ProfileMiddlewaresFunc("tinyidp", cmds.ConfigFilePlanBuilder),
+		}),
+		cli.WithProfileSettingsSection(),
+	)
+	cobra.CheckErr(err)
+	rootCmd.AddCommand(printConfigCobraCmd)
+
 	cobra.CheckErr(rootCmd.Execute())
 }
