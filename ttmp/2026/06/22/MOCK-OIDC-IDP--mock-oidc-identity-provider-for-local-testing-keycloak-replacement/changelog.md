@@ -22,3 +22,12 @@ Step 2: Phase 0 baseline OIDC happy path — main.go + tests, go build/vet/test 
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/cmd/tinyidp/main.go — server
 
+
+## 2026-06-22
+
+Step 3: Phase 1 multiple synthetic users + refactor into internal/server with go:embed login page (commit f9ece67).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/authorize.go — GET+POST login flow + parseAuthorizeRequest (commit f9ece67)
+

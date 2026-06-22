@@ -17,11 +17,11 @@
 - [x] P0.12 Validate build/vet/run + curl
 
 ### Phase 1 — Multiple synthetic users
-- [ ] P1.1 `internal/user/user.go` + `FromLogin`
-- [ ] P1.2 `/authorize` GET+POST with `html/template`
-- [ ] P1.3 `parseAuthorizeRequest` + hidden fields
-- [ ] P1.4 Remove fixed default user
-- [ ] P1.5 Validate distinct stable subs
+- [x] P1.1 `internal/user/user.go` + `FromLogin`
+- [x] P1.2 `/authorize` GET+POST with `html/template`
+- [x] P1.3 `parseAuthorizeRequest` + hidden fields
+- [x] P1.4 Remove fixed default user
+- [x] P1.5 Validate distinct stable subs
 
 ### Phase 2 — Scenario registry
 - [ ] P2.1 `internal/scenario/scenario.go` struct
@@ -55,6 +55,13 @@
 - [ ] P12 Go test helper
 
 ## Completed
+
+### Phase 1
+- [x] P1.1 internal/user/user.go + FromLogin
+- [x] P1.2 /authorize GET+POST with html/template
+- [x] P1.3 parseAuthorizeRequest + hidden fields
+- [x] P1.4 removed fixed default user
+- [x] P1.5 validated distinct stable subs
 
 ### Phase 0
 - [x] P0.1 go mod init

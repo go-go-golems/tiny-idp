@@ -60,11 +60,11 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 
 **Goal:** log in as any username; distinct stable `sub`s.
 
-- [ ] P1.1 Extract `internal/user/user.go` with `User` + `FromLogin(login)` (stable `sub = user-<b64(sha16)>`, email/name derivation, normalization).
-- [ ] P1.2 Convert `/authorize` to GET (render login form) + POST (submit login) using `html/template`.
-- [ ] P1.3 Add `parseAuthorizeRequest` + `authorizeRequest` struct; echo authorize params as hidden fields.
-- [ ] P1.4 Add `hiddenAuthorizeFields`, `normalizeLogin`, `errText`; remove fixed default user from `server`.
-- [ ] P1.5 Validate: log in as `alice` then `bob`; confirm distinct stable `sub`s; confirm arbitrary usernames work.
+- [x] P1.1 Extract `internal/user/user.go` with `User` + `FromLogin(login)` (stable `sub = user-<b64(sha16)>`, email/name derivation, normalization).
+- [x] P1.2 Convert `/authorize` to GET (render login form) + POST (submit login) using `html/template`.
+- [x] P1.3 Add `parseAuthorizeRequest` + `authorizeRequest` struct; echo authorize params as hidden fields.
+- [x] P1.4 Add `hiddenAuthorizeFields`, `normalizeLogin`, `errText`; remove fixed default user from `server`.
+- [x] P1.5 Validate: log in as `alice` then `bob`; confirm distinct stable `sub`s; confirm arbitrary usernames work.
 
 **Exit criteria:** distinct stable subjects per login; login page round-trips authorize params.
 

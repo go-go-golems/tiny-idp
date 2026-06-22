@@ -16,12 +16,18 @@ RelatedFiles:
       Note: Phase 0 implementation (commit d473d513)
     - Path: cmd/tinyidp/main_test.go
       Note: httptest flow + ID token signature verification (commit d473d513)
+    - Path: internal/server/authorize.go
+      Note: Phase 1 authorize flow (commit f9ece67)
+    - Path: internal/user/user.go
+      Note: FromLogin stable sub derivation (commit f9ece67)
 ExternalSources: []
 Summary: 'Chronological implementation diary for the mock OIDC IdP (ticket MOCK-OIDC-IDP): steps, failures, sharp edges, review notes.'
 LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
+
 
 
 
@@ -147,3 +153,70 @@ This step made the mock IdP real: a single Go binary that speaks the OIDC happy 
 - Key: RSA 2048, generated per startup, `kid="dev-key-1"`.
 - Code TTL: 5 minutes. Access token TTL: 1 hour.
 - Test count: 7 (`TestDiscoveryContainsRequiredFields`, `TestAuthorizeRejectsBadClient`, `TestAuthorizeRejectsDisallowedRedirectURI`, `TestHappyPathNoPKCE`, `TestHappyPathWithPKCE`, `TestPKCEVerifierMismatchRejected`, `TestCodeIsOneTimeUse`, `TestUserInfoRejectsBadToken` — 8 total).
+
+## Step 3: Phase 1 + refactor into internal/server (go:embed login page)
+
+This step added multiple synthetic users and, at the user's invitation, refactored the single `main.go` into a multi-file `internal/server` package with the login form embedded via `go:embed`. The result is far easier to extend in Phase 2: each endpoint is one file, the scenario registry can live in its own package, and the login page is a real HTML file instead of a Go string literal. All existing tests still pass after the move, and Phase 1 exit criteria (distinct stable subjects per login) are pinned by tests.
+
+### Prompt Context
+
+**User prompt (verbatim):** "feel free to break the software into smaller files, use go:embed to embed assets, etc..."
+
+**Assistant interpretation:** Refactor freely — split into smaller files, embed the login HTML as an asset rather than inlining it.
+
+**Inferred user intent:** Keep the codebase maintainable as phases grow; don't let a monolithic main.go accumulate.
+
+**Commit (code):** f9ece670b67a6e676ed441cbdfa3a78bb56086fe — "feat(tinyidp): Phase 1 multiple synthetic users + package refactor"
+
+### What I did
+- Created `internal/user` package (`user.go`): `User`, `FromLogin` (stable `sub = user-<b64(sha256("tinyidp:user:"+login)[:16])>`, synthetic email, name = local part), `Normalize`.
+- Refactored `cmd/tinyidp/main.go` (single ~400-line file) into `internal/server` package split by concern:
+  - `server.go` — `Server`, `Options`, `New`, `RegisterRoutes`, `Issuer()`/`ClientID()` accessors.
+  - `discovery.go` + `jwt.go` — discovery, jwks, `signJWT`, `verifyPKCE`, `b64`.
+  - `authorize.go` — `authorizeRequest`, `authorize` (GET+POST), `parseAuthorizeRequest`, `hiddenAuthorizeFields`, `issueCodeAndRedirect`, `errText`.
+  - `token.go`, `userinfo.go` — endpoints.
+  - `helpers.go` — `writeJSON`, `tokenError`, `randomB64`, `hasScope`, `WithCORS`.
+  - `embed.go` + `static/login.html` — login form embedded via `//go:embed`.
+- Slimmed `cmd/tinyidp/main.go` to `main()` + `env`/`parseCSV`.
+- Converted `/authorize` from immediate redirect to GET (render form) + POST (submit login); echo authorize params as hidden fields.
+- Moved tests to `internal/server/server_test.go` (package `server`); added `internal/user/user_test.go`.
+- Updated tests for the new contract (login arg on `fullFlow`, POST-based `authorizePostRedirect`, derived-sub assertions).
+
+### Why
+- One file per endpoint keeps Phase 2's scenario threading localized: `authorize.go`/`token.go`/`userinfo.go` each become the single place a scenario hook lands.
+- `go:embed` makes the login page a real editable HTML file (with future scenario buttons in Phase 3) instead of an escaped Go string; rebuilding is the only step to change the page.
+- Extracting `New(Options)` + `RegisterRoutes` keeps `main()` thin and makes the Phase 12 Go test helper (`Start(t, opts)`) almost trivial later.
+
+### What worked
+- `go build ./...`, `go vet ./...`, `go test ./... -count=1` all green: `internal/server` (1.687s) and `internal/user` (0.003s).
+- Runtime smoke test against the refactored binary: `/healthz` ok; `GET /authorize` renders `<input id="login">`; `POST /authorize` as `alice` returns `302 -> ...callback?code=...&state=zz`.
+- git correctly detected the test file move (`R cmd/tinyidp/main_test.go -> internal/server/server_test.go`).
+
+### What didn't work
+- An early multi-edit on the test file failed (`oldText` whitespace mismatch) because tabs vs. the edit's content diverged. Recovered by rewriting the whole test file with `write` instead of patching. Lesson: for large structural test changes, a clean rewrite is faster and less error-prone than many small edits.
+
+### What I learned
+- `//go:embed static/login.html` requires the file to live under the package dir; `internal/server/static/login.html` is the right home. The embedded string is parsed once into `template.Must` at package init — safe for concurrent `Execute`.
+- Tests in `package server` (internal) can touch unexported fields directly, so `newTestServer` can build a `*Server` with a known RSA key without exporting every field. `New()` is only needed by `main()` and the future public helper.
+
+### What was tricky to build
+- The login form must echo *all* authorize params as hidden fields (including `code_challenge`, `nonce`, `state`), otherwise the POST loses context and the flow breaks. `hiddenAuthorizeFields` is the single source of truth for which params survive the round-trip — adding a new param later means updating both it and `parseAuthorizeRequest`.
+- `issuer` is set to the test server's URL *after* constructing the `*Server`, because `httptest.NewServer` picks a random port. This is why `newTestServer` mutates `s.issuer` post-construction rather than passing it in.
+
+### What warrants a second pair of eyes
+- `parseAuthorizeRequest` is called on both GET and POST. Confirm the POST path re-validates everything (it does) — a future refactor that only validates on GET would let a forged POST bypass client/redirect checks.
+- The hidden-field round-trip trusts the browser to echo params back. For a test tool this is fine, but confirm no production assumption leaks in (e.g., re-validating `redirect_uri` against the allowlist on POST — done).
+
+### What should be done in the future
+- Phase 2 will replace the loose `user.FromLogin(login)` call in `authorize` POST with `registry.Lookup(login)`, returning a `*Scenario` that carries both the user and any failure hooks. The `issueCodeAndRedirect` signature will gain a scenario param.
+- Consider a `Server.SetIssuer(string)` test helper (or a `NewWithKey` constructor) so tests don't poke `s.issuer` directly; acceptable as-is only because tests are in-package.
+
+### Code review instructions
+- Start at `internal/server/authorize.go`: read `authorize` (GET/POST switch), then `parseAuthorizeRequest` (validation chokepoint), then `issueCodeAndRedirect` (code storage + redirect).
+- Then `internal/user/user.go`: `FromLogin` (subject derivation) + `Normalize`.
+- Validate: `go test ./... -count=1 -v -run 'TestDistinct|TestSubIsStable|TestArbitraryEmail|TestAuthorizePOSTRequiresLogin'`.
+
+### Technical details
+- Package layout now: `cmd/tinyidp/main.go`; `internal/server/{server,embed,discovery,jwt,authorize,token,userinfo,helpers}.go` + `static/login.html`; `internal/user/user.go`.
+- Test counts: server (12 tests), user (5 tests).
+- Login page embedded size: ~2 KB.
