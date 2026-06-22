@@ -85,10 +85,10 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 
 **Goal:** the login page is self-documenting.
 
-- [ ] P3.1 Group `registry.All()` into categories (normal / auth-failure / token-failure / id-token-failure / userinfo-failure).
-- [ ] P3.2 Render grouped scenario buttons that fill+submit the `login` field.
-- [ ] P3.3 Keep manual login input for arbitrary usernames.
-- [ ] P3.4 Validate: open `/authorize?...` in a browser; every listed scenario reachable in one click and matching the registry.
+- [x] P3.1 Group `registry.All()` into categories (normal / auth-failure / token-failure / id-token-failure / userinfo-failure).
+- [x] P3.2 Render grouped scenario buttons that fill+submit the `login` field.
+- [x] P3.3 Keep manual login input for arbitrary usernames.
+- [x] P3.4 Validate: open `/authorize?...` in a browser; every listed scenario reachable in one click and matching the registry.
 
 **Exit criteria:** login page lists every supported scenario; one-click login works.
 

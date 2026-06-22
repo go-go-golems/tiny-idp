@@ -494,3 +494,36 @@ func TestScenarioHookIsThreadedThroughFlow(t *testing.T) {
 		t.Fatalf("sub = %v, want dave's sub", claims["sub"])
 	}
 }
+
+// --- Phase 3: self-documenting login page ---
+
+// TestLoginPageListsBuiltinScenarios verifies the login page renders the
+// scenario registry as quick-pick buttons, so the page is always in sync
+// with what Lookup accepts.
+func TestLoginPageListsBuiltinScenarios(t *testing.T) {
+	_, ts := newTestServer(t)
+	q := url.Values{}
+	q.Set("response_type", "code")
+	q.Set("client_id", "dev-client")
+	q.Set("redirect_uri", "https://app.test/cb")
+	q.Set("scope", "openid")
+	resp, err := ts.Client().Get(ts.URL + "/authorize?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	page := string(body)
+	if !strings.Contains(page, "Quick picks") {
+		t.Fatal("login page missing 'Quick picks' section")
+	}
+	if !strings.Contains(page, "Normal users") {
+		t.Fatal("login page missing 'Normal users' group")
+	}
+	// Every registered scenario with a Category should appear as a button.
+	for _, name := range []string{"alice", "bob"} {
+		if !strings.Contains(page, `data-login="`+name+`"`) {
+			t.Fatalf("login page missing quick-pick button for %q", name)
+		}
+	}
+}

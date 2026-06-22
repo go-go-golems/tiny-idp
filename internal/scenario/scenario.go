@@ -22,6 +22,7 @@ import (
 type Scenario struct {
 	Name        string
 	Description string
+	Category    string // used by the login page to group buttons (Phase 3)
 	User        user.User
 
 	// AuthError, when non-empty, is the OAuth error code returned at the
@@ -107,12 +108,44 @@ func builtinScenarios() []Scenario {
 		{
 			Name:        "alice",
 			Description: "normal user",
+			Category:    "Normal users",
 			User:        user.FromLogin("alice"),
 		},
 		{
 			Name:        "bob",
 			Description: "normal user",
+			Category:    "Normal users",
 			User:        user.FromLogin("bob"),
 		},
 	}
+}
+
+// CategoryGroup is a labeled set of scenarios, used by the login page to
+// render grouped quick-pick buttons.
+type CategoryGroup struct {
+	Label string
+	Items []Scenario
+}
+
+// Grouped returns all registered scenarios bucketed by Category, preserving
+// the first-seen order of categories. The login page renders one section per
+// group. Scenarios with an empty Category are skipped (they are not
+// quick-pickable; the fallback covers arbitrary logins via the text input).
+func (r *Registry) Grouped() []CategoryGroup {
+	var order []string
+	buckets := map[string][]Scenario{}
+	for _, sc := range r.m {
+		if sc.Category == "" {
+			continue
+		}
+		if _, seen := buckets[sc.Category]; !seen {
+			order = append(order, sc.Category)
+		}
+		buckets[sc.Category] = append(buckets[sc.Category], sc)
+	}
+	out := make([]CategoryGroup, 0, len(order))
+	for _, label := range order {
+		out = append(out, CategoryGroup{Label: label, Items: buckets[label]})
+	}
+	return out
 }

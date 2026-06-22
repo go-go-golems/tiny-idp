@@ -20,6 +20,8 @@ RelatedFiles:
       Note: Phase 2 scenario registry (commit 6454cd3)
     - Path: internal/server/authorize.go
       Note: Phase 1 authorize flow (commit f9ece67)
+    - Path: internal/server/static/login.html
+      Note: embedded login form with quick-pick buttons (Phase 3)
     - Path: internal/server/token.go
       Note: scenario TokenError + MutateClaims threading (commit 6454cd3)
     - Path: internal/user/user.go
@@ -30,6 +32,7 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
 
 
 
@@ -289,3 +292,60 @@ This step replaced ad-hoc, login-string switches with a `Scenario` data model an
 - Packages: 4 (`cmd/tinyidp`, `internal/server`, `internal/scenario`, `internal/user`).
 - Test counts: scenario (5), server (13), user (5).
 - Registry preloads 2 normal scenarios (`alice`, `bob`); fallback covers all other logins.
+
+## Step 5: Phase 3 — self-documenting login page
+
+This step wired the scenario registry into the login page so the page is self-documenting: it lists every registered scenario as a one-click quick-pick button, grouped by category. The page and the registry can no longer drift, because the page is rendered from `registry.Grouped()`. A developer opening `/authorize` now sees `alice`, `bob` (and, after Phase 4, every failure mode) as buttons rather than having to memorize magic usernames.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement Phase 3 — make the login page list selectable scenarios grouped by category.
+
+**Inferred user intent:** Reduce friction and memorization; make the mock IdP discoverable for new users.
+
+**Commit (code):** (this step) — "feat(tinyidp): Phase 3 self-documenting login page"
+
+### What I did
+- Added `Category` field to `scenario.Scenario`; categorized `alice`/`bob` as "Normal users".
+- Added `scenario.Registry.Grouped()` returning `[]CategoryGroup` (first-seen category order, skips uncategorized).
+- Added `Server.scenarioGroups()` bridging `scenario.CategoryGroup` → the template's `scenarioGroup`/`scenarioItem` shape.
+- Wired `Scenarios: s.scenarioGroups()` into the GET authorize handler's template data (previously nil).
+- The embedded `static/login.html` already had the `{{range .Scenarios}}` markup with `data-login` buttons and a small JS handler to fill the login input on click.
+- Test `TestLoginPageListsBuiltinScenarios` asserts the page renders "Quick picks", "Normal users", and a `data-login="alice"`/`"bob"` button.
+
+### Why
+- Rendering the page from `registry.Grouped()` is a single source of truth: adding a scenario in Phase 4 automatically surfaces it on the page. No separate "update the docs" step.
+- The `Category` field (rather than name-prefix parsing) keeps grouping explicit and stable.
+
+### What worked
+- `go build/vet/test` green; live smoke test (port 5561, after killing stale processes) shows "Quick picks" + `alice`/`bob` buttons.
+- `TestLoginPageListsBuiltinScenarios` passes in-package.
+
+### What didn't work
+- **Stale-process trap:** earlier `go run` smoke tests left `tinyidp` processes bound to :5556, so later `curl` calls hit a pre-Phase-3 binary and appeared to show the page broken. The code was correct all along (the in-package test passed). Fix: `pkill -9 -f 'exe/tinyidp'` and use unique ports (`OIDC_ADDR=127.0.0.1:55XX`) per smoke test. Lesson: always confirm no leftover listener before trusting a curl result, and prefer `httptest`-based assertions over live-port curls.
+- A first test draft had a stray `for _, sc := range newTestServer(t).0` line (autocomplete noise) that I removed before committing.
+
+### What I learned
+- `go:embed` + `html/template` renders server-side; the page content is purely a function of the template + the `loginPageData` model, so testing the rendered HTML string is a valid, fast assertion.
+- `pkill -f tinyidp` is dangerous because it can match the agent's own subprocess tree; matching `exe/tinyidp` is precise.
+
+### What was tricky to build
+- Distinguishing "the code is wrong" from "the curl hit a stale process". The in-package `httptest` test was the decisive signal — it rendered scenarios correctly, which proved the live binary would too once the port was free.
+- Template truthiness: `{{if .Scenarios}}` is falsy for a nil slice but truthy for a non-nil (even empty) slice. `Grouped()` returns a non-nil slice, so the section renders even with zero scenarios (correct: the header just has no items).
+
+### What warrants a second pair of eyes
+- Confirm `Grouped()`'s first-seen ordering is deterministic enough for the page. It iterates a Go map, so category order within `Grouped()` is *not* stable across runs (Go randomizes map iteration). The *categories* are stable (alice/bob both "Normal users" → one group), but if Phase 4 adds many categories, their on-page order may shuffle per restart. Acceptable for a test tool; flag for review.
+
+### What should be done in the future
+- If category order matters (e.g. Phase 4 wants "Normal users" first, then "ID token failures"), either sort `Grouped()` by a defined category priority or store categories in an ordered slice rather than deriving from map iteration.
+- Add a "show advanced" toggle once scenario count grows past ~15 to keep the page scannable.
+
+### Code review instructions
+- Start at `internal/scenario/scenario.go`: `Grouped()`; then `internal/server/embed.go`: `scenarioGroups()`; then `authorize.go` GET branch.
+- Validate: `go test ./internal/server/ -run TestLoginPageListsBuiltinScenarios -v`; then `go run ./cmd/tinyidp` and open `/authorize?...` in a browser.
+
+### Technical details
+- Login page now ~2.6 KB rendered; 2 quick-pick buttons (alice, bob).
+- Category field added without breaking existing scenario registrations (zero value = uncategorized, skipped by Grouped).

@@ -40,3 +40,12 @@ Step 4: Phase 2 scenario registry — *Scenario threaded through handlers, one-f
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go — Scenario + Registry (commit 6454cd3)
 
+
+## 2026-06-22
+
+Step 5: Phase 3 self-documenting login page — scenarios rendered from registry.Grouped() (one-click buttons).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/embed.go — scenarioGroups bridges registry to template (Phase 3)
+

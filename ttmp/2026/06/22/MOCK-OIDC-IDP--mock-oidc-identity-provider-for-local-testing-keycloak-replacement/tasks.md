@@ -32,10 +32,10 @@
 - [x] P2.6 Validate one-file scenario add
 
 ### Phase 3 — Login page with selectable scenarios
-- [ ] P3.1 Group scenarios by category
-- [ ] P3.2 Render grouped buttons
-- [ ] P3.3 Keep manual input
-- [ ] P3.4 Validate one-click scenarios
+- [x] P3.1 Group scenarios by category
+- [x] P3.2 Render grouped buttons
+- [x] P3.3 Keep manual input
+- [x] P3.4 Validate one-click scenarios
 
 ### Phase 4 — High-value failure scenarios
 - [ ] P4.1 Auth-error scenarios
@@ -55,6 +55,12 @@
 - [ ] P12 Go test helper
 
 ## Completed
+
+### Phase 3
+- [x] P3.1 group scenarios by category
+- [x] P3.2 render grouped buttons
+- [x] P3.3 keep manual input
+- [x] P3.4 validated one-click scenarios
 
 ### Phase 2
 - [x] P2.1 scenario.go struct

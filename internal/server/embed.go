@@ -26,7 +26,8 @@ type hiddenField struct {
 }
 
 // scenarioGroup is a labeled collection of selectable scenarios on the login
-// page. Empty until Phase 3 wires the scenario registry into the page.
+// page. It mirrors scenario.CategoryGroup but uses the template-facing
+// scenarioItem shape.
 type scenarioGroup struct {
 	Label string
 	Items []scenarioItem
@@ -41,4 +42,20 @@ type scenarioItem struct {
 type loginPageData struct {
 	Hidden    []hiddenField
 	Scenarios []scenarioGroup
+}
+
+// scenarioGroups converts the scenario registry's category groups into the
+// template-facing shape. It is the bridge between internal/scenario and the
+// embedded login template.
+func (s *Server) scenarioGroups() []scenarioGroup {
+	in := s.registry.Grouped()
+	out := make([]scenarioGroup, 0, len(in))
+	for _, g := range in {
+		items := make([]scenarioItem, 0, len(g.Items))
+		for _, sc := range g.Items {
+			items = append(items, scenarioItem{Name: sc.Name, Description: sc.Description})
+		}
+		out = append(out, scenarioGroup{Label: g.Label, Items: items})
+	}
+	return out
 }

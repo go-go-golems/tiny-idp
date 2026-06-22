@@ -41,8 +41,8 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_ = loginPage.Execute(w, loginPageData{
-			Hidden: hiddenAuthorizeFields(ar),
-			// Scenarios left nil until Phase 3 wires the registry in.
+			Hidden:    hiddenAuthorizeFields(ar),
+			Scenarios: s.scenarioGroups(),
 		})
 
 	case http.MethodPost:
