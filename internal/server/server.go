@@ -31,10 +31,11 @@ type Server struct {
 
 	registry *scenario.Registry
 
-	mu       sync.Mutex
-	codes    map[string]authCode
-	tokens   map[string]accessToken
-	sessions map[string]*session
+	mu            sync.Mutex
+	codes         map[string]authCode
+	tokens        map[string]accessToken
+	sessions      map[string]*session
+	refreshTokens map[string]refreshToken
 }
 
 // authCode is a one-time authorization code awaiting exchange at /token.
@@ -58,6 +59,17 @@ type accessToken struct {
 	Scenario *scenario.Scenario
 }
 
+// refreshToken is an opaque token mapped to a user + expiry, used to obtain
+// new access tokens without re-authentication. Rotation deletes the
+// presented refresh token and issues a fresh one.
+type refreshToken struct {
+	User     user.User
+	Scenario *scenario.Scenario
+	ClientID string
+	Scope    string
+	Expires  time.Time
+}
+
 // Options configures a Server at construction time.
 type Options struct {
 	Issuer   string
@@ -77,14 +89,15 @@ func New(opts Options) (*Server, error) {
 		clients = client.NewRegistry()
 	}
 	return &Server{
-		issuer:   opts.Issuer,
-		clients:  clients,
-		key:      key,
-		kid:      "dev-key-1",
-		registry: scenario.New(),
-		codes:    map[string]authCode{},
-		tokens:   map[string]accessToken{},
-		sessions: map[string]*session{},
+		issuer:        opts.Issuer,
+		clients:       clients,
+		key:           key,
+		kid:           "dev-key-1",
+		registry:      scenario.New(),
+		codes:         map[string]authCode{},
+		tokens:        map[string]accessToken{},
+		sessions:      map[string]*session{},
+		refreshTokens: map[string]refreshToken{},
 	}, nil
 }
 

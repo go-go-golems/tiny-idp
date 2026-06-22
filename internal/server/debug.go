@@ -167,10 +167,11 @@ func (s *Server) debugReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	n := len(s.sessions) + len(s.codes) + len(s.tokens)
+	n := len(s.sessions) + len(s.codes) + len(s.tokens) + len(s.refreshTokens)
 	s.sessions = map[string]*session{}
 	s.codes = map[string]authCode{}
 	s.tokens = map[string]accessToken{}
+	s.refreshTokens = map[string]refreshToken{}
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"reset": true,

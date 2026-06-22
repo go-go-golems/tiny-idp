@@ -3,15 +3,24 @@ package server
 import (
 	"net/http"
 	"time"
+
+	"github.com/manuel/tinyidp/internal/scenario"
+	"github.com/manuel/tinyidp/internal/user"
 )
 
-// token implements the token endpoint: exchange an authorization code for an
-// ID token + access token.
+// refreshTokenTTL is how long a refresh token stays valid. Longer than the
+// access token (1h) so an RP can renew across a session without re-login.
+const refreshTokenTTL = 24 * time.Hour
+
+// token implements the token endpoint. It supports two grant types:
 //
-// Client auth supports both client_secret_basic (HTTP Basic) and
-// client_secret_post. Public clients (empty client secret) skip the secret
-// check. The auth code is popped atomically under the mutex because
-// authorization codes are one-time use.
+//   - authorization_code: exchange a one-time code for ID + access tokens
+//     (and a refresh token when the scope includes offline_access).
+//   - refresh_token: exchange a refresh token for a new access + refresh
+//     token pair (rotation). Reuse of a rotated refresh token is rejected.
+//
+// Client auth (client_secret_basic / client_secret_post) is shared across
+// both grants.
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		tokenError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
@@ -19,10 +28,6 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := r.ParseForm(); err != nil {
 		tokenError(w, http.StatusBadRequest, "invalid_request", "invalid form")
-		return
-	}
-	if r.Form.Get("grant_type") != "authorization_code" {
-		tokenError(w, http.StatusBadRequest, "unsupported_grant_type", "only authorization_code is supported")
 		return
 	}
 
@@ -35,10 +40,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_id")
 		return
 	}
-
-	// Confidential clients (non-empty secret) must present it; public clients
-	// (empty secret) skip the check. This matches the client_secret_basic and
-	// client_secret_post methods advertised in discovery.
+	// Confidential clients must present their secret; public clients skip.
 	if c.Secret != "" {
 		secret := r.Form.Get("client_secret")
 		if hasBasic {
@@ -50,9 +52,20 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The client_id on the code (set at /authorize) must match the client
-	// authenticating at /token. A code issued to one client cannot be
-	// redeemed by another.
+	switch r.Form.Get("grant_type") {
+	case "authorization_code":
+		s.tokenAuthorizationCode(w, r, clientID, c)
+	case "refresh_token":
+		s.tokenRefresh(w, r, clientID, c)
+	default:
+		tokenError(w, http.StatusBadRequest, "unsupported_grant_type", "only authorization_code and refresh_token are supported")
+	}
+}
+
+// tokenAuthorizationCode exchanges a one-time authorization code for ID +
+// access tokens. If the scope includes offline_access, a refresh token is
+// also issued.
+func (s *Server) tokenAuthorizationCode(w http.ResponseWriter, r *http.Request, clientID string, _ interface{}) {
 	code := r.Form.Get("code")
 
 	// Pop the code atomically: authorization codes are one-time use, so the
@@ -77,7 +90,6 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	access := randomB64(32)
 
 	// Token-error scenarios simulate failures at the token endpoint.
 	switch ac.Scenario.TokenError {
@@ -91,6 +103,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(10 * time.Second)
 	}
 
+	access := randomB64(32)
 	s.mu.Lock()
 	s.tokens[access] = accessToken{
 		User:     ac.User,
@@ -132,14 +145,87 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
-
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"access_token": access,
 		"token_type":   "Bearer",
 		"expires_in":   3600,
 		"scope":        ac.Scope,
 		"id_token":     idToken,
+	}
+
+	// Phase 9: issue a refresh token when the RP requested offline_access.
+	if hasScope(ac.Scope, "offline_access") {
+		rt := s.issueRefreshToken(ac.User, ac.Scenario, ac.ClientID, ac.Scope, now)
+		resp["refresh_token"] = rt
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// tokenRefresh exchanges a refresh token for a new access + refresh token
+// pair. Rotation: the old refresh token is deleted, and a new one is issued.
+// Reuse of a rotated (deleted) token fails with invalid_grant, which is the
+// standard OAuth refresh-token-rotation reuse signal.
+func (s *Server) tokenRefresh(w http.ResponseWriter, r *http.Request, clientID string, _ interface{}) {
+	rt := r.Form.Get("refresh_token")
+
+	s.mu.Lock()
+	rtok, ok := s.refreshTokens[rt]
+	// Rotation: delete the presented token so it cannot be reused. If it was
+	// already rotated (absent), this is a reuse attempt.
+	delete(s.refreshTokens, rt)
+	s.mu.Unlock()
+
+	if !ok {
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "unknown refresh token (rotated, revoked, or never issued)")
+		return
+	}
+	if time.Now().After(rtok.Expires) {
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "expired refresh token")
+		return
+	}
+	if rtok.ClientID != clientID {
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "client_id mismatch")
+		return
+	}
+
+	now := time.Now()
+	access := randomB64(32)
+	s.mu.Lock()
+	s.tokens[access] = accessToken{
+		User:     rtok.User,
+		Expires:  now.Add(time.Hour),
+		Scenario: rtok.Scenario,
+	}
+	s.mu.Unlock()
+
+	// Issue a rotated refresh token.
+	newRT := s.issueRefreshToken(rtok.User, rtok.Scenario, rtok.ClientID, rtok.Scope, now)
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token":  access,
+		"token_type":    "Bearer",
+		"expires_in":    3600,
+		"scope":         rtok.Scope,
+		"refresh_token": newRT,
 	})
+}
+
+// issueRefreshToken stores a new refresh token and returns its opaque value.
+func (s *Server) issueRefreshToken(u user.User, sc *scenario.Scenario, clientID, scope string, now time.Time) string {
+	rt := randomB64(32)
+	s.mu.Lock()
+	s.refreshTokens[rt] = refreshToken{
+		User:     u,
+		Scenario: sc,
+		ClientID: clientID,
+		Scope:    scope,
+		Expires:  now.Add(refreshTokenTTL),
+	}
+	s.mu.Unlock()
+	return rt
 }
