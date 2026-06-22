@@ -94,3 +94,12 @@ Step 10: Phase 5 multiple clients — client registry (dev-client/public-spa/web
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/client/client.go — Client + Registry + builtins (commit 5fed666)
 
+
+## 2026-06-22
+
+Step 11: Merge configured client into builtin (resolve Step 10 open question) — RequirePKCE/Secret/AllowedScopes preserved, redirect URIs unioned. 71 tests green (commit c9101d8).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/client/client.go — Merge(base
+

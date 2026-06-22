@@ -117,6 +117,26 @@ client_secret: (empty)
 scopes:        openid profile email
 ```
 
+## Clients
+
+The provider ships with three built-in clients, so a single running instance can test public (SPA), confidential (web app), and permissive (quick-test) relying parties:
+
+| Client ID | Type | PKCE | Secret | Default redirect URI |
+|-----------|------|------|--------|---------------------|
+| `dev-client` | public | optional | (none) | `http://localhost:3000/callback`, `http://127.0.0.1:3000/callback` |
+| `public-spa` | public | **required** | (none) | `http://localhost:8080/callback` |
+| `web-app` | confidential | optional | `dev-secret` | `http://localhost:8080/callback` |
+
+### Configuring a client (merge behavior)
+
+The OIDC section's `--client-id` / `--client-secret` / `--redirect-uris` register a single configured client. When the configured `--client-id` **matches a builtin**, the configuration is **merged** into the builtin rather than replacing it:
+
+- `RequirePKCE`, `Secret` (when not overridden), and `AllowedScopes` are preserved from the builtin.
+- The configured `--redirect-uris` are **added** (deduplicated) to the builtin's.
+- A non-empty `--client-secret` overrides the builtin's.
+
+So `--client-id public-spa --redirect-uris http://localhost:9090/cb` yields a `public-spa` client that still requires PKCE but now also accepts `http://localhost:9090/cb`. A configured `--client-id` that does not match a builtin registers a new permissive client.
+
 ## Endpoints
 
 | Endpoint | Purpose |

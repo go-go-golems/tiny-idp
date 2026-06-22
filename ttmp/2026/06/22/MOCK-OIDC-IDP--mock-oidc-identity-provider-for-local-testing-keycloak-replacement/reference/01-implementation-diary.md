@@ -21,7 +21,9 @@ RelatedFiles:
     - Path: internal/cmds/print_config.go
       Note: second consumer of reusable oidc section (commit 0257f23)
     - Path: internal/cmds/serve.go
-      Note: Glazed BareCommand composing the oidc section (commit 871eae0)
+      Note: |-
+        Glazed BareCommand composing the oidc section (commit 871eae0)
+        buildClientRegistry Lookup-or-merge (commit c9101d8)
     - Path: internal/scenario/scenario.go
       Note: Phase 2 scenario registry (commit 6454cd3)
     - Path: internal/server/authorize.go
@@ -44,6 +46,7 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
 
 
 
@@ -682,3 +685,56 @@ This step replaced the single hardcoded client with a client registry, so a sing
 - Built-in clients: `dev-client` (public, permissive), `public-spa` (public, PKCE required, redirect `http://localhost:8080/callback`), `web-app` (confidential, secret `dev-secret`).
 - Test count: 60 (client 7, cmds 7, server 31, scenario 5, user 5, oidc 4, +1).
 - No new dependencies; client package is stdlib-only.
+
+## Step 11: Merge configured client into builtin (resolve open question)
+
+This step resolves the open question from Step 10: when the OIDC-section `--client-id` matches a builtin, the configured client is now **merged** into the builtin instead of replacing it. The builtin's `RequirePKCE`, `Secret`, and `AllowedScopes` are preserved; the configured redirect URIs are unioned (deduplicated) onto the builtin's; a non-empty configured `--client-secret` overrides the builtin's. A configured ID that does not match any builtin still registers a new permissive client (the Phase 0-4 behavior for custom IDs).
+
+### Prompt Context
+
+**User prompt (verbatim):** "I want merging."
+
+**Assistant interpretation:** When the configured client_id matches a builtin, merge rather than replace — keep builtin properties (RequirePKCE, Secret) and add the configured redirect URIs.
+
+**Inferred user intent:** Configure `--client-id public-spa --redirect-uris X` and get a public-spa client that still requires PKCE but also accepts X, rather than a permissive client that lost the PKCE requirement.
+
+**Commit (code):** c9101d8 — "feat(tinyidp): merge configured client into builtin"
+
+### What I did
+- Added `client.Merge(base, override Client) Client` + `unionStrings` helper to `internal/client/client.go`. Merge starts from `base`, takes `override.ID`, overrides `Secret` only when non-empty, unions `RedirectURIs` (deduplicated, base's order first), and keeps `RequirePKCE`/`AllowedScopes` from base (no override fields exist in the OIDC section).
+- Updated `buildClientRegistry` in `internal/cmds/serve.go` to `Lookup` the configured ID in the builtin registry; if present, `Register(Merge(base, configured))`; else `Register(configured)` as a new permissive client.
+- Tests: 5 in `internal/client/merge_test.go` (preserve properties, dedup, non-empty secret overrides, empty secret keeps builtin, override ID wins) + 3 in `internal/cmds/serve_test.go` (merge builtin across public-spa/web-app, register new permissive, default keeps builtins).
+
+### Why
+- The replace behavior was surprising and dangerous: `--client-id public-spa --redirect-uris X` silently produced a `public-spa` client with `RequirePKCE=false`, which is the opposite of what the builtin name promises. A test relying on "public-spa requires PKCE" would pass with the builtin and fail (or worse, silently pass insecurely) once a developer added a custom redirect URI.
+- Merge makes builtin properties sticky: the builtin defines the client's *class* (public/confidential, PKCE required or not), and configuration only extends the client's *allowlists* (redirect URIs) or overrides the secret. This matches how a developer thinks about "I want to use the public-spa client with my callback URL".
+
+### What worked
+- 71 tests green (was 60). Live smoke: configuring `public-spa` with a custom redirect URI via env keeps `RequirePKCE` (both the custom URI `http://localhost:9090/cb` and the builtin `http://localhost:8080/callback` return 400 without PKCE), and an unknown redirect URI is still rejected. The merge is observable end-to-end.
+- `unionStrings` dedup matters for the default case: `dev-client`'s builtin redirect URIs exactly equal the OIDC section's defaults, so merge + dedup produces the same set (no spurious duplicates).
+
+### What didn't work
+- Nothing failed. The `Merge` design (non-empty overrides Secret; union RedirectURIs; keep RequirePKCE/AllowedScopes) was unambiguous because the OIDC section has no fields for RequirePKCE or AllowedScopes, so there was nothing to "merge" for those — they're always taken from base.
+
+### What I learned
+- A clean merge rule is: **configured non-empty scalar values override; list values union; fields absent from the config schema are taken from the base**. This generalizes — if a future config field for `RequirePKCE` is added, it would follow the same "non-empty overrides" rule.
+- The merge happens in `buildClientRegistry` (the serve command's wiring), not in `Registry.Register`. `Register` stays a plain replace, which is the right primitive for callers that want full control (e.g. tests, a future config-file clients section that defines a client from scratch). Merge is a higher-level policy layered on top.
+
+### What was tricky to build
+- Deciding whether `RedirectURIs` should union or replace. Union is the literal meaning of "merge" and is more useful (the user's callback works without losing the builtin defaults), but it is a behavior change from Phase 5 (where `--redirect-uris` replaced the builtin's set for `dev-client`). For `dev-client` the change is invisible in the default case (dedup), and for an explicit `--client-id dev-client --redirect-uris X` the user now gets both X and the builtin defaults — which is the intuitive "extend" behavior. Chose union; documented in the function comment.
+
+### What warrants a second pair of eyes
+- The union-of-redirect-URIs behavior for `dev-client`: a user who previously relied on `--redirect-uris X` *replacing* the builtin defaults (so only X was accepted) now gets X plus the builtin defaults. This is a minor backward-incompatible change within the Phase 5 release cycle. Confirm this is acceptable — I believe it is, because the merge is the requested behavior and the builtin defaults are harmless (they're localhost callbacks).
+- `Merge` takes `override.ID`. In our usage `base.ID == override.ID` (we looked up base by override.ID), so this is safe. A general-purpose caller passing mismatched IDs would get `override.ID` on a `base`-shaped client, which could be confusing. Documented in the function comment; not a concern for the single caller.
+
+### What should be done in the future
+- If a config-file `clients:` section is added (mentioned in Step 10's future work), decide whether clients defined there merge into builtins (by ID match) or always replace. The current `buildClientRegistry` policy is specific to the OIDC-section single client; a multi-client config section would need its own policy, likely "replace unless an explicit merge flag is set".
+- Consider exposing `RequirePKCE` and `AllowedScopes` as OIDC-section fields if users want to configure them per-client without code. Currently they're only settable via builtins.
+
+### Code review instructions
+- Start at `internal/client/client.go`: `Merge` + `unionStrings`. Then `internal/cmds/serve.go`: `buildClientRegistry` (the Lookup-or-merge).
+- Validate: `go test ./internal/client/ ./internal/cmds/ -count=1 -run 'Merge|BuildClient' -v`.
+
+### Technical details
+- Merge rule: `out = base; out.ID = override.ID; if override.Secret != "" { out.Secret = override.Secret }; out.RedirectURIs = union(base, override); RequirePKCE/AllowedScopes from base`.
+- Test count: 71 (client 12, cmds 10, server 31, scenario 5, user 5, oidc 4, +4).
