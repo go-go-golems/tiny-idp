@@ -45,6 +45,22 @@ type Scenario struct {
 	// MutateClaims, when non-nil, mutates the ID token claims after they are
 	// built (e.g. set exp in the past for id-expired, wrong aud, etc.).
 	MutateClaims func(claims map[string]any, now time.Time)
+
+	// ExtraClaims are merged into the ID token claims (and the userinfo
+	// response) after the base claims are built and before MutateClaims runs.
+	// This is the declarative way to emit claim variants (groups, roles,
+	// tenant, preferred_username, locale) without writing a MutateClaims
+	// closure for each. MutateClaims (if also set) runs after ExtraClaims and
+	// can override them.
+	ExtraClaims map[string]any
+
+	// OmitClaims is a list of claim names to delete from both the ID token
+	// and the userinfo response after ExtraClaims are merged. This is the
+	// declarative way to model "this user has no X claim" as a positive
+	// scenario (distinct from the Phase 4 id-* MutateClaims mutators, which
+	// affect the ID token only and are meant to test ID-token validation).
+	// MutateClaims runs after OmitClaims and can re-add a claim if needed.
+	OmitClaims []string
 }
 
 // Registry maps a normalized login to a Scenario. The zero value is not
@@ -117,6 +133,100 @@ func builtinScenarios() []Scenario {
 			Description: "normal user",
 			Category:    "Normal users",
 			User:        user.FromLogin("bob"),
+		},
+
+		// --- Phase 7: claim variants (groups, roles, tenant, etc.) ---
+		// These emit extra claims so relying parties can test role/tenant
+		// mapping and weird claim shapes. ExtraClaims are merged into both the
+		// ID token and the userinfo response, so the two agree under normal
+		// scenarios.
+		{
+			Name:        "admin",
+			Description: "user with groups:[admin, engineering] and roles:[owner]",
+			Category:    "Claim variants",
+			User:        user.FromLogin("admin"),
+			ExtraClaims: map[string]any{
+				"groups":              []string{"admin", "engineering"},
+				"roles":               []string{"owner"},
+				"preferred_username": "admin",
+			},
+		},
+		{
+			Name:        "viewer",
+			Description: "user with groups:[viewer] and roles:[reader]",
+			Category:    "Claim variants",
+			User:        user.FromLogin("viewer"),
+			ExtraClaims: map[string]any{
+				"groups":              []string{"viewer"},
+				"roles":               []string{"reader"},
+				"preferred_username": "viewer",
+			},
+		},
+		{
+			Name:        "no-groups",
+			Description: "user with no groups or roles claims",
+			Category:    "Claim variants",
+			User:        user.FromLogin("no-groups"),
+			// No groups/roles claims at all — tests RPs that require them.
+		},
+		{
+			Name:        "many-groups",
+			Description: "user with many groups (stress claim parsing)",
+			Category:    "Claim variants",
+			User:        user.FromLogin("many-groups"),
+			ExtraClaims: map[string]any{
+				"groups": []string{"g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8"},
+			},
+		},
+		{
+			Name:        "tenant-a-admin",
+			Description: "user in tenant-a with admin group",
+			Category:    "Claim variants",
+			User:        user.FromLogin("tenant-a-admin"),
+			ExtraClaims: map[string]any{
+				"groups":  []string{"admin"},
+				"tenant": "tenant-a",
+			},
+		},
+		{
+			Name:        "tenant-b-viewer",
+			Description: "user in tenant-b with viewer group",
+			Category:    "Claim variants",
+			User:        user.FromLogin("tenant-b-viewer"),
+			ExtraClaims: map[string]any{
+				"groups":  []string{"viewer"},
+				"tenant": "tenant-b",
+			},
+		},
+		{
+			Name:        "unicode-name",
+			Description: "user with a unicode display name and locale",
+			Category:    "Claim variants",
+			User:        user.FromLogin("unicode-name"),
+			ExtraClaims: map[string]any{
+				"name":  "Müller Frédéric",
+				"locale": "de-DE",
+			},
+		},
+		{
+			Name:        "no-email",
+			Description: "user with no email/email_verified claims (positive scenario)",
+			Category:    "Claim variants",
+			User:        user.FromLogin("no-email"),
+			// Omit email claims from BOTH the ID token and userinfo, to test RPs
+			// that handle missing email. (Distinct from id-missing-email, which
+			// is an ID-token-only mutation via MutateClaims and tests ID-token
+			// validation specifically.)
+			OmitClaims: []string{"email", "email_verified"},
+		},
+		{
+			Name:        "unverified-email",
+			Description: "user with email_verified = false (positive scenario)",
+			Category:    "Claim variants",
+			User:        user.FromLogin("unverified-email"),
+			ExtraClaims: map[string]any{
+				"email_verified": false,
+			},
 		},
 
 		// --- Authorization endpoint failures (redirect back with OAuth error) ---

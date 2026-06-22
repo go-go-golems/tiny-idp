@@ -113,6 +113,15 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	if ac.Nonce != "" {
 		claims["nonce"] = ac.Nonce
 	}
+	// Phase 7: merge the scenario's declarative extra claims (groups, roles,
+	// tenant, etc.) before MutateClaims so a mutator can still override.
+	for k, v := range ac.Scenario.ExtraClaims {
+		claims[k] = v
+	}
+	// Phase 7: omit claims the scenario marks as absent (e.g. no-email).
+	for _, k := range ac.Scenario.OmitClaims {
+		delete(claims, k)
+	}
 	if ac.Scenario.MutateClaims != nil {
 		ac.Scenario.MutateClaims(claims, now)
 	}

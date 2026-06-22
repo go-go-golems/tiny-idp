@@ -38,19 +38,39 @@ func (s *Server) userinfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "simulated userinfo server error", http.StatusInternalServerError)
 		return
 	case "sub_mismatch":
-		writeJSON(w, http.StatusOK, map[string]any{
-			"sub":            at.User.Sub + "-different",
-			"email":          at.User.Email,
-			"email_verified": true,
-			"name":           at.User.Name,
-		})
+		// Return the same claims the ID token would, but with a different sub,
+		// so the RP catches the disagreement between ID token and userinfo.
+		resp := userinfoClaims(at)
+		resp["sub"] = at.User.Sub + "-different"
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, userinfoClaims(at))
+}
+
+// userinfoClaims builds the userinfo response body for an access token. It
+// mirrors the ID token's user-facing claims (sub/email/name + the scenario's
+// ExtraClaims), so that under normal scenarios the ID token and userinfo
+// agree. The sub_mismatch scenario overrides sub after calling this.
+
+// userinfoClaims builds the userinfo response body for an access token: the
+// base user claims (sub/email/email_verified/name) merged with the scenario's
+// ExtraClaims and with OmitClaims deleted. This mirrors what the ID token
+// carries, so under normal scenarios the ID token and userinfo agree on the
+// user's attributes.
+func userinfoClaims(at accessToken) map[string]any {
+	resp := map[string]any{
 		"sub":            at.User.Sub,
 		"email":          at.User.Email,
 		"email_verified": true,
 		"name":           at.User.Name,
-	})
+	}
+	for k, v := range at.Scenario.ExtraClaims {
+		resp[k] = v
+	}
+	for _, k := range at.Scenario.OmitClaims {
+		delete(resp, k)
+	}
+	return resp
 }
