@@ -58,3 +58,12 @@ Step 6: Phase 4 high-value failure scenarios — 17 scenarios registered as data
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go — 17 failure scenarios as data entries (Phase 4)
 
+
+## 2026-06-22
+
+Step 7: delivery — docmgr doctor clean (vocab added), bundle uploaded + verified on reMarkable at /ai/2026/06/22/MOCK-OIDC-IDP.
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/ttmp/2026/06/22/MOCK-OIDC-IDP--mock-oidc-identity-provider-for-local-testing-keycloak-replacement/reference/01-implementation-diary.md — delivery step
+

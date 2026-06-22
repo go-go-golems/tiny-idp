@@ -419,3 +419,54 @@ This step added the actual failure scenarios as pure data entries in `builtinSce
 - Scenarios: 19 total (2 normal + 17 failure; `token-slow` uncategorized).
 - Tests: 37 total across 4 packages (server 26, scenario 5, user 5, cmd 0).
 - MVP (Phases 0–4) exit criteria all met: happy path, multiple users, scenario registry, self-documenting login page, high-value failures.
+
+## Step 7: Delivery — validation + reMarkable upload
+
+This final step validated the ticket with `docmgr doctor`, uploaded the bundled design + phases + diary documents to reMarkable, and verified the remote listing. The MVP (Phases 0–4) is complete, tested (37 tests green), and delivered. Later phases (5–12) remain documented in the phases doc but are intentionally deferred.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Finish the deliverable: validate docs, upload to reMarkable, verify.
+
+**Inferred user intent:** Close the loop on the original request — store the design in the ticket and upload to reMarkable.
+
+### What I did
+- Ran `docmgr doctor --ticket MOCK-OIDC-IDP --stale-after 30`; resolved the single `unknown_topics` warning by adding `oidc`, `go`, `testing`, `identity`, `auth` to the vocabulary. Re-ran doctor: ✅ All checks passed.
+- Dry-run bundle upload of the design doc + phases doc + diary → `Mock OIDC IdP — Design, Phases, Diary.pdf`.
+- Real upload to `/ai/2026/06/22/MOCK-OIDC-IDP`.
+- Verified: `remarquee cloud ls /ai/2026/06/22/MOCK-OIDC-IDP --long --non-interactive` shows the PDF.
+
+### Why
+- The deliverable checklist requires doctor-clean docs and a verified reMarkable upload before handoff.
+
+### What worked
+- Doctor clean after vocabulary addition.
+- Bundle upload succeeded on first real run (dry-run caught no issues).
+- Remote listing confirms the PDF landed at the expected path.
+
+### What didn't work
+- Nothing failed in this step.
+
+### What I learned
+- The vocabulary is project-wide; adding topics once benefits all future tickets in this repo.
+
+### What was tricky to build
+- None.
+
+### What warrants a second pair of eyes
+- The bundle contains the diary as-is (long, with all the "what didn't work" honesty). Confirm that's desired for the reMarkable audience vs. a trimmed handoff. I kept the full diary because the user asked to "keep a detailed diary."
+
+### What should be done in the future
+- When Phase 5+ work begins, append new diary steps here (do not rewrite history).
+- Re-upload the bundle after major doc revisions.
+
+### Code review instructions
+- Validate delivery: `docmgr doctor --ticket MOCK-OIDC-IDP --stale-after 30` (expect all-pass); `remarquee cloud ls /ai/2026/06/22/MOCK-OIDC-IDP --long --non-interactive` (expect the PDF).
+- Validate code: `go build ./... && go vet ./... && go test ./... -count=1`.
+
+### Technical details
+- reMarkable path: `/ai/2026/06/22/MOCK-OIDC-IDP/Mock OIDC IdP — Design, Phases, Diary`.
+- Final test count: 37 (server 26, scenario 5, user 5, cmd 0).
+- Commits: 12 total (1 initial + 11 from this work).
