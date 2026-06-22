@@ -11,10 +11,10 @@ import (
 // unioned onto the builtin's.
 func TestMergePreservesBuiltinProperties(t *testing.T) {
 	base := Client{
-		ID:           "public-spa",
-		Secret:       "",
-		RedirectURIs: []string{"http://localhost:8080/callback"},
-		RequirePKCE:  true,
+		ID:            "public-spa",
+		Secret:        "",
+		RedirectURIs:  []string{"http://localhost:8080/callback"},
+		RequirePKCE:   true,
 		AllowedScopes: []string{"openid", "profile", "email"},
 	}
 	override := Client{

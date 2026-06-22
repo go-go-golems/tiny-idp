@@ -31,21 +31,22 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 		t.Fatalf("rsa keygen: %v", err)
 	}
 	s := &Server{
-		issuer:   "", // filled in after we know the test server URL
-		clients:  client.NewRegistry(),
-		key:      key,
-		kid:      "dev-key-1",
-		registry: scenario.New(),
-		codes:    map[string]authCode{},
-		tokens:   map[string]accessToken{},
-		sessions: map[string]*session{},
+		issuer:        "", // filled in after we know the test server URL
+		clients:       client.NewRegistry(),
+		key:           key,
+		kid:           "dev-key-1",
+		registry:      scenario.New(),
+		codes:         map[string]authCode{},
+		tokens:        map[string]accessToken{},
+		sessions:      map[string]*session{},
 		refreshTokens: map[string]refreshToken{},
 	}
 	// Register a permissive test client that allows the test's redirect URI.
 	// The built-in dev-client uses localhost:3000; tests use https://app.test/cb.
 	s.clients.Register(client.Client{
-		ID:           "dev-client",
-		RedirectURIs: []string{"https://app.test/cb"},
+		ID:                     "dev-client",
+		RedirectURIs:           []string{"https://app.test/cb"},
+		PostLogoutRedirectURIs: []string{"https://app.test/logout"},
 	})
 	mux := http.NewServeMux()
 	s.RegisterRoutes(mux)
@@ -201,9 +202,7 @@ func verifyIDTokenSignature(t *testing.T, ts *httptest.Server, idToken string) m
 	if hdr["alg"] != "RS256" {
 		t.Fatalf("alg = %v, want RS256", hdr["alg"])
 	}
-	if hdr["kid"] != "dev-key-1" {
-		t.Fatalf("kid = %v, want dev-key-1", hdr["kid"])
-	}
+	kid, _ := hdr["kid"].(string)
 	payloadJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		t.Fatalf("decode payload: %v", err)
@@ -217,6 +216,8 @@ func verifyIDTokenSignature(t *testing.T, ts *httptest.Server, idToken string) m
 		t.Fatalf("decode sig: %v", err)
 	}
 
+	// JWKS may publish multiple kids (Phase 10). Build a kid -> public key map
+	// and look up the one the token header claims to be signed by.
 	jwksResp, err := ts.Client().Get(ts.URL + "/jwks")
 	if err != nil {
 		t.Fatalf("jwks: %v", err)
@@ -230,14 +231,18 @@ func verifyIDTokenSignature(t *testing.T, ts *httptest.Server, idToken string) m
 	if err := json.NewDecoder(jwksResp.Body).Decode(&jwks); err != nil {
 		t.Fatalf("decode jwks: %v", err)
 	}
-	if len(jwks.Keys) != 1 || jwks.Keys[0].Kid != "dev-key-1" {
-		t.Fatalf("jwks unexpected: %+v", jwks)
+	pubByKey := map[string]*rsa.PublicKey{}
+	for _, k := range jwks.Keys {
+		nBytes, _ := base64.RawURLEncoding.DecodeString(k.N)
+		eBytes, _ := base64.RawURLEncoding.DecodeString(k.E)
+		n := new(big.Int).SetBytes(nBytes)
+		e := new(big.Int).SetBytes(eBytes).Int64()
+		pubByKey[k.Kid] = &rsa.PublicKey{N: n, E: int(e)}
 	}
-	nBytes, _ := base64.RawURLEncoding.DecodeString(jwks.Keys[0].N)
-	eBytes, _ := base64.RawURLEncoding.DecodeString(jwks.Keys[0].E)
-	n := new(big.Int).SetBytes(nBytes)
-	e := new(big.Int).SetBytes(eBytes).Int64()
-	pub := &rsa.PublicKey{N: n, E: int(e)}
+	pub, ok := pubByKey[kid]
+	if !ok {
+		t.Fatalf("jwks has no key for kid %q (available: %v)", kid, keysOf(pubByKey))
+	}
 
 	signed := parts[0] + "." + parts[1]
 	sum := sha256.Sum256([]byte(signed))
@@ -245,6 +250,15 @@ func verifyIDTokenSignature(t *testing.T, ts *httptest.Server, idToken string) m
 		t.Fatalf("id_token signature verification failed: %v", err)
 	}
 	return claims
+}
+
+// keysOf returns the kids of a kid->public-key map, for error messages.
+func keysOf(m map[string]*rsa.PublicKey) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
 }
 
 func TestDiscoveryContainsRequiredFields(t *testing.T) {
@@ -695,7 +709,7 @@ func TestPhase4_UserInfoFailures(t *testing.T) {
 	// helper, since fullFlow asserts a 200 at userinfo.
 	_, ts := newTestServer(t)
 	for _, tc := range []struct {
-		login     string
+		login      string
 		wantStatus int
 	}{
 		{"userinfo-401", http.StatusUnauthorized},
@@ -769,14 +783,14 @@ func newTestServerWithBuiltinClients(t *testing.T) (*Server, *httptest.Server) {
 		clients.Register(c)
 	}
 	s := &Server{
-		issuer:   "",
-		clients:  clients,
-		key:      key,
-		kid:      "dev-key-1",
-		registry: scenario.New(),
-		codes:    map[string]authCode{},
-		tokens:   map[string]accessToken{},
-		sessions: map[string]*session{},
+		issuer:        "",
+		clients:       clients,
+		key:           key,
+		kid:           "dev-key-1",
+		registry:      scenario.New(),
+		codes:         map[string]authCode{},
+		tokens:        map[string]accessToken{},
+		sessions:      map[string]*session{},
 		refreshTokens: map[string]refreshToken{},
 	}
 	mux := http.NewServeMux()

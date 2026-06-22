@@ -35,6 +35,10 @@ type Client struct {
 	// non-empty, /authorize rejects a scope request containing a scope not in
 	// this set.
 	AllowedScopes []string
+	// PostLogoutRedirectURIs is the allowlist of URIs the RP may redirect to
+	// after RP-initiated logout (Phase 11). If empty, no post-logout redirect
+	// is permitted for this client and /end-session returns a logged-out page.
+	PostLogoutRedirectURIs []string
 }
 
 // AllowsRedirectURI reports whether uri is in the client's allowlist.
@@ -60,6 +64,17 @@ func (c *Client) AllowsScope(requested string) bool {
 		}
 	}
 	return true
+}
+
+// AllowsPostLogoutRedirectURI reports whether uri is in the client's
+// post-logout redirect allowlist (Phase 11).
+func (c *Client) AllowsPostLogoutRedirectURI(uri string) bool {
+	for _, allowed := range c.PostLogoutRedirectURIs {
+		if allowed == uri {
+			return true
+		}
+	}
+	return false
 }
 
 // Registry maps client IDs to Client structs.
@@ -106,22 +121,25 @@ func (r *Registry) All() []Client {
 func BuiltinClients() []Client {
 	return []Client{
 		{
-			ID:           "dev-client",
-			Secret:       "",
-			RedirectURIs: []string{"http://localhost:3000/callback", "http://127.0.0.1:3000/callback"},
-			RequirePKCE:  false,
+			ID:                     "dev-client",
+			Secret:                 "",
+			RedirectURIs:           []string{"http://localhost:3000/callback", "http://127.0.0.1:3000/callback"},
+			PostLogoutRedirectURIs: []string{"http://localhost:3000", "http://127.0.0.1:3000"},
+			RequirePKCE:            false,
 		},
 		{
-			ID:           "public-spa",
-			Secret:       "",
-			RedirectURIs: []string{"http://localhost:8080/callback"},
-			RequirePKCE:  true,
+			ID:                     "public-spa",
+			Secret:                 "",
+			RedirectURIs:           []string{"http://localhost:8080/callback"},
+			PostLogoutRedirectURIs: []string{"http://localhost:8080"},
+			RequirePKCE:            true,
 		},
 		{
-			ID:           "web-app",
-			Secret:       "dev-secret",
-			RedirectURIs: []string{"http://localhost:8080/callback"},
-			RequirePKCE:  false,
+			ID:                     "web-app",
+			Secret:                 "dev-secret",
+			RedirectURIs:           []string{"http://localhost:8080/callback"},
+			PostLogoutRedirectURIs: []string{"http://localhost:8080"},
+			RequirePKCE:            false,
 		},
 	}
 }
@@ -144,6 +162,7 @@ func Merge(base, override Client) Client {
 		out.Secret = override.Secret
 	}
 	out.RedirectURIs = unionStrings(base.RedirectURIs, override.RedirectURIs)
+	out.PostLogoutRedirectURIs = unionStrings(base.PostLogoutRedirectURIs, override.PostLogoutRedirectURIs)
 	// RequirePKCE and AllowedScopes are kept from base (no override fields).
 	return out
 }

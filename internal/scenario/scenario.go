@@ -61,6 +61,20 @@ type Scenario struct {
 	// affect the ID token only and are meant to test ID-token validation).
 	// MutateClaims runs after OmitClaims and can re-add a claim if needed.
 	OmitClaims []string
+
+	// SignKey selects which signing key the ID token is signed with (Phase 10):
+	//   ""             -> the active key (kid dev-key-1), published in JWKS
+	//   "rotated"      -> a second published key (kid rotated-key-2); the token
+	//                     verifies, which tests that the RP looks up the kid
+	//                     rather than assuming a single key
+	//   "unknown-kid"  -> signs with a kid that is NOT published in JWKS, so the
+	//                     RP cannot find a key to verify against (kid-not-found)
+	//   "bad-sig"      -> signs with a key whose private half does NOT match the
+	//                     public half published under that kid, so signature
+	//                     verification fails (the kid is found but the sig is wrong)
+	// This is distinct from MutateClaims: MutateClaims corrupts claim *values*,
+	// while SignKey corrupts the *signature/key binding*.
+	SignKey string
 }
 
 // Registry maps a normalized login to a Scenario. The zero value is not
@@ -374,6 +388,34 @@ func builtinScenarios() []Scenario {
 			Category:     "UserInfo failures",
 			User:         user.FromLogin("userinfo-sub-mismatch"),
 			UserInfoError: "sub_mismatch",
+		},
+
+		// --- JWKS / key rotation (Phase 10) ---
+		// These corrupt the signature/key binding, not claim values. The JWKS
+		// endpoint publishes three kids (dev-key-1, rotated-key-2, bad-sig-key);
+		// each scenario picks a different signing behavior. JWKS-level failures
+		// (500/slow/empty) are server modes toggled via the debug UI, not
+		// per-user scenarios, because /jwks is global and not tied to a login.
+		{
+			Name:        "key-rotated",
+			Description: "ID token signed with a second published key (kid rotated-key-2); verifies against JWKS",
+			Category:    "JWKS / key rotation",
+			User:        user.FromLogin("key-rotated"),
+			SignKey:     "rotated",
+		},
+		{
+			Name:        "kid-not-found",
+			Description: "ID token kid is not present in JWKS (RP cannot find a key)",
+			Category:    "JWKS / key rotation",
+			User:        user.FromLogin("kid-not-found"),
+			SignKey:     "unknown-kid",
+		},
+		{
+			Name:        "bad-signature",
+			Description: "ID token kid is in JWKS but signature was made with a different key",
+			Category:    "JWKS / key rotation",
+			User:        user.FromLogin("bad-signature"),
+			SignKey:     "bad-sig",
 		},
 	}
 }

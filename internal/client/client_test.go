@@ -69,7 +69,7 @@ func TestAllowsRedirectURI(t *testing.T) {
 
 func TestAllowsScopeWithAllowlist(t *testing.T) {
 	c := Client{
-		ID:           "x",
+		ID:            "x",
 		AllowedScopes: []string{"openid", "profile", "email"},
 	}
 	if !c.AllowsScope("openid profile") {

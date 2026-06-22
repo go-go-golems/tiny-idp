@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"time"
@@ -19,6 +20,7 @@ func (s *Server) debugRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/sessions", s.debugSessions)
 	mux.HandleFunc("/debug/codes", s.debugCodes)
 	mux.HandleFunc("/debug/tokens", s.debugTokens)
+	mux.HandleFunc("/debug/jwks-mode", s.debugJWKSMode)
 	mux.HandleFunc("/debug/reset", s.debugReset)
 }
 
@@ -77,16 +79,22 @@ func (s *Server) debugIndex(w http.ResponseWriter, r *http.Request) {
 		"codes":    len(s.codes),
 		"tokens":   len(s.tokens),
 	}
+	mode := s.jwksMode
+	if mode == "" {
+		mode = "normal"
+	}
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"endpoints": map[string]string{
-			"debug":            "this index",
-			"debug/sessions":   "list active IdP sessions",
-			"debug/codes":      "list outstanding authorization codes",
-			"debug/tokens":     "list issued access tokens",
-			"debug/reset":      "POST to clear all sessions/codes/tokens",
+			"debug":           "this index",
+			"debug/sessions":  "list active IdP sessions",
+			"debug/codes":     "list outstanding authorization codes",
+			"debug/tokens":    "list issued access tokens",
+			"debug/jwks-mode": "GET current /jwks mode; POST {\"mode\":\"normal|500|slow|empty\"} to set",
+			"debug/reset":     "POST to clear all sessions/codes/tokens/refresh-tokens",
 		},
-		"counts": counts,
+		"counts":    counts,
+		"jwks_mode": mode,
 	})
 }
 
@@ -156,6 +164,37 @@ func (s *Server) debugTokens(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// debugJWKSMode gets or sets the /jwks failure mode (Phase 10). GET returns
+// the current mode; POST with JSON {"mode":"normal|500|slow|empty"} sets it.
+func (s *Server) debugJWKSMode(w http.ResponseWriter, r *http.Request) {
+	if !requireLoopback(w, r) {
+		return
+	}
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]any{"mode": s.JWKSMode()})
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed (GET to read, POST to set)", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	switch body.Mode {
+	case "normal", "500", "slow", "empty":
+	default:
+		http.Error(w, "unknown mode (want normal|500|slow|empty)", http.StatusBadRequest)
+		return
+	}
+	s.SetJWKSMode(body.Mode)
+	writeJSON(w, http.StatusOK, map[string]any{"mode": body.Mode})
+}
+
 // debugReset clears all in-memory sessions, codes, and tokens. POST-only so a
 // stray GET (e.g. a browser prefetch) cannot wipe state.
 func (s *Server) debugReset(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +211,7 @@ func (s *Server) debugReset(w http.ResponseWriter, r *http.Request) {
 	s.codes = map[string]authCode{}
 	s.tokens = map[string]accessToken{}
 	s.refreshTokens = map[string]refreshToken{}
+	s.jwksMode = "normal"
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"reset": true,

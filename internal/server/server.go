@@ -23,11 +23,17 @@ import (
 
 // Server holds all IdP state.
 type Server struct {
-	issuer   string
-	clients  *client.Registry
+	issuer  string
+	clients *client.Registry
 
 	key *rsa.PrivateKey
 	kid string
+
+	// jwksMode selects a failure mode for the /jwks endpoint (Phase 10):
+	// "normal" (default), "500", "slow", or "empty". JWKS failures are
+	// server-level (not per-user) because /jwks is global and fetched
+	// independently of any login.
+	jwksMode string
 
 	registry *scenario.Registry
 
@@ -72,8 +78,8 @@ type refreshToken struct {
 
 // Options configures a Server at construction time.
 type Options struct {
-	Issuer   string
-	Clients  *client.Registry
+	Issuer  string
+	Clients *client.Registry
 }
 
 // New constructs a Server with a freshly generated RSA signing key. If
@@ -109,6 +115,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/authorize", s.authorize)
 	mux.HandleFunc("/token", s.token)
 	mux.HandleFunc("/userinfo", s.userinfo)
+	mux.HandleFunc("/end-session", s.endSession)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
@@ -120,3 +127,22 @@ func (s *Server) Issuer() string { return s.issuer }
 
 // Clients returns the client registry.
 func (s *Server) Clients() *client.Registry { return s.clients }
+
+// SetJWKSMode sets a failure mode for the /jwks endpoint (Phase 10). Valid
+// values are "normal", "500", "slow", and "empty". It is intended for test
+// setup and the debug UI; the value is not part of the serialized config.
+func (s *Server) SetJWKSMode(mode string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.jwksMode = mode
+}
+
+// JWKSMode returns the current /jwks failure mode.
+func (s *Server) JWKSMode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.jwksMode == "" {
+		return "normal"
+	}
+	return s.jwksMode
+}

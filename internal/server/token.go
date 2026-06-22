@@ -139,7 +139,7 @@ func (s *Server) tokenAuthorizationCode(w http.ResponseWriter, r *http.Request, 
 		ac.Scenario.MutateClaims(claims, now)
 	}
 
-	idToken, err := s.signJWT(claims)
+	idToken, err := s.signJWT(claims, ac.Scenario)
 	if err != nil {
 		tokenError(w, http.StatusInternalServerError, "server_error", "could not sign token")
 		return
