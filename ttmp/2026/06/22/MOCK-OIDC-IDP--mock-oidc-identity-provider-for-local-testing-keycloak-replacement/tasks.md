@@ -50,7 +50,7 @@
 - [x] P4.5 Validate each end-to-end
 
 ## Deferred (Phases 5–12)
-- [ ] P5 Multiple clients
+- [x] P5 Multiple clients
 - [ ] P6 Session cookie, prompt, max_age
 - [ ] P7 Claims/authorization shapes
 - [ ] P8 Debug UI

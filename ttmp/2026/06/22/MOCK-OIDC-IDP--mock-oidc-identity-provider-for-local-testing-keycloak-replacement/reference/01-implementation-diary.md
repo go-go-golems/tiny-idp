@@ -25,13 +25,17 @@ RelatedFiles:
     - Path: internal/scenario/scenario.go
       Note: Phase 2 scenario registry (commit 6454cd3)
     - Path: internal/server/authorize.go
-      Note: Phase 1 authorize flow (commit f9ece67)
+      Note: |-
+        Phase 1 authorize flow (commit f9ece67)
+        per-client validation in parseAuthorizeRequest (commit 5fed666)
     - Path: internal/server/server_test.go
       Note: Phase 4 matrix tests (Phase 4)
     - Path: internal/server/static/login.html
       Note: embedded login form with quick-pick buttons (Phase 3)
     - Path: internal/server/token.go
-      Note: scenario TokenError + MutateClaims threading (commit 6454cd3)
+      Note: |-
+        scenario TokenError + MutateClaims threading (commit 6454cd3)
+        client auth from registry + cross-client rejection (commit 5fed666)
     - Path: internal/user/user.go
       Note: FromLogin stable sub derivation (commit f9ece67)
 ExternalSources: []
@@ -40,6 +44,8 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
+
 
 
 
@@ -614,3 +620,65 @@ This step delivered the two Glazed CLI extras the user asked for: working profil
 - Profile precedence: defaults < profiles < config < env < args < flags.
 - New commands: `tinyidp print-config` (GlazeCommand, emits rows), `tinyidp serve` (BareCommand).
 - Test count: 48 (cmds 7, server 26, scenario 5, user 5, oidc 4, +1 unused).
+
+## Step 10: Phase 5 — multiple clients
+
+This step replaced the single hardcoded client with a client registry, so a single running provider can serve multiple relying parties. Three built-in clients ship: `dev-client` (permissive, the quick-test default), `public-spa` (a public client with PKCE required), and `web-app` (a confidential client with a secret required). The Phase 0-4 single-client UX is preserved: setting `--redirect-uris` still works and overrides `dev-client`'s allowlist. The key new invariants are per-client redirect URI allowlists, per-client PKCE requirement, and cross-client code rejection (a code issued to one client cannot be redeemed by another).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 9)
+
+**Assistant interpretation:** After profiles and print-config, resume the deferred phases beginning with Phase 5 (multiple clients).
+
+**Inferred user intent:** Let a single mock IdP test public (SPA), confidential (web-app), and permissive (dev) clients against the same instance — the common real-world shape.
+
+**Commit (code):** 5fed666 — "feat(tinyidp): Phase 5 multiple clients (client registry)"
+
+### What I did
+- Created `internal/client/client.go`: `Client` struct (`ID`, `Secret`, `RedirectURIs`, `RequirePKCE`, `AllowedScopes`) with `AllowsRedirectURI`/`AllowsScope` helpers; `Registry` (`Lookup`/`Register`/`All`); `NewRegistry` preloads `dev-client`, `public-spa`, `web-app`.
+- `Server` now holds `*client.Registry` instead of single-client fields (`clientID`/`clientSecret`/`redirectURIs` removed). `New(Options)` defaults to `client.NewRegistry()` when `opts.Clients` is nil.
+- `parseAuthorizeRequest`: looks up the client, checks the redirect URI against *that client's* allowlist, enforces `RequirePKCE` (rejects an authorize with no `code_challenge`), and checks `AllowedScopes` (empty = permissive, the dev-client default).
+- `token()`: authenticates the client from the registry; confidential clients (non-empty `Secret`) require it via Basic or post, public clients skip. The existing `ac.ClientID != clientID` check now also serves as cross-client code rejection (the code's `ClientID` was set at authorize time from the authorize request's `client_id`).
+- `serve.go` builds the registry from builtins + the OIDC-section-configured client (`buildClientRegistry`): the configured `--client-id`/`--client-secret`/`--redirect-uris` register a single permissive client (default `dev-client`), overriding the builtin. So `--redirect-uris http://localhost:8080/cb` still "just works" as in Phase 0-4.
+- Tests: 5 server (`TestPhase5_PublicSpaRequiresPKCE`, `AcceptsWithPKCE`, `WebAppRequiresSecret`, `WebAppSucceedsWithSecret`, `CrossClientCodeRejection`) + 7 client unit tests.
+
+### Why
+- A single-client provider can't test the most common real-world shape: an app with a public SPA frontend (PKCE-only, no secret) and a confidential backend (secret required). The registry lets one running provider serve both, plus a permissive `dev-client` for quick manual testing.
+- Per-client redirect URI allowlists are the correct OIDC behavior — a redirect URI is valid for a specific client, not globally. The single-client model collapsed this; the registry makes it explicit.
+- `RequirePKCE` is enforced at `/authorize` (reject before issuing a code) rather than only at `/token`, so a public-spa client never issues a code that lacks a challenge. The stored `ac.CodeChallenge` is non-empty for such clients, so the existing `verifyPKCE` (which rejects an empty verifier when a challenge exists) handles the token-side enforcement for free.
+
+### What worked
+- 60 tests green (was 48); live smoke shows `clients=3` in the log, `public-spa` no-PKCE → 400, `dev-client` renders the login form.
+- Cross-client rejection: a code issued to `dev-client` returns 400 `invalid_grant` when redeemed as `web-app`. This is the single most important new security property.
+- The OIDC section's `--client-id`/`--client-secret`/`--redirect-uris` still work unchanged, so no breaking change for existing users of the Phase 0-4 single-client flow.
+
+### What didn't work
+- First Phase 5 test draft used GET `/authorize` expecting a 302 redirect for `public-spa`/`web-app`, but GET renders the login form (200), not a redirect. The redirect happens on POST. Fixed by using the existing `authorizePostRedirect` helper (which POSTs the login form). Recurring lesson from Step 2/5: the authorize flow is GET-form-then-POST-submit, not GET-redirect.
+- Removing `Server.ClientID()` and `Server.Registry()` accessors broke `serve.go` (logging) and the in-package `TestScenarioHookIsThreadedThroughFlow` (`s.registry.Register`). The test is in-package so it accesses `s.registry` directly (no accessor needed); `serve.go` logging switched to `len(srv.Clients().All())`.
+
+### What I learned
+- The cross-client code rejection property comes for free from the existing `ac.ClientID != clientID` check, because the code's `ClientID` is set at authorize time from the *authorize request's* `client_id`, and the token handler's `clientID` is the *token request's* `client_id`. If they differ, the code was issued to a different client. No new check needed — the existing one already does the right thing once multiple clients exist.
+- `AllowedScopes` empty = permissive is a deliberate choice: it preserves the Phase 0-4 behavior (any scope including `openid` works) for `dev-client`, while a client with a non-empty `AllowedScopes` enforces a real allowlist. This makes the field opt-in rather than mandatory.
+
+### What was tricky to build
+- Preserving backward compatibility. The OIDC section still has `client-id`/`client-secret`/`redirect-uris` fields (removing them would break profiles/config files). The `buildClientRegistry` helper registers the configured client on top of the builtins, so the configured client (default `dev-client`) overrides the builtin `dev-client`'s redirect URIs. A developer who only sets `--redirect-uris` gets the same behavior as before.
+- The `RequirePKCE` enforcement split: authorize rejects no-challenge requests for such clients, and the stored code's challenge is non-empty, so token-side `verifyPKCE` rejects a missing verifier. Both sides must agree; the test `TestPhase5_PublicSpaRequiresPKCE` pins the authorize side, and `TestPhase5_PublicSpaAcceptsWithPKCE` pins the happy path.
+
+### What warrants a second pair of eyes
+- `buildClientRegistry` registers the configured client as permissive (PKCE optional, all scopes). If a user sets `--client-id public-spa` via the OIDC section, they get a *permissive* `public-spa` (overriding the builtin PKCE-required one). This is probably not what they want. Confirm whether the configured client should inherit the builtin's properties when the ID matches, or whether the current "configured overrides builtin" is acceptable. Documented as an open question.
+- Cross-client rejection relies on `ac.ClientID != clientID`. Confirm no future refactor sets `ac.ClientID` from the token request instead of the authorize request (that would break the property).
+
+### What should be done in the future
+- Resolve the open question above: when the configured `--client-id` matches a builtin (e.g. `public-spa`), should the configured redirect URIs be *added* to the builtin's properties (keeping RequirePKCE) or *replace* them (current behavior)? The current behavior is simpler but potentially surprising.
+- Consider exposing client registration via config file (a `clients:` section in `tinyidp.yaml`) so users can define arbitrary clients without code. The registry's `Register` method already supports this; only the config wiring is missing.
+- Phase 6 (session cookie, `prompt`, `max_age`) is the next phase; it builds on the client registry (sessions are per-client in real OIDC, though the mock may not need that distinction yet).
+
+### Code review instructions
+- Start at `internal/client/client.go`: `Client`, `AllowsRedirectURI`, `AllowsScope`, `Registry`, `BuiltinClients`. Then `internal/server/authorize.go` `parseAuthorizeRequest` (per-client validation) and `internal/server/token.go` (client auth from registry). Then `internal/cmds/serve.go` `buildClientRegistry`.
+- Validate: `go test ./internal/client/ ./internal/server/ -count=1 -run 'Phase5|Client' -v`.
+
+### Technical details
+- Built-in clients: `dev-client` (public, permissive), `public-spa` (public, PKCE required, redirect `http://localhost:8080/callback`), `web-app` (confidential, secret `dev-secret`).
+- Test count: 60 (client 7, cmds 7, server 31, scenario 5, user 5, oidc 4, +1).
+- No new dependencies; client package is stdlib-only.

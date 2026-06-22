@@ -85,3 +85,12 @@ Step 9: Profiles (profiles.yaml + --profile, full precedence chain) + print-conf
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/cmds/profiles.go — ProfileMiddlewaresFunc wires GatherFlagsFromProfiles (commit ca2ada2)
 
+
+## 2026-06-22
+
+Step 10: Phase 5 multiple clients — client registry (dev-client/public-spa/web-app), per-client redirect/PKCE/scope, cross-client code rejection. 60 tests green (commit 5fed666).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/client/client.go — Client + Registry + builtins (commit 5fed666)
+

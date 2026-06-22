@@ -104,12 +104,12 @@ Each task is a single, reviewable commit unit where reasonable. A task is `[x]` 
 
 **Exit criteria:** all listed scenarios produce their documented failure.
 
-## Phase 5 — Multiple clients (deferred)
+## Phase 5 — Multiple clients
 
-- [ ] P5.1 `internal/client/client.go` with `Client{ID, Secret, RedirectURIs, RequirePKCE, AllowedScopes}`.
-- [ ] P5.2 Client registry; replace single-client fields on `server`.
-- [ ] P5.3 Predefined clients: `public-spa` (no secret, PKCE required), `web-app` (secret required), `dev-client` (permissive).
-- [ ] P5.4 Discovery advertises `token_endpoint_auth_methods_supported` accurately.
+- [x] P5.1 `internal/client/client.go` with `Client{ID, Secret, RedirectURIs, RequirePKCE, AllowedScopes}`.
+- [x] P5.2 Client registry; replace single-client fields on `server`.
+- [x] P5.3 Predefined clients: `public-spa` (no secret, PKCE required), `web-app` (secret required), `dev-client` (permissive).
+- [x] P5.4 Discovery advertises `token_endpoint_auth_methods_supported` accurately (already correct from Phase 0).
 
 ## Phase 6 — Session cookie, prompt, max_age (deferred)
 
