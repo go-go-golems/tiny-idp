@@ -2,6 +2,11 @@
 
 ## MVP (Phases 0–4)
 
+### Glazed CLI extras
+- [x] Profiles (profiles.yaml + --profile, precedence: defaults < profiles < config < env < flags)
+- [x] print-config command (second consumer of the reusable oidc section)
+- [x] --config-file loading (ConfigPlanBuilder)
+
 ### Phase 0 — Baseline OIDC happy path
 - [x] P0.1 `go mod init`
 - [x] P0.2 Scaffold `cmd/tinyidp/main.go` (env, key, ListenAndServe)
@@ -83,6 +88,11 @@
 - [x] P1.3 parseAuthorizeRequest + hidden fields
 - [x] P1.4 removed fixed default user
 - [x] P1.5 validated distinct stable subs
+
+### Glazed CLI extras
+- [x] Profiles (profiles.yaml + --profile, precedence: defaults < profiles < config < env < flags)
+- [x] print-config command (second consumer of the reusable oidc section)
+- [x] --config-file loading (ConfigPlanBuilder)
 
 ### Phase 0
 - [x] P0.1 go mod init

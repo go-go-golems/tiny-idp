@@ -18,6 +18,8 @@ RelatedFiles:
       Note: httptest flow + ID token signature verification (commit d473d513)
     - Path: internal/cmds/config.go
       Note: ConfigFilePlanBuilder wiring --config-file (commit 871eae0)
+    - Path: internal/cmds/print_config.go
+      Note: second consumer of reusable oidc section (commit 0257f23)
     - Path: internal/cmds/serve.go
       Note: Glazed BareCommand composing the oidc section (commit 871eae0)
     - Path: internal/scenario/scenario.go
@@ -38,6 +40,7 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
 
 
 
@@ -549,3 +552,65 @@ This step replaced the hand-rolled env-var-only CLI with a Glazed-based CLI, per
 - New packages: `internal/sections/oidc`, `internal/cmds`, `cmd/tinyidp/doc`.
 - Test count: 41 (server 26, scenario 5, user 5, oidc 4, + 1 unused).
 - Env prefix: `TINYIDP_*`. Config-file key: `oidc:`. Profile flags: `--profile`/`--profile-file`.
+
+## Step 9: Profiles + print-config
+
+This step delivered the two Glazed CLI extras the user asked for: working profile resolution (so setups are switchable with `--profile`) and a `print-config` command (to debug the resolved configuration). Profiles are wired through a custom `MiddlewaresFunc` that inserts `GatherFlagsFromProfiles` at the correct precedence layer (above defaults, below config/env/flags), with a bootstrap resolution of `--profile`/`--profile-file` that honors `TINYIDP_PROFILE` env. `print-config` is the second consumer of the reusable `oidc` section, which validates that the section is genuinely decoupled from `serve`.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead. I want profiles so we can quickly switch setups, print-config is nice to debug things, and then the phases. Continue committing at appropriate intervals, and keeping a diary, and checking off tasks"
+
+**Assistant interpretation:** Implement profiles and print-config now, then resume the deferred phases (5+), with continued commits/diary/task-checking.
+
+**Inferred user intent:** Make configuration switchable and debuggable before adding more provider features.
+
+**Commit (code):** ca2ada2 (profiles) + 0257f23 (print-config)
+
+### What I did
+- `internal/cmds/profiles.go`: `ProfileMiddlewaresFunc(appName, configPlanBuilder)` — a `cli.CobraMiddlewaresFunc` that builds the full source chain with `GatherFlagsFromProfiles` inserted above defaults and below config/env/flags. Bootstrap-resolves `--profile`/`--profile-file` from the parsed command-settings section + `TINYIDP_PROFILE`/`TINYIDP_PROFILE_FILE` env before constructing the profile middleware (per the Glazed implementing-profile-middleware pattern, to avoid capturing defaults before env is applied).
+- `cmd/tinyidp/main.go`: `serve` now uses `MiddlewaresFunc: cmds.ProfileMiddlewaresFunc(...)` (replacing the default chain), keeping `WithProfileSettingsSection()` for the flags. Default profile file: `~/.config/tinyidp/profiles.yaml` (XDG-aware via `os.UserConfigDir`).
+- `internal/cmds/print_config.go`: `PrintConfigCommand` as a `cmds.GlazeCommand` composing the same reusable `oidc` section as `serve` + the Glazed output section (default `yaml`). Emits one row with the resolved config.
+- `cmd/tinyidp/doc/pages/profiles.md`: help page (file format, default location, precedence, error behavior, introspection).
+- Tests: 4 profile tests (`TestProfileOverridesDefaults`, `TestProfileEnvOverridesProfile`, `TestProfileMissingDefaultFileSkipsSilently`, `TestProfileExplicitMissingFileErrors`) + 3 print-config tests (`TestPrintConfigEmitsResolvedDefaults`, `TestPrintConfigReflectsEnvOverride`, `TestPrintConfigReflectsProfileOverride`).
+
+### Why
+- Profiles sit above defaults and below config/env/flags by design: a profile is a convenient baseline (e.g. a `dev` issuer vs a `ci` issuer), but a local override (a flag, an env var) must always win. This is the Glazed-recommended placement for environment presets.
+- `print-config` is both a debugging tool and a proof of reusability. If `print-config` could not compose the same `oidc` section and resolve it identically to `serve`, the "reusable section" claim from Step 8 would be false. The `TestPrintConfigReflectsProfileOverride` test pins that the full chain (profile → row) works through the same section.
+
+### What worked
+- Live verification: `--profile dev` → `dev-profile-client`; `--profile ci` → `ci-runner` with custom redirect; `profile+env` → env wins; `profile+env+flag` → flag wins. The `--print-parsed-fields` log shows `source: profiles` winning over `source: defaults`.
+- `print-config` outputs yaml by default and `--output json` works; profile and env overrides surface in the emitted row.
+- 48 tests green across 5 packages.
+
+### What didn't work
+- First profiles_test draft used `parsed.Set(slug, key, val)` which doesn't exist; `Values.Set` takes `(slug, *SectionValues)`. Fixed by using `GetOrCreate(section)` + `sectionValues.Fields.Set(key, *FieldValue)` with a `setField` helper that builds the `FieldValue` from the section's definition. This mirrors how glazed's own tests populate values.
+- `FromCobra(nil, ...)` panics (it dereferences the cobra command). The middleware now guards `if cmd != nil` before adding `FromCobra`, mirroring `ParseCommandSettingsSection`'s pattern. Tests pass `nil` cmd; production always passes a real cmd.
+- `print-config` first used `cli.NewGlazedSchemasWithDefaults` (doesn't exist) and a `fields` default key (rejected: "unknown field"). Fixed to `settings.NewGlazedSchema` with `WithOutputSectionOptions(schema.WithDefaults({"output":"yaml"}))`. The `fields` key belongs to a different sub-section.
+- `captureProcessor` needed a `Close` method to satisfy `middlewares.Processor`; `Row.Get` returns `(value, ok)` (it's an orderedmap). Added both.
+
+### What I learned
+- The Glazed profile middleware's 4th argument (`defaultProfileName`, defaulting to `"default"`) is what makes the no-profiles.yaml case work: if the default file is missing AND the requested profile is the default name, loading skips silently. An explicitly-named profile with a missing default file errors. This is the right UX: out-of-the-box works, typos are loud.
+- The "bootstrap parse then build chain" pattern exists because profile *selection* can come from env/config — if you constructed the profile middleware before env was applied, you'd capture the default profile name and load the wrong profile. The bootstrap parse resolves selection first, then the chain applies profiles with the resolved selection.
+
+### What was tricky to build
+- Getting the precedence exactly right. The chain is built in *reverse* precedence (last applied wins): flags, args, env, config, profiles, defaults. If profiles were appended after env, env would not override profiles. The `TestProfileEnvOverridesProfile` test pins this; without it, a future refactor could invert precedence silently.
+- `print-config`'s glazed section: the output default must use a valid field name (`output`, not `fields`). The glazed section is composed of sub-sections, so `WithDefaults` keys must match a real field in one of them.
+
+### What warrants a second pair of eyes
+- The `ProfileMiddlewaresFunc` guards `FromCobra` on `cmd != nil`. Confirm production always passes a real cmd (it does, via `BuildCobraCommand`). A future code path that calls the middleware with a nil cmd in production would silently skip flag parsing — the guard prevents a panic but not silent flag loss.
+- Profile *file* loading now errors on an explicitly missing file. Confirm this matches expectations: `--profile-file /typo.yaml` should error (it does), not silently fall back.
+
+### What should be done in the future
+- The `token-slow` 10s sleep is still a fixed duration; consider a scenario field or env knob before CI use (carried from Step 6).
+- A `--print-profile` or showing the active profile in `print-config` output would help debug which profile was selected (currently only visible via `--print-parsed-fields`).
+
+### Code review instructions
+- Start at `internal/cmds/profiles.go`: `ProfileMiddlewaresFunc` (the chain construction) + `resolveProfileSelection` (bootstrap). Then `internal/cmds/print_config.go`: how a second command composes the same `oidc` section.
+- Validate: `go test ./internal/cmds/ -count=1 -v -run 'Profile|PrintConfig'`; then `go run ./cmd/tinyidp print-config --profile dev --profile-file <profiles.yaml>`.
+
+### Technical details
+- Default profile file: `~/.config/tinyidp/profiles.yaml` (XDG).
+- Profile precedence: defaults < profiles < config < env < args < flags.
+- New commands: `tinyidp print-config` (GlazeCommand, emits rows), `tinyidp serve` (BareCommand).
+- Test count: 48 (cmds 7, server 26, scenario 5, user 5, oidc 4, +1 unused).

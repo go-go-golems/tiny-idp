@@ -76,3 +76,12 @@ Step 8: Adopted Glazed command framework — reusable oidc field section, layere
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/sections/oidc/section.go — reusable OIDC field section (commit 871eae0)
 
+
+## 2026-06-22
+
+Step 9: Profiles (profiles.yaml + --profile, full precedence chain) + print-config command (second consumer of reusable oidc section). 48 tests green (commits ca2ada2, 0257f23).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/cmds/profiles.go — ProfileMiddlewaresFunc wires GatherFlagsFromProfiles (commit ca2ada2)
+
