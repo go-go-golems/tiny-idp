@@ -52,15 +52,22 @@ Its sole purpose is to replace Keycloak-in-Docker for **local development and in
 The mock IdP supports the OIDC "happy path": **discovery**, **JWKS**, **authorize**, **token**, and **userinfo**.
 On top of the happy path it adds a **scenario model** so a developer can log in as `alice`, `bob`, or special usernames like `id-expired` / `userinfo-401` to reproduce real OIDC client bugs without a database, without Docker, and without account management.
 
-The first usable release covers five phases:
+The implementation is complete through Phase 11. Only **Phase 12** (importable Go test helper) remains. The first release (Phases 0–4) is stable; Phases 5–11 are implemented and tested:
 
 1. **Phase 0** — Baseline OIDC happy path (discovery, JWKS, authorize, token, userinfo).
 2. **Phase 1** — Multiple synthetic users (log in as any username; stable `sub`).
 3. **Phase 2** — Scenario registry (replace ad-hoc string switches with a data model).
 4. **Phase 3** — Login page with selectable scenarios (self-documenting UI).
 5. **Phase 4** — High-value failure scenarios (expired token, wrong aud/iss, bad nonce, broken userinfo).
+6. **Phase 5** — Multiple clients (public/confidential/dev, per-client redirect/PKCE/scope, merge into builtins).
+7. **Phase 6** — Session cookie, `prompt=none`/`prompt=login`, `max_age`, `login_hint`, `auth_time` carried from login.
+8. **Phase 7** — Claim variants via `ExtraClaims`/`OmitClaims` (groups/roles/tenant/locale).
+9. **Phase 8** — Debug UI (`/debug/*`, loopback-only introspection + reset).
+10. **Phase 9** — Refresh tokens (`offline_access`, rotation, reuse detection).
+11. **Phase 10** — JWKS/key rotation (multi-key JWKS, `kid-not-found`, bad signature, JWKS 500/slow/empty).
+12. **Phase 11** — RP-initiated logout (`/end-session`, `id_token_hint`, `post_logout_redirect_uri`, `state`).
 
-Later phases (multiple clients, session cookies/`prompt`, claims/authorization shapes, debug UI, refresh tokens, JWKS rotation, logout, Go test helper) are documented but explicitly **not** part of the first release.
+**Phase 12** (importable Go test helper) is documented but not yet implemented.
 
 ---
 
@@ -95,8 +102,7 @@ This is **not production-grade**. It deliberately omits:
 
 - Real login, consent, or password validation.
 - Persistent keys (signing key is generated in-memory at startup).
-- Refresh tokens (until Phase 9), revocation, pairwise subjects.
-- Logout / end-session (until Phase 11).
+- Revocation, pairwise subjects. (Refresh tokens are supported as of Phase 9; logout as of Phase 11.)
 - TLS enforcement, hardened redirect handling, dynamic client registration.
 - Multi-tenancy, account databases, email verification flows.
 
@@ -277,13 +283,13 @@ The single-file version is the **starting point for Phase 0**. The phased plan (
 | Failure simulation | None | No way to reproduce token/userinfo errors | Phase 2 + Phase 4 |
 | Self-documenting UI | None | Developer must memorize magic usernames | Phase 3 |
 | Scenario model | None (handlers would need switches) | Brittle string-switch code | Phase 2 |
-| Multiple clients | Single client | Can't test public vs confidential clients | Phase 5 (later) |
-| Sessions / `prompt` / `max_age` | None | Can't test silent login / reauth | Phase 6 (later) |
-| Claim variants (groups/roles/tenant) | Minimal claims | Can't test authorization logic | Phase 7 (later) |
-| Debug UI | None | Hard to inspect issued tokens | Phase 8 (later) |
-| Refresh tokens | None | Can't test renewal | Phase 9 (later) |
-| JWKS rotation | Single key | Can't test key rollover | Phase 10 (later) |
-| Logout | None | Can't test RP-initiated logout | Phase 11 (later) |
+| Multiple clients | Single client | Can't test public vs confidential clients | Phase 5 ✅ |
+| Sessions / `prompt` / `max_age` | None | Can't test silent login / reauth | Phase 6 ✅ |
+| Claim variants (groups/roles/tenant) | Minimal claims | Can't test authorization logic | Phase 7 ✅ |
+| Debug UI | None | Hard to inspect issued tokens | Phase 8 ✅ |
+| Refresh tokens | None | Can't test renewal | Phase 9 ✅ |
+| JWKS rotation | Single key | Can't test key rollover | Phase 10 ✅ |
+| Logout | None | Can't test RP-initiated logout | Phase 11 ✅ |
 | Go test helper | None | Can't embed in `go test` | Phase 12 (later) |
 
 ---
@@ -873,16 +879,16 @@ Implement and verify each (pseudocode in §8):
 
 **Validate:** for each, run the full flow against a sample RP and confirm the failure surfaces where expected (RP error page, token exchange error, id-token validation failure, userinfo error).
 
-### Later phases (documented, not in first release)
+### Later phases (implemented; Phase 12 pending)
 
-- **Phase 5** — Multiple clients (`public-spa` PKCE-only, `web-app` confidential, `dev-client` permissive).
-- **Phase 6** — Session cookie + `prompt=none`/`prompt=login` + `max_age` + `login_hint` + `auth_time`.
-- **Phase 7** — Claim variants: `admin`, `viewer`, `no-email`, `unverified-email`, `no-groups`, `many-groups`, `tenant-a-admin`, `unicode-name`; `groups`/`roles`/`tenant`/`preferred_username`.
-- **Phase 8** — Debug UI: `/debug`, `/debug/sessions`, `/debug/codes`, `/debug/tokens`, `/debug/reset` (loopback only).
-- **Phase 9** — Refresh tokens: `offline_access`, `refresh_token` grant, rotation, reuse detection.
-- **Phase 10** — JWKS/key rotation: multiple kids, `kid-not-found`, bad signature, JWKS 500/slow/empty.
-- **Phase 11** — Logout: `/end-session`, `id_token_hint`, `post_logout_redirect_uri`, `state`.
-- **Phase 12** — Go test helper: `func Start(t testing.TB, opts Options) *Provider` returning `Issuer()`.
+- **Phase 5** ✅ — Multiple clients (`public-spa` PKCE-only, `web-app` confidential, `dev-client` permissive); merge into builtins.
+- **Phase 6** ✅ — Session cookie + `prompt=none`/`prompt=login` + `max_age` + `login_hint` + `auth_time` carried from login.
+- **Phase 7** ✅ — Claim variants: `admin`, `viewer`, `no-email`, `unverified-email`, `no-groups`, `many-groups`, `tenant-a-admin`, `unicode-name`; `groups`/`roles`/`tenant`/`preferred_username`/`locale`.
+- **Phase 8** ✅ — Debug UI: `/debug`, `/debug/sessions`, `/debug/codes`, `/debug/tokens`, `/debug/reset` (loopback only).
+- **Phase 9** ✅ — Refresh tokens: `offline_access`, `refresh_token` grant, rotation, reuse detection.
+- **Phase 10** ✅ — JWKS/key rotation: multiple kids, `kid-not-found`, bad signature, JWKS 500/slow/empty; `Scenario.SignKey` + server-level `jwksMode`.
+- **Phase 11** ✅ — Logout: `/end-session`, `id_token_hint`, `post_logout_redirect_uri`, `state`; client-scoped post-logout allowlist.
+- **Phase 12** — Go test helper: `func Start(t testing.TB, opts Options) *Provider` returning `Issuer()`. **(pending)**
 
 ---
 
