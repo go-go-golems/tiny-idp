@@ -2,7 +2,7 @@
 
 A minimal mock [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) Identity Provider for **local development and integration testing**. It exists to replace Keycloak-in-Docker when all you need is a working OIDC provider that issues RS256-signed ID tokens.
 
-> ⚠️ **Not production-grade.** No real login, consent, persistent keys, refresh tokens, revocation, logout, or TLS enforcement. Bind to loopback (`127.0.0.1`) and never expose to the internet. See the design doc in `ttmp/` (ticket `MOCK-OIDC-IDP`).
+> ⚠️ **Not production-grade.** No real account system, consent screen, persistent keys, token revocation, or TLS enforcement. Refresh tokens and RP-initiated logout are implemented for testing semantics only and are in-memory. Bind to loopback (`127.0.0.1`) and never expose to the internet. See the design doc in `ttmp/` (ticket `MOCK-OIDC-IDP`).
 
 ## Run
 
@@ -146,12 +146,15 @@ So `--client-id public-spa --redirect-uris http://localhost:9090/cb` yields a `p
 | `GET /.well-known/openid-configuration` | Discovery metadata. |
 | `GET /jwks` | Public signing keys (JWKS). |
 | `GET /authorize` | Authorization endpoint (login form → code). |
-| `POST /token` | Token endpoint (code → ID + access token). |
+| `POST /token` | Token endpoint (`authorization_code` and `refresh_token`). |
 | `GET /userinfo` | UserInfo (bearer access token → claims). |
+| `GET /end-session` | RP-initiated logout. |
 | `GET /healthz` | Liveness. |
+| `GET/POST /debug/*` | Loopback-only introspection, reset, and JWKS failure-mode controls. |
 
 ## Status
 
 - **Phase 0–4** — baseline OIDC happy path, multiple synthetic users, scenario registry, self-documenting login page, failure scenarios (done).
 - **Glazed CLI** — reusable `oidc` field section, layered config (flags/env/config), **profiles** (`--profile` resolves `profiles.yaml`), **`print-config`** command (done).
-- **Phase 5–12** — multiple clients, sessions, claims, debug UI, refresh tokens, JWKS rotation, logout, Go test helper (deferred; see `ttmp/.../reference/02-implementation-phases-and-tasks.md`).
+- **Phase 5–11** — multiple clients, sessions, claims, debug UI, refresh tokens, JWKS rotation, and RP-initiated logout (done).
+- **Phase 12** — Go test helper package (deferred; see `ttmp/.../reference/02-implementation-phases-and-tasks.md`).
