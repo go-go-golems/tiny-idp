@@ -63,7 +63,7 @@ Examples:
 Introspect the resolved configuration:
   tinyidp serve --print-parsed-fields
 
-Use a named profile (requires profiles.yaml, see `+"`tinyidp help profiles`"+`):
+Use a named profile (requires profiles.yaml, see `+"`tinyidp help reference`"+`):
   tinyidp serve --profile dev
 `),
 		cmds.WithSections(oidcSection, commandSettingsSection),

@@ -43,7 +43,7 @@ func defaultProfileFile() (string, error) {
 //
 //	defaults < profiles < config < env < args < flags
 //
-// This matches the precedence documented in `tinyidp help profiles` and in
+// This matches the precedence documented in `tinyidp help reference` and in
 // the README. Profiles sit above defaults (a profile overrides the built-in
 // defaults) but below config/env/flags (local overrides win), which is the
 // Glazed-recommended placement for environment presets.

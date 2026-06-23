@@ -53,7 +53,7 @@ func main() {
 	cobra.CheckErr(err)
 	serveCobraCmd, err := cli.BuildCobraCommand(serveCmd,
 		cli.WithParserConfig(cli.CobraParserConfig{
-			AppName:            "tinyidp", // enables TINYIDP_* env loading
+			AppName:           "tinyidp",                  // enables TINYIDP_* env loading
 			ConfigPlanBuilder: cmds.ConfigFilePlanBuilder, // makes --config-file actually load
 			// Replace the default parser chain with one that inserts profile
 			// resolution at the right precedence layer (defaults < profiles <
@@ -63,7 +63,7 @@ func main() {
 		}),
 		// Adds --profile / --profile-file (and TINYIDP_PROFILE /
 		// TINYIDP_PROFILE_FILE). The MiddlewaresFunc above reads these and
-		// loads ~/.config/tinyidp/profiles.yaml. See `tinyidp help profiles`.
+		// loads ~/.config/tinyidp/profiles.yaml. See `tinyidp help reference`.
 		cli.WithProfileSettingsSection(),
 	)
 	cobra.CheckErr(err)
@@ -76,8 +76,8 @@ func main() {
 	cobra.CheckErr(err)
 	printConfigCobraCmd, err := cli.BuildCobraCommand(printConfigCmd,
 		cli.WithParserConfig(cli.CobraParserConfig{
-			AppName:            "tinyidp",
-			ConfigPlanBuilder:  cmds.ConfigFilePlanBuilder,
+			AppName:           "tinyidp",
+			ConfigPlanBuilder: cmds.ConfigFilePlanBuilder,
 			MiddlewaresFunc:   cmds.ProfileMiddlewaresFunc("tinyidp", cmds.ConfigFilePlanBuilder),
 		}),
 		cli.WithProfileSettingsSection(),

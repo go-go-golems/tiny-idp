@@ -86,7 +86,7 @@ go run ./cmd/tinyidp serve --profile ci --profile-file /path/to/profiles.yaml
 TINYIDP_PROFILE=dev go run ./cmd/tinyidp serve   # or via env
 ```
 
-Profiles sit above defaults and below config/env/flags in precedence, so a local override always wins. The default file missing + `default` profile = silent skip (works out of the box). See `tinyidp help profiles`.
+Profiles sit above defaults and below config/env/flags in precedence, so a local override always wins. The default file missing + `default` profile = silent skip (works out of the box). See `tinyidp help reference`.
 
 ### Introspect the resolved config
 
@@ -101,9 +101,11 @@ go run ./cmd/tinyidp serve --print-schema                   # show the command's
 `print-config` composes the same reusable `oidc` section as `serve`, so its output is exactly what `serve` would use.
 
 ```bash
-go run ./cmd/tinyidp help              # browse topics
-go run ./cmd/tinyidp help oidc-config  # the OIDC section
-go run ./cmd/tinyidp help profiles     # profiles explained
+go run ./cmd/tinyidp help                # browse topics
+go run ./cmd/tinyidp help getting-started  # install + first login
+go run ./cmd/tinyidp help tutorial      # guided scenario walkthrough
+go run ./cmd/tinyidp help scenarios      # the scenario catalog
+go run ./cmd/tinyidp help reference      # config, clients, endpoints
 ```
 
 ## Configure your app (RP)
