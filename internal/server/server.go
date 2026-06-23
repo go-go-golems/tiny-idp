@@ -78,8 +78,9 @@ type refreshToken struct {
 
 // Options configures a Server at construction time.
 type Options struct {
-	Issuer  string
-	Clients *client.Registry
+	Issuer   string
+	Clients  *client.Registry
+	Registry *scenario.Registry
 }
 
 // New constructs a Server with a freshly generated RSA signing key. If
@@ -94,12 +95,16 @@ func New(opts Options) (*Server, error) {
 	if clients == nil {
 		clients = client.NewRegistry()
 	}
+	registry := opts.Registry
+	if registry == nil {
+		registry = scenario.New()
+	}
 	return &Server{
 		issuer:        opts.Issuer,
 		clients:       clients,
 		key:           key,
 		kid:           "dev-key-1",
-		registry:      scenario.New(),
+		registry:      registry,
 		codes:         map[string]authCode{},
 		tokens:        map[string]accessToken{},
 		sessions:      map[string]*session{},

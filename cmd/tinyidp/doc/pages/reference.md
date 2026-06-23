@@ -47,6 +47,7 @@ and config-file schema never drift between them.
 | `--client-id` | `TINYIDP_CLIENT_ID` | `dev-client` | Client ID. If it matches a builtin, the config is merged into it. |
 | `--client-secret` | `TINYIDP_CLIENT_SECRET` | (empty) | If set, `/token` enforces it; if empty, the client is public. |
 | `--redirect-uris` | `TINYIDP_REDIRECT_URIS` | `http://localhost:3000/callback,http://127.0.0.1:3000/callback` | Allowlist of redirect URIs (repeat the flag or pass a list). |
+| `--users-file` | `TINYIDP_USERS_FILE` | (empty) | Optional YAML/JSON file with seeded users and claims. |
 
 ### Precedence
 
@@ -75,6 +76,7 @@ live under the `oidc` section slug:
       client-secret: dev-secret
       redirect-uris:
         - http://localhost:8080/callback
+      users-file: ./users.yaml
 
 Pass it with `tinyidp serve --config-file config.yaml`.
 
@@ -103,6 +105,30 @@ non-default profile with no file is an error, never a silent fallback.
 
     tinyidp serve --profile dev
     TINYIDP_PROFILE=ci tinyidp serve
+
+## Seeded users
+
+By default, tinyidp derives a stable synthetic user from whatever login is typed. For integration tests that need fixed subjects or app-specific claims, pass `--users-file` (or `oidc.users-file` in config). The file may be YAML or JSON:
+
+    users:
+      - login: alice
+        sub: user-alice-fixed
+        email: alice@example.test
+        name: Alice Inbox
+        email_verified: true
+        claims:
+          groups: [inbox-users]
+          tenant: personal
+      - login: bob
+        sub: user-bob-fixed
+        email: bob@example.test
+        name: Bob Inbox
+        email-verified: true
+        claims:
+          groups: [inbox-users]
+          tenant: personal
+
+Seeded users are registered as normal scenarios. They override builtins with the same login, appear on the login page under "Seeded users" by default, and their `claims` map is merged into both the ID token and userinfo response. Use `omit_claims` when a seeded user should deliberately omit a base claim such as `email`.
 
 ## Clients
 

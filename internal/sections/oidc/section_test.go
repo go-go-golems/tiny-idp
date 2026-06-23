@@ -29,7 +29,7 @@ func TestSectionShape(t *testing.T) {
 	assert.Equal(t, "OIDC Provider Configuration", section.GetName())
 
 	defs := section.GetDefinitions()
-	for _, name := range []string{"issuer", "addr", "client-id", "client-secret", "redirect-uris"} {
+	for _, name := range []string{"issuer", "addr", "client-id", "client-secret", "redirect-uris", "users-file"} {
 		_, present := defs.Get(name)
 		assert.True(t, present, "missing field %q", name)
 	}
@@ -54,6 +54,7 @@ func TestDefaultsRoundTrip(t *testing.T) {
 		[]string{"http://localhost:3000/callback", "http://127.0.0.1:3000/callback"},
 		s.RedirectURIs,
 	)
+	assert.Equal(t, "", s.UsersFile)
 }
 
 // TestEnvOverridesDefaults proves the AppName-based env loading (TINYIDP_*)

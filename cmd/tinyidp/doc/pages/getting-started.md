@@ -95,6 +95,11 @@ by category. Each scenario reproduces a specific behavior — a normal
 user, a claim variant, or a failure. You select a scenario by logging in
 as its name.
 
+If your integration tests need fixed subjects or custom claims for names
+such as `alice` and `bob`, start tinyidp with `--users-file ./users.yaml`.
+The users file overrides or adds normal login scenarios without changing
+the relying party configuration.
+
 ## Step 5 — inspect what was issued
 
 tinyidp exposes a loopback-only debug UI. In another terminal:

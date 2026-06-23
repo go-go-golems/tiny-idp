@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/manuel/tinyidp/internal/client"
+	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/sections/oidc"
 	"github.com/manuel/tinyidp/internal/server"
 )
@@ -59,6 +60,7 @@ Examples:
   tinyidp serve --issuer http://localhost:5556 --client-id dev-client
   tinyidp serve --redirect-uris http://localhost:8080/callback
   tinyidp serve --client-secret dev-secret
+  tinyidp serve --users-file ./users.yaml
 
 Introspect the resolved configuration:
   tinyidp serve --print-parsed-fields
@@ -79,9 +81,15 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 		return err
 	}
 
+	registry, err := buildScenarioRegistry(cfg)
+	if err != nil {
+		return err
+	}
+
 	srv, err := server.New(server.Options{
-		Issuer:  cfg.Issuer,
-		Clients: buildClientRegistry(cfg),
+		Issuer:   cfg.Issuer,
+		Clients:  buildClientRegistry(cfg),
+		Registry: registry,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
@@ -140,4 +148,17 @@ func buildClientRegistry(cfg *oidc.Settings) *client.Registry {
 		r.Register(configured)
 	}
 	return r
+}
+
+func buildScenarioRegistry(cfg *oidc.Settings) (*scenario.Registry, error) {
+	r := scenario.New()
+	if cfg.UsersFile == "" {
+		return r, nil
+	}
+	seeded, err := scenario.LoadSeededUsers(cfg.UsersFile)
+	if err != nil {
+		return nil, err
+	}
+	r.RegisterAll(seeded)
+	return r, nil
 }

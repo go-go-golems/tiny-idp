@@ -516,6 +516,36 @@ func TestScenarioHookIsThreadedThroughFlow(t *testing.T) {
 	}
 }
 
+func TestSeededUserScenarioIsThreadedThroughFlow(t *testing.T) {
+	s, ts := newTestServer(t)
+	seeded, err := scenario.SeededUsersToScenarios([]scenario.SeededUser{
+		{
+			Login: "alice",
+			Sub:   "user-alice-fixed",
+			Email: "alice@inbox.test",
+			Name:  "Alice Inbox",
+			Claims: map[string]any{
+				"tenant": "personal",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.registry.RegisterAll(seeded)
+
+	_, claims, ui := fullFlow(t, ts, "alice", nil)
+	if claims["sub"] != "user-alice-fixed" || ui["sub"] != "user-alice-fixed" {
+		t.Fatalf("seeded sub not used: id=%v userinfo=%v", claims["sub"], ui["sub"])
+	}
+	if claims["email"] != "alice@inbox.test" || ui["email"] != "alice@inbox.test" {
+		t.Fatalf("seeded email not used: id=%v userinfo=%v", claims["email"], ui["email"])
+	}
+	if claims["tenant"] != "personal" || ui["tenant"] != "personal" {
+		t.Fatalf("seeded tenant not used: id=%v userinfo=%v", claims["tenant"], ui["tenant"])
+	}
+}
+
 // --- Phase 3: self-documenting login page ---
 
 // TestLoginPageListsBuiltinScenarios verifies the login page renders the

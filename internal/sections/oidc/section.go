@@ -61,6 +61,10 @@ func NewSection() (schema.Section, error) {
 				}),
 				fields.WithHelp("Allowlist of redirect URIs (repeat --redirect-uris or pass a list in config)"),
 			),
+			fields.New("users-file", fields.TypeString,
+				fields.WithDefault(""),
+				fields.WithHelp("Optional YAML/JSON file with seeded users and claims"),
+			),
 		),
 	)
 }

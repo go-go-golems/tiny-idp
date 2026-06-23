@@ -29,6 +29,7 @@ The OIDC provider config is a **reusable Glazed field section** (`internal/secti
 | `--client-id` | `TINYIDP_CLIENT_ID` | `oidc.client-id` | `dev-client` | Accepted client ID. |
 | `--client-secret` | `TINYIDP_CLIENT_SECRET` | `oidc.client-secret` | (empty) | If set, `/token` enforces it; if empty, client is public. |
 | `--redirect-uris` | `TINYIDP_REDIRECT_URIS` | `oidc.redirect-uris` | `http://localhost:3000/callback,http://127.0.0.1:3000/callback` | Allowlist (repeatable flag / list in config). |
+| `--users-file` | `TINYIDP_USERS_FILE` | `oidc.users-file` | (empty) | Optional YAML/JSON file with seeded users and claims. |
 
 ### Examples
 
@@ -58,11 +59,42 @@ oidc:
   client-secret: dev-secret
   redirect-uris:
     - http://localhost:8080/callback
+  users-file: ./users.yaml
 ```
 
 ```bash
 go run ./cmd/tinyidp serve --config-file tinyidp.yaml
 ```
+
+### Seeded users
+
+By default, any login derives a stable synthetic user. For tests that need fixed subjects or app-specific claim shapes, pass a users file:
+
+```yaml
+users:
+  - login: alice
+    sub: user-alice-fixed
+    email: alice@example.test
+    name: Alice Inbox
+    email_verified: true
+    claims:
+      groups: [inbox-users]
+      tenant: personal
+  - login: bob
+    sub: user-bob-fixed
+    email: bob@example.test
+    name: Bob Inbox
+    email-verified: true
+    claims:
+      groups: [inbox-users]
+      tenant: personal
+```
+
+```bash
+go run ./cmd/tinyidp serve --users-file ./users.yaml
+```
+
+Seeded users override builtins with the same login, so you can keep using `alice` and `bob` while making their `sub`, `email`, `name`, and claims deterministic for a test suite.
 
 ### Profiles (switch setups with one flag)
 
