@@ -21,7 +21,7 @@
   <h1>Tiny IdP</h1>
   <p class="hint">Enter any login. A local synthetic OIDC user will be created (password is ignored).</p>
 
-  <form id="login-form" method="post" action="/authorize">
+  <form id="login-form" method="post" action="authorize">
     {{range .Hidden}}
       <input type="hidden" name="{{.Name}}" value="{{.Value}}">
     {{end}}

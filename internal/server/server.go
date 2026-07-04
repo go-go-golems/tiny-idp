@@ -13,6 +13,8 @@ package server
 import (
 	"crypto/rsa"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -114,17 +116,43 @@ func New(opts Options) (*Server, error) {
 
 // RegisterRoutes wires all IdP handlers onto the given mux. Tests use this to
 // mount the server on an httptest.Server without ListenAndServe.
+//
+// When the configured issuer has a path component, routes are registered both
+// at the root paths and at the issuer path prefix. For example, issuer
+// "http://127.0.0.1:5556/realms/demo" serves discovery at both
+// "/.well-known/openid-configuration" and
+// "/realms/demo/.well-known/openid-configuration". This keeps the simple root
+// issuer workflow while allowing Keycloak-shaped realm issuer URLs in tests.
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/.well-known/openid-configuration", s.discovery)
-	mux.HandleFunc("/jwks", s.jwks)
-	mux.HandleFunc("/authorize", s.authorize)
-	mux.HandleFunc("/token", s.token)
-	mux.HandleFunc("/userinfo", s.userinfo)
-	mux.HandleFunc("/end-session", s.endSession)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	s.registerRoutesAt(mux, "")
+	if prefix := s.issuerPathPrefix(); prefix != "" {
+		s.registerRoutesAt(mux, prefix)
+	}
+}
+
+func (s *Server) registerRoutesAt(mux *http.ServeMux, prefix string) {
+	mux.HandleFunc(prefix+"/.well-known/openid-configuration", s.discovery)
+	mux.HandleFunc(prefix+"/jwks", s.jwks)
+	mux.HandleFunc(prefix+"/authorize", s.authorize)
+	mux.HandleFunc(prefix+"/token", s.token)
+	mux.HandleFunc(prefix+"/userinfo", s.userinfo)
+	mux.HandleFunc(prefix+"/end-session", s.endSession)
+	mux.HandleFunc(prefix+"/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	s.debugRoutes(mux)
+	s.debugRoutesAt(mux, prefix)
+}
+
+func (s *Server) issuerPathPrefix() string {
+	u, err := url.Parse(s.issuer)
+	if err != nil {
+		return ""
+	}
+	prefix := strings.TrimRight(u.EscapedPath(), "/")
+	if prefix == "/" {
+		return ""
+	}
+	return prefix
 }
 
 // Issuer returns the configured issuer URL.

@@ -24,7 +24,7 @@ The OIDC provider config is a **reusable Glazed field section** (`internal/secti
 
 | Flag | Env | Config key | Default | Meaning |
 |------|-----|------------|---------|---------|
-| `--issuer` | `TINYIDP_ISSUER` | `oidc.issuer` | `http://localhost:5556` | Issuer URL; endpoints derived from it. |
+| `--issuer` | `TINYIDP_ISSUER` | `oidc.issuer` | `http://localhost:5556` | Issuer URL; endpoints derived from it. Path-based issuers such as `http://localhost:5556/realms/demo` are supported. |
 | `--addr` | `TINYIDP_ADDR` | `oidc.addr` | `127.0.0.1:5556` | Listen address (loopback by default). |
 | `--client-id` | `TINYIDP_CLIENT_ID` | `oidc.client-id` | `dev-client` | Accepted client ID. |
 | `--client-secret` | `TINYIDP_CLIENT_SECRET` | `oidc.client-secret` | (empty) | If set, `/token` enforces it; if empty, client is public. |
@@ -183,6 +183,8 @@ So `--client-id public-spa --redirect-uris http://localhost:9090/cb` yields a `p
 | `GET /end-session` | RP-initiated logout. |
 | `GET /healthz` | Liveness. |
 | `GET/POST /debug/*` | Loopback-only introspection, reset, and JWKS failure-mode controls. |
+
+When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/token`, `/userinfo`, `/jwks`, and `/end-session` endpoint URLs. Root routes remain available for simple local testing.
 
 ## Status
 

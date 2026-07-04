@@ -67,7 +67,11 @@ configuration. Confirm the endpoint responds:
     curl -s http://localhost:5556/.well-known/openid-configuration | jq .issuer
 
 The `issuer` is `http://localhost:5556`, and the document advertises every
-endpoint tinyidp implements, including `end_session_endpoint`.
+endpoint tinyidp implements, including `end_session_endpoint`. If you need a
+Keycloak-shaped issuer for compatibility tests, start tinyidp with a path-based
+issuer such as `--issuer http://localhost:5556/realms/demo`; discovery is then
+available at `/realms/demo/.well-known/openid-configuration` and advertises
+endpoints under that same path.
 
 ## Step 3 — point your relying party at tinyidp
 

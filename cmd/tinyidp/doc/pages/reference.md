@@ -42,7 +42,7 @@ and config-file schema never drift between them.
 
 | Flag | Env | Default | Purpose |
 |------|-----|---------|---------|
-| `--issuer` | `TINYIDP_ISSUER` | `http://localhost:5556` | Issuer URL; endpoints are derived from it. |
+| `--issuer` | `TINYIDP_ISSUER` | `http://localhost:5556` | Issuer URL; endpoints are derived from it. Path-based issuers such as `http://localhost:5556/realms/demo` are supported. |
 | `--addr` | `TINYIDP_ADDR` | `127.0.0.1:5556` | Listen address (loopback by default; set `0.0.0.0:5556` for LAN). |
 | `--client-id` | `TINYIDP_CLIENT_ID` | `dev-client` | Client ID. If it matches a builtin, the config is merged into it. |
 | `--client-secret` | `TINYIDP_CLIENT_SECRET` | (empty) | If set, `/token` enforces it; if empty, the client is public. |
@@ -165,6 +165,8 @@ registers a new permissive client.
 | `/end-session` | GET | RP-initiated logout. See Logout below. |
 | `/healthz` | GET | Liveness (`ok`). |
 | `/debug/*` | GET/POST | Loopback-only introspection. See Debug UI below. |
+
+If `--issuer` includes a path component, tinyidp registers the same endpoints under that prefix as well as at the root. For example, issuer `http://localhost:5556/realms/demo` serves discovery at `/realms/demo/.well-known/openid-configuration` and advertises endpoint URLs under `/realms/demo`. This is useful when replacing Keycloak realm URLs in tests while keeping the root issuer workflow available for simple local runs.
 
 ## Behaviors
 

@@ -56,6 +56,122 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	return s, ts
 }
 
+// TestIssuerPathPrefixRoutes proves tinyidp can serve Keycloak-shaped issuer
+// URLs such as /realms/<name> while still deriving discovery metadata and ID
+// token issuer claims from the configured path-based issuer.
+func TestIssuerPathPrefixRoutes(t *testing.T) {
+	const prefix = "/realms/personal-inbox"
+
+	s, err := New(Options{Issuer: "http://issuer.test" + prefix})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	s.clients.Register(client.Client{
+		ID:                     "dev-client",
+		RedirectURIs:           []string{"https://app.test/cb"},
+		PostLogoutRedirectURIs: []string{"https://app.test/logout"},
+	})
+	mux := http.NewServeMux()
+	s.RegisterRoutes(mux)
+	ts := httptest.NewServer(WithCORS(mux))
+	t.Cleanup(ts.Close)
+	s.issuer = ts.URL + prefix
+
+	resp, err := ts.Client().Get(ts.URL + prefix + "/.well-known/openid-configuration")
+	if err != nil {
+		t.Fatalf("prefixed discovery: %v", err)
+	}
+	var discovery map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+		resp.Body.Close()
+		t.Fatalf("decode discovery: %v", err)
+	}
+	resp.Body.Close()
+	if discovery["issuer"] != s.issuer {
+		t.Fatalf("issuer = %v want %s", discovery["issuer"], s.issuer)
+	}
+	if discovery["authorization_endpoint"] != s.issuer+"/authorize" {
+		t.Fatalf("authorization_endpoint = %v", discovery["authorization_endpoint"])
+	}
+	if discovery["token_endpoint"] != s.issuer+"/token" {
+		t.Fatalf("token_endpoint = %v", discovery["token_endpoint"])
+	}
+	if discovery["jwks_uri"] != s.issuer+"/jwks" {
+		t.Fatalf("jwks_uri = %v", discovery["jwks_uri"])
+	}
+
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "dev-client")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid profile email")
+	auth.Set("state", "prefixed-state")
+	auth.Set("nonce", "prefixed-nonce")
+
+	formResp, err := ts.Client().Get(ts.URL + prefix + "/authorize?" + auth.Encode())
+	if err != nil {
+		t.Fatalf("prefixed authorize GET: %v", err)
+	}
+	formBody, _ := io.ReadAll(formResp.Body)
+	formResp.Body.Close()
+	if formResp.StatusCode != http.StatusOK || !strings.Contains(string(formBody), `action="authorize"`) {
+		t.Fatalf("prefixed authorize form = %d %q", formResp.StatusCode, formBody)
+	}
+
+	c := ts.Client()
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }
+	postResp, err := c.PostForm(ts.URL+prefix+"/authorize", authorizeForm("alice", auth))
+	if err != nil {
+		t.Fatalf("prefixed authorize POST: %v", err)
+	}
+	loc, err := postResp.Location()
+	postResp.Body.Close()
+	if err != nil {
+		t.Fatalf("prefixed authorize redirect location: %v", err)
+	}
+	if loc.Query().Get("state") != "prefixed-state" {
+		t.Fatalf("state not echoed: %s", loc.String())
+	}
+	code := loc.Query().Get("code")
+	if code == "" {
+		t.Fatalf("no code in prefixed redirect: %s", loc.String())
+	}
+
+	tokForm := url.Values{}
+	tokForm.Set("grant_type", "authorization_code")
+	tokForm.Set("code", code)
+	tokForm.Set("redirect_uri", "https://app.test/cb")
+	tokForm.Set("client_id", "dev-client")
+	tokenResp, err := ts.Client().PostForm(ts.URL+prefix+"/token", tokForm)
+	if err != nil {
+		t.Fatalf("prefixed token exchange: %v", err)
+	}
+	defer tokenResp.Body.Close()
+	var tokenBody map[string]any
+	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenBody); err != nil {
+		t.Fatalf("decode prefixed token response: %v", err)
+	}
+	if tokenResp.StatusCode != http.StatusOK {
+		t.Fatalf("prefixed token status %d: %v", tokenResp.StatusCode, tokenBody)
+	}
+	claims := verifyIDTokenSignature(t, ts, tokenBody["id_token"].(string))
+	if claims["iss"] != s.issuer {
+		t.Fatalf("id token iss = %v want %s", claims["iss"], s.issuer)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+prefix+"/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenBody["access_token"].(string))
+	uiResp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("prefixed userinfo: %v", err)
+	}
+	defer uiResp.Body.Close()
+	if uiResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(uiResp.Body)
+		t.Fatalf("prefixed userinfo status %d: %s", uiResp.StatusCode, body)
+	}
+}
+
 // fullFlow drives authorize (GET form -> POST login) -> token -> userinfo for
 // the given login and extra authorize params (code_challenge / code_verifier /
 // etc.) and returns the parsed token response, the verified ID token claims,
