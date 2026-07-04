@@ -112,3 +112,4 @@
 
 - MVP cutoff = Phases 0–4. Detailed per-task breakdown in `reference/02-implementation-phases-and-tasks.md`.
 - All work stays inside `/home/manuel/code/wesen/2026-06-22--mock-oidc-idp`.
+- [x] Support Keycloak-style path-based issuer routes
