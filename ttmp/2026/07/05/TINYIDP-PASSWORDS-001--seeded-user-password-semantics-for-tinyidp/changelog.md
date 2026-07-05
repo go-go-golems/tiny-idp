@@ -23,3 +23,13 @@ Uploaded design bundle to reMarkable at /ai/2026/07/05/TINYIDP-PASSWORDS-001.
 
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/design-doc/01-seeded-user-password-semantics-guide.md — Uploaded bundle content
 
+
+## 2026-07-05
+
+Expanded password ticket into a detailed step-by-step implementation checklist and recorded continuation diary.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/reference/01-implementation-diary.md — Continuation diary
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/tasks.md — Detailed password implementation checklist
+

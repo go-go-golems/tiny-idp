@@ -97,3 +97,75 @@ Ticket path:
 ```text
 /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp
 ```
+
+## Step 2: Resume password ticket with detailed implementation checklist
+
+This step resumed `TINYIDP-PASSWORDS-001` after completing the generic claim preset ticket. I replaced the coarse task list with a precise phase-by-phase checklist so implementation progress can be tracked at the level of schema fields, validation behavior, tests, docs, and final repository validation.
+
+No code changed in this step. The next step will implement the seeded-user and scenario schema changes with focused tests before touching authorize POST behavior.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the step-by-step tinyidp follow-up work, using the existing docmgr tickets, detailed task tracking, diary updates, validation, and focused commits.
+
+**Inferred user intent:** The user wants the next ticket advanced incrementally without losing the documentation and review discipline established in the previous ticket.
+
+**Commit (code):** pending — task/diary baseline only.
+
+### What I did
+
+- Chose `TINYIDP-PASSWORDS-001` as the next ticket after finishing generic claim presets.
+- Replaced the coarse password task list with detailed phases:
+  - ticket baseline and tracking,
+  - seeded-user schema and conversion,
+  - scenario tests,
+  - authorize POST validation,
+  - server-flow tests,
+  - login UI/docs,
+  - final validation/bookkeeping.
+- Added this diary entry before code changes.
+
+### Why
+
+- The user asked for precise tracking in the docmgr ticket.
+- Password semantics touch schema, request handling, UI copy, docs, and tests; splitting them prevents a hard-to-review batch.
+
+### What worked
+
+- Existing ticket state was clean and the previous design bundle had already passed `docmgr doctor`.
+
+### What didn't work
+
+- No failures occurred in this step.
+
+### What I learned
+
+- The current password ticket still had a coarse checklist. It needed the same task granularity as the generic claim preset ticket before implementation.
+
+### What was tricky to build
+
+- The main scoping choice is to keep passwords optional and seeded-user driven. Built-in and fallback users should continue to be permissive unless a configured seeded user supplies a password.
+
+### What warrants a second pair of eyes
+
+- Review the final validation behavior: wrong and missing configured passwords should both return the same generic `invalid login or password` message.
+
+### What should be done in the future
+
+- Implement Phase 1 and Phase 2 in a focused code commit.
+- Then implement authorize POST validation and server-flow tests.
+
+### Code review instructions
+
+- Start with `tasks.md` for the execution checklist.
+- Then inspect the next code commit for `internal/scenario/seeded_users.go` and `internal/scenario/seeded_users_test.go` only.
+
+### Technical details
+
+Ticket path:
+
+```text
+/home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp
+```
