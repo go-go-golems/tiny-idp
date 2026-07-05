@@ -99,10 +99,20 @@ by category. Each scenario reproduces a specific behavior — a normal
 user, a claim variant, or a failure. You select a scenario by logging in
 as its name.
 
-If your integration tests need fixed subjects or custom claims for names
-such as `alice` and `bob`, start tinyidp with `--users-file ./users.yaml`.
-The users file overrides or adds normal login scenarios without changing
-the relying party configuration.
+If your integration tests need fixed subjects, optional fixture passwords,
+or custom claims for names such as `alice` and `bob`, start tinyidp with
+`--users-file ./users.yaml`. The users file overrides or adds normal login
+scenarios without changing the relying party configuration.
+
+Checked-in examples are available when you want a copy/paste starting point:
+
+    ./tinyidp serve --config-file examples/configs/dev-root.yaml
+    ./tinyidp serve --config-file examples/configs/personal-inbox-root.yaml
+    ./tinyidp serve --config-file examples/configs/personal-inbox-realm.yaml
+
+`oidc.users-file` paths in config files are resolved relative to the process
+working directory, so run these commands from the tinyidp repository root or
+use an absolute users-file path.
 
 ## Step 5 — inspect what was issued
 

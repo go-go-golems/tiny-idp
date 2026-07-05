@@ -1,0 +1,28 @@
+# Provider-neutral seeded users for the xgoja personal knowledge inbox tutorial.
+#
+# Passwords are local fixture values. They are useful for realistic tutorial
+# flows, but they are not production credentials.
+users:
+  - login: alice
+    password: alice-password
+    sub: user-alice-fixed
+    email: alice@example.test
+    name: Alice Inbox
+    email_verified: true
+    groups: [inbox-users]
+    roles: [writer]
+    tenant: personal
+    preferred_username: alice
+    locale: en-US
+
+  - login: bob
+    password: bob-password
+    sub: user-bob-fixed
+    email: bob@example.test
+    name: Bob Inbox
+    email-verified: true
+    groups: [inbox-users]
+    roles: [reader]
+    tenant: personal
+    preferred_username: bob
+    locale: en-US

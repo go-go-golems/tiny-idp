@@ -15,8 +15,28 @@ RelatedFiles:
       Note: |-
         Step 06 tinyidp smoke target to make portable and documented
         Existing tinyidp smoke variables and Step 06 target
+    - Path: ../../../../../../../go-go-goja/examples/xgoja/23-personal-knowledge-inbox/06-browser-login-keycloak/scripts/tinyidp_login_smoke.py
+      Note: xgoja helper updated to submit fixture password (commit eccfa5b)
     - Path: ../../../../../../../go-go-goja/examples/xgoja/23-personal-knowledge-inbox/Makefile
       Note: Aggregate personal-inbox smoke and tinyidp-smoke entrypoint
+    - Path: README.md
+      Note: Public config example and xgoja smoke docs
+    - Path: cmd/tinyidp/doc/pages/getting-started.md
+      Note: Getting-started config example docs
+    - Path: cmd/tinyidp/doc/pages/reference.md
+      Note: Reference docs for config examples and users-file paths
+    - Path: examples/configs/confidential-web-app.yaml
+      Note: Confidential web app config example
+    - Path: examples/configs/dev-root.yaml
+      Note: Basic root-issuer config example
+    - Path: examples/configs/personal-inbox-realm.yaml
+      Note: Personal-inbox path issuer config example
+    - Path: examples/configs/personal-inbox-root.yaml
+      Note: Personal-inbox root issuer config example
+    - Path: examples/configs/public-spa-pkce.yaml
+      Note: Public SPA PKCE config example
+    - Path: examples/users/personal-inbox-users.yaml
+      Note: Personal-inbox seeded users fixture
     - Path: internal/cmds/serve.go
       Note: |-
         Serve command wiring from OIDC settings to server/client registry
@@ -35,6 +55,7 @@ LastUpdated: 2026-07-05T17:45:00-04:00
 WhatFor: Use when implementing example config files, xgoja smoke snippets, profile conventions, and config-debugging ergonomics for tinyidp.
 WhenToUse: Read before changing tinyidp CLI config fields, example config layout, xgoja Makefile smoke targets, or docs for root vs realm issuers.
 ---
+
 
 
 # Portable Configs and xgoja Smoke Ergonomics Guide

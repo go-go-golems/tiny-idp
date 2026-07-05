@@ -80,6 +80,18 @@ live under the `oidc` section slug:
 
 Pass it with `tinyidp serve --config-file config.yaml`.
 
+Portable examples are checked in under `examples/configs/`:
+
+| File | Purpose |
+|------|---------|
+| `dev-root.yaml` | Basic root-issuer setup for local development. |
+| `personal-inbox-root.yaml` | xgoja personal-inbox setup with a root issuer. |
+| `personal-inbox-realm.yaml` | xgoja personal-inbox setup with a path-based issuer URL. |
+| `public-spa-pkce.yaml` | Builtin public SPA client while preserving PKCE-required behavior. |
+| `confidential-web-app.yaml` | Builtin confidential web-app client with local `dev-secret`. |
+
+`oidc.users-file` is resolved relative to the process working directory. For the checked-in examples, run from the tinyidp repository root or pass an absolute users-file path.
+
 ### Profiles
 
 Profiles are named bundles of overrides stored in a YAML file, selected
@@ -176,7 +188,7 @@ registers a new permissive client.
 | `/healthz` | GET | Liveness (`ok`). |
 | `/debug/*` | GET/POST | Loopback-only introspection. See Debug UI below. |
 
-If `--issuer` includes a path component, tinyidp registers the same endpoints under that prefix as well as at the root. For example, issuer `http://localhost:5556/realms/demo` serves discovery at `/realms/demo/.well-known/openid-configuration` and advertises endpoint URLs under `/realms/demo`. This is useful when replacing Keycloak realm URLs in tests while keeping the root issuer workflow available for simple local runs.
+If `--issuer` includes a path component, tinyidp registers the same endpoints under that prefix as well as at the root. For example, issuer `http://localhost:5556/realms/demo` serves discovery at `/realms/demo/.well-known/openid-configuration` and advertises endpoint URLs under `/realms/demo`. This is useful when an app expects an issuer URL with a path while keeping the root issuer workflow available for simple local runs. Path-based issuers are URL-shape compatibility only; seeded-user claims remain generic and provider-neutral.
 
 ## Behaviors
 
@@ -262,6 +274,8 @@ against a log without exposing the full token in a listing.
 | Config flag has no effect. | A higher-precedence source overrode it. | Run `tinyidp serve --print-parsed-fields` to see which source won. |
 | `--redirect-uris` replaced the builtin's URIs. | It does not — it unions them. | The merge preserves builtin properties; the configured URI is added, not swapped. |
 | Debug endpoints return 403. | The request is not from loopback. | Call them from the same host; they are loopback-only by design. |
+| Users file cannot be read. | `oidc.users-file` was relative to a different working directory. | Run from the tinyidp repository root or pass an absolute users-file path. |
+| xgoja login redirects but callback fails. | The app base URL does not match the configured redirect URI. | Match `TINYIDP_BASE_URL` and `oidc.redirect-uris`, for example `http://127.0.0.1:19794/auth/callback`. |
 
 ## See also
 

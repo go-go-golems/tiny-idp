@@ -1,0 +1,10 @@
+# Root-issuer config for the xgoja personal knowledge inbox tutorial smokes.
+# Run from the tinyidp repository root so the relative users-file path resolves.
+# The generated app normally runs at http://127.0.0.1:19794.
+oidc:
+  issuer: http://127.0.0.1:19087
+  addr: 127.0.0.1:19087
+  client-id: personal-inbox-local
+  redirect-uris:
+    - http://127.0.0.1:19794/auth/callback
+  users-file: examples/users/personal-inbox-users.yaml

@@ -66,6 +66,18 @@ oidc:
 go run ./cmd/tinyidp serve --config-file tinyidp.yaml
 ```
 
+Checked-in portable examples live under `examples/configs/`:
+
+| File | Use |
+|------|-----|
+| `examples/configs/dev-root.yaml` | Basic root-issuer dev setup on `localhost:5556`. |
+| `examples/configs/personal-inbox-root.yaml` | xgoja personal-inbox smoke setup with a root issuer. |
+| `examples/configs/personal-inbox-realm.yaml` | xgoja personal-inbox smoke setup with a path-based issuer URL. |
+| `examples/configs/public-spa-pkce.yaml` | Builtin public SPA client that preserves PKCE-required behavior. |
+| `examples/configs/confidential-web-app.yaml` | Builtin confidential web-app client with local `dev-secret`. |
+
+`oidc.users-file` is currently resolved relative to the process working directory. For portable examples, run tinyidp from the repository root or use an absolute users-file path.
+
 ### Seeded users
 
 By default, any login derives a stable synthetic user. For tests that need fixed subjects or app-specific claim shapes, pass a users file:
@@ -100,6 +112,8 @@ users:
 ```bash
 go run ./cmd/tinyidp serve --users-file ./users.yaml
 ```
+
+A ready-to-copy personal-inbox fixture is available at `examples/users/personal-inbox-users.yaml`.
 
 Seeded users override builtins with the same login, so you can keep using `alice` and `bob` while making their `sub`, `email`, `name`, and claims deterministic for a test suite.
 
@@ -195,7 +209,35 @@ So `--client-id public-spa --redirect-uris http://localhost:9090/cb` yields a `p
 | `GET /healthz` | Liveness. |
 | `GET/POST /debug/*` | Loopback-only introspection, reset, and JWKS failure-mode controls. |
 
-When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/token`, `/userinfo`, `/jwks`, and `/end-session` endpoint URLs. Root routes remain available for simple local testing.
+When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/token`, `/userinfo`, `/jwks`, and `/end-session` endpoint URLs. Root routes remain available for simple local testing. Path-based issuers are URL-shape compatibility only; seeded-user claims stay provider-neutral.
+
+## xgoja personal-inbox smoke ergonomics
+
+From the xgoja Step 06 example directory, you can continue using the existing Makefile variables while pointing them at tinyidp:
+
+```bash
+TINYIDP_ROOT=/path/to/2026-06-22--mock-oidc-idp \
+TINYIDP_ISSUER=http://127.0.0.1:19087 \
+TINYIDP_USERS_FILE=/path/to/2026-06-22--mock-oidc-idp/examples/users/personal-inbox-users.yaml \
+make tinyidp-smoke
+```
+
+For a path-based issuer:
+
+```bash
+TINYIDP_ROOT=/path/to/2026-06-22--mock-oidc-idp \
+TINYIDP_ISSUER=http://127.0.0.1:19087/realms/personal-inbox \
+TINYIDP_USERS_FILE=/path/to/2026-06-22--mock-oidc-idp/examples/users/personal-inbox-users.yaml \
+make tinyidp-smoke
+```
+
+Step 07 can reuse the same users file to exercise Alice/Bob inbox isolation. Step 08's device authorization flow remains implemented by the generated xgoja host; tinyidp supplies browser-login OIDC behavior, not an external device authorization endpoint.
+
+Common symptoms:
+
+- `users file ... no such file`: run from the tinyidp repo root or pass an absolute `TINYIDP_USERS_FILE`.
+- `redirect_uri not allowed for this client`: make the app public base URL match the config's redirect URI.
+- discovery works at `/` but not under a path: use a path-based issuer and fetch discovery under that same prefix.
 
 ## Status
 

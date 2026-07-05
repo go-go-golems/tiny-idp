@@ -1,0 +1,10 @@
+# Public SPA client example.
+# `public-spa` is a builtin client that requires PKCE. tinyidp merges this
+# configured redirect URI into the builtin while preserving the PKCE requirement.
+oidc:
+  issuer: http://127.0.0.1:19100
+  addr: 127.0.0.1:19100
+  client-id: public-spa
+  redirect-uris:
+    - http://localhost:8080/callback
+    - http://127.0.0.1:8080/callback
