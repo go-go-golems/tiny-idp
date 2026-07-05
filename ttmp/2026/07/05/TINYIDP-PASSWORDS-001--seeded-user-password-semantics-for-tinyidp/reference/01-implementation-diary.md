@@ -17,6 +17,10 @@ RelatedFiles:
       Note: Seeded-user password schema and conversion
     - Path: internal/scenario/seeded_users_test.go
       Note: Password schema/load tests
+    - Path: internal/server/authorize.go
+      Note: Authorize POST password validation
+    - Path: internal/server/server_test.go
+      Note: Server-flow password validation tests
     - Path: ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/design-doc/01-seeded-user-password-semantics-guide.md
       Note: Primary design guide created in Step 1
 ExternalSources: []
@@ -25,6 +29,7 @@ LastUpdated: 2026-07-05T17:45:00-04:00
 WhatFor: Read before implementing optional password checks for seeded users.
 WhenToUse: Use when resuming TINYIDP-PASSWORDS-001 or reviewing password behavior decisions.
 ---
+
 
 
 # Diary
@@ -246,4 +251,81 @@ Validation command run:
 ```text
 go test ./internal/scenario -count=1
 ok  	github.com/manuel/tinyidp/internal/scenario	0.003s
+```
+
+## Step 4: Validate configured passwords in authorize POST
+
+This step connected the seeded-user password metadata to the browser authorization flow. Authorize POST now checks a scenario's optional password before running auth-error scenarios or issuing a code.
+
+The behavior remains permissive for scenarios with no configured password. Wrong and missing passwords for password-protected seeded users return the same generic `invalid login or password` error and do not create sessions or authorization codes.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Continue from schema metadata into request-time password validation with focused server tests.
+
+**Inferred user intent:** The user wants test-backed behavior changes with exact validation output and task bookkeeping.
+
+**Commit (code):** pending — authorize validation slice.
+
+### What I did
+
+- Added `passwordAccepted` helper in `internal/server/authorize.go`.
+- Read submitted password from the authorize POST form.
+- Rejected wrong or missing configured passwords with `401 Unauthorized` and generic error text.
+- Kept no-password scenarios permissive.
+- Added server-flow tests for:
+  - correct configured password success,
+  - wrong password failure,
+  - missing password failure,
+  - no session/code creation for failed attempts,
+  - unprotected seeded user permissive behavior,
+  - builtin user permissive behavior.
+
+### Why
+
+- Password validation belongs before auth-error scenario redirects and before session/code creation.
+- Using generic error text avoids teaching user-enumeration-style behavior even in a local mock.
+
+### What worked
+
+- `go test ./internal/server -count=1` passed.
+
+### What didn't work
+
+- No failures occurred in this step.
+
+### What I learned
+
+- Failed authorize POST attempts can be verified by checking the in-memory `sessions` and `codes` maps directly in server tests.
+- Existing test helpers could be extended with a no-redirect POST helper to inspect non-302 responses cleanly.
+
+### What was tricky to build
+
+- The state-count assertion must account for the successful correct-password login that intentionally creates one session and one code before the wrong/missing password checks.
+
+### What warrants a second pair of eyes
+
+- Review whether `401 Unauthorized` is preferable to re-rendering the login form with an error message.
+- Review whether password validation should trim submitted passwords. Current behavior requires exact submitted password and only trims configured fixture passwords.
+
+### What should be done in the future
+
+- Update login form copy and public docs.
+- Run full repository validation after docs/examples are updated.
+
+### Code review instructions
+
+- Start with the POST branch in `internal/server/authorize.go`.
+- Then review `TestSeededUserPasswordValidation` and `postAuthorizeNoRedirect` in `internal/server/server_test.go`.
+- Validate with `go test ./internal/server -count=1`.
+
+### Technical details
+
+Validation command run:
+
+```text
+go test ./internal/server -count=1
+ok  	github.com/manuel/tinyidp/internal/server	9.577s
 ```

@@ -31,22 +31,22 @@
 ## Phase 3 — Authorize POST validation
 
 - [x] Read submitted password from authorize POST form
-- [ ] Add small helper for configured-password validation
-- [ ] Reject wrong configured passwords with generic `invalid login or password` text
-- [ ] Return `401 Unauthorized` for wrong configured password
-- [ ] Reject missing configured passwords the same way as wrong passwords
-- [ ] Validate password before auth-error scenario redirects
-- [ ] Preserve no-password scenarios as permissive
+- [x] Add small helper for configured-password validation
+- [x] Reject wrong configured passwords with generic `invalid login or password` text
+- [x] Return `401 Unauthorized` for wrong configured password
+- [x] Reject missing configured passwords the same way as wrong passwords
+- [x] Validate password before auth-error scenario redirects
+- [x] Preserve no-password scenarios as permissive
 
 ## Phase 4 — Server-flow tests
 
-- [ ] Add test that password-protected seeded user succeeds with correct password
-- [ ] Add test that wrong password returns `401`
-- [ ] Add test that missing password returns `401`
-- [ ] Assert wrong password creates no session
-- [ ] Assert wrong password creates no authorization code
-- [ ] Add/keep test that seeded user without password accepts arbitrary submitted password
-- [ ] Add/keep test that built-in user without password accepts arbitrary submitted password
+- [x] Add test that password-protected seeded user succeeds with correct password
+- [x] Add test that wrong password returns `401`
+- [x] Add test that missing password returns `401`
+- [x] Assert wrong password creates no session
+- [x] Assert wrong password creates no authorization code
+- [x] Add/keep test that seeded user without password accepts arbitrary submitted password
+- [x] Add/keep test that built-in user without password accepts arbitrary submitted password
 - [ ] Run `go test ./internal/server -count=1`
 
 ## Phase 5 — Login UI and documentation

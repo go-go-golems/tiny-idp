@@ -45,3 +45,14 @@ Added optional seeded-user password metadata and scenario conversion tests.
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/scenario/seeded_users_test.go — Password schema/load tests
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/reference/01-implementation-diary.md — Step 3 diary
 
+
+## 2026-07-05
+
+Added authorize POST validation for configured seeded-user passwords with server-flow tests.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/authorize.go — Authorize POST password validation
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/server_test.go — Server-flow password validation tests
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/reference/01-implementation-diary.md — Step 4 diary
+

@@ -292,6 +292,17 @@ func authorizePostRedirect(t *testing.T, ts *httptest.Server, form url.Values) *
 	return loc
 }
 
+func postAuthorizeNoRedirect(t *testing.T, ts *httptest.Server, form url.Values) *http.Response {
+	t.Helper()
+	c := ts.Client()
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := c.PostForm(ts.URL+"/authorize", form)
+	if err != nil {
+		t.Fatalf("authorize POST: %v", err)
+	}
+	return resp
+}
+
 // authorizeForm builds a POST form for the given login + authorize params.
 func authorizeForm(login string, auth url.Values) url.Values {
 	f := url.Values{}
@@ -629,6 +640,76 @@ func TestScenarioHookIsThreadedThroughFlow(t *testing.T) {
 	}
 	if claims["sub"] != user.FromLogin("dave").Sub {
 		t.Fatalf("sub = %v, want dave's sub", claims["sub"])
+	}
+}
+
+func TestSeededUserPasswordValidation(t *testing.T) {
+	s, ts := newTestServer(t)
+	seeded, err := scenario.SeededUsersToScenarios([]scenario.SeededUser{
+		{Login: "alice", Password: "alice-password", Sub: "user-alice-fixed"},
+		{Login: "bob", Sub: "user-bob-fixed"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.registry.RegisterAll(seeded)
+
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "dev-client")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid profile email")
+	auth.Set("state", "pw-state")
+	auth.Set("nonce", "pw-nonce")
+
+	form := authorizeForm("alice", auth)
+	form.Set("password", "alice-password")
+	loc := authorizePostRedirect(t, ts, form)
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("correct password did not issue code: %s", loc.String())
+	}
+
+	wrong := authorizeForm("alice", auth)
+	wrong.Set("password", "wrong-password")
+	resp := postAuthorizeNoRedirect(t, ts, wrong)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong password status = %d body=%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "invalid login or password") {
+		t.Fatalf("wrong password body = %q", body)
+	}
+
+	missing := authorizeForm("alice", auth)
+	missing.Del("password")
+	resp = postAuthorizeNoRedirect(t, ts, missing)
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("missing password status = %d body=%s", resp.StatusCode, body)
+	}
+
+	s.mu.Lock()
+	sessionCount := len(s.sessions)
+	codeCount := len(s.codes)
+	s.mu.Unlock()
+	if sessionCount != 1 || codeCount != 1 {
+		t.Fatalf("wrong/missing passwords created state: sessions=%d codes=%d", sessionCount, codeCount)
+	}
+
+	permissive := authorizeForm("bob", auth)
+	permissive.Set("password", "anything")
+	loc = authorizePostRedirect(t, ts, permissive)
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("unprotected seeded user did not issue code: %s", loc.String())
+	}
+
+	builtin := authorizeForm("viewer", auth)
+	builtin.Set("password", "anything")
+	loc = authorizePostRedirect(t, ts, builtin)
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("builtin user did not issue code: %s", loc.String())
 	}
 }
 
