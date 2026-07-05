@@ -11,6 +11,12 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: README.md
+      Note: Public seeded-user password documentation
+    - Path: cmd/tinyidp/doc/pages/reference.md
+      Note: CLI help reference for seeded-user passwords
+    - Path: examples/users/generic-claims-users.yaml
+      Note: Example users with optional fixture passwords
     - Path: internal/scenario/scenario.go
       Note: |-
         Scenario registry is the runtime lookup path for seeded users
@@ -27,12 +33,14 @@ RelatedFiles:
       Note: |-
         Login form already has a password field marked ignored
         Login form password field copy
+        Login page copy for optional fixture passwords
 ExternalSources: []
 Summary: Design and implementation guide for optional password checks on tinyidp seeded users while keeping default test-mode login permissive.
 LastUpdated: 2026-07-05T17:45:00-04:00
 WhatFor: Use when implementing optional password fields for seeded users, login-form validation behavior, and tests that mimic Keycloak demo credentials.
 WhenToUse: Read before changing seeded-user schema, authorize POST login validation, login page wording, or docs around password behavior.
 ---
+
 
 
 # Seeded-user Password Semantics Guide

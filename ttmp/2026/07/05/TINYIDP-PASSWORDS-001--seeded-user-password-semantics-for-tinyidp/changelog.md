@@ -56,3 +56,16 @@ Added authorize POST validation for configured seeded-user passwords with server
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/server_test.go — Server-flow password validation tests
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/reference/01-implementation-diary.md — Step 4 diary
 
+
+## 2026-07-05
+
+Documented optional seeded-user passwords, updated login copy and example users, and validated full repo.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/README.md — Public docs
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/cmd/tinyidp/doc/pages/reference.md — CLI help docs
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/examples/users/generic-claims-users.yaml — Example fixture users
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/static/login.html — Login page copy
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/reference/01-implementation-diary.md — Step 5 diary
+

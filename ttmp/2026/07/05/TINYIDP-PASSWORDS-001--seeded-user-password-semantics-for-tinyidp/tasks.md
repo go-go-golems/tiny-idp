@@ -47,22 +47,22 @@
 - [x] Assert wrong password creates no authorization code
 - [x] Add/keep test that seeded user without password accepts arbitrary submitted password
 - [x] Add/keep test that built-in user without password accepts arbitrary submitted password
-- [ ] Run `go test ./internal/server -count=1`
+- [x] Run `go test ./internal/server -count=1`
 
 ## Phase 5 — Login UI and documentation
 
-- [ ] Update `internal/server/static/login.html` copy away from unconditional "password is ignored"
-- [ ] Update README seeded-user docs with optional password semantics
-- [ ] Update Glazed reference page seeded-user docs with optional password semantics
-- [ ] Update `examples/users/generic-claims-users.yaml` with fixture passwords if appropriate
-- [ ] Avoid implying production security or real account management
+- [x] Update `internal/server/static/login.html` copy away from unconditional "password is ignored"
+- [x] Update README seeded-user docs with optional password semantics
+- [x] Update Glazed reference page seeded-user docs with optional password semantics
+- [x] Update `examples/users/generic-claims-users.yaml` with fixture passwords if appropriate
+- [x] Avoid implying production security or real account management
 
 ## Phase 6 — Full validation and bookkeeping
 
-- [ ] Run `GOWORK=off go test ./... -count=1`
-- [ ] Run `GOWORK=off go build ./cmd/tinyidp`
-- [ ] Update diary with exact command output
-- [ ] Relate changed implementation/docs files to the ticket docs
-- [ ] Update changelog with implementation summary
-- [ ] Run `docmgr doctor --ticket TINYIDP-PASSWORDS-001 --stale-after 30`
-- [ ] Commit implementation and docs
+- [x] Run `GOWORK=off go test ./... -count=1`
+- [x] Run `GOWORK=off go build ./cmd/tinyidp`
+- [x] Update diary with exact command output
+- [x] Relate changed implementation/docs files to the ticket docs
+- [x] Update changelog with implementation summary
+- [x] Run `docmgr doctor --ticket TINYIDP-PASSWORDS-001 --stale-after 30`
+- [x] Commit implementation and docs

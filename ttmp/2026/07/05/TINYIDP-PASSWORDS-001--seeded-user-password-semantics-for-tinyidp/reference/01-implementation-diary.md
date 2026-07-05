@@ -329,3 +329,84 @@ Validation command run:
 go test ./internal/server -count=1
 ok  	github.com/manuel/tinyidp/internal/server	9.577s
 ```
+
+## Step 5: Document optional fixture passwords and run full validation
+
+This step completed the user-facing portion of optional password semantics. The login page no longer says passwords are always ignored, and the README/reference docs now explain that passwords are optional seeded-user fixture values.
+
+The full repository test suite and tinyidp build passed after the UI/docs changes, so the password ticket is implementation-complete.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Finish the password ticket by updating UI copy, public docs, examples, validation, and ticket bookkeeping.
+
+**Inferred user intent:** The user wants the behavior change to be understandable to future users and reviewers, not only implemented in code.
+
+**Commit (code):** pending — docs/UI/final validation slice.
+
+### What I did
+
+- Updated `internal/server/static/login.html`:
+  - removed unconditional "password is ignored" copy,
+  - changed password placeholder to `optional fixture password`.
+- Updated `README.md` seeded-user examples and semantics.
+- Updated `cmd/tinyidp/doc/pages/reference.md` seeded-user examples and semantics.
+- Added fixture passwords to `examples/users/generic-claims-users.yaml`.
+- Ran full repository validation.
+
+### Why
+
+- Once password-protected seeded users exist, the old login-page copy was misleading.
+- Docs must make clear that these passwords are local test fixtures, not a production account/security system.
+
+### What worked
+
+- Full tests passed.
+- The tinyidp binary built successfully.
+
+### What didn't work
+
+- No command failures occurred in this step.
+
+### What I learned
+
+- The example users file created for generic claims is also a good place to demonstrate optional fixture passwords without adding a separate example.
+
+### What was tricky to build
+
+- The docs need to balance two facts: passwords can be enforced for seeded users, but tinyidp remains non-production and passwords are plain local fixtures.
+
+### What warrants a second pair of eyes
+
+- Review whether examples should include passwords by default, or whether that makes the default path feel less permissive than tinyidp really is.
+
+### What should be done in the future
+
+- If xgoja smoke helpers adopt password-protected users, update them to submit the configured fixture passwords.
+- Consider adding config examples under `TINYIDP-CONFIG-001` that reference `examples/users/generic-claims-users.yaml`.
+
+### Code review instructions
+
+- Review the seeded-user docs in `README.md` and `cmd/tinyidp/doc/pages/reference.md`.
+- Review `internal/server/static/login.html` for clear local-test wording.
+- Validate with the full commands below.
+
+### Technical details
+
+Validation commands run:
+
+```text
+GOWORK=off go test ./... -count=1
+?   	github.com/manuel/tinyidp/cmd/tinyidp	[no test files]
+?   	github.com/manuel/tinyidp/cmd/tinyidp/doc	[no test files]
+ok  	github.com/manuel/tinyidp/internal/client	0.008s
+ok  	github.com/manuel/tinyidp/internal/cmds	0.019s
+ok  	github.com/manuel/tinyidp/internal/scenario	0.006s
+ok  	github.com/manuel/tinyidp/internal/sections/oidc	0.007s
+ok  	github.com/manuel/tinyidp/internal/server	9.656s
+ok  	github.com/manuel/tinyidp/internal/user	0.005s
+
+GOWORK=off go build ./cmd/tinyidp
+```

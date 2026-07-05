@@ -5,6 +5,7 @@
 # or provider-specific shape.
 users:
   - login: alice
+    password: alice-password
     sub: user-alice-fixed
     email: alice@example.test
     name: Alice Inbox
@@ -16,6 +17,7 @@ users:
     locale: en-US
 
   - login: bob
+    password: bob-password
     sub: user-bob-fixed
     email: bob@example.test
     name: Bob Inbox

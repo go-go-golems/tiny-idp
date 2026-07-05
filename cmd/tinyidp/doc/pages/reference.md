@@ -115,6 +115,7 @@ By default, tinyidp derives a stable synthetic user from whatever login is typed
         sub: user-alice-fixed
         email: alice@example.test
         name: Alice Inbox
+        password: alice-password
         email_verified: true
         groups: [inbox-users]
         roles: [writer]
@@ -125,6 +126,7 @@ By default, tinyidp derives a stable synthetic user from whatever login is typed
         sub: user-bob-fixed
         email: bob@example.test
         name: Bob Inbox
+        password: bob-password
         email-verified: true
         groups: [inbox-users]
         roles: [reader]
@@ -133,6 +135,8 @@ By default, tinyidp derives a stable synthetic user from whatever login is typed
           feature_flags: [compact-inbox]
 
 Seeded users are registered as normal scenarios. They override builtins with the same login and appear on the login page under "Seeded users" by default.
+
+`password` is optional. If it is omitted or empty, the seeded user remains permissive and any submitted password is accepted. If it is set, authorize POST must submit the exact fixture password; wrong or missing passwords return `401 invalid login or password` and no session or authorization code is created. Passwords are plain local test fixture values, not production credentials.
 
 Generic top-level claim helpers are available for common authorization fixtures: `groups`, `roles`, `tenant`, `preferred_username`, and `locale`. These expand into ordinary top-level claims in both the ID token and userinfo response. The raw `claims` map remains available for provider-specific or unusual shapes; explicit `claims` entries override generic helper fields with the same claim name. Use `omit_claims` when a seeded user should deliberately omit a base claim such as `email`.
 

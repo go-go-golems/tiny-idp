@@ -76,6 +76,7 @@ users:
     sub: user-alice-fixed
     email: alice@example.test
     name: Alice Inbox
+    password: alice-password
     email_verified: true
     groups: [inbox-users]
     roles: [writer]
@@ -86,6 +87,7 @@ users:
     sub: user-bob-fixed
     email: bob@example.test
     name: Bob Inbox
+    password: bob-password
     email-verified: true
     groups: [inbox-users]
     roles: [reader]
@@ -100,6 +102,8 @@ go run ./cmd/tinyidp serve --users-file ./users.yaml
 ```
 
 Seeded users override builtins with the same login, so you can keep using `alice` and `bob` while making their `sub`, `email`, `name`, and claims deterministic for a test suite.
+
+`password` is optional. When it is omitted or empty, that seeded user keeps the default local-test behavior and any submitted password is accepted. When `password` is set, the authorize form must submit the exact fixture password or tinyidp returns `401 invalid login or password` without creating a session or authorization code. These are plain local test fixtures, not production credentials.
 
 Common authorization claims can be written as top-level generic fields: `groups`, `roles`, `tenant`, `preferred_username`, and `locale`. These expand into ordinary top-level ID token and userinfo claims. The raw `claims` map is still the escape hatch for provider-specific or unusual claim shapes; explicit `claims` values override the generic fields when the same claim name appears in both places.
 
