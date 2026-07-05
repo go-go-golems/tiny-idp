@@ -11,13 +11,19 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go
+    - Path: README.md
+      Note: Public seeded-user documentation for generic claim fields
+    - Path: cmd/tinyidp/doc/pages/reference.md
+      Note: Glazed help reference for generic claim fields
+    - Path: examples/users/generic-claims-users.yaml
+      Note: Provider-neutral seeded-user example
+    - Path: internal/scenario/scenario.go
       Note: Current scenario model and generic ExtraClaims/OmitClaims hooks
-    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/scenario/seeded_users.go
+    - Path: internal/scenario/seeded_users.go
       Note: Current seeded-user schema and conversion target for generic preset fields
-    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/token.go
+    - Path: internal/server/token.go
       Note: ID token claim construction and ExtraClaims merge behavior
-    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/userinfo.go
+    - Path: internal/server/userinfo.go
       Note: UserInfo claim construction from scenario/user state
 ExternalSources: []
 Summary: Design and implementation guide for generic seeded-user authorization claim presets in tinyidp, without Keycloak-specific realm/client role shapes.
@@ -25,6 +31,7 @@ LastUpdated: 2026-07-05T18:20:00-04:00
 WhatFor: Use when implementing generic seeded-user claim helpers such as groups, roles, tenant, locale, and preferred_username.
 WhenToUse: Read before changing seeded-user schemas, claim preset fields, or appauth examples that consume role/group claims.
 ---
+
 
 # Generic Authorization Claim Presets Guide
 

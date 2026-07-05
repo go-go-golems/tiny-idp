@@ -116,19 +116,25 @@ By default, tinyidp derives a stable synthetic user from whatever login is typed
         email: alice@example.test
         name: Alice Inbox
         email_verified: true
-        claims:
-          groups: [inbox-users]
-          tenant: personal
+        groups: [inbox-users]
+        roles: [writer]
+        tenant: personal
+        preferred_username: alice
+        locale: en-US
       - login: bob
         sub: user-bob-fixed
         email: bob@example.test
         name: Bob Inbox
         email-verified: true
+        groups: [inbox-users]
+        roles: [reader]
+        tenant: personal
         claims:
-          groups: [inbox-users]
-          tenant: personal
+          feature_flags: [compact-inbox]
 
-Seeded users are registered as normal scenarios. They override builtins with the same login, appear on the login page under "Seeded users" by default, and their `claims` map is merged into both the ID token and userinfo response. Use `omit_claims` when a seeded user should deliberately omit a base claim such as `email`.
+Seeded users are registered as normal scenarios. They override builtins with the same login and appear on the login page under "Seeded users" by default.
+
+Generic top-level claim helpers are available for common authorization fixtures: `groups`, `roles`, `tenant`, `preferred_username`, and `locale`. These expand into ordinary top-level claims in both the ID token and userinfo response. The raw `claims` map remains available for provider-specific or unusual shapes; explicit `claims` entries override generic helper fields with the same claim name. Use `omit_claims` when a seeded user should deliberately omit a base claim such as `email`.
 
 ## Clients
 

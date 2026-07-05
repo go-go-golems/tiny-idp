@@ -256,3 +256,81 @@ ok  	github.com/manuel/tinyidp/internal/scenario	0.003s
 go test ./internal/server -count=1
 ok  	github.com/manuel/tinyidp/internal/server	9.935s
 ```
+
+## Step 4: Document generic claim presets and run full validation
+
+This step completed the documentation and validation slice for generic claim presets. The README, Glazed reference page, and an example users file now show provider-neutral authorization claims instead of provider-specific realm/client role structures.
+
+The code and docs were validated with the full repository test suite and a tinyidp build. The remaining work after this step is only final task bookkeeping and committing the documentation slice.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Continue the step-by-step implementation by documenting the generic claim fields, adding an example fixture, and validating the repo before committing.
+
+**Inferred user intent:** The user wants a precise, reviewable implementation trail where docs, examples, validation, and tasks stay aligned.
+
+**Commit (code):** pending — documentation/example validation slice.
+
+### What I did
+
+- Updated `README.md` seeded-user documentation with generic fields.
+- Updated `cmd/tinyidp/doc/pages/reference.md` with generic fields and merge semantics.
+- Added `examples/users/generic-claims-users.yaml`.
+- Ran full validation.
+
+### Why
+
+- Users need the new schema documented where they discover seeded users.
+- A checked-in example makes the generic/provider-neutral boundary concrete.
+
+### What worked
+
+- Full test suite passed.
+- `go build ./cmd/tinyidp` passed.
+
+### What didn't work
+
+- No command failures occurred in this step.
+
+### What I learned
+
+- The docs previously described authorization claims only under the raw `claims` map. The new docs make common top-level fields visible while preserving the raw map as the advanced escape hatch.
+
+### What was tricky to build
+
+- The main doc-writing constraint was avoiding provider-specific examples while still explaining that raw `claims` can express unusual shapes when needed.
+
+### What warrants a second pair of eyes
+
+- Review whether the example file should also be referenced from getting-started, not only README/reference.
+- Review if `feature_flags` in the example is useful or too app-specific.
+
+### What should be done in the future
+
+- Consider adding config examples that reference this users file under `TINYIDP-CONFIG-001`.
+
+### Code review instructions
+
+- Review `README.md` and `cmd/tinyidp/doc/pages/reference.md` seeded-user sections.
+- Review `examples/users/generic-claims-users.yaml` for provider-neutral terminology.
+- Validate with the commands below.
+
+### Technical details
+
+Validation commands run:
+
+```text
+GOWORK=off go test ./... -count=1
+?   	github.com/manuel/tinyidp/cmd/tinyidp	[no test files]
+?   	github.com/manuel/tinyidp/cmd/tinyidp/doc	[no test files]
+ok  	github.com/manuel/tinyidp/internal/client	0.005s
+ok  	github.com/manuel/tinyidp/internal/cmds	0.023s
+ok  	github.com/manuel/tinyidp/internal/scenario	0.005s
+ok  	github.com/manuel/tinyidp/internal/sections/oidc	0.006s
+ok  	github.com/manuel/tinyidp/internal/server	11.662s
+ok  	github.com/manuel/tinyidp/internal/user	0.003s
+
+GOWORK=off go build ./cmd/tinyidp
+```

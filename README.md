@@ -77,17 +77,22 @@ users:
     email: alice@example.test
     name: Alice Inbox
     email_verified: true
-    claims:
-      groups: [inbox-users]
-      tenant: personal
+    groups: [inbox-users]
+    roles: [writer]
+    tenant: personal
+    preferred_username: alice
+    locale: en-US
   - login: bob
     sub: user-bob-fixed
     email: bob@example.test
     name: Bob Inbox
     email-verified: true
+    groups: [inbox-users]
+    roles: [reader]
+    tenant: personal
+    # Raw claims remain available for provider-specific or unusual shapes.
     claims:
-      groups: [inbox-users]
-      tenant: personal
+      feature_flags: [compact-inbox]
 ```
 
 ```bash
@@ -95,6 +100,8 @@ go run ./cmd/tinyidp serve --users-file ./users.yaml
 ```
 
 Seeded users override builtins with the same login, so you can keep using `alice` and `bob` while making their `sub`, `email`, `name`, and claims deterministic for a test suite.
+
+Common authorization claims can be written as top-level generic fields: `groups`, `roles`, `tenant`, `preferred_username`, and `locale`. These expand into ordinary top-level ID token and userinfo claims. The raw `claims` map is still the escape hatch for provider-specific or unusual claim shapes; explicit `claims` values override the generic fields when the same claim name appears in both places.
 
 ### Profiles (switch setups with one flag)
 

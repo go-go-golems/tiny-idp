@@ -49,16 +49,16 @@
 
 ## Phase 6 — Docs and examples
 
-- [ ] Update README seeded-user documentation
-- [ ] Update Glazed reference page seeded-user documentation
-- [ ] Add or update example users file with generic top-level fields
-- [ ] Avoid provider-specific realm/client role examples
+- [x] Update README seeded-user documentation
+- [x] Update Glazed reference page seeded-user documentation
+- [x] Add or update example users file with generic top-level fields
+- [x] Avoid provider-specific realm/client role examples
 
 ## Phase 7 — Final validation and diary
 
-- [ ] Run `GOWORK=off go test ./... -count=1`
-- [ ] Run `GOWORK=off go build ./cmd/tinyidp`
-- [ ] Update diary with exact command output
-- [ ] Update changelog and doc relations
-- [ ] Run `docmgr doctor --ticket TINYIDP-CLAIMS-001 --stale-after 30`
-- [ ] Commit implementation and docs
+- [x] Run `GOWORK=off go test ./... -count=1`
+- [x] Run `GOWORK=off go build ./cmd/tinyidp`
+- [x] Update diary with exact command output
+- [x] Update changelog and doc relations
+- [x] Run `docmgr doctor --ticket TINYIDP-CLAIMS-001 --stale-after 30`
+- [x] Commit implementation and docs
