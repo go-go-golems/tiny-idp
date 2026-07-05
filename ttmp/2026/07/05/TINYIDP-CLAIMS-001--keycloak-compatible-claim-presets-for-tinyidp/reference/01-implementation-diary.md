@@ -11,7 +11,13 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-CLAIMS-001--keycloak-compatible-claim-presets-for-tinyidp/design-doc/01-keycloak-compatible-claim-presets-guide.md
+    - Path: internal/scenario/seeded_users.go
+      Note: Generic seeded-user claim preset implementation
+    - Path: internal/scenario/seeded_users_test.go
+      Note: Unit and YAML tests for generic claim presets
+    - Path: internal/server/server_test.go
+      Note: End-to-end ID token/userinfo coverage for generic claim presets
+    - Path: ttmp/2026/07/05/TINYIDP-CLAIMS-001--keycloak-compatible-claim-presets-for-tinyidp/design-doc/01-keycloak-compatible-claim-presets-guide.md
       Note: Primary design guide created in Step 1
 ExternalSources: []
 Summary: Chronological diary for the Keycloak-compatible claim presets ticket.
@@ -19,6 +25,7 @@ LastUpdated: 2026-07-05T17:45:00-04:00
 WhatFor: Read before implementing optional Keycloak-shaped claim preset expansion.
 WhenToUse: Use when resuming TINYIDP-CLAIMS-001 or reviewing authorization claim compatibility decisions.
 ---
+
 
 # Diary
 
@@ -166,3 +173,86 @@ Add detailed list of tasks so we can precisely keep track of where we are in the
 ### Technical details
 
 The corrected implementation should not add `realm_access`, `resource_access`, or any Keycloak-named schema fields.
+
+## Step 3: Implement generic seeded-user claim presets and tests
+
+This step implemented the first code slice for the generic claim-preset ticket. Seeded users now accept provider-neutral top-level fields for common authorization claims and expand them through the existing scenario `ExtraClaims` path.
+
+The implementation intentionally avoids provider-specific structures. It adds only top-level `groups`, `roles`, `tenant`, `preferred_username`, and `locale`, with explicit `claims` retaining final override authority.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** After correcting the scope, begin implementing the generic claim preset ticket incrementally with tests and diary updates.
+
+**Inferred user intent:** The user wants implementation progress to be traceable in docmgr tasks and diary entries, not a large untracked batch.
+
+**Commit (code):** pending — generic claim preset implementation slice.
+
+### What I did
+
+- Added generic fields to `internal/scenario/seeded_users.go`:
+  - `Groups []string`,
+  - `Roles []string`,
+  - `Tenant string`,
+  - `PreferredUsername string`,
+  - `Locale string`.
+- Added `genericClaimPresets`, `cleanString`, and `cleanStringList` helpers.
+- Made seeded-user conversion expand convenience fields before explicit `Claims`, preserving explicit override behavior.
+- Updated `internal/scenario/seeded_users_test.go` with unit/YAML coverage.
+- Updated `internal/server/server_test.go` to prove expanded claims appear in both ID token and `/userinfo`.
+
+### Why
+
+- This keeps common authorization fixtures concise while preserving the raw `claims` map for advanced shapes.
+- The existing `Scenario.ExtraClaims` path already feeds both token and userinfo, so the feature belongs at seeded-user conversion time.
+
+### What worked
+
+- `go test ./internal/scenario -count=1` passed.
+- `go test ./internal/server -count=1` passed.
+- No server token/userinfo implementation changes were needed.
+
+### What didn't work
+
+- No command failures occurred in this step.
+
+### What I learned
+
+- The existing test helper decodes token claims through JSON, so slice claims appear as `[]any` in server-flow assertions.
+- Keeping preset expansion in `internal/scenario` makes the feature independent of OIDC endpoint details.
+
+### What was tricky to build
+
+- Merge order matters. The implementation constructs preset claims first and then overlays `su.Claims`, so explicit raw claims can override convenience fields.
+- List normalization needed to be minimal: trim and drop empty values while preserving author order.
+
+### What warrants a second pair of eyes
+
+- Review whether `preferred_username` should remain explicit-only or default from login.
+- Review whether duplicate group/role entries should be preserved, deduplicated, or rejected. Current behavior preserves duplicates after trimming.
+
+### What should be done in the future
+
+- Update README and Glazed help docs with the new generic fields.
+- Add or update an example users file.
+- Run full repository validation after docs are updated.
+
+### Code review instructions
+
+- Start at `internal/scenario/seeded_users.go`, especially `genericClaimPresets` and `seededUserToScenario`.
+- Then review `internal/scenario/seeded_users_test.go` for merge and YAML semantics.
+- Finally review `internal/server/server_test.go` around `TestSeededUserScenarioIsThreadedThroughFlow` to confirm end-to-end token/userinfo behavior.
+
+### Technical details
+
+Validation commands run:
+
+```text
+go test ./internal/scenario -count=1
+ok  	github.com/manuel/tinyidp/internal/scenario	0.003s
+
+go test ./internal/server -count=1
+ok  	github.com/manuel/tinyidp/internal/server	9.935s
+```

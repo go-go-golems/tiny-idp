@@ -636,13 +636,15 @@ func TestSeededUserScenarioIsThreadedThroughFlow(t *testing.T) {
 	s, ts := newTestServer(t)
 	seeded, err := scenario.SeededUsersToScenarios([]scenario.SeededUser{
 		{
-			Login: "alice",
-			Sub:   "user-alice-fixed",
-			Email: "alice@inbox.test",
-			Name:  "Alice Inbox",
-			Claims: map[string]any{
-				"tenant": "personal",
-			},
+			Login:             "alice",
+			Sub:               "user-alice-fixed",
+			Email:             "alice@inbox.test",
+			Name:              "Alice Inbox",
+			Groups:            []string{"inbox-users"},
+			Roles:             []string{"writer"},
+			Tenant:            "personal",
+			PreferredUsername: "alice",
+			Locale:            "en-US",
 		},
 	})
 	if err != nil {
@@ -659,6 +661,28 @@ func TestSeededUserScenarioIsThreadedThroughFlow(t *testing.T) {
 	}
 	if claims["tenant"] != "personal" || ui["tenant"] != "personal" {
 		t.Fatalf("seeded tenant not used: id=%v userinfo=%v", claims["tenant"], ui["tenant"])
+	}
+	if claims["preferred_username"] != "alice" || ui["preferred_username"] != "alice" {
+		t.Fatalf("seeded preferred_username not used: id=%v userinfo=%v", claims["preferred_username"], ui["preferred_username"])
+	}
+	if claims["locale"] != "en-US" || ui["locale"] != "en-US" {
+		t.Fatalf("seeded locale not used: id=%v userinfo=%v", claims["locale"], ui["locale"])
+	}
+	groups, ok := claims["groups"].([]any)
+	if !ok || len(groups) != 1 || groups[0] != "inbox-users" {
+		t.Fatalf("seeded groups not used in ID token: %#v", claims["groups"])
+	}
+	uiGroups, ok := ui["groups"].([]any)
+	if !ok || len(uiGroups) != 1 || uiGroups[0] != "inbox-users" {
+		t.Fatalf("seeded groups not used in userinfo: %#v", ui["groups"])
+	}
+	roles, ok := claims["roles"].([]any)
+	if !ok || len(roles) != 1 || roles[0] != "writer" {
+		t.Fatalf("seeded roles not used in ID token: %#v", claims["roles"])
+	}
+	uiRoles, ok := ui["roles"].([]any)
+	if !ok || len(uiRoles) != 1 || uiRoles[0] != "writer" {
+		t.Fatalf("seeded roles not used in userinfo: %#v", ui["roles"])
 	}
 }
 

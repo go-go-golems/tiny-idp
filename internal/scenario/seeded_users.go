@@ -43,6 +43,12 @@ type SeededUser struct {
 	EmailVerified      *bool `json:"email_verified" yaml:"email_verified"`
 	EmailVerifiedKebab *bool `json:"email-verified" yaml:"email-verified"`
 
+	Groups            []string `json:"groups" yaml:"groups"`
+	Roles             []string `json:"roles" yaml:"roles"`
+	Tenant            string   `json:"tenant" yaml:"tenant"`
+	PreferredUsername string   `json:"preferred_username" yaml:"preferred_username"`
+	Locale            string   `json:"locale" yaml:"locale"`
+
 	Claims     map[string]any `json:"claims" yaml:"claims"`
 	OmitClaims []string       `json:"omit_claims" yaml:"omit_claims"`
 	Category   string         `json:"category" yaml:"category"`
@@ -112,7 +118,7 @@ func seededUserToScenario(su SeededUser) (Scenario, error) {
 		u.Name = strings.TrimSpace(su.Name)
 	}
 
-	extra := map[string]any{}
+	extra := genericClaimPresets(su)
 	for k, v := range su.Claims {
 		extra[k] = v
 	}
@@ -133,6 +139,42 @@ func seededUserToScenario(su SeededUser) (Scenario, error) {
 		ExtraClaims: extra,
 		OmitClaims:  append([]string(nil), su.OmitClaims...),
 	}, nil
+}
+
+func genericClaimPresets(su SeededUser) map[string]any {
+	extra := map[string]any{}
+	if groups := cleanStringList(su.Groups); len(groups) > 0 {
+		extra["groups"] = groups
+	}
+	if roles := cleanStringList(su.Roles); len(roles) > 0 {
+		extra["roles"] = roles
+	}
+	if tenant := cleanString(su.Tenant); tenant != "" {
+		extra["tenant"] = tenant
+	}
+	if preferredUsername := cleanString(su.PreferredUsername); preferredUsername != "" {
+		extra["preferred_username"] = preferredUsername
+	}
+	if locale := cleanString(su.Locale); locale != "" {
+		extra["locale"] = locale
+	}
+	return extra
+}
+
+func cleanString(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func cleanStringList(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := cleanString(value)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func firstBool(values ...*bool) *bool {

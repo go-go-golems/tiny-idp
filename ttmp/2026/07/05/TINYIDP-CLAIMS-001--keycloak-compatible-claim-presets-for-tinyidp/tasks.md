@@ -9,43 +9,43 @@
 
 ## Phase 1 — Seeded-user schema
 
-- [ ] Add `Groups []string` to `SeededUser` with JSON/YAML tags
-- [ ] Add `Roles []string` to `SeededUser` with JSON/YAML tags
-- [ ] Add `Tenant string` to `SeededUser` with JSON/YAML tags
-- [ ] Add `PreferredUsername string` to `SeededUser` with JSON/YAML tags
-- [ ] Add `Locale string` to `SeededUser` with JSON/YAML tags
-- [ ] Keep `Claims map[string]any` and `OmitClaims []string` unchanged
+- [x] Add `Groups []string` to `SeededUser` with JSON/YAML tags
+- [x] Add `Roles []string` to `SeededUser` with JSON/YAML tags
+- [x] Add `Tenant string` to `SeededUser` with JSON/YAML tags
+- [x] Add `PreferredUsername string` to `SeededUser` with JSON/YAML tags
+- [x] Add `Locale string` to `SeededUser` with JSON/YAML tags
+- [x] Keep `Claims map[string]any` and `OmitClaims []string` unchanged
 
 ## Phase 2 — Claim expansion helper
 
-- [ ] Add helper to trim scalar string claim values
-- [ ] Add helper to trim string-list values and drop empty entries while preserving order
-- [ ] Expand non-empty `groups` into `extra["groups"]`
-- [ ] Expand non-empty `roles` into `extra["roles"]`
-- [ ] Expand non-empty `tenant` into `extra["tenant"]`
-- [ ] Expand non-empty `preferred_username` into `extra["preferred_username"]`
-- [ ] Expand non-empty `locale` into `extra["locale"]`
+- [x] Add helper to trim scalar string claim values
+- [x] Add helper to trim string-list values and drop empty entries while preserving order
+- [x] Expand non-empty `groups` into `extra["groups"]`
+- [x] Expand non-empty `roles` into `extra["roles"]`
+- [x] Expand non-empty `tenant` into `extra["tenant"]`
+- [x] Expand non-empty `preferred_username` into `extra["preferred_username"]`
+- [x] Expand non-empty `locale` into `extra["locale"]`
 
 ## Phase 3 — Merge semantics
 
-- [ ] Apply convenience fields before explicit `Claims`
-- [ ] Preserve explicit `Claims` override behavior
-- [ ] Preserve `email_verified` handling after explicit `Claims`
-- [ ] Preserve `OmitClaims` behavior without changing token/userinfo code
+- [x] Apply convenience fields before explicit `Claims`
+- [x] Preserve explicit `Claims` override behavior
+- [x] Preserve `email_verified` handling after explicit `Claims`
+- [x] Preserve `OmitClaims` behavior without changing token/userinfo code
 
 ## Phase 4 — Unit tests
 
-- [ ] Add test for top-level groups/roles/tenant/preferred_username/locale
-- [ ] Add test proving explicit `claims` override top-level groups/roles
-- [ ] Add test proving empty/whitespace list entries are dropped
-- [ ] Add YAML load test covering generic top-level fields
-- [ ] Run `go test ./internal/scenario -count=1`
+- [x] Add test for top-level groups/roles/tenant/preferred_username/locale
+- [x] Add test proving explicit `claims` override top-level groups/roles
+- [x] Add test proving empty/whitespace list entries are dropped
+- [x] Add YAML load test covering generic top-level fields
+- [x] Run `go test ./internal/scenario -count=1`
 
 ## Phase 5 — Server-flow tests
 
-- [ ] Add or update server flow test proving generic preset claims appear in ID token
-- [ ] Assert the same claims appear in `/userinfo`
-- [ ] Run `go test ./internal/server -count=1`
+- [x] Add or update server flow test proving generic preset claims appear in ID token
+- [x] Assert the same claims appear in `/userinfo`
+- [x] Run `go test ./internal/server -count=1`
 
 ## Phase 6 — Docs and examples
 
