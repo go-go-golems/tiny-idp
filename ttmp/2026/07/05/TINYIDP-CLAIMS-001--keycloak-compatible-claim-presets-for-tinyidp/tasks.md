@@ -1,39 +1,64 @@
 # Tasks
 
-## Phase 0 — Ticket and design package
+## Phase 0 — Scope correction and bookkeeping
 
-- [x] Create docmgr ticket under the tinyidp repo `ttmp` root
-- [x] Write intern-facing Keycloak-compatible claim presets guide
-- [x] Write implementation diary
-- [x] Upload design bundle to reMarkable
-- [x] Run `docmgr doctor --ticket TINYIDP-CLAIMS-001 --stale-after 30`
+- [x] Replace Keycloak-specific design language with generic claim preset language
+- [x] Record the user correction in the implementation diary
+- [x] Update task list to be detailed enough for step-by-step tracking
+- [x] Commit the scope-correction docs
 
-## Phase 1 — Preset model and expansion helper
+## Phase 1 — Seeded-user schema
 
-- [ ] Add `KeycloakClaims` / `KeycloakClaimPreset` type
-- [ ] Add optional `keycloak` block to `SeededUser`
-- [ ] Implement expansion for `preferred_username`, `groups`, `realm_access.roles`, and `resource_access.<client>.roles`
-- [ ] Add unit tests for every claim shape
+- [ ] Add `Groups []string` to `SeededUser` with JSON/YAML tags
+- [ ] Add `Roles []string` to `SeededUser` with JSON/YAML tags
+- [ ] Add `Tenant string` to `SeededUser` with JSON/YAML tags
+- [ ] Add `PreferredUsername string` to `SeededUser` with JSON/YAML tags
+- [ ] Add `Locale string` to `SeededUser` with JSON/YAML tags
+- [ ] Keep `Claims map[string]any` and `OmitClaims []string` unchanged
 
-## Phase 2 — Seeded-user integration
+## Phase 2 — Claim expansion helper
 
-- [ ] Expand `keycloak` preset before explicit `claims`
-- [ ] Make explicit `claims` override preset-generated fields
-- [ ] Apply `omit_claims` after preset and explicit claims
-- [ ] Preserve current email/email_verified behavior
+- [ ] Add helper to trim scalar string claim values
+- [ ] Add helper to trim string-list values and drop empty entries while preserving order
+- [ ] Expand non-empty `groups` into `extra["groups"]`
+- [ ] Expand non-empty `roles` into `extra["roles"]`
+- [ ] Expand non-empty `tenant` into `extra["tenant"]`
+- [ ] Expand non-empty `preferred_username` into `extra["preferred_username"]`
+- [ ] Expand non-empty `locale` into `extra["locale"]`
 
-## Phase 3 — Docs and examples
+## Phase 3 — Merge semantics
 
-- [ ] Add `examples/users/roles-demo-users.yaml`
-- [ ] Document exact emitted JSON for each preset field
-- [ ] Update README seeded-user section
-- [ ] Update Glazed help reference page
+- [ ] Apply convenience fields before explicit `Claims`
+- [ ] Preserve explicit `Claims` override behavior
+- [ ] Preserve `email_verified` handling after explicit `Claims`
+- [ ] Preserve `OmitClaims` behavior without changing token/userinfo code
 
-## Phase 4 — Integration validation
+## Phase 4 — Unit tests
 
-- [ ] Add server flow test proving ID token includes preset claims
-- [ ] Add userinfo test proving userinfo includes preset claims
-- [ ] Add override test proving explicit claims win
-- [ ] Add omit test proving preset claims can be removed
-- [ ] Decide whether any xgoja/appauth example should consume the preset
-- [ ] Update changelog and related file links after implementation
+- [ ] Add test for top-level groups/roles/tenant/preferred_username/locale
+- [ ] Add test proving explicit `claims` override top-level groups/roles
+- [ ] Add test proving empty/whitespace list entries are dropped
+- [ ] Add YAML load test covering generic top-level fields
+- [ ] Run `go test ./internal/scenario -count=1`
+
+## Phase 5 — Server-flow tests
+
+- [ ] Add or update server flow test proving generic preset claims appear in ID token
+- [ ] Assert the same claims appear in `/userinfo`
+- [ ] Run `go test ./internal/server -count=1`
+
+## Phase 6 — Docs and examples
+
+- [ ] Update README seeded-user documentation
+- [ ] Update Glazed reference page seeded-user documentation
+- [ ] Add or update example users file with generic top-level fields
+- [ ] Avoid provider-specific realm/client role examples
+
+## Phase 7 — Final validation and diary
+
+- [ ] Run `GOWORK=off go test ./... -count=1`
+- [ ] Run `GOWORK=off go build ./cmd/tinyidp`
+- [ ] Update diary with exact command output
+- [ ] Update changelog and doc relations
+- [ ] Run `docmgr doctor --ticket TINYIDP-CLAIMS-001 --stale-after 30`
+- [ ] Commit implementation and docs

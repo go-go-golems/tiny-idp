@@ -1,5 +1,5 @@
 ---
-Title: Keycloak-compatible Claim Presets Guide
+Title: Generic Authorization Claim Presets Guide
 Ticket: TINYIDP-CLAIMS-001
 Status: active
 Topics:
@@ -11,76 +11,69 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: internal/scenario/scenario.go
-      Note: |-
-        Current scenario model and extra-claim hooks
-        Scenario ExtraClaims surface
-    - Path: internal/scenario/seeded_users.go
-      Note: |-
-        Current seeded-user claims map that can already express nested claims manually
-        Seeded-user keycloak preset schema target
-    - Path: internal/server/jwt.go
-      Note: |-
-        ID token claim construction and scenario claim mutation
-        ID token claim construction
-    - Path: internal/server/userinfo.go
-      Note: |-
-        UserInfo claim construction from scenario/user state
-        UserInfo claim construction
+    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go
+      Note: Current scenario model and generic ExtraClaims/OmitClaims hooks
+    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/scenario/seeded_users.go
+      Note: Current seeded-user schema and conversion target for generic preset fields
+    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/token.go
+      Note: ID token claim construction and ExtraClaims merge behavior
+    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/userinfo.go
+      Note: UserInfo claim construction from scenario/user state
 ExternalSources: []
-Summary: Design and implementation guide for optional Keycloak-shaped authorization claim presets in tinyidp.
-LastUpdated: 2026-07-05T17:45:00-04:00
-WhatFor: Use when implementing optional Keycloak-compatible realm/client role claim helpers for tests that need authorization-claim compatibility.
-WhenToUse: Read before changing scenario claim construction, seeded-user schemas, claim presets, or xgoja/appauth examples that consume Keycloak roles/groups.
+Summary: Design and implementation guide for generic seeded-user authorization claim presets in tinyidp, without Keycloak-specific realm/client role shapes.
+LastUpdated: 2026-07-05T18:20:00-04:00
+WhatFor: Use when implementing generic seeded-user claim helpers such as groups, roles, tenant, locale, and preferred_username.
+WhenToUse: Read before changing seeded-user schemas, claim preset fields, or appauth examples that consume role/group claims.
 ---
 
-
-# Keycloak-compatible Claim Presets Guide
+# Generic Authorization Claim Presets Guide
 
 ## Executive summary
 
-`tinyidp` does not need Keycloak claim presets for basic OIDC login. The current personal-inbox smokes can work with standard claims such as `sub`, `email`, `email_verified`, and `name`, plus simple custom claims in seeded users.
+This ticket is intentionally generic. `tinyidp` should not grow Keycloak-specific realm/client role structures for this work. The goal is to make common authorization claims easy to express in seeded users while preserving the existing raw `claims` map for advanced or provider-specific shapes.
 
-Keycloak-compatible claim presets become useful when a relying party tests authorization logic that expects Keycloak-shaped claims. Common examples are `realm_access.roles`, `resource_access.<client_id>.roles`, and group paths. Writing these nested structures by hand in every users file is possible today through `claims`, but it is repetitive and error-prone.
+The proposed feature adds short, provider-neutral fields to seeded users:
 
-This ticket designs optional claim presets that expand concise seeded-user config into Keycloak-shaped nested claims. The feature should stay opt-in. It should not make tinyidp pretend to be Keycloak. It should provide a convenient compatibility fixture for apps whose claim-mapping code already expects Keycloak structures.
+- `groups`
+- `roles`
+- `tenant`
+- `preferred_username`
+- `locale`
+
+These fields expand into normal top-level OIDC/custom claims through the existing `Scenario.ExtraClaims` mechanism. They do not create nested provider-specific structures such as realm access maps. If a test needs unusual shapes, it can still use the explicit `claims` map.
 
 ## Problem statement and scope
 
-Current seeded users support arbitrary `claims` maps. That means this is already possible:
+Seeded users already support arbitrary claims:
 
 ```yaml
-claims:
-  realm_access:
-    roles: [admin, user]
-  resource_access:
-    personal-inbox-local:
+users:
+  - login: alice
+    claims:
+      groups: [inbox-users]
       roles: [writer]
-  groups:
-    - /inbox-users
+      tenant: personal
 ```
 
-The problem is ergonomics and consistency. Different tests may encode the same Keycloak shapes differently. Some may put roles in `roles`, some in `groups`, some in `realm_access`, and some in `resource_access`. If an app specifically tests Keycloak role mapping, fixtures should be obvious and consistent.
+That is flexible, but it makes the most common role/group fixtures look more verbose than necessary. It also hides important authorization-relevant values under a generic map when scanning a users file.
 
-This ticket covers claim preset expansion only. It does not add Keycloak protocol endpoints, admin APIs, import of realm JSON, or full Keycloak emulation.
+This ticket introduces convenience fields only. It does not add:
+
+- Keycloak realm/client role claim structures;
+- provider-specific import/export;
+- full authorization policy evaluation;
+- server-side access control;
+- new token endpoints or admin APIs.
 
 ## Current-state analysis
 
-### Scenario extra claims
+`internal/scenario/seeded_users.go` converts a `SeededUser` into a `Scenario`. During conversion it builds an `extra` map from `su.Claims`, then adds `email_verified` if configured. That `extra` map becomes `Scenario.ExtraClaims`.
 
-`internal/scenario/seeded_users.go` accepts a `Claims map[string]any` field and copies it into `Scenario.ExtraClaims`. This already supports arbitrary nested YAML objects.
+`internal/server/token.go` merges `Scenario.ExtraClaims` into ID token claims. `internal/server/userinfo.go` mirrors those user-facing claims in `/userinfo`. This is the correct path for generic preset fields because no token-layer special case is required.
 
-### ID token and userinfo
+## Proposed seeded-user schema
 
-`internal/server/jwt.go` and `internal/server/userinfo.go` merge scenario/user claims into token and userinfo responses. The exact helper names should be confirmed during implementation, but the important current behavior is that `Scenario.ExtraClaims` reaches both ID token and userinfo.
-
-### Existing limitation
-
-There is no reusable vocabulary for Keycloak-like role shapes. Users must know the exact nested JSON shape and repeat it in each fixture.
-
-## Proposed model
-
-Add an optional `keycloak` section to `SeededUser`:
+Extend `SeededUser` with provider-neutral fields:
 
 ```go
 type SeededUser struct {
@@ -89,36 +82,18 @@ type SeededUser struct {
     Email string `json:"email" yaml:"email"`
     Name  string `json:"name" yaml:"name"`
 
-    Claims   map[string]any      `json:"claims" yaml:"claims"`
-    Keycloak *KeycloakClaimPreset `json:"keycloak" yaml:"keycloak"`
-}
+    Groups            []string `json:"groups" yaml:"groups"`
+    Roles             []string `json:"roles" yaml:"roles"`
+    Tenant            string   `json:"tenant" yaml:"tenant"`
+    PreferredUsername string   `json:"preferred_username" yaml:"preferred_username"`
+    Locale            string   `json:"locale" yaml:"locale"`
 
-type KeycloakClaimPreset struct {
-    RealmRoles   []string            `json:"realm_roles" yaml:"realm_roles"`
-    ClientRoles  map[string][]string `json:"client_roles" yaml:"client_roles"`
-    Groups       []string            `json:"groups" yaml:"groups"`
-    PreferredUsername string         `json:"preferred_username" yaml:"preferred_username"`
-}
-```
-
-Expanded claims:
-
-```json
-{
-  "preferred_username": "alice",
-  "groups": ["/inbox-users"],
-  "realm_access": {
-    "roles": ["user", "admin"]
-  },
-  "resource_access": {
-    "personal-inbox-local": {
-      "roles": ["writer"]
-    }
-  }
+    Claims     map[string]any `json:"claims" yaml:"claims"`
+    OmitClaims []string       `json:"omit_claims" yaml:"omit_claims"`
 }
 ```
 
-### YAML example
+YAML example:
 
 ```yaml
 users:
@@ -126,191 +101,189 @@ users:
     sub: user-alice-fixed
     email: alice@example.test
     name: Alice Inbox
-    keycloak:
-      preferred_username: alice
-      realm_roles: [user, inbox-admin]
-      client_roles:
-        personal-inbox-local: [writer]
-      groups:
-        - /inbox-users
-        - /engineering
+    groups: [inbox-users, engineering]
+    roles: [writer]
+    tenant: personal
+    preferred_username: alice
+    locale: en-US
 ```
 
-### Merge rules
+Expanded claims:
 
-1. Start with user-derived base claims.
-2. Expand `keycloak` preset claims into a map.
-3. Merge explicit `claims` on top of preset claims.
-4. Apply `omit_claims` last.
-
-This lets users use the preset for common shape and override exact fields when needed.
-
-Pseudocode:
-
-```go
-extra := map[string]any{}
-if su.Keycloak != nil {
-    merge(extra, expandKeycloakPreset(su.Login, su.Keycloak))
-}
-merge(extra, su.Claims)
-applyEmailVerified(extra)
-scenario.ExtraClaims = extra
-scenario.OmitClaims = su.OmitClaims
-```
-
-### Conflict behavior
-
-If both `keycloak.realm_roles` and `claims.realm_access` are set, explicit `claims.realm_access` wins. This is simpler than trying to merge nested role arrays. It also gives fixture authors an escape hatch.
-
-## Proposed API details
-
-### Go types
-
-Add to `internal/scenario/seeded_users.go` or a sibling `keycloak_claims.go`:
-
-```go
-type KeycloakClaims struct {
-    PreferredUsername string              `json:"preferred_username" yaml:"preferred_username"`
-    RealmRoles        []string            `json:"realm_roles" yaml:"realm_roles"`
-    ClientRoles       map[string][]string `json:"client_roles" yaml:"client_roles"`
-    Groups            []string            `json:"groups" yaml:"groups"`
-}
-
-func ExpandKeycloakClaims(login string, kc *KeycloakClaims) map[string]any
-```
-
-### Expansion pseudocode
-
-```go
-func ExpandKeycloakClaims(login string, kc *KeycloakClaims) map[string]any {
-    out := map[string]any{}
-
-    preferred := strings.TrimSpace(kc.PreferredUsername)
-    if preferred == "" {
-        preferred = user.Normalize(login)
-    }
-    if preferred != "" {
-        out["preferred_username"] = preferred
-    }
-
-    if len(kc.Groups) > 0 {
-        out["groups"] = normalizeGroups(kc.Groups)
-    }
-
-    if len(kc.RealmRoles) > 0 {
-        out["realm_access"] = map[string]any{
-            "roles": uniqueSorted(kc.RealmRoles),
-        }
-    }
-
-    if len(kc.ClientRoles) > 0 {
-        ra := map[string]any{}
-        for clientID, roles := range kc.ClientRoles {
-            ra[clientID] = map[string]any{"roles": uniqueSorted(roles)}
-        }
-        out["resource_access"] = ra
-    }
-
-    return out
+```json
+{
+  "groups": ["inbox-users", "engineering"],
+  "roles": ["writer"],
+  "tenant": "personal",
+  "preferred_username": "alice",
+  "locale": "en-US"
 }
 ```
 
-Do not sort if preserving author order matters for tests. If deterministic JSON snapshots are important, use first-seen de-duplication rather than alphabetical sort.
+## Merge rules
+
+The merge order should be explicit and test-backed:
+
+1. Start with convenience fields (`groups`, `roles`, `tenant`, `preferred_username`, `locale`).
+2. Apply explicit `claims` on top of convenience fields.
+3. Apply `email_verified` compatibility fields.
+4. Apply `omit_claims` later in token/userinfo construction as it already does.
+
+This means explicit `claims` win over convenience fields. For example:
+
+```yaml
+users:
+  - login: alice
+    roles: [writer]
+    claims:
+      roles: [owner]
+```
+
+The emitted `roles` claim is `["owner"]`.
+
+## Pseudocode
+
+```go
+func seededUserToScenario(su SeededUser) (Scenario, error) {
+    login := user.Normalize(su.Login)
+    if login == "" {
+        return Scenario{}, fmt.Errorf("login is required")
+    }
+
+    extra := map[string]any{}
+    if len(su.Groups) > 0 {
+        extra["groups"] = cleanStringList(su.Groups)
+    }
+    if len(su.Roles) > 0 {
+        extra["roles"] = cleanStringList(su.Roles)
+    }
+    if strings.TrimSpace(su.Tenant) != "" {
+        extra["tenant"] = strings.TrimSpace(su.Tenant)
+    }
+    if strings.TrimSpace(su.PreferredUsername) != "" {
+        extra["preferred_username"] = strings.TrimSpace(su.PreferredUsername)
+    }
+    if strings.TrimSpace(su.Locale) != "" {
+        extra["locale"] = strings.TrimSpace(su.Locale)
+    }
+
+    for k, v := range su.Claims {
+        extra[k] = v // explicit claims override presets
+    }
+
+    if ev := firstBool(su.EmailVerified, su.EmailVerifiedKebab); ev != nil {
+        extra["email_verified"] = *ev
+    }
+
+    return Scenario{ExtraClaims: extra, OmitClaims: su.OmitClaims}, nil
+}
+```
+
+`cleanStringList` should trim whitespace and drop empty values. It should preserve author order. Do not sort unless tests require deterministic reordering; preserving config order is easier to reason about.
 
 ## Decision records
 
-### Decision: Presets are opt-in seeded-user config, not global server mode
+### Decision: Use generic top-level claim fields only
 
-- **Context:** Not every app wants Keycloak-shaped claims. Basic OIDC tests should remain generic.
-- **Options considered:** Global `--keycloak-claims` mode; seeded-user `keycloak:` block; only raw `claims` maps.
-- **Decision:** Add an optional `keycloak:` block per seeded user.
-- **Rationale:** Authorization roles are usually user-specific. Per-user config keeps fixtures explicit.
-- **Consequences:** A user file can mix generic users and Keycloak-shaped users.
+- **Context:** The user explicitly requested no Keycloak realm-specific work and wants tinyidp kept generic.
+- **Options considered:** Provider-specific nested claims; generic top-level fields; raw `claims` only.
+- **Decision:** Add generic convenience fields only.
+- **Rationale:** This supports common authorization tests without coupling tinyidp to one provider's vocabulary.
+- **Consequences:** Users who need provider-specific structures can still write them under `claims` manually.
+- **Status:** accepted
+
+### Decision: Explicit `claims` override convenience fields
+
+- **Context:** Convenience fields should reduce boilerplate, not remove control.
+- **Options considered:** Convenience fields win; explicit claims win; reject conflicts.
+- **Decision:** Explicit `claims` win.
+- **Rationale:** The raw map is the escape hatch for unusual test fixtures.
+- **Consequences:** Conflicting values are allowed and deterministic.
 - **Status:** proposed
 
-### Decision: Explicit `claims` override preset output
+### Decision: Preserve author order for groups and roles
 
-- **Context:** Fixture authors need escape hatches for unusual claim shapes.
-- **Options considered:** Preset wins; explicit claims win; deep merge everything.
-- **Decision:** Expand preset first, then apply explicit `claims`.
-- **Rationale:** Explicit config should be the final authority.
-- **Consequences:** Docs must explain that `claims.realm_access` replaces preset-generated `realm_access` if both are set.
+- **Context:** Some tests snapshot token/userinfo JSON or display ordered groups.
+- **Options considered:** Sort values; preserve order; deduplicate.
+- **Decision:** Trim/drop empty entries but preserve author order and duplicates initially.
+- **Rationale:** Changing list contents can surprise fixture authors. Validation should be minimal.
+- **Consequences:** If duplicate handling is desired later, add it as a separate explicit behavior.
 - **Status:** proposed
 
-### Decision: Do not import Keycloak realm JSON in this ticket
+## Detailed implementation task list
 
-- **Context:** The first compatibility need is claim shape, not full Keycloak realm import.
-- **Options considered:** Parse Keycloak realm JSON; define small tinyidp-native preset schema.
-- **Decision:** Use a small tinyidp-native `keycloak:` schema.
-- **Rationale:** Realm JSON is large, versioned, and includes many features tinyidp does not implement.
-- **Consequences:** Users must translate realm roles into tinyidp config manually, but the target config is much smaller.
-- **Status:** proposed
+### Phase 0 — Scope correction and bookkeeping
 
-## Implementation phases
+- [x] Replace Keycloak-specific design language with generic claim preset language.
+- [x] Record the user correction in the diary.
+- [x] Update this task list to be precise enough for step-by-step execution.
+- [ ] Commit the scope-correction docs.
 
-### Phase 1: model and expansion helper
+### Phase 1 — Seeded-user schema
 
-- Add `KeycloakClaims` struct.
-- Add `Keycloak *KeycloakClaims` to `SeededUser`.
-- Implement `ExpandKeycloakClaims`.
-- Unit-test empty, realm roles, client roles, groups, preferred username fallback, and mixed claims.
+- [ ] Add `Groups []string` to `SeededUser` with JSON/YAML tags.
+- [ ] Add `Roles []string` to `SeededUser` with JSON/YAML tags.
+- [ ] Add `Tenant string` to `SeededUser` with JSON/YAML tags.
+- [ ] Add `PreferredUsername string` to `SeededUser` with JSON/YAML tags.
+- [ ] Add `Locale string` to `SeededUser` with JSON/YAML tags.
+- [ ] Keep the existing `Claims map[string]any` field unchanged.
 
-### Phase 2: seeded-user integration
+### Phase 2 — Claim expansion helper
 
-- In `seededUserToScenario`, expand preset claims before `su.Claims`.
-- Preserve existing `email_verified` behavior.
-- Ensure `omit_claims` can omit preset-generated fields.
+- [ ] Add a helper to trim string claim values.
+- [ ] Add a helper to trim string-list values while preserving order.
+- [ ] Expand non-empty `groups` into `extra["groups"]`.
+- [ ] Expand non-empty `roles` into `extra["roles"]`.
+- [ ] Expand non-empty `tenant` into `extra["tenant"]`.
+- [ ] Expand non-empty `preferred_username` into `extra["preferred_username"]`.
+- [ ] Expand non-empty `locale` into `extra["locale"]`.
 
-### Phase 3: docs and examples
+### Phase 3 — Merge semantics
 
-- Add docs to README seeded-user section.
-- Add `examples/users/roles-demo-users.yaml`.
-- Add a help/reference section explaining the exact emitted JSON.
+- [ ] Apply convenience fields before explicit `Claims`.
+- [ ] Preserve explicit `Claims` override behavior with a test.
+- [ ] Preserve `email_verified` handling after explicit `Claims`.
+- [ ] Preserve `OmitClaims` behavior without changing token/userinfo code.
 
-### Phase 4: integration validation
+### Phase 4 — Unit tests
 
-- Add a server test that logs in as a Keycloak-preset seeded user and verifies ID token and userinfo include:
-  - `realm_access.roles`;
-  - `resource_access.<client>.roles`;
-  - `groups`;
-  - `preferred_username`.
-- Add a negative/override test proving explicit `claims` wins.
+- [ ] Add a test for top-level groups/roles/tenant/preferred_username/locale.
+- [ ] Add a test proving explicit `claims` override top-level groups/roles.
+- [ ] Add a test proving empty/whitespace list entries are dropped.
+- [ ] Add a YAML load test covering generic top-level fields.
+- [ ] Run `go test ./internal/scenario -count=1`.
 
-## Testing strategy
+### Phase 5 — Server-flow tests
 
-Unit tests:
+- [ ] Add or update server flow test proving generic preset claims appear in ID token.
+- [ ] Assert the same claims appear in `/userinfo`.
+- [ ] Run `go test ./internal/server -count=1`.
 
-```text
-TestExpandKeycloakClaimsRealmRoles
-TestExpandKeycloakClaimsClientRoles
-TestExpandKeycloakClaimsGroups
-TestSeededUserClaimsOverrideKeycloakPreset
-TestOmitClaimsCanRemoveKeycloakPresetField
-```
+### Phase 6 — Docs and examples
 
-Server integration tests:
+- [ ] Update README seeded-user documentation.
+- [ ] Update Glazed reference page seeded-user documentation.
+- [ ] Add or update an example users file with generic top-level fields.
+- [ ] Avoid provider-specific realm/client role examples.
 
-1. Start test server with registry containing a seeded Keycloak-preset user.
-2. Complete authorize/token flow.
-3. Decode ID token.
-4. Call `/userinfo`.
-5. Assert both surfaces carry expected nested claims.
+### Phase 7 — Final validation and diary
 
-Optional xgoja tests:
-
-- Only add xgoja/appauth tests if a current example actually consumes Keycloak roles. Do not add preset usage to simple login smokes.
+- [ ] Run `GOWORK=off go test ./... -count=1`.
+- [ ] Run `GOWORK=off go build ./cmd/tinyidp`.
+- [ ] Update diary with exact command output.
+- [ ] Update changelog and doc relations.
+- [ ] Run `docmgr doctor --ticket TINYIDP-CLAIMS-001 --stale-after 30`.
+- [ ] Commit implementation and docs.
 
 ## Risks and open questions
 
-- The word “Keycloak” can imply broader compatibility than this feature provides. Docs should say “Keycloak-shaped claims,” not “Keycloak emulation.”
-- Some apps expect `groups` to be simple names, while Keycloak often emits path-like groups. The config should accept exactly what the fixture author writes.
-- Some apps expect roles in `roles` or `scope` instead of Keycloak nested objects. Those should remain raw `claims` config, not part of this preset.
-- If future tests need realm JSON import, that should be a separate ticket.
+- Top-level `roles` and `groups` are common but not universal. The raw `claims` map remains the compatibility escape hatch.
+- Trimming and dropping empty list entries is useful, but deduplication is not included to avoid surprising authors.
+- `email_verified` currently overrides any `claims.email_verified`; this guide preserves that behavior for compatibility.
 
 ## References
 
 - `/home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/scenario/seeded_users.go`
 - `/home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/scenario/scenario.go`
-- `/home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/jwt.go`
+- `/home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/token.go`
 - `/home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/userinfo.go`
-- `/home/manuel/workspaces/2026-06-12/goja-express-auth/go-go-goja/examples/xgoja/23-personal-knowledge-inbox/06-browser-login-keycloak/keycloak/realm-personal-inbox.json`
