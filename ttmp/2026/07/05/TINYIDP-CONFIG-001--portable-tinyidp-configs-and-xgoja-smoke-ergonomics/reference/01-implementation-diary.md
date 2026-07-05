@@ -100,3 +100,73 @@ Ticket path:
 ```text
 /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-CONFIG-001--portable-tinyidp-configs-and-xgoja-smoke-ergonomics
 ```
+
+## Step 2: Resume config ticket with detailed implementation checklist
+
+This step resumed `TINYIDP-CONFIG-001` after completing the generic claims and password fixture tickets. I replaced the coarse checklist with precise tasks for example config files, user fixtures, documentation, validation, xgoja smoke decisions, and final bookkeeping.
+
+No runtime code changed in this step. The next step will add provider-neutral portable config examples and a personal-inbox users fixture that uses the generic claims/password support from the previous tickets.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the next tinyidp follow-up ticket with the same step-by-step docmgr, diary, validation, and commit discipline.
+
+**Inferred user intent:** The user wants the remaining portable config work implemented incrementally and tracked precisely in the ticket.
+
+**Commit (code):** pending — task/diary baseline only.
+
+### What I did
+
+- Chose `TINYIDP-CONFIG-001` as the next ticket after finishing password fixtures.
+- Replaced the coarse task list with detailed phases:
+  - baseline tracking,
+  - portable config examples,
+  - relative path and smoke ergonomics docs,
+  - example validation,
+  - xgoja smoke decision/validation,
+  - final validation/bookkeeping.
+- Added this diary entry before adding examples.
+
+### Why
+
+- The config ticket touches examples, docs, validation commands, and possibly xgoja smoke workflows; detailed task tracking prevents accidental scope drift.
+
+### What worked
+
+- The existing ticket was healthy and `docmgr doctor` had already passed before this continuation.
+
+### What didn't work
+
+- No failures occurred in this step.
+
+### What I learned
+
+- The ticket can now build on the generic claim and password fixture support that was implemented after the original design doc was written.
+
+### What was tricky to build
+
+- The task list must distinguish path-based issuer compatibility from provider-specific claim semantics. We can document path issuers as URL-shape compatibility while keeping user claims generic.
+
+### What warrants a second pair of eyes
+
+- Review whether xgoja Step 06 smoke validation belongs in this ticket or should remain a documented override, since the example config files are repo-local to tinyidp.
+
+### What should be done in the future
+
+- Add example configs and users in a focused commit.
+- Validate `print-config` and discovery before updating public docs.
+
+### Code review instructions
+
+- Start with `tasks.md` for the precise execution checklist.
+- Then inspect the next commit's `examples/configs/*` and `examples/users/*` files.
+
+### Technical details
+
+Ticket path:
+
+```text
+/home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-CONFIG-001--portable-tinyidp-configs-and-xgoja-smoke-ergonomics
+```
