@@ -33,10 +33,11 @@ type SeededUserFile struct {
 // scenario. Missing sub/email/name values are derived from Login, exactly like
 // arbitrary fallback users. Claims are merged into both ID token and userinfo.
 type SeededUser struct {
-	Login string `json:"login" yaml:"login"`
-	Sub   string `json:"sub" yaml:"sub"`
-	Email string `json:"email" yaml:"email"`
-	Name  string `json:"name" yaml:"name"`
+	Login    string `json:"login" yaml:"login"`
+	Sub      string `json:"sub" yaml:"sub"`
+	Email    string `json:"email" yaml:"email"`
+	Name     string `json:"name" yaml:"name"`
+	Password string `json:"password" yaml:"password"`
 
 	// Support both spellings because YAML fixtures often prefer kebab-case while
 	// JSON/OIDC examples usually prefer snake_case.
@@ -136,6 +137,7 @@ func seededUserToScenario(su SeededUser) (Scenario, error) {
 		Description: "seeded user from users file",
 		Category:    category,
 		User:        u,
+		Password:    strings.TrimSpace(su.Password),
 		ExtraClaims: extra,
 		OmitClaims:  append([]string(nil), su.OmitClaims...),
 	}, nil

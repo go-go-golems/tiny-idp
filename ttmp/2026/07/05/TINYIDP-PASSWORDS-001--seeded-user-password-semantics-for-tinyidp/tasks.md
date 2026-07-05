@@ -13,24 +13,24 @@
 
 ## Phase 1 — Seeded-user schema and conversion
 
-- [ ] Add optional `Password string` field to `scenario.SeededUser` with JSON/YAML tags
-- [ ] Add optional `Password string` metadata to `scenario.Scenario`
-- [ ] Trim whitespace from configured seeded-user password during conversion
-- [ ] Copy trimmed seeded-user password into the resulting scenario
-- [ ] Preserve empty password as "no password required"
-- [ ] Keep existing seeded-user identity and generic claim preset behavior unchanged
+- [x] Add optional `Password string` field to `scenario.SeededUser` with JSON/YAML tags
+- [x] Add optional `Password string` metadata to `scenario.Scenario`
+- [x] Trim whitespace from configured seeded-user password during conversion
+- [x] Copy trimmed seeded-user password into the resulting scenario
+- [x] Preserve empty password as "no password required"
+- [x] Keep existing seeded-user identity and generic claim preset behavior unchanged
 
 ## Phase 2 — Scenario tests
 
-- [ ] Add direct `SeededUsersToScenarios` test proving password is copied
-- [ ] Add YAML users-file test proving password is loaded
-- [ ] Add JSON users-file test proving password is loaded
-- [ ] Add test proving missing password remains empty/permissive
-- [ ] Run `go test ./internal/scenario -count=1`
+- [x] Add direct `SeededUsersToScenarios` test proving password is copied
+- [x] Add YAML users-file test proving password is loaded
+- [x] Add JSON users-file test proving password is loaded
+- [x] Add test proving missing password remains empty/permissive
+- [x] Run `go test ./internal/scenario -count=1`
 
 ## Phase 3 — Authorize POST validation
 
-- [ ] Read submitted password from authorize POST form
+- [x] Read submitted password from authorize POST form
 - [ ] Add small helper for configured-password validation
 - [ ] Reject wrong configured passwords with generic `invalid login or password` text
 - [ ] Return `401 Unauthorized` for wrong configured password

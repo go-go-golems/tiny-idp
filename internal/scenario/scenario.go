@@ -25,6 +25,10 @@ type Scenario struct {
 	Category    string // used by the login page to group buttons (Phase 3)
 	User        user.User
 
+	// Password is an optional test-fixture password for seeded users. When empty,
+	// the scenario remains permissive and any submitted password is accepted.
+	Password string
+
 	// AuthError, when non-empty, is the OAuth error code returned at the
 	// /authorize endpoint via redirect (e.g. "access_denied"). The code is
 	// never issued.
@@ -80,7 +84,7 @@ type Scenario struct {
 // Registry maps a normalized login to a Scenario. The zero value is not
 // usable; construct with New.
 type Registry struct {
-	m     map[string]Scenario
+	m        map[string]Scenario
 	fallback func(string) Scenario
 }
 
@@ -160,8 +164,8 @@ func builtinScenarios() []Scenario {
 			Category:    "Claim variants",
 			User:        user.FromLogin("admin"),
 			ExtraClaims: map[string]any{
-				"groups":              []string{"admin", "engineering"},
-				"roles":               []string{"owner"},
+				"groups":             []string{"admin", "engineering"},
+				"roles":              []string{"owner"},
 				"preferred_username": "admin",
 			},
 		},
@@ -171,8 +175,8 @@ func builtinScenarios() []Scenario {
 			Category:    "Claim variants",
 			User:        user.FromLogin("viewer"),
 			ExtraClaims: map[string]any{
-				"groups":              []string{"viewer"},
-				"roles":               []string{"reader"},
+				"groups":             []string{"viewer"},
+				"roles":              []string{"reader"},
 				"preferred_username": "viewer",
 			},
 		},
@@ -198,7 +202,7 @@ func builtinScenarios() []Scenario {
 			Category:    "Claim variants",
 			User:        user.FromLogin("tenant-a-admin"),
 			ExtraClaims: map[string]any{
-				"groups":  []string{"admin"},
+				"groups": []string{"admin"},
 				"tenant": "tenant-a",
 			},
 		},
@@ -208,7 +212,7 @@ func builtinScenarios() []Scenario {
 			Category:    "Claim variants",
 			User:        user.FromLogin("tenant-b-viewer"),
 			ExtraClaims: map[string]any{
-				"groups":  []string{"viewer"},
+				"groups": []string{"viewer"},
 				"tenant": "tenant-b",
 			},
 		},
@@ -218,7 +222,7 @@ func builtinScenarios() []Scenario {
 			Category:    "Claim variants",
 			User:        user.FromLogin("unicode-name"),
 			ExtraClaims: map[string]any{
-				"name":  "Müller Frédéric",
+				"name":   "Müller Frédéric",
 				"locale": "de-DE",
 			},
 		},
@@ -369,24 +373,24 @@ func builtinScenarios() []Scenario {
 
 		// --- UserInfo endpoint failures ---
 		{
-			Name:         "userinfo-401",
-			Description:  "userinfo returns 401",
-			Category:     "UserInfo failures",
-			User:         user.FromLogin("userinfo-401"),
+			Name:          "userinfo-401",
+			Description:   "userinfo returns 401",
+			Category:      "UserInfo failures",
+			User:          user.FromLogin("userinfo-401"),
 			UserInfoError: "401",
 		},
 		{
-			Name:         "userinfo-500",
-			Description:  "userinfo returns 500",
-			Category:     "UserInfo failures",
-			User:         user.FromLogin("userinfo-500"),
+			Name:          "userinfo-500",
+			Description:   "userinfo returns 500",
+			Category:      "UserInfo failures",
+			User:          user.FromLogin("userinfo-500"),
 			UserInfoError: "500",
 		},
 		{
-			Name:         "userinfo-sub-mismatch",
-			Description:  "userinfo sub differs from ID token",
-			Category:     "UserInfo failures",
-			User:         user.FromLogin("userinfo-sub-mismatch"),
+			Name:          "userinfo-sub-mismatch",
+			Description:   "userinfo sub differs from ID token",
+			Category:      "UserInfo failures",
+			User:          user.FromLogin("userinfo-sub-mismatch"),
 			UserInfoError: "sub_mismatch",
 		},
 

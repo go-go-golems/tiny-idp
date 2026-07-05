@@ -11,7 +11,13 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/design-doc/01-seeded-user-password-semantics-guide.md
+    - Path: internal/scenario/scenario.go
+      Note: Scenario password metadata
+    - Path: internal/scenario/seeded_users.go
+      Note: Seeded-user password schema and conversion
+    - Path: internal/scenario/seeded_users_test.go
+      Note: Password schema/load tests
+    - Path: ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/design-doc/01-seeded-user-password-semantics-guide.md
       Note: Primary design guide created in Step 1
 ExternalSources: []
 Summary: Chronological diary for the seeded-user password semantics ticket.
@@ -19,6 +25,7 @@ LastUpdated: 2026-07-05T17:45:00-04:00
 WhatFor: Read before implementing optional password checks for seeded users.
 WhenToUse: Use when resuming TINYIDP-PASSWORDS-001 or reviewing password behavior decisions.
 ---
+
 
 # Diary
 
@@ -168,4 +175,75 @@ Ticket path:
 
 ```text
 /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp
+```
+
+## Step 3: Add password metadata to seeded users and scenarios
+
+This step implemented the data-model part of optional password semantics. Seeded users can now carry a `password` fixture value, and conversion into a scenario preserves that password as optional scenario metadata.
+
+No authorize behavior changed in this step. A seeded user with a configured password is now represented correctly, but login validation will be added in the next implementation slice.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Continue the password implementation in small reviewable slices, starting with schema and conversion tests.
+
+**Inferred user intent:** The user wants incremental implementation with commits at meaningful boundaries rather than one large password-feature patch.
+
+**Commit (code):** pending — schema/conversion slice.
+
+### What I did
+
+- Added `Password string` to `scenario.SeededUser` with JSON/YAML tags.
+- Added `Password string` to `scenario.Scenario` as optional test-fixture metadata.
+- Trimmed configured seeded-user passwords during conversion.
+- Preserved empty password as the marker for "no password required".
+- Added direct seeded-user conversion tests.
+- Added YAML and JSON users-file password load tests.
+
+### Why
+
+- Authorize POST should validate against scenario metadata, not re-read users-file state or maintain a parallel map.
+- Empty passwords must keep the current permissive behavior for builtins, fallback users, and seeded users that do not opt in.
+
+### What worked
+
+- `go test ./internal/scenario -count=1` passed.
+
+### What didn't work
+
+- No failures occurred in this step.
+
+### What I learned
+
+- The existing `SeededUsersToScenarios` conversion is the right boundary for password metadata, just like it is for deterministic identity and claims.
+
+### What was tricky to build
+
+- Password values should be trimmed at configuration-conversion time so accidental whitespace in YAML does not become part of the fixture password.
+- Empty string remains the only sentinel for no password requirement.
+
+### What warrants a second pair of eyes
+
+- Review whether trimming passwords is desired. It is ergonomic for fixtures, but it means leading/trailing spaces cannot be intentional test passwords.
+
+### What should be done in the future
+
+- Add authorize POST validation and server-flow tests.
+- Update login UI copy and docs after behavior exists.
+
+### Code review instructions
+
+- Start with `internal/scenario/seeded_users.go` and `internal/scenario/scenario.go`.
+- Review `internal/scenario/seeded_users_test.go` for direct, YAML, and JSON load coverage.
+- Validate with `go test ./internal/scenario -count=1`.
+
+### Technical details
+
+Validation command run:
+
+```text
+go test ./internal/scenario -count=1
+ok  	github.com/manuel/tinyidp/internal/scenario	0.003s
 ```

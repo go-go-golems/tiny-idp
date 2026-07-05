@@ -43,6 +43,22 @@ func TestSeededUsersToScenariosOverridesIdentityAndClaims(t *testing.T) {
 	}
 }
 
+func TestSeededUsersToScenariosCopiesOptionalPassword(t *testing.T) {
+	scenarios, err := SeededUsersToScenarios([]SeededUser{
+		{Login: "alice", Password: " alice-password "},
+		{Login: "bob"},
+	})
+	if err != nil {
+		t.Fatalf("SeededUsersToScenarios: %v", err)
+	}
+	if scenarios[0].Password != "alice-password" {
+		t.Fatalf("alice password = %q", scenarios[0].Password)
+	}
+	if scenarios[1].Password != "" {
+		t.Fatalf("bob password = %q, want empty", scenarios[1].Password)
+	}
+}
+
 func TestSeededUsersToScenariosExpandsGenericClaimPresets(t *testing.T) {
 	scenarios, err := SeededUsersToScenarios([]SeededUser{
 		{
@@ -107,6 +123,7 @@ func TestLoadSeededUsersFromYAML(t *testing.T) {
     sub: user-bob-fixed
     email: bob@inbox.test
     name: Bob Inbox
+    password: bob-password
     email-verified: true
     groups: [inbox-users]
     roles: [reader]
@@ -127,6 +144,9 @@ func TestLoadSeededUsersFromYAML(t *testing.T) {
 	if sc.User.Sub != "user-bob-fixed" || sc.User.Email != "bob@inbox.test" {
 		t.Fatalf("unexpected user: %+v", sc.User)
 	}
+	if sc.Password != "bob-password" {
+		t.Fatalf("password = %q", sc.Password)
+	}
 	if sc.ExtraClaims["email_verified"] != true {
 		t.Fatalf("email_verified = %#v", sc.ExtraClaims["email_verified"])
 	}
@@ -144,6 +164,24 @@ func TestLoadSeededUsersFromYAML(t *testing.T) {
 	}
 	if sc.ExtraClaims["locale"] != "en-US" {
 		t.Fatalf("locale = %#v", sc.ExtraClaims["locale"])
+	}
+}
+
+func TestLoadSeededUsersFromJSONWithPassword(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "users.json")
+	if err := os.WriteFile(path, []byte(`{"users":[{"login":"alice","password":"alice-password","sub":"user-alice-fixed"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scenarios, err := LoadSeededUsers(path)
+	if err != nil {
+		t.Fatalf("LoadSeededUsers: %v", err)
+	}
+	if len(scenarios) != 1 {
+		t.Fatalf("len = %d", len(scenarios))
+	}
+	if scenarios[0].Password != "alice-password" {
+		t.Fatalf("password = %q", scenarios[0].Password)
 	}
 }
 
