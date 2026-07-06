@@ -1,7 +1,7 @@
 ---
 Title: Seeded-user password semantics for tinyidp
 Ticket: TINYIDP-PASSWORDS-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - testing
@@ -13,10 +13,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-05T17:31:48.994043493-04:00
+LastUpdated: 2026-07-05T20:05:42.837684704-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Seeded-user password semantics for tinyidp
 

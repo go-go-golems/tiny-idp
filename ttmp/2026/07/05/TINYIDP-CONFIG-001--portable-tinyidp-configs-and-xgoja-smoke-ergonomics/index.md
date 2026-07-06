@@ -1,7 +1,7 @@
 ---
 Title: Portable tinyidp configs and xgoja smoke ergonomics
 Ticket: TINYIDP-CONFIG-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - testing
@@ -13,10 +13,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-05T17:31:48.690756712-04:00
+LastUpdated: 2026-07-05T20:05:42.726614466-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Portable tinyidp configs and xgoja smoke ergonomics
 

@@ -69,3 +69,8 @@ Documented optional seeded-user passwords, updated login copy and example users,
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/static/login.html — Login page copy
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-PASSWORDS-001--seeded-user-password-semantics-for-tinyidp/reference/01-implementation-diary.md — Step 5 diary
 
+
+## 2026-07-05
+
+Ticket closed
+

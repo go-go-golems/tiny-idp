@@ -58,3 +58,8 @@ Documented generic claim presets, added example users file, and validated full r
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/examples/users/generic-claims-users.yaml — Generic claim example
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-CLAIMS-001--keycloak-compatible-claim-presets-for-tinyidp/reference/01-implementation-diary.md — Step 4 diary
 
+
+## 2026-07-05
+
+Ticket closed
+

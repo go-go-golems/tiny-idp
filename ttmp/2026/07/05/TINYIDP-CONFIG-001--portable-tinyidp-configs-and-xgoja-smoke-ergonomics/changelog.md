@@ -49,3 +49,8 @@ Added portable config examples, documented xgoja smoke usage, validated print-co
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/examples/users/personal-inbox-users.yaml — Users fixture
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/05/TINYIDP-CONFIG-001--portable-tinyidp-configs-and-xgoja-smoke-ergonomics/reference/01-implementation-diary.md — Step 3 diary
 
+
+## 2026-07-05
+
+Ticket closed
+

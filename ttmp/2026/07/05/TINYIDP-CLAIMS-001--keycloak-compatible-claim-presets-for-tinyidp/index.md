@@ -1,7 +1,7 @@
 ---
 Title: Keycloak-compatible claim presets for tinyidp
 Ticket: TINYIDP-CLAIMS-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - testing
@@ -13,10 +13,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-05T17:31:49.332942247-04:00
+LastUpdated: 2026-07-05T20:05:42.955055595-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Keycloak-compatible claim presets for tinyidp
 
