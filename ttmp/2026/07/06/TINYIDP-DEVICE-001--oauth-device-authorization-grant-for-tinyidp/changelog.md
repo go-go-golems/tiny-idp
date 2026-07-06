@@ -45,3 +45,8 @@ Documented native device authorization and validated the full repository with te
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/README.md — README device flow update
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/cmd/tinyidp/doc/pages/tutorial-device-authorization.md — Device authorization tutorial
 
+
+## 2026-07-06
+
+Ticket closed
+

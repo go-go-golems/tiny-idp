@@ -105,4 +105,4 @@
 - [x] Update implementation diary with exact command output
 - [x] Update changelog and doc relations
 - [x] Run `docmgr doctor --ticket TINYIDP-DEVICE-001 --stale-after 30`
-- [ ] Commit implementation and docs
+- [x] Commit implementation and docs

@@ -1,7 +1,7 @@
 ---
 Title: OAuth device authorization grant for tinyidp
 Ticket: TINYIDP-DEVICE-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - testing
@@ -13,10 +13,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-06T15:59:30.387418751-04:00
+LastUpdated: 2026-07-06T16:57:21.855496632-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # OAuth device authorization grant for tinyidp
 

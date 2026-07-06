@@ -231,7 +231,7 @@ I also ran the full Go test suite, built the CLI, rendered the new Glazed help p
 
 **Inferred user intent:** The user wants this feature to be reviewable, reproducible, and usable from help/README material rather than existing only in tests.
 
-**Commit (code):** pending — docs and final validation slice.
+**Commit (code):** 10ca17f83bf11b58385c59691c681c263a1962c2 — "docs: document tinyidp device authorization"
 
 ### What I did
 
