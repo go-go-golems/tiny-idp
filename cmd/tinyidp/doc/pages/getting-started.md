@@ -54,10 +54,12 @@ determinism and failure coverage, not hardening.
 From the repository root:
 
     go build -o tinyidp ./cmd/tinyidp
-    ./tinyidp serve
+    ./tinyidp serve --config-file examples/configs/dev-root.yaml
 
 The server starts on `http://localhost:5556`. Leave it running in one
-terminal; the examples below assume it is reachable at that URL.
+terminal; the examples below assume it is reachable at that URL. You can
+also run `./tinyidp serve` with no config file; `dev-root.yaml` simply
+makes the default local setup explicit.
 
 ## Step 2 — confirm discovery
 
@@ -127,12 +129,14 @@ state without adding log statements.
 
 ## Where to go next
 
-- `tinyidp help tutorial` — a guided walkthrough that exercises the
-  happy path and then a failure scenario, to learn the testing model.
-- `tinyidp help scenarios` — the full catalog of scenarios and the model
-  behind them.
-- `tinyidp help reference` — configuration, clients, endpoints, and
-  behaviors, organized for lookup.
+- `tinyidp help user-guide` — everyday usage: config files, clients, seeded users, passwords, claims, and troubleshooting.
+- `tinyidp help developer-guide` — package layout, scenario model, route mounting, and extension workflow.
+- `tinyidp help tutorial-first-rp-login` — a focused first relying-party login walkthrough.
+- `tinyidp help tutorial-seeded-users-and-claims` — deterministic Alice/Bob fixtures with passwords and claims.
+- `tinyidp help tutorial-xgoja-personal-inbox` — xgoja personal-inbox Steps 06, 07, and 08 with root and path issuers.
+- `tinyidp help tutorial` — a guided walkthrough that exercises the happy path and then failure scenarios.
+- `tinyidp help scenarios` — the full catalog of scenarios and the model behind them.
+- `tinyidp help reference` — configuration, clients, endpoints, and behaviors, organized for lookup.
 
 ## See also
 

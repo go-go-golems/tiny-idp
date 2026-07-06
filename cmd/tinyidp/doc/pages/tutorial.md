@@ -133,5 +133,9 @@ client model are in `tinyidp help reference`.
 ## See also
 
 - `tinyidp help getting-started` — install and first login.
+- `tinyidp help tutorial-first-rp-login` — first relying-party login walkthrough before scenario testing.
+- `tinyidp help tutorial-seeded-users-and-claims` — deterministic users, fixture passwords, and generic claims.
+- `tinyidp help tutorial-xgoja-personal-inbox` — xgoja personal-inbox Steps 06, 07, and 08.
+- `tinyidp help user-guide` — operational guide for configuring tinyidp.
 - `tinyidp help scenarios` — the full scenario catalog and model.
 - `tinyidp help reference` — endpoints, clients, and configuration.

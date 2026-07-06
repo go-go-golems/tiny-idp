@@ -152,6 +152,25 @@ Seeded users are registered as normal scenarios. They override builtins with the
 
 Generic top-level claim helpers are available for common authorization fixtures: `groups`, `roles`, `tenant`, `preferred_username`, and `locale`. These expand into ordinary top-level claims in both the ID token and userinfo response. The raw `claims` map remains available for provider-specific or unusual shapes; explicit `claims` entries override generic helper fields with the same claim name. Use `omit_claims` when a seeded user should deliberately omit a base claim such as `email`.
 
+### Seeded-user fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `login` | string | Required login/scenario name. Normalized before registration. |
+| `sub` | string | Optional fixed subject. Defaults to deterministic synthetic subject derived from login. |
+| `email` | string | Optional fixed email. Defaults to login or `login@example.test`. |
+| `name` | string | Optional display name. Defaults to login local part. |
+| `password` | string | Optional fixture password. Empty means any submitted password is accepted. |
+| `email_verified` / `email-verified` | bool | Optional email verification claim. Both spellings are accepted. |
+| `groups` | list[string] | Generic top-level `groups` claim. Whitespace-only entries are dropped. |
+| `roles` | list[string] | Generic top-level `roles` claim. Whitespace-only entries are dropped. |
+| `tenant` | string | Generic top-level `tenant` claim. |
+| `preferred_username` | string | Generic top-level preferred username claim. |
+| `locale` | string | Generic top-level locale claim. |
+| `claims` | object | Raw extra claims. Values here override generic helper fields with the same name. |
+| `omit_claims` | list[string] | Claims to delete from ID token and userinfo after extra claims are merged. |
+| `category` | string | Login-page quick-pick category. Defaults to `Seeded users`. |
+
 ## Clients
 
 tinyidp ships a client registry with three builtins, so one running
@@ -280,5 +299,10 @@ against a log without exposing the full token in a listing.
 ## See also
 
 - `tinyidp help getting-started` — install and first login.
+- `tinyidp help user-guide` — operational guide for running tinyidp against relying parties.
+- `tinyidp help developer-guide` — implementation guide for extending tinyidp.
+- `tinyidp help tutorial-first-rp-login` — first relying-party login walkthrough.
+- `tinyidp help tutorial-seeded-users-and-claims` — deterministic users and claim fixtures.
+- `tinyidp help tutorial-xgoja-personal-inbox` — xgoja personal-inbox smoke workflow.
 - `tinyidp help tutorial` — a guided walkthrough of scenarios.
 - `tinyidp help scenarios` — the full scenario catalog and model.

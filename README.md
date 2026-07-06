@@ -159,10 +159,15 @@ go run ./cmd/tinyidp serve --print-schema                   # show the command's
 
 ```bash
 go run ./cmd/tinyidp help                # browse topics
-go run ./cmd/tinyidp help getting-started  # install + first login
-go run ./cmd/tinyidp help tutorial      # guided scenario walkthrough
-go run ./cmd/tinyidp help scenarios      # the scenario catalog
-go run ./cmd/tinyidp help reference      # config, clients, endpoints
+go run ./cmd/tinyidp help getting-started                  # install + first login
+go run ./cmd/tinyidp help user-guide                       # operational guide
+go run ./cmd/tinyidp help developer-guide                  # implementation guide
+go run ./cmd/tinyidp help tutorial-first-rp-login          # first RP login
+go run ./cmd/tinyidp help tutorial-seeded-users-and-claims # users, passwords, claims
+go run ./cmd/tinyidp help tutorial-xgoja-personal-inbox    # xgoja Steps 06/07/08
+go run ./cmd/tinyidp help tutorial                         # guided scenario walkthrough
+go run ./cmd/tinyidp help scenarios                        # the scenario catalog
+go run ./cmd/tinyidp help reference                        # config, clients, endpoints
 ```
 
 ## Configure your app (RP)
