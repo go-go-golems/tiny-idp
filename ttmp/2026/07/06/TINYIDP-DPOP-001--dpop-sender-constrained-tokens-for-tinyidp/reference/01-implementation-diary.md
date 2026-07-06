@@ -327,7 +327,7 @@ The ticket is now in the same state as the device authorization ticket: implemen
 
 **Inferred user intent:** The user wants the DPoP implementation to be fully ticketed, uploaded, and closed after validation.
 
-**Commit (code):** pending — closure bookkeeping.
+**Commit (code):** f72dc14b6751a8fc9e284538d5c803889ad03503 — "docs: close dpop ticket"
 
 ### What I did
 
