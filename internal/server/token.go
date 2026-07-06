@@ -114,7 +114,12 @@ func (s *Server) tokenAuthorizationCode(w http.ResponseWriter, r *http.Request, 
 		time.Sleep(10 * time.Second)
 	}
 
-	access := s.issueAccessToken(ac.User, ac.Scenario, now)
+	proof, ok := s.dpopProofForTokenRequest(w, r)
+	if !ok {
+		return
+	}
+
+	access := s.issueAccessToken(ac.User, ac.Scenario, now, proof.JKT)
 
 	idToken, err := s.issueIDToken(ac.User, ac.Scenario, ac.ClientID, ac.Nonce, ac.AuthTime, now)
 	if err != nil {
@@ -124,7 +129,7 @@ func (s *Server) tokenAuthorizationCode(w http.ResponseWriter, r *http.Request, 
 
 	resp := map[string]any{
 		"access_token": access,
-		"token_type":   "Bearer",
+		"token_type":   tokenTypeForJKT(proof.JKT),
 		"expires_in":   3600,
 		"scope":        ac.Scope,
 		"id_token":     idToken,
@@ -132,7 +137,7 @@ func (s *Server) tokenAuthorizationCode(w http.ResponseWriter, r *http.Request, 
 
 	// Phase 9: issue a refresh token when the RP requested offline_access.
 	if hasScope(ac.Scope, "offline_access") {
-		rt := s.issueRefreshToken(ac.User, ac.Scenario, ac.ClientID, ac.Scope, now)
+		rt := s.issueRefreshToken(ac.User, ac.Scenario, ac.ClientID, ac.Scope, now, proof.JKT)
 		resp["refresh_token"] = rt
 	}
 
@@ -150,9 +155,6 @@ func (s *Server) tokenRefresh(w http.ResponseWriter, r *http.Request, clientID s
 
 	s.mu.Lock()
 	rtok, ok := s.refreshTokens[rt]
-	// Rotation: delete the presented token so it cannot be reused. If it was
-	// already rotated (absent), this is a reuse attempt.
-	delete(s.refreshTokens, rt)
 	s.mu.Unlock()
 
 	if !ok {
@@ -168,17 +170,48 @@ func (s *Server) tokenRefresh(w http.ResponseWriter, r *http.Request, clientID s
 		return
 	}
 
+	proof, ok := s.dpopProofForTokenRequest(w, r)
+	if !ok {
+		return
+	}
+	newDPoPJKT := proof.JKT
+	if rtok.DPoPJKT != "" {
+		if proof.JKT == "" {
+			tokenError(w, http.StatusBadRequest, "invalid_dpop_proof", "refresh token requires DPoP proof")
+			return
+		}
+		if proof.JKT != rtok.DPoPJKT {
+			tokenError(w, http.StatusBadRequest, "invalid_dpop_proof", "DPoP proof key does not match refresh token")
+			return
+		}
+		newDPoPJKT = rtok.DPoPJKT
+	}
+
+	// Rotation: delete the presented token so it cannot be reused. If it was
+	// already rotated (absent), this is a reuse attempt.
+	s.mu.Lock()
+	latest, ok := s.refreshTokens[rt]
+	if ok {
+		delete(s.refreshTokens, rt)
+		rtok = latest
+	}
+	s.mu.Unlock()
+	if !ok {
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "unknown refresh token (rotated, revoked, or never issued)")
+		return
+	}
+
 	now := time.Now()
-	access := s.issueAccessToken(rtok.User, rtok.Scenario, now)
+	access := s.issueAccessToken(rtok.User, rtok.Scenario, now, newDPoPJKT)
 
 	// Issue a rotated refresh token.
-	newRT := s.issueRefreshToken(rtok.User, rtok.Scenario, rtok.ClientID, rtok.Scope, now)
+	newRT := s.issueRefreshToken(rtok.User, rtok.Scenario, rtok.ClientID, rtok.Scope, now, newDPoPJKT)
 
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token":  access,
-		"token_type":    "Bearer",
+		"token_type":    tokenTypeForJKT(newDPoPJKT),
 		"expires_in":    3600,
 		"scope":         rtok.Scope,
 		"refresh_token": newRT,
@@ -247,10 +280,15 @@ func (s *Server) tokenDeviceCode(w http.ResponseWriter, r *http.Request, clientI
 		return
 	}
 
-	access := s.issueAccessToken(grant.User, grant.Scenario, now)
+	proof, ok := s.dpopProofForTokenRequest(w, r)
+	if !ok {
+		return
+	}
+
+	access := s.issueAccessToken(grant.User, grant.Scenario, now, proof.JKT)
 	resp := map[string]any{
 		"access_token": access,
-		"token_type":   "Bearer",
+		"token_type":   tokenTypeForJKT(proof.JKT),
 		"expires_in":   3600,
 		"scope":        grant.Scope,
 	}
@@ -263,7 +301,7 @@ func (s *Server) tokenDeviceCode(w http.ResponseWriter, r *http.Request, clientI
 		resp["id_token"] = idToken
 	}
 	if hasScope(grant.Scope, "offline_access") {
-		resp["refresh_token"] = s.issueRefreshToken(grant.User, grant.Scenario, grant.ClientID, grant.Scope, now)
+		resp["refresh_token"] = s.issueRefreshToken(grant.User, grant.Scenario, grant.ClientID, grant.Scope, now, proof.JKT)
 	}
 
 	w.Header().Set("Cache-Control", "no-store")
@@ -271,13 +309,14 @@ func (s *Server) tokenDeviceCode(w http.ResponseWriter, r *http.Request, clientI
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) issueAccessToken(u user.User, sc *scenario.Scenario, now time.Time) string {
+func (s *Server) issueAccessToken(u user.User, sc *scenario.Scenario, now time.Time, dpopJKT string) string {
 	access := randomB64(32)
 	s.mu.Lock()
 	s.tokens[access] = accessToken{
 		User:     u,
 		Expires:  now.Add(time.Hour),
 		Scenario: sc,
+		DPoPJKT:  dpopJKT,
 	}
 	s.mu.Unlock()
 	return access
@@ -311,7 +350,7 @@ func (s *Server) issueIDToken(u user.User, sc *scenario.Scenario, clientID, nonc
 }
 
 // issueRefreshToken stores a new refresh token and returns its opaque value.
-func (s *Server) issueRefreshToken(u user.User, sc *scenario.Scenario, clientID, scope string, now time.Time) string {
+func (s *Server) issueRefreshToken(u user.User, sc *scenario.Scenario, clientID, scope string, now time.Time, dpopJKT string) string {
 	rt := randomB64(32)
 	s.mu.Lock()
 	s.refreshTokens[rt] = refreshToken{
@@ -320,6 +359,7 @@ func (s *Server) issueRefreshToken(u user.User, sc *scenario.Scenario, clientID,
 		ClientID: clientID,
 		Scope:    scope,
 		Expires:  now.Add(refreshTokenTTL),
+		DPoPJKT:  dpopJKT,
 	}
 	s.mu.Unlock()
 	return rt

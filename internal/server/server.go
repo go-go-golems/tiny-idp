@@ -45,6 +45,7 @@ type Server struct {
 	sessions      map[string]*session
 	refreshTokens map[string]refreshToken
 	deviceGrants  map[string]deviceGrant
+	dpopReplay    map[string]time.Time
 }
 
 // authCode is a one-time authorization code awaiting exchange at /token.
@@ -66,6 +67,7 @@ type accessToken struct {
 	User     user.User
 	Expires  time.Time
 	Scenario *scenario.Scenario
+	DPoPJKT  string
 }
 
 // refreshToken is an opaque token mapped to a user + expiry, used to obtain
@@ -77,6 +79,7 @@ type refreshToken struct {
 	ClientID string
 	Scope    string
 	Expires  time.Time
+	DPoPJKT  string
 }
 
 // Options configures a Server at construction time.
@@ -113,6 +116,7 @@ func New(opts Options) (*Server, error) {
 		sessions:      map[string]*session{},
 		refreshTokens: map[string]refreshToken{},
 		deviceGrants:  map[string]deviceGrant{},
+		dpopReplay:    map[string]time.Time{},
 	}, nil
 }
 

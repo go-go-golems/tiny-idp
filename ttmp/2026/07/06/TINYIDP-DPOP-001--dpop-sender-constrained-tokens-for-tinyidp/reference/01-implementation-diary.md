@@ -3,24 +3,33 @@ Title: Implementation Diary
 Ticket: TINYIDP-DPOP-001
 Status: active
 Topics:
-  - oidc
-  - auth
-  - identity
-  - testing
-  - go
+    - oidc
+    - auth
+    - identity
+    - testing
+    - go
 DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
-  - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DPOP-001--dpop-sender-constrained-tokens-for-tinyidp/design-doc/01-dpop-design-and-implementation-guide.md
-    Note: Primary DPoP design and implementation guide created in Step 1
+    - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DPOP-001--dpop-sender-constrained-tokens-for-tinyidp/design-doc/01-dpop-design-and-implementation-guide.md
+      Note: Primary DPoP design and implementation guide created in Step 1
+    - Path: repo://internal/server/dpop.go
+      Note: DPoP proof parsing, verification, thumbprints, ath, and replay cache
+    - Path: repo://internal/server/dpop_test.go
+      Note: DPoP proof, token, userinfo, refresh, and device-code tests
+    - Path: repo://internal/server/token.go
+      Note: Token endpoint DPoP binding and refresh-token enforcement
+    - Path: repo://internal/server/userinfo.go
+      Note: DPoP-bound access-token enforcement
 ExternalSources:
-  - "RFC 9449: OAuth 2.0 Demonstrating Proof of Possession (DPoP): https://www.rfc-editor.org/rfc/rfc9449.html"
+    - 'RFC 9449: OAuth 2.0 Demonstrating Proof of Possession (DPoP): https://www.rfc-editor.org/rfc/rfc9449.html'
 Summary: Chronological diary for designing and implementing DPoP sender-constrained tokens in tinyidp.
 LastUpdated: 2026-07-06T00:00:00-04:00
 WhatFor: Read before resuming TINYIDP-DPOP-001 or reviewing DPoP implementation decisions.
 WhenToUse: Use when implementing DPoP proof validation, token binding, replay protection, docs, or smoke tests.
 ---
+
 
 # Diary
 
@@ -109,4 +118,95 @@ Ticket path:
 
 ```text
 /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DPOP-001--dpop-sender-constrained-tokens-for-tinyidp
+```
+
+## Step 2: Implement DPoP proof validation and token binding
+
+This step implemented the core DPoP runtime behavior described in the design guide. tinyidp now accepts optional DPoP proof JWTs at `/token`, binds issued opaque access and refresh tokens to the proof key thumbprint, returns `token_type: DPoP` for bound access tokens, and requires matching DPoP proofs for `/userinfo` calls that use bound tokens.
+
+The implementation keeps existing bearer behavior intact. A token request without a `DPoP` header still creates bearer tokens, and unbound access tokens still call `/userinfo` with `Authorization: Bearer`. DPoP only changes behavior for tokens that were deliberately issued with a valid proof.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** After writing the design guide, implement DPoP support in tinyidp with tests and diary updates.
+
+**Inferred user intent:** The user wants working sender-constrained token support, not only a DPoP design package.
+
+**Commit (code):** pending — DPoP implementation slice.
+
+### What I did
+
+- Added `internal/server/dpop.go` with:
+  - compact proof JWT parsing,
+  - `typ=dpop+jwt` validation,
+  - ES256 and RS256 JWK parsing,
+  - ES256 and RS256 proof signature verification,
+  - RFC 7638 JWK thumbprint calculation,
+  - `htm`, `htu`, `iat`, `jti`, replay, and `ath` validation.
+- Added `DPoPJKT` to access-token and refresh-token state.
+- Added `dpopReplay` to `Server` and cleared it in debug reset.
+- Added `dpop_signing_alg_values_supported` to discovery.
+- Updated token issuance so authorization-code and device-code exchanges bind access/refresh tokens when `DPoP` is present.
+- Updated refresh-token rotation so DPoP-bound refresh tokens require a matching DPoP proof.
+- Updated `/userinfo` so DPoP-bound access tokens require `Authorization: DPoP` plus a matching proof with `ath`.
+- Added `internal/server/dpop_test.go` covering proof validation, replay, RS256, authorization-code binding, userinfo enforcement, refresh rotation, and device-code binding.
+
+### Why
+
+- DPoP has to be enforced at both issuance and use. Validating only at `/token` would record a key but not protect `/userinfo`; validating only at `/userinfo` would have no binding to compare against.
+- Refresh tokens need binding too. Otherwise a DPoP-bound access token could be renewed by a caller who stole only the refresh token.
+
+### What worked
+
+- Focused DPoP tests passed.
+- Full server package tests passed.
+
+### What didn't work
+
+- No command failures occurred in this step.
+
+### What I learned
+
+- The existing opaque-token maps are a clean fit for DPoP because the binding can live as server-side metadata. There was no need to convert access tokens to JWTs.
+- Refresh-token rotation needed a small restructuring. The old code deleted the presented refresh token before all validation. For DPoP-bound refresh tokens, proof validation must happen before rotation so a missing or wrong proof does not consume an otherwise valid refresh token.
+
+### What was tricky to build
+
+- ES256 signatures in JOSE use raw `r || s` bytes, not ASN.1 DER. The verifier and tests both have to use fixed-width 32-byte integers for P-256.
+- `htu` validation must compare against the request URL without query parameters. The helper uses scheme, host, and escaped path from the incoming request, which matches tinyidp's loopback/test deployment model.
+- Replay protection needs to run after signature and claim validation. Otherwise malformed proofs could pollute the replay cache.
+
+### What warrants a second pair of eyes
+
+- Review whether allowing unbound refresh tokens to upgrade into DPoP-bound tokens is the desired behavior.
+- Review whether `/userinfo` should return JSON OAuth errors instead of plain HTTP errors for DPoP proof failures.
+- Review whether supporting RS256 in addition to ES256 is useful enough to keep the extra parser and tests.
+
+### What should be done in the future
+
+- Add README and Glazed help documentation for DPoP usage.
+- Add a manual smoke that generates a proof, obtains a DPoP token, and calls `/userinfo`.
+- Consider nonce support in a follow-up ticket if a client needs it.
+
+### Code review instructions
+
+- Start with `internal/server/dpop.go`.
+- Then inspect the DPoP call sites in `internal/server/token.go` and `internal/server/userinfo.go`.
+- Review tests in `internal/server/dpop_test.go`, especially refresh-token binding and replay cases.
+- Validate with:
+  - `go test ./internal/server -run 'TestDPoP' -count=1`
+  - `go test ./internal/server -count=1`
+
+### Technical details
+
+Validation output:
+
+```text
+$ go test ./internal/server -run 'TestDPoP' -count=1
+ok  	github.com/manuel/tinyidp/internal/server	0.891s
+
+$ go test ./internal/server -count=1
+ok  	github.com/manuel/tinyidp/internal/server	17.249s
 ```

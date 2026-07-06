@@ -251,12 +251,13 @@ func (s *Server) debugReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	n := len(s.sessions) + len(s.codes) + len(s.tokens) + len(s.refreshTokens) + len(s.deviceGrants)
+	n := len(s.sessions) + len(s.codes) + len(s.tokens) + len(s.refreshTokens) + len(s.deviceGrants) + len(s.dpopReplay)
 	s.sessions = map[string]*session{}
 	s.codes = map[string]authCode{}
 	s.tokens = map[string]accessToken{}
 	s.refreshTokens = map[string]refreshToken{}
 	s.deviceGrants = map[string]deviceGrant{}
+	s.dpopReplay = map[string]time.Time{}
 	s.jwksMode = "normal"
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{

@@ -80,6 +80,7 @@ func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token", deviceGrantType},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
+		"dpop_signing_alg_values_supported":     []string{"ES256", "RS256"},
 		"scopes_supported":                      []string{"openid", "profile", "email", "offline_access"},
 		"claims_supported":                      []string{"sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "email", "email_verified", "name", "groups", "roles", "tenant", "preferred_username", "locale"},
 		"code_challenge_methods_supported":      []string{"S256", "plain"},

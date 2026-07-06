@@ -22,3 +22,13 @@ Uploaded DPoP design bundle to reMarkable at /ai/2026/07/06/TINYIDP-DPOP-001.
 
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DPOP-001--dpop-sender-constrained-tokens-for-tinyidp/design-doc/01-dpop-design-and-implementation-guide.md — Uploaded design guide
 
+
+## 2026-07-06
+
+Implemented DPoP proof validation, opaque token binding, refresh-token binding, userinfo enforcement, discovery metadata, and server tests.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/dpop.go — Core DPoP implementation
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/dpop_test.go — DPoP test coverage
+
