@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/manuel/tinyidp/internal/client"
 	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/user"
 )
@@ -31,25 +32,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientID, basicSecret, hasBasic := r.BasicAuth()
-	if clientID == "" {
-		clientID = r.Form.Get("client_id")
-	}
-	c, ok := s.clients.Lookup(clientID)
+	clientID, c, ok := s.authenticateOAuthClient(w, r)
 	if !ok {
-		tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_id")
 		return
-	}
-	// Confidential clients must present their secret; public clients skip.
-	if c.Secret != "" {
-		secret := r.Form.Get("client_secret")
-		if hasBasic {
-			secret = basicSecret
-		}
-		if secret != c.Secret {
-			tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_secret")
-			return
-		}
 	}
 
 	switch r.Form.Get("grant_type") {
@@ -62,6 +47,30 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	default:
 		tokenError(w, http.StatusBadRequest, "unsupported_grant_type", "only authorization_code, refresh_token, and device_code are supported")
 	}
+}
+
+func (s *Server) authenticateOAuthClient(w http.ResponseWriter, r *http.Request) (string, client.Client, bool) {
+	clientID, basicSecret, hasBasic := r.BasicAuth()
+	if clientID == "" {
+		clientID = r.Form.Get("client_id")
+	}
+	c, ok := s.clients.Lookup(clientID)
+	if !ok {
+		tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_id")
+		return "", client.Client{}, false
+	}
+	// Confidential clients must present their secret; public clients skip.
+	if c.Secret != "" {
+		secret := r.Form.Get("client_secret")
+		if hasBasic {
+			secret = basicSecret
+		}
+		if secret != c.Secret {
+			tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_secret")
+			return "", client.Client{}, false
+		}
+	}
+	return clientID, c, true
 }
 
 // tokenAuthorizationCode exchanges a one-time authorization code for ID +
@@ -201,6 +210,7 @@ func (s *Server) tokenDeviceCode(w http.ResponseWriter, r *http.Request, clientI
 	grant = s.deviceGrants[deviceCode]
 	if !grant.LastPoll.IsZero() && now.Sub(grant.LastPoll) < grant.Interval {
 		grant.SlowDownCount++
+		grant.Interval += 5 * time.Second
 		grant.LastPoll = now
 		s.deviceGrants[deviceCode] = grant
 		s.mu.Unlock()

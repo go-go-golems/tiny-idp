@@ -61,10 +61,8 @@ func (s *Server) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientID := strings.TrimSpace(r.Form.Get("client_id"))
-	c, ok := s.clients.Lookup(clientID)
+	clientID, c, ok := s.authenticateOAuthClient(w, r)
 	if !ok {
-		tokenError(w, http.StatusBadRequest, "invalid_client", "bad client_id")
 		return
 	}
 

@@ -59,3 +59,14 @@ Uploaded final implementation bundle to reMarkable at /ai/2026/07/06/TINYIDP-DEV
 
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DEVICE-001--oauth-device-authorization-grant-for-tinyidp/reference/01-implementation-diary.md — Records final reMarkable upload
 
+
+## 2026-07-06
+
+Addressed PR review feedback: device authorization now reuses confidential-client authentication, approval rejects blank logins in tests/docs, and slow_down persists the RFC backoff interval increase.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/device.go — Device authorization client authentication
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/device_test.go — Regression tests for review feedback
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/token.go — Shared client authentication and slow_down interval persistence
+

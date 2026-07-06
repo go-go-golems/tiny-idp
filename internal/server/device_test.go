@@ -74,7 +74,24 @@ func TestDeviceAuthorizationRejectsUnknownClientAndScope(t *testing.T) {
 		"client_id": {"missing-client"},
 		"scope":     {"openid"},
 	})
-	assertOAuthError(t, resp, http.StatusBadRequest, "invalid_client")
+	assertOAuthError(t, resp, http.StatusUnauthorized, "invalid_client")
+
+	resp = postForm(t, ts, "/device_authorization", url.Values{
+		"client_id": {"web-app"},
+		"scope":     {"openid profile email"},
+	})
+	assertOAuthError(t, resp, http.StatusUnauthorized, "invalid_client")
+
+	resp = postForm(t, ts, "/device_authorization", url.Values{
+		"client_id":     {"web-app"},
+		"client_secret": {"dev-secret"},
+		"scope":         {"openid profile email"},
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("confidential client with secret status = %d: %s", resp.StatusCode, body)
+	}
 
 	resp = postForm(t, ts, "/device_authorization", url.Values{
 		"client_id": {"public-spa"},
@@ -112,21 +129,28 @@ func TestDeviceTokenPollingApprovalAndOneTimeUse(t *testing.T) {
 
 	slow := pollDeviceToken(t, ts, deviceCode, "dev-client")
 	assertOAuthError(t, slow, http.StatusBadRequest, "slow_down")
+	s.mu.Lock()
+	if got := s.deviceGrants[deviceCode].Interval; got != 10*time.Second {
+		s.mu.Unlock()
+		t.Fatalf("interval after slow_down = %s, want 10s", got)
+	}
+	s.mu.Unlock()
 
+	approveDevice(t, ts, userCode, "", "", "login is required")
 	approveDevice(t, ts, userCode, "alice", "wrong-password", "invalid login or password")
 	s.mu.Lock()
 	grant := s.deviceGrants[deviceCode]
 	if grant.Status != devicePending {
 		t.Fatalf("wrong password changed status to %s", grant.Status)
 	}
-	grant.LastPoll = time.Now().Add(-10 * time.Second)
+	grant.LastPoll = time.Now().Add(-11 * time.Second)
 	s.deviceGrants[deviceCode] = grant
 	s.mu.Unlock()
 
 	approveDevice(t, ts, userCode, "alice", "alice-password", "Device request approved")
 	s.mu.Lock()
 	grant = s.deviceGrants[deviceCode]
-	grant.LastPoll = time.Now().Add(-10 * time.Second)
+	grant.LastPoll = time.Now().Add(-11 * time.Second)
 	s.deviceGrants[deviceCode] = grant
 	s.mu.Unlock()
 

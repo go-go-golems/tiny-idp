@@ -279,6 +279,7 @@ Request parameters:
 | Parameter | Required | Meaning |
 |---|---:|---|
 | `client_id` | yes | Client starting the device flow. |
+| `client_secret` | confidential clients only | Client secret when the client authenticates with `client_secret_post`; `client_secret_basic` is also accepted. |
 | `scope` | no | Requested scopes. Defaults should be conservative; examples should use `openid profile email`. |
 
 Response fields from RFC 8628:
@@ -315,10 +316,8 @@ func (s *Server) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
     }
     r.ParseForm()
 
-    clientID := r.Form.Get("client_id")
-    c, ok := s.clients.Lookup(clientID)
+    clientID, c, ok := s.authenticateOAuthClient(w, r)
     if !ok {
-        oauthError(w, 400, "invalid_client", "bad client_id")
         return
     }
 
@@ -349,7 +348,7 @@ func (s *Server) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-The endpoint should set `Cache-Control: no-store` and `Pragma: no-cache`, matching token responses.
+The endpoint should set `Cache-Control: no-store` and `Pragma: no-cache`, matching token responses. RFC 8628 applies normal OAuth client authentication to this endpoint, so confidential clients must authenticate before tinyidp stores a pending grant. Otherwise any caller that knows a confidential `client_id` could create approval prompts and debug state for that client.
 
 ### GET /device
 
@@ -409,6 +408,10 @@ func (s *Server) deviceApprove(w http.ResponseWriter, r *http.Request) {
     }
 
     login := user.Normalize(r.Form.Get("login"))
+    if login == "" {
+        renderDevicePage(w, "login is required")
+        return
+    }
     sc, _ := s.registry.Lookup(login)
     if !passwordAccepted(sc, r.Form.Get("password")) {
         renderDevicePage(w, "invalid login or password")
@@ -468,6 +471,7 @@ func (s *Server) tokenDeviceCode(w http.ResponseWriter, r *http.Request, clientI
     grant, ok := s.deviceGrants[code]
     if ok && !grant.LastPoll.IsZero() && now.Sub(grant.LastPoll) < grant.Interval {
         grant.SlowDownCount++
+        grant.Interval += 5 * time.Second
         grant.LastPoll = now
         s.deviceGrants[code] = grant
         s.mu.Unlock()
