@@ -20,6 +20,7 @@ func (s *Server) debugRoutesAt(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(prefix+"/debug/sessions", s.debugSessions)
 	mux.HandleFunc(prefix+"/debug/codes", s.debugCodes)
 	mux.HandleFunc(prefix+"/debug/tokens", s.debugTokens)
+	mux.HandleFunc(prefix+"/debug/device-grants", s.debugDeviceGrants)
 	mux.HandleFunc(prefix+"/debug/jwks-mode", s.debugJWKSMode)
 	mux.HandleFunc(prefix+"/debug/reset", s.debugReset)
 }
@@ -69,15 +70,28 @@ type debugTokenEntry struct {
 	Scenario string `json:"scenario"`
 }
 
+type debugDeviceGrantEntry struct {
+	debugEntry
+	UserCode      string `json:"user_code"`
+	ClientID      string `json:"client_id"`
+	Scope         string `json:"scope"`
+	Status        string `json:"status"`
+	Sub           string `json:"sub,omitempty"`
+	Scenario      string `json:"scenario,omitempty"`
+	LastPoll      string `json:"last_poll,omitempty"`
+	SlowDownCount int    `json:"slow_down_count"`
+}
+
 func (s *Server) debugIndex(w http.ResponseWriter, r *http.Request) {
 	if !requireLoopback(w, r) {
 		return
 	}
 	s.mu.Lock()
 	counts := map[string]int{
-		"sessions": len(s.sessions),
-		"codes":    len(s.codes),
-		"tokens":   len(s.tokens),
+		"sessions":      len(s.sessions),
+		"codes":         len(s.codes),
+		"tokens":        len(s.tokens),
+		"device_grants": len(s.deviceGrants),
 	}
 	mode := s.jwksMode
 	if mode == "" {
@@ -86,12 +100,13 @@ func (s *Server) debugIndex(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"endpoints": map[string]string{
-			"debug":           "this index",
-			"debug/sessions":  "list active IdP sessions",
-			"debug/codes":     "list outstanding authorization codes",
-			"debug/tokens":    "list issued access tokens",
-			"debug/jwks-mode": "GET current /jwks mode; POST {\"mode\":\"normal|500|slow|empty\"} to set",
-			"debug/reset":     "POST to clear all sessions/codes/tokens/refresh-tokens",
+			"debug":               "this index",
+			"debug/sessions":      "list active IdP sessions",
+			"debug/codes":         "list outstanding authorization codes",
+			"debug/tokens":        "list issued access tokens",
+			"debug/device-grants": "list pending/approved/denied device grants",
+			"debug/jwks-mode":     "GET current /jwks mode; POST {\"mode\":\"normal|500|slow|empty\"} to set",
+			"debug/reset":         "POST to clear all sessions/codes/tokens/refresh-tokens/device-grants",
 		},
 		"counts":    counts,
 		"jwks_mode": mode,
@@ -164,6 +179,36 @@ func (s *Server) debugTokens(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (s *Server) debugDeviceGrants(w http.ResponseWriter, r *http.Request) {
+	if !requireLoopback(w, r) {
+		return
+	}
+	s.mu.Lock()
+	out := make([]debugDeviceGrantEntry, 0, len(s.deviceGrants))
+	for code, grant := range s.deviceGrants {
+		entry := debugDeviceGrantEntry{
+			debugEntry: debugEntry{
+				Prefix:    prefix(code, 8),
+				Expires:   grant.Expires.Format(time.RFC3339),
+				ExpiresIn: int(time.Until(grant.Expires).Seconds()),
+			},
+			UserCode:      grant.UserCode,
+			ClientID:      grant.ClientID,
+			Scope:         grant.Scope,
+			Status:        string(grant.Status),
+			Sub:           grant.User.Sub,
+			Scenario:      scenarioName(grant.Scenario),
+			SlowDownCount: grant.SlowDownCount,
+		}
+		if !grant.LastPoll.IsZero() {
+			entry.LastPoll = grant.LastPoll.Format(time.RFC3339)
+		}
+		out = append(out, entry)
+	}
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, out)
+}
+
 // debugJWKSMode gets or sets the /jwks failure mode (Phase 10). GET returns
 // the current mode; POST with JSON {"mode":"normal|500|slow|empty"} sets it.
 func (s *Server) debugJWKSMode(w http.ResponseWriter, r *http.Request) {
@@ -206,11 +251,13 @@ func (s *Server) debugReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	n := len(s.sessions) + len(s.codes) + len(s.tokens) + len(s.refreshTokens)
+	n := len(s.sessions) + len(s.codes) + len(s.tokens) + len(s.refreshTokens) + len(s.deviceGrants) + len(s.dpopReplay)
 	s.sessions = map[string]*session{}
 	s.codes = map[string]authCode{}
 	s.tokens = map[string]accessToken{}
 	s.refreshTokens = map[string]refreshToken{}
+	s.deviceGrants = map[string]deviceGrant{}
+	s.dpopReplay = map[string]time.Time{}
 	s.jwksMode = "normal"
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{

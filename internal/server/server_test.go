@@ -40,6 +40,8 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 		tokens:        map[string]accessToken{},
 		sessions:      map[string]*session{},
 		refreshTokens: map[string]refreshToken{},
+		deviceGrants:  map[string]deviceGrant{},
+		dpopReplay:    map[string]time.Time{},
 	}
 	// Register a permissive test client that allows the test's redirect URI.
 	// The built-in dev-client uses localhost:3000; tests use https://app.test/cb.
@@ -1043,6 +1045,8 @@ func newTestServerWithBuiltinClients(t *testing.T) (*Server, *httptest.Server) {
 		tokens:        map[string]accessToken{},
 		sessions:      map[string]*session{},
 		refreshTokens: map[string]refreshToken{},
+		deviceGrants:  map[string]deviceGrant{},
+		dpopReplay:    map[string]time.Time{},
 	}
 	mux := http.NewServeMux()
 	s.RegisterRoutes(mux)

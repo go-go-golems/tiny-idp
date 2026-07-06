@@ -13,20 +13,40 @@ import (
 // not a JWT. It is looked up under the mutex; expired tokens are rejected.
 func (s *Server) userinfo(w http.ResponseWriter, r *http.Request) {
 	auth := r.Header.Get("Authorization")
-	if !strings.HasPrefix(auth, "Bearer ") {
-		http.Error(w, "missing bearer token", http.StatusUnauthorized)
+	scheme, token, ok := strings.Cut(auth, " ")
+	if !ok || strings.TrimSpace(token) == "" {
+		http.Error(w, "missing access token", http.StatusUnauthorized)
 		return
 	}
-
-	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	token = strings.TrimSpace(token)
 
 	s.mu.Lock()
 	at, ok := s.tokens[token]
 	s.mu.Unlock()
 
 	if !ok || time.Now().After(at.Expires) {
-		http.Error(w, "invalid bearer token", http.StatusUnauthorized)
+		http.Error(w, "invalid access token", http.StatusUnauthorized)
 		return
+	}
+	if at.DPoPJKT == "" {
+		if scheme != "Bearer" {
+			http.Error(w, "bearer token required", http.StatusUnauthorized)
+			return
+		}
+	} else {
+		if scheme != "DPoP" {
+			http.Error(w, "DPoP token required", http.StatusUnauthorized)
+			return
+		}
+		proof, err := s.validateDPoPProof(r, strings.TrimSpace(r.Header.Get("DPoP")), token)
+		if err != nil {
+			http.Error(w, "invalid DPoP proof: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+		if proof.JKT != at.DPoPJKT {
+			http.Error(w, "DPoP proof key does not match access token", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	// UserInfo-error scenarios simulate failures at the userinfo endpoint.

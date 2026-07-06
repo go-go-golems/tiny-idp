@@ -29,7 +29,7 @@ Use `tinyidp help developer-guide` if you want to modify tinyidp itself. Use `ti
 
 ## What tinyidp provides
 
-tinyidp implements the OIDC authorization-code flow for local development and integration tests. It serves discovery, JWKS, authorize, token, userinfo, logout, health, and debug endpoints. It stores all runtime state in memory and generates signing keys at startup.
+tinyidp implements the OIDC authorization-code flow, OAuth device-code flow, and opt-in DPoP sender-constrained tokens for local development and integration tests. It serves discovery, JWKS, authorize, device authorization, token, userinfo, logout, health, and debug endpoints. It stores all runtime state in memory and generates signing keys at startup.
 
 The default server is intentionally local:
 
@@ -161,6 +161,35 @@ Use the raw `claims` map for unusual shapes:
 
 If the same claim name appears in a generic field and in `claims`, the explicit `claims` value wins. `omit_claims` deletes claims from ID token and userinfo after claims are assembled.
 
+## Use DPoP-bound access tokens
+
+DPoP lets a client bind an access token to a proof key. Include a valid `DPoP` proof JWT on the `/token` request to receive `token_type: DPoP`. The resulting access token must be used at `/userinfo` with `Authorization: DPoP <token>` and another proof signed by the same key.
+
+The `/userinfo` proof must include `ath`, the base64url SHA-256 hash of the access token. tinyidp also rejects replayed proof `jti` values. Existing bearer flows continue to work when no `DPoP` header is present.
+
+See `tinyidp help tutorial-dpop` for the full request shape and implementation limits.
+
+## Use device authorization for CLI or constrained-device tests
+
+Device authorization lets a non-browser client ask the user to approve in a browser. Start the flow with:
+
+    curl -sS -X POST http://localhost:5556/device_authorization \
+      -d client_id=dev-client \
+      -d 'scope=openid profile email offline_access' | jq .
+
+Show the returned `verification_uri` and `user_code` to the user, or open `verification_uri_complete` directly. The approval page uses the same scenario registry and seeded-user fixture password behavior as browser login. For example, with `examples/users/personal-inbox-users.yaml`, approve as `alice` / `alice-password`.
+
+The device polls the token endpoint with:
+
+    curl -sS -X POST http://localhost:5556/token \
+      -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
+      -d client_id=dev-client \
+      -d device_code="$DEVICE_CODE" | jq .
+
+Before approval, the token endpoint returns `authorization_pending`. Too-fast polling returns `slow_down`. Approval returns bearer tokens; denial returns `access_denied`; expiry returns `expired_token`; reusing a consumed device code returns `invalid_grant`.
+
+See `tinyidp help tutorial-device-authorization` for a complete walkthrough.
+
 ## Debug a running provider
 
 The debug endpoints are loopback-only. They show enough state to diagnose a test without exposing full secrets:
@@ -169,6 +198,7 @@ The debug endpoints are loopback-only. They show enough state to diagnose a test
     curl -s http://localhost:5556/debug/sessions | jq .
     curl -s http://localhost:5556/debug/codes | jq .
     curl -s http://localhost:5556/debug/tokens | jq .
+    curl -s http://localhost:5556/debug/device-grants | jq .
 
 Use `/debug/reset` to clear in-memory state between tests:
 
@@ -195,5 +225,7 @@ Use `/debug/jwks-mode` to simulate JWKS failures:
 - `tinyidp help getting-started` — first run and first login.
 - `tinyidp help tutorial-first-rp-login` — walk through the full browser login flow.
 - `tinyidp help tutorial-seeded-users-and-claims` — build deterministic users and claims.
+- `tinyidp help tutorial-device-authorization` — walk through device-code approval and polling.
+- `tinyidp help tutorial-dpop` — obtain and use DPoP-bound access tokens.
 - `tinyidp help tutorial-xgoja-personal-inbox` — use tinyidp with the xgoja personal-inbox examples.
 - `tinyidp help reference` — complete lookup reference.

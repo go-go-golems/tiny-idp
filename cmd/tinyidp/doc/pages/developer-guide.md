@@ -71,12 +71,14 @@ type Server struct {
     tokens        map[string]accessToken
     sessions      map[string]*session
     refreshTokens map[string]refreshToken
+    deviceGrants  map[string]deviceGrant
+    dpopReplay    map[string]time.Time
 }
 ```
 
 The mutex protects maps that change during requests. The signing key, client registry, issuer, and scenario registry are constructed before the server starts serving requests and are treated as stable configuration.
 
-The important invariant is that an authorization code carries the authenticated user, scenario, client ID, redirect URI, scope, PKCE challenge, nonce, and authentication time into the token endpoint. The token endpoint should not re-derive that context.
+The important invariant is that authorization codes and approved device grants carry the authenticated user, scenario, client ID, scope, and authentication time into the token endpoint. The token endpoint should not re-derive that context.
 
 ## The scenario registry
 
@@ -159,7 +161,44 @@ This supports issuer URLs such as:
 
 The path prefix is a routing concern only. Do not use path-based issuers to infer provider-specific claim behavior. Claims are defined by scenarios and seeded users.
 
-When changing routing, test discovery, authorize, token, userinfo, JWKS, logout, health, and debug routes under both root and path prefixes.
+When changing routing, test discovery, authorize, device authorization, device approval, token, userinfo, JWKS, logout, health, and debug routes under both root and path prefixes.
+
+## DPoP workflow
+
+DPoP support lives in `internal/server/dpop.go`, with call sites in `token.go` and `userinfo.go`. The proof validator parses compact JWTs, validates the JOSE header, verifies ES256 or RS256 signatures, computes the RFC 7638 JWK thumbprint, checks `htm`, `htu`, `iat`, `jti`, optional `ath`, and records proof IDs in the replay cache.
+
+Implementation boundaries:
+
+- `accessToken.DPoPJKT` stores the proof key thumbprint for DPoP-bound opaque access tokens.
+- `refreshToken.DPoPJKT` preserves the binding across refresh-token rotation.
+- `Server.dpopReplay` stores proof replay keys and expires them opportunistically.
+- Token requests without `DPoP` preserve bearer behavior.
+- Token requests with valid `DPoP` proofs return `token_type: DPoP` and bind the issued token metadata.
+- `/userinfo` requires `Authorization: DPoP` and an `ath` proof only when the access token is DPoP-bound.
+
+When changing this flow, test both the proof validator and the HTTP endpoints. The validator catches cryptographic and request-binding mistakes; the endpoint tests prove the metadata is used correctly.
+
+## Device authorization workflow
+
+Native device authorization lives in `internal/server/device.go` plus the device-code branch in `internal/server/token.go`.
+
+The flow has two actors:
+
+1. The device client calls `POST /device_authorization` with `client_id` and `scope`.
+2. The user opens `/device`, enters the user code, logs in through scenario/seeded-user credentials, and approves or denies.
+3. The device polls `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` and the opaque `device_code`.
+
+Implementation boundaries:
+
+- `deviceGrant` is keyed by opaque `device_code` in `Server.deviceGrants`.
+- Human-entered `user_code` lookup scans the map under lock; this keeps the first implementation simple and avoids a second index that must be kept in sync.
+- User-code normalization is permissive about case, spaces, and hyphens.
+- Approval uses `registry.Lookup(login)` and the same `passwordAccepted` fixture-password semantics as authorize POST.
+- Token polling returns OAuth device errors: `authorization_pending`, `slow_down`, `expired_token`, `access_denied`, and `invalid_grant`.
+- Successful token exchange deletes the device grant so the code is one-time use.
+- `/debug/device-grants` shows redacted state for tests without exposing full device codes.
+
+When changing this flow, test both state transitions and returned OAuth error codes. Avoid sleeping in tests; age `LastPoll` or `Expires` under the server mutex to keep the suite fast.
 
 ## Configuration section workflow
 
@@ -234,6 +273,10 @@ For xgoja integration, use the personal-inbox tutorial smokes in the `go-go-goja
 | Reading env vars in server code. | It bypasses Glazed precedence and `print-config`. | Add a section field and decode settings. |
 | Forgetting path-prefixed routes. | Path issuers advertise path-prefixed endpoints. | Test root and path routes together. |
 | Creating a session before credential validation. | Failed login can leave valid auth state behind. | Validate first, then create session and code. |
+| Reusing an approved device code. | Device codes are bearer credentials and must be one-time use. | Delete the grant during successful token exchange. |
+| Testing device polling with real sleeps. | It slows the suite and makes tests flaky. | Mutate `LastPoll`/`Expires` under the server mutex. |
+| Accepting a DPoP-bound token as bearer. | It removes the sender constraint the token was issued with. | Require `Authorization: DPoP` and a matching proof. |
+| Forgetting `ath` on resource proofs. | The proof is not bound to the access token value. | Require `ath` for `/userinfo` when `DPoPJKT` is set. |
 
 ## See also
 

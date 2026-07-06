@@ -148,4 +148,5 @@ The first login establishes the invariant every other tutorial builds on: the RP
 - `tinyidp help user-guide` — operational guide for everyday use.
 - `tinyidp help tutorial` — scenario and failure-mode tutorial.
 - `tinyidp help tutorial-seeded-users-and-claims` — deterministic users and claims.
+- `tinyidp help tutorial-device-authorization` — device-code approval and polling.
 - `tinyidp help reference` — full endpoint and config reference.

@@ -201,15 +201,55 @@ registers a new permissive client.
 | `/.well-known/openid-configuration` | GET | Discovery; advertises every endpoint and supported grant/scope/claim. |
 | `/jwks` | GET | Public signing keys (three kids). See JWKS rotation below. |
 | `/authorize` | GET/POST | Authorization endpoint; GET decides silent vs interactive login, POST submits credentials. |
-| `/token` | POST | Token endpoint; `authorization_code` and `refresh_token` grants. |
+| `/device_authorization` | POST | OAuth Device Authorization Grant start endpoint; returns a `device_code`, `user_code`, verification URIs, expiry, and polling interval. |
+| `/device` | GET/POST | Browser approval form for device grants; approves or denies a `user_code` using normal scenario/seeded-user login semantics. |
+| `/token` | POST | Token endpoint; `authorization_code`, `refresh_token`, and `urn:ietf:params:oauth:grant-type:device_code` grants. |
 | `/userinfo` | GET | UserInfo; bearer-token-protected claims. |
 | `/end-session` | GET | RP-initiated logout. See Logout below. |
 | `/healthz` | GET | Liveness (`ok`). |
 | `/debug/*` | GET/POST | Loopback-only introspection. See Debug UI below. |
 
-If `--issuer` includes a path component, tinyidp registers the same endpoints under that prefix as well as at the root. For example, issuer `http://localhost:5556/realms/demo` serves discovery at `/realms/demo/.well-known/openid-configuration` and advertises endpoint URLs under `/realms/demo`. This is useful when an app expects an issuer URL with a path while keeping the root issuer workflow available for simple local runs. Path-based issuers are URL-shape compatibility only; seeded-user claims remain generic and provider-neutral.
+If `--issuer` includes a path component, tinyidp registers the same endpoints under that prefix as well as at the root. For example, issuer `http://localhost:5556/realms/demo` serves discovery at `/realms/demo/.well-known/openid-configuration` and advertises endpoint URLs under `/realms/demo`. This includes `/device_authorization` and `/device` for device-flow tests. Path-based issuers are URL-shape compatibility only; seeded-user claims remain generic and provider-neutral.
 
 ## Behaviors
+
+### DPoP sender-constrained tokens
+
+tinyidp implements opt-in DPoP sender-constrained access tokens. If a token request includes a valid `DPoP` proof JWT, tinyidp computes the proof JWK thumbprint, stores it beside the opaque access token, and returns `token_type: DPoP`. If the request omits `DPoP`, tinyidp returns the existing bearer response.
+
+Discovery advertises:
+
+    "dpop_signing_alg_values_supported": ["ES256", "RS256"]
+
+DPoP behavior:
+
+- Token endpoint proofs must use `typ: dpop+jwt`, `alg: ES256` or `RS256`, a public JWK, `jti`, `htm`, `htu`, and fresh `iat`.
+- `/userinfo` calls for DPoP-bound tokens must use `Authorization: DPoP <token>` and a fresh `DPoP` proof whose key matches the token binding.
+- `/userinfo` proofs must include `ath`, the base64url SHA-256 hash of the access token.
+- Reusing a proof `jti` with the same key is rejected by the in-memory replay cache.
+- Refresh tokens issued from DPoP-bound flows are bound to the same key and require matching DPoP proofs during rotation.
+- Nonce support is not implemented in the first DPoP release.
+
+For a guided explanation, see `tinyidp help tutorial-dpop`.
+
+### Device Authorization Grant
+
+tinyidp implements the OAuth 2.0 Device Authorization Grant for local and integration-test clients. A device starts with `POST /device_authorization`, then polls `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` while the user approves or denies the request in a browser at `/device`.
+
+Important behavior:
+
+- `client_id` is required and must identify a registered client.
+- Scope must include `openid`; client scope allowlists are enforced when configured.
+- User codes are eight characters displayed as `XXXX-XXXX`; approval normalizes case, spaces, and hyphens.
+- Polling before approval returns `authorization_pending`.
+- Polling faster than the response `interval` returns `slow_down`.
+- Denial returns `access_denied`.
+- Expiry returns `expired_token`.
+- Unknown, mismatched, or already-used device codes return `invalid_grant`.
+- Approved grants issue access tokens, ID tokens for `openid`, and refresh tokens for `offline_access`.
+- A successful device-code token exchange deletes the grant, making the device code one-time use.
+
+For a runnable walkthrough, see `tinyidp help tutorial-device-authorization`.
 
 ### Sessions
 
@@ -279,8 +319,9 @@ reset, guarded to loopback so a LAN bind does not leak state.
 | `/debug/sessions` | GET | Active sessions (login, sub, auth_time, expires). |
 | `/debug/codes` | GET | Outstanding authorization codes. |
 | `/debug/tokens` | GET | Issued access tokens. |
+| `/debug/device-grants` | GET | Pending/approved/denied device grants with redacted device-code prefixes. |
 | `/debug/jwks-mode` | GET/POST | Read or set the JWKS failure mode. |
-| `/debug/reset` | POST | Clear all sessions, codes, tokens, and refresh tokens. |
+| `/debug/reset` | POST | Clear all sessions, codes, tokens, refresh tokens, and device grants. |
 
 Secrets are shown as 8-character prefixes — enough to correlate a flow
 against a log without exposing the full token in a listing.

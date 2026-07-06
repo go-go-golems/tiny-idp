@@ -188,4 +188,5 @@ Seeded users are compiled into normal scenarios. That means fixture identity, fi
 - `tinyidp help user-guide` — seeded-user field overview.
 - `tinyidp help reference` — complete seeded-user schema.
 - `tinyidp help scenarios` — built-in scenario catalog.
+- `tinyidp help tutorial-device-authorization` — use seeded-user fixture passwords to approve device requests.
 - `tinyidp help tutorial-xgoja-personal-inbox` — seeded users in the xgoja personal-inbox smokes.
