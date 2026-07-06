@@ -148,8 +148,22 @@ func TestDeviceTokenPollingApprovalAndOneTimeUse(t *testing.T) {
 	s.mu.Unlock()
 
 	approveDevice(t, ts, userCode, "alice", "alice-password", "Device request approved")
+	second := postForm(t, ts, "/device", url.Values{
+		"user_code": {userCode},
+		"action":    {"deny"},
+	})
+	defer second.Body.Close()
+	body, _ := io.ReadAll(second.Body)
+	if second.StatusCode != http.StatusOK || !strings.Contains(string(body), "device request already handled") {
+		t.Fatalf("second deny response = %d %q", second.StatusCode, body)
+	}
+	approveDevice(t, ts, userCode, "bob", "", "device request already handled")
 	s.mu.Lock()
 	grant = s.deviceGrants[deviceCode]
+	if grant.Status != deviceApproved || grant.User.Sub != "user-alice-fixed" {
+		s.mu.Unlock()
+		t.Fatalf("completed grant was overwritten: status=%s user=%#v", grant.Status, grant.User)
+	}
 	grant.LastPoll = time.Now().Add(-11 * time.Second)
 	s.deviceGrants[deviceCode] = grant
 	s.mu.Unlock()

@@ -70,3 +70,15 @@ Addressed PR review feedback: device authorization now reuses confidential-clien
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/device_test.go — Regression tests for review feedback
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/token.go — Shared client authentication and slow_down interval persistence
 
+
+## 2026-07-06
+
+Addressed second PR review pass: invalid DPoP proofs no longer consume approved device grants, and completed approval decisions cannot be overwritten by duplicate browser submits.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/device.go — Guards completed grants before approval/denial mutation
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/device_test.go — Duplicate-submit regression coverage
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/dpop_test.go — Invalid DPoP retry regression coverage
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/token.go — Moves approved grant deletion after DPoP validation
+

@@ -200,6 +200,10 @@ func (s *Server) devicePOST(w http.ResponseWriter, r *http.Request) {
 		s.renderDeviceMessage(w, r, "unknown or expired user code")
 		return
 	}
+	if grant.Status != devicePending {
+		s.renderDeviceMessage(w, r, "device request already handled")
+		return
+	}
 
 	switch r.PostForm.Get("action") {
 	case "deny":

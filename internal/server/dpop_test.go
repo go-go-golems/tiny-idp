@@ -147,11 +147,28 @@ func TestDPoPDeviceCodeToken(t *testing.T) {
 	s, ts := newTestServer(t)
 	key := newDPoPECKey(t)
 	started := deviceAuthorization(t, ts, "dev-client", "openid profile email")
+	deviceCode := started["device_code"].(string)
 	approveDevice(t, ts, started["user_code"].(string), "alice", "", "Device request approved")
+
+	postTokenWithDPoP(t, ts, url.Values{
+		"grant_type":  {deviceGrantType},
+		"device_code": {deviceCode},
+		"client_id":   {"dev-client"},
+	}, "not-a-jwt", http.StatusBadRequest)
+	s.mu.Lock()
+	grant, exists := s.deviceGrants[deviceCode]
+	if exists {
+		grant.LastPoll = time.Now().Add(-6 * time.Second)
+		s.deviceGrants[deviceCode] = grant
+	}
+	s.mu.Unlock()
+	if !exists || grant.Status != deviceApproved {
+		t.Fatalf("invalid DPoP proof consumed approved device grant: exists=%v grant=%#v", exists, grant)
+	}
 
 	body := postTokenWithDPoP(t, ts, url.Values{
 		"grant_type":  {deviceGrantType},
-		"device_code": {started["device_code"].(string)},
+		"device_code": {deviceCode},
 		"client_id":   {"dev-client"},
 	}, makeDPoPProof(t, key, http.MethodPost, ts.URL+"/token", "", "device-token-proof-1", time.Now()), http.StatusOK)
 	if body["token_type"] != "DPoP" || body["access_token"] == "" {

@@ -399,3 +399,88 @@ Upload output:
 ```text
 OK: uploaded TINYIDP-DEVICE-001 final implementation.pdf -> /ai/2026/07/06/TINYIDP-DEVICE-001
 ```
+
+## Step 5: Address second device authorization review pass
+
+This step addressed two follow-up PR review comments on the already-implemented device authorization flow. Both comments concerned edge cases after approval: a malformed DPoP proof should not consume the approved device grant, and a second browser form submission should not overwrite the first approval decision.
+
+The fixes keep the device grant state machine stable. Once a grant leaves `pending`, browser approval actions no longer mutate it, and token exchange deletes an approved grant only after DPoP validation succeeds.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Address the two new code review comments on https://github.com/go-go-golems/tiny-idp/pull/2"
+
+**Assistant interpretation:** Read the new PR review comments, implement the requested fixes, validate, commit, push, and reply on GitHub.
+
+**Inferred user intent:** The user wants PR #2 to be review-clean before merge, with regressions covered by tests.
+
+**Commit (code):** pending — review feedback fix.
+
+### What I did
+
+- Moved DPoP proof validation before final approved device-grant deletion in `tokenDeviceCode`.
+- Added a regression test proving an invalid DPoP proof does not consume an approved device grant and a corrected retry can still succeed.
+- Added a completed-grant guard in `devicePOST` so approved or denied grants render `device request already handled` instead of allowing later form submissions to overwrite the decision.
+- Added a regression test proving a second deny/approve submit cannot overwrite an approved Alice grant.
+
+### Why
+
+- A client-side DPoP proof mistake should not force the user to restart device approval.
+- The first approval or denial should be the authorization decision. Later duplicate browser submits should be harmless.
+
+### What worked
+
+- Focused device/DPoP regression tests passed.
+- Full server package tests passed.
+- Full repository tests passed.
+
+### What didn't work
+
+- The first DPoP retry regression immediately retried after the invalid DPoP poll and hit `slow_down`. The test now explicitly ages `LastPoll` after proving the grant still exists, keeping the test deterministic without sleeping.
+
+### What I learned
+
+- The DPoP validation path is part of successful token response validation and must happen before one-time grant consumption.
+- Completed device grants need the same idempotence guard at the browser approval boundary as token exchange has at the polling boundary.
+
+### What was tricky to build
+
+- The token path has two distinct side effects: polling metadata updates and one-time grant deletion. The fix only moves deletion after DPoP validation; the test accounts for polling metadata by aging `LastPoll` before retrying.
+
+### What warrants a second pair of eyes
+
+- Review whether invalid DPoP proofs should also avoid updating `LastPoll`, or whether treating them as token polls for rate-limit purposes is acceptable.
+
+### What should be done in the future
+
+- N/A
+
+### Code review instructions
+
+- Review `internal/server/token.go` around `tokenDeviceCode` and `internal/server/device.go` around `devicePOST`.
+- Validate with:
+  - `go test ./internal/server -run 'TestDevice|TestDPoPDeviceCodeToken' -count=1`
+  - `go test ./internal/server -count=1`
+  - `GOWORK=off go test ./... -count=1`
+
+### Technical details
+
+Validation output:
+
+```text
+$ go test ./internal/server -run 'TestDevice|TestDPoPDeviceCodeToken' -count=1
+ok  	github.com/manuel/tinyidp/internal/server	0.347s
+
+$ go test ./internal/server -count=1
+ok  	github.com/manuel/tinyidp/internal/server	8.140s
+
+$ GOWORK=off go test ./... -count=1
+?   	github.com/manuel/tinyidp/cmd/tinyidp	[no test files]
+?   	github.com/manuel/tinyidp/cmd/tinyidp/doc	[no test files]
+ok  	github.com/manuel/tinyidp/internal/client	0.002s
+ok  	github.com/manuel/tinyidp/internal/cmds	0.010s
+ok  	github.com/manuel/tinyidp/internal/scenario	0.003s
+ok  	github.com/manuel/tinyidp/internal/sections/oidc	0.004s
+ok  	github.com/manuel/tinyidp/internal/server	7.563s
+ok  	github.com/manuel/tinyidp/internal/user	0.003s
+```

@@ -268,6 +268,11 @@ func (s *Server) tokenDeviceCode(w http.ResponseWriter, r *http.Request, clientI
 		return
 	}
 
+	proof, ok := s.dpopProofForTokenRequest(w, r)
+	if !ok {
+		return
+	}
+
 	s.mu.Lock()
 	latest, ok := s.deviceGrants[deviceCode]
 	if ok && latest.Status == deviceApproved && latest.ClientID == clientID {
@@ -277,11 +282,6 @@ func (s *Server) tokenDeviceCode(w http.ResponseWriter, r *http.Request, clientI
 	s.mu.Unlock()
 	if !ok || grant.Status != deviceApproved {
 		tokenError(w, http.StatusBadRequest, "invalid_grant", "device grant already used")
-		return
-	}
-
-	proof, ok := s.dpopProofForTokenRequest(w, r)
-	if !ok {
 		return
 	}
 
