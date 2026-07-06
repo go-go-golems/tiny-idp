@@ -34,7 +34,8 @@ tokens, wrong audiences, broken userinfo, missing JWKS keys, and more.
 Beyond the happy path it also models the behaviors a real IdP exposes:
 multiple clients (public, confidential, and permissive), IdP sessions
 with `prompt` and `max_age`, refresh tokens with rotation, multi-key
-JWKS, and RP-initiated logout.
+JWKS, RP-initiated logout, and the OAuth Device Authorization Grant for
+CLI or constrained-device tests.
 
 ## What it is not
 
@@ -69,8 +70,8 @@ configuration. Confirm the endpoint responds:
     curl -s http://localhost:5556/.well-known/openid-configuration | jq .issuer
 
 The `issuer` is `http://localhost:5556`, and the document advertises every
-endpoint tinyidp implements, including `end_session_endpoint`. If you need a
-Keycloak-shaped issuer for compatibility tests, start tinyidp with a path-based
+endpoint tinyidp implements, including `end_session_endpoint` and
+`device_authorization_endpoint`. If you need a Keycloak-shaped issuer for compatibility tests, start tinyidp with a path-based
 issuer such as `--issuer http://localhost:5556/realms/demo`; discovery is then
 available at `/realms/demo/.well-known/openid-configuration` and advertises
 endpoints under that same path.
@@ -133,6 +134,7 @@ state without adding log statements.
 - `tinyidp help developer-guide` — package layout, scenario model, route mounting, and extension workflow.
 - `tinyidp help tutorial-first-rp-login` — a focused first relying-party login walkthrough.
 - `tinyidp help tutorial-seeded-users-and-claims` — deterministic Alice/Bob fixtures with passwords and claims.
+- `tinyidp help tutorial-device-authorization` — CLI-friendly device-code approval and polling.
 - `tinyidp help tutorial-xgoja-personal-inbox` — xgoja personal-inbox Steps 06, 07, and 08 with root and path issuers.
 - `tinyidp help tutorial` — a guided walkthrough that exercises the happy path and then failure scenarios.
 - `tinyidp help scenarios` — the full catalog of scenarios and the model behind them.

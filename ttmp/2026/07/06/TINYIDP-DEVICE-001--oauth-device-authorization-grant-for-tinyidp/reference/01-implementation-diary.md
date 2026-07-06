@@ -13,6 +13,12 @@ Owners: []
 RelatedFiles:
     - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DEVICE-001--oauth-device-authorization-grant-for-tinyidp/design-doc/01-device-authorization-grant-design-and-implementation-guide.md
       Note: Primary device authorization design guide created in Step 1
+    - Path: repo://README.md
+      Note: Device authorization overview and endpoint table
+    - Path: repo://cmd/tinyidp/doc/pages/reference.md
+      Note: Device endpoint and behavior reference
+    - Path: repo://cmd/tinyidp/doc/pages/tutorial-device-authorization.md
+      Note: New device authorization tutorial
     - Path: repo://internal/server/device.go
       Note: Native device authorization endpoints and state
     - Path: repo://internal/server/device_test.go
@@ -28,6 +34,7 @@ LastUpdated: 2026-07-06T00:00:00-04:00
 WhatFor: Read before implementing tinyidp-native device authorization grant endpoints.
 WhenToUse: Use when resuming TINYIDP-DEVICE-001 or reviewing device authorization design decisions.
 ---
+
 
 
 # Diary
@@ -134,7 +141,7 @@ The implementation keeps the feature aligned with the rest of tinyidp: state is 
 
 **Inferred user intent:** The user wants native device authorization support delivered with the same documentation discipline as the previous tinyidp follow-up work.
 
-**Commit (code):** pending — core device authorization implementation slice.
+**Commit (code):** f896475c514aedfb3f2c1ea0f6cc7d0c9ffc4ea4 — "feat: add native device authorization grant"
 
 ### What I did
 
@@ -209,3 +216,102 @@ go test ./internal/server -count=1
 ```
 
 Both passed after correcting the scope-negative test.
+
+## Step 3: Document, validate, and smoke the device flow
+
+This step completed the user-facing documentation and full validation pass for native device authorization. The docs now explain the new endpoints in the README, help reference, user guide, developer guide, and a dedicated runnable tutorial.
+
+I also ran the full Go test suite, built the CLI, rendered the new Glazed help page, and performed a curl-based local smoke that started tinyidp, created a device authorization request, approved Alice with her fixture password, and exchanged the device code for access, ID, and refresh tokens.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Finish the ticket beyond code by updating docs, validating the full repository, and recording exact commands and outcomes.
+
+**Inferred user intent:** The user wants this feature to be reviewable, reproducible, and usable from help/README material rather than existing only in tests.
+
+**Commit (code):** pending — docs and final validation slice.
+
+### What I did
+
+- Added `cmd/tinyidp/doc/pages/tutorial-device-authorization.md`.
+- Updated README with a device authorization overview, quick curl flow, help link, and endpoint table rows.
+- Updated `reference.md` with device endpoints, grant behavior, path issuer notes, and debug endpoint details.
+- Updated `user-guide.md` with operational device-flow instructions and debug command coverage.
+- Updated `developer-guide.md` with server state, device workflow internals, invariants, and common implementation mistakes.
+- Updated cross-links from getting-started and tutorial pages.
+- Clarified that xgoja Step 08 still uses app-owned device endpoints, while tinyidp now also has native device grant endpoints.
+- Ran full validation and a manual curl smoke.
+
+### Why
+
+- Device authorization is a protocol workflow with multiple actors. Users need more than endpoint names; they need to know which terminal commands to run, which browser page to open, what errors mean, and how seeded-user passwords interact with approval.
+- The xgoja tutorial needed clarification so readers do not confuse the generated app-owned Step 08 flow with tinyidp-native `/device_authorization`.
+
+### What worked
+
+- `GOWORK=off go test ./... -count=1` passed.
+- `GOWORK=off go build ./cmd/tinyidp` passed.
+- `go run ./cmd/tinyidp help tutorial-device-authorization` rendered successfully.
+- Manual curl smoke passed and printed `ok device curl smoke`.
+
+### What didn't work
+
+- No new command failures occurred in this step.
+
+### What I learned
+
+- The Glazed help renderer wraps long lines aggressively, but the page renders and remains readable from the terminal.
+- A no-sleep manual device smoke is possible by approving before the first token poll; the `slow_down` interval only matters after a poll has already set `LastPoll`.
+
+### What was tricky to build
+
+- The docs had to distinguish three related but separate things: OIDC browser authorization code login, tinyidp-native OAuth device-code flow, and the current xgoja Step 08 app-owned device flow. The final wording points readers to the right tutorial for each.
+- The manual smoke needed to exercise the real HTTP endpoints without an interactive browser. Posting the approval form directly is acceptable because it is exactly what the browser form submits.
+
+### What warrants a second pair of eyes
+
+- Review whether the README quick-start should show `localhost` or `127.0.0.1` consistently for device examples.
+- Review whether the user guide should mention device-flow security caveats more prominently even though tinyidp is explicitly local/test only.
+
+### What should be done in the future
+
+- Consider adding a checked-in script for the curl device-flow smoke if this becomes a repeated release check.
+- Consider exposing configurable device-code TTL/interval later if tests need shorter intervals without state mutation.
+
+### Code review instructions
+
+- Start with the new tutorial: `cmd/tinyidp/doc/pages/tutorial-device-authorization.md`.
+- Then check the README and reference/user/developer guides for consistency with the implementation.
+- Re-run:
+  - `GOWORK=off go test ./... -count=1`
+  - `GOWORK=off go build ./cmd/tinyidp`
+  - `go run ./cmd/tinyidp help tutorial-device-authorization`
+
+### Technical details
+
+Validation output:
+
+```text
+$ GOWORK=off go test ./... -count=1
+?   	github.com/manuel/tinyidp/cmd/tinyidp	[no test files]
+?   	github.com/manuel/tinyidp/cmd/tinyidp/doc	[no test files]
+ok  	github.com/manuel/tinyidp/internal/client	0.006s
+ok  	github.com/manuel/tinyidp/internal/cmds	0.014s
+ok  	github.com/manuel/tinyidp/internal/scenario	0.004s
+ok  	github.com/manuel/tinyidp/internal/sections/oidc	0.005s
+ok  	github.com/manuel/tinyidp/internal/server	9.808s
+ok  	github.com/manuel/tinyidp/internal/user	0.002s
+
+$ GOWORK=off go build ./cmd/tinyidp
+# passed with no output
+
+$ go run ./cmd/tinyidp help tutorial-device-authorization >/tmp/tinyidp-device-help.txt
+# rendered successfully
+
+$ curl/manual smoke
+ok
+started CTQY-T96M
+ok device curl smoke ['access_token', 'expires_in', 'id_token', 'refresh_token', 'scope', 'token_type']
+```

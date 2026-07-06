@@ -36,19 +36,19 @@
 - [x] Implement user-code normalization helper
 - [x] Add tests for user-code format
 - [x] Add tests for user-code normalization
-- [ ] Decide whether to add a secondary user-code index or scan map under lock
+- [x] Decide whether to add a secondary user-code index or scan map under lock
 
 ## Phase 4 — Verification UI and approval
 
-- [ ] Add `/device` GET approval page
-- [ ] Prefill `user_code` from query parameter when present
-- [ ] Add `/device` POST approval handling
-- [ ] Add approve and deny actions
-- [ ] Validate unknown and expired user codes
-- [ ] Resolve login through scenario registry
-- [ ] Validate fixture password using existing semantics
-- [ ] Mark grant approved with user, scenario, and auth time
-- [ ] Mark grant denied without user state
+- [x] Add `/device` GET approval page
+- [x] Prefill `user_code` from query parameter when present
+- [x] Add `/device` POST approval handling
+- [x] Add approve and deny actions
+- [x] Validate unknown and expired user codes
+- [x] Resolve login through scenario registry
+- [x] Validate fixture password using existing semantics
+- [x] Mark grant approved with user, scenario, and auth time
+- [x] Mark grant denied without user state
 - [x] Ensure wrong password leaves grant pending
 
 ## Phase 5 — Token polling grant
@@ -69,13 +69,13 @@
 ## Phase 6 — Discovery, debug, and docs
 
 - [x] Add `device_authorization_endpoint` to discovery
-- [ ] Add device-code grant type to `grant_types_supported`
-- [ ] Add `/debug/device-grants` with redacted device-code prefixes
-- [ ] Update README
-- [ ] Update `cmd/tinyidp/doc/pages/user-guide.md`
-- [ ] Update `cmd/tinyidp/doc/pages/developer-guide.md`
-- [ ] Update `cmd/tinyidp/doc/pages/reference.md`
-- [ ] Add `cmd/tinyidp/doc/pages/tutorial-device-authorization.md`
+- [x] Add device-code grant type to `grant_types_supported`
+- [x] Add `/debug/device-grants` with redacted device-code prefixes
+- [x] Update README
+- [x] Update `cmd/tinyidp/doc/pages/user-guide.md`
+- [x] Update `cmd/tinyidp/doc/pages/developer-guide.md`
+- [x] Update `cmd/tinyidp/doc/pages/reference.md`
+- [x] Add `cmd/tinyidp/doc/pages/tutorial-device-authorization.md`
 
 ## Phase 7 — Tests
 
@@ -91,18 +91,18 @@
 - [x] Test `offline_access` returns refresh token
 - [x] Test successful device code is one-time use
 - [x] Test client mismatch returns `invalid_grant`
-- [ ] Test wrong fixture password leaves grant pending
-- [ ] Test seeded Alice approval yields fixed subject and claims
+- [x] Test wrong fixture password leaves grant pending
+- [x] Test seeded Alice approval yields fixed subject and claims
 - [x] Test path-based issuer routes include device endpoints
 
 ## Phase 8 — Validation and handoff
 
 - [x] Run `go test ./internal/server -count=1`
-- [ ] Run `GOWORK=off go test ./... -count=1`
-- [ ] Run `GOWORK=off go build ./cmd/tinyidp`
-- [ ] Smoke-render new help page with `go run ./cmd/tinyidp help tutorial-device-authorization`
-- [ ] Run manual `curl` device flow smoke
-- [ ] Update implementation diary with exact command output
-- [ ] Update changelog and doc relations
-- [ ] Run `docmgr doctor --ticket TINYIDP-DEVICE-001 --stale-after 30`
+- [x] Run `GOWORK=off go test ./... -count=1`
+- [x] Run `GOWORK=off go build ./cmd/tinyidp`
+- [x] Smoke-render new help page with `go run ./cmd/tinyidp help tutorial-device-authorization`
+- [x] Run manual `curl` device flow smoke
+- [x] Update implementation diary with exact command output
+- [x] Update changelog and doc relations
+- [x] Run `docmgr doctor --ticket TINYIDP-DEVICE-001 --stale-after 30`
 - [ ] Commit implementation and docs

@@ -164,11 +164,34 @@ go run ./cmd/tinyidp help user-guide                       # operational guide
 go run ./cmd/tinyidp help developer-guide                  # implementation guide
 go run ./cmd/tinyidp help tutorial-first-rp-login          # first RP login
 go run ./cmd/tinyidp help tutorial-seeded-users-and-claims # users, passwords, claims
+go run ./cmd/tinyidp help tutorial-device-authorization    # OAuth device-code login
 go run ./cmd/tinyidp help tutorial-xgoja-personal-inbox    # xgoja Steps 06/07/08
 go run ./cmd/tinyidp help tutorial                         # guided scenario walkthrough
 go run ./cmd/tinyidp help scenarios                        # the scenario catalog
 go run ./cmd/tinyidp help reference                        # config, clients, endpoints
 ```
+
+## Device authorization grant
+
+tinyidp implements the OAuth 2.0 Device Authorization Grant for local and integration-test clients. A device starts with `POST /device_authorization`, shows the returned `user_code` and `verification_uri` to the user, and polls `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` until the browser approval form at `/device` approves or denies the request.
+
+Quick start:
+
+```bash
+DEVICE_JSON=$(curl -sS -X POST http://localhost:5556/device_authorization \
+  -d client_id=dev-client \
+  -d 'scope=openid profile email offline_access')
+
+echo "$DEVICE_JSON" | jq .
+# Open verification_uri_complete, approve as alice/alice-password when using examples/users/personal-inbox-users.yaml.
+
+curl -sS -X POST http://localhost:5556/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
+  -d client_id=dev-client \
+  -d device_code="$(echo "$DEVICE_JSON" | jq -r .device_code)" | jq .
+```
+
+Polling before approval returns `authorization_pending`; polling too quickly returns `slow_down`; denied, expired, mismatched, unknown, or already-used device codes return the corresponding OAuth error. See `tinyidp help tutorial-device-authorization`.
 
 ## Configure your app (RP)
 
@@ -208,13 +231,15 @@ So `--client-id public-spa --redirect-uris http://localhost:9090/cb` yields a `p
 | `GET /.well-known/openid-configuration` | Discovery metadata. |
 | `GET /jwks` | Public signing keys (JWKS). |
 | `GET /authorize` | Authorization endpoint (login form → code). |
-| `POST /token` | Token endpoint (`authorization_code` and `refresh_token`). |
+| `POST /device_authorization` | OAuth device-code start endpoint. |
+| `GET/POST /device` | Browser approval/denial form for device-code requests. |
+| `POST /token` | Token endpoint (`authorization_code`, `refresh_token`, and device-code grants). |
 | `GET /userinfo` | UserInfo (bearer access token → claims). |
 | `GET /end-session` | RP-initiated logout. |
 | `GET /healthz` | Liveness. |
 | `GET/POST /debug/*` | Loopback-only introspection, reset, and JWKS failure-mode controls. |
 
-When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/token`, `/userinfo`, `/jwks`, and `/end-session` endpoint URLs. Root routes remain available for simple local testing. Path-based issuers are URL-shape compatibility only; seeded-user claims stay provider-neutral.
+When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/device_authorization`, `/device`, `/token`, `/userinfo`, `/jwks`, and `/end-session` endpoint URLs. Root routes remain available for simple local testing. Path-based issuers are URL-shape compatibility only; seeded-user claims stay provider-neutral.
 
 ## xgoja personal-inbox smoke ergonomics
 

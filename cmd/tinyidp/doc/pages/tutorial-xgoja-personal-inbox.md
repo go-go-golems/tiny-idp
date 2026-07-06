@@ -22,7 +22,7 @@ SectionType: Tutorial
 
 This tutorial shows how to use tinyidp as the OIDC provider for the `go-go-goja` personal knowledge inbox examples. It covers Step 06 browser login, Step 07 Alice/Bob inbox isolation, and Step 08 device-token capture isolation.
 
-The device authorization endpoints in Step 08 are implemented by the generated xgoja host. tinyidp supplies browser-login OIDC behavior; it is not an external device authorization server.
+The device authorization endpoints in the current xgoja Step 08 example are implemented by the generated xgoja host. tinyidp supplies browser-login OIDC behavior for that app-owned flow. tinyidp also has its own native OAuth Device Authorization Grant endpoints; see `tinyidp help tutorial-device-authorization` when you want tinyidp itself to be the device authorization server.
 
 ## Repositories
 
@@ -118,7 +118,7 @@ The smoke uses two independent browser sessions. Alice captures an item, Bob cap
 
 ## Step 6 — run Step 08 device-token capture isolation
 
-Step 08 adds the generated host's device authorization flow. tinyidp is still only used for browser login.
+Step 08 adds the generated host's app-owned device authorization flow. In this example, tinyidp is still used for browser login rather than for its native `/device_authorization` endpoint.
 
     cd /home/manuel/workspaces/2026-06-12/goja-express-auth/go-go-goja/examples/xgoja/23-personal-knowledge-inbox/08-device-authorization
 

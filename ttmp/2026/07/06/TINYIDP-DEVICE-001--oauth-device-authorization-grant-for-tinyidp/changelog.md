@@ -35,3 +35,13 @@ Implemented native device authorization runtime core with routes, polling, appro
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/device.go — Device authorization endpoint implementation
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/token.go — Device-code token exchange implementation
 
+
+## 2026-07-06
+
+Documented native device authorization and validated the full repository with tests, build, help rendering, and a curl smoke.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/README.md — README device flow update
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/cmd/tinyidp/doc/pages/tutorial-device-authorization.md — Device authorization tutorial
+
