@@ -414,7 +414,7 @@ The fixes keep the device grant state machine stable. Once a grant leaves `pendi
 
 **Inferred user intent:** The user wants PR #2 to be review-clean before merge, with regressions covered by tests.
 
-**Commit (code):** pending — review feedback fix.
+**Commit (code):** 6521e508db57708e62e87f2e9d99da4f358a6bda — "fix: harden device grant completion semantics"
 
 ### What I did
 
