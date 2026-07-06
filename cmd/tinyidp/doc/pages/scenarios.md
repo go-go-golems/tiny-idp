@@ -160,4 +160,6 @@ they are server-level modes toggled through the debug UI, because
 ## See also
 
 - `tinyidp help tutorial` — a guided walkthrough of four scenarios.
+- `tinyidp help tutorial-seeded-users-and-claims` — deterministic users and custom claims before scenario failures.
+- `tinyidp help developer-guide` — how scenarios are implemented and extended.
 - `tinyidp help reference` — endpoints, the debug UI, and the JWKS mode toggle.

@@ -1,0 +1,10 @@
+# Path-based issuer config for compatibility with apps that expect an issuer URL
+# containing a realm-like path. The claims and users remain provider-neutral.
+# Run from the tinyidp repository root so the relative users-file path resolves.
+oidc:
+  issuer: http://127.0.0.1:19087/realms/personal-inbox
+  addr: 127.0.0.1:19087
+  client-id: personal-inbox-local
+  redirect-uris:
+    - http://127.0.0.1:19794/auth/callback
+  users-file: examples/users/personal-inbox-users.yaml

@@ -16,6 +16,7 @@ type Settings struct {
 	ClientID     string   `glazed:"client-id"`
 	ClientSecret string   `glazed:"client-secret"`
 	RedirectURIs []string `glazed:"redirect-uris"`
+	UsersFile    string   `glazed:"users-file"`
 }
 
 // GetSettings decodes the OIDC section from parsed Glaze values into a

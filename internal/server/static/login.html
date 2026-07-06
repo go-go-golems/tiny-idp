@@ -19,9 +19,9 @@
 </head>
 <body>
   <h1>Tiny IdP</h1>
-  <p class="hint">Enter any login. A local synthetic OIDC user will be created (password is ignored).</p>
+  <p class="hint">Enter any login. Password is optional unless the selected seeded user fixture defines one.</p>
 
-  <form id="login-form" method="post" action="/authorize">
+  <form id="login-form" method="post" action="authorize">
     {{range .Hidden}}
       <input type="hidden" name="{{.Name}}" value="{{.Value}}">
     {{end}}
@@ -30,7 +30,7 @@
     <input id="login" name="login" autocomplete="username" autofocus placeholder="alice or alice@example.test" value="{{.LoginHint}}">
 
     <label for="password">Password</label>
-    <input id="password" name="password" type="password" placeholder="ignored">
+    <input id="password" name="password" type="password" placeholder="optional fixture password">
 
     <button type="submit">Sign in</button>
   </form>

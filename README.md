@@ -2,7 +2,7 @@
 
 A minimal mock [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) Identity Provider for **local development and integration testing**. It exists to replace Keycloak-in-Docker when all you need is a working OIDC provider that issues RS256-signed ID tokens.
 
-> ⚠️ **Not production-grade.** No real login, consent, persistent keys, refresh tokens, revocation, logout, or TLS enforcement. Bind to loopback (`127.0.0.1`) and never expose to the internet. See the design doc in `ttmp/` (ticket `MOCK-OIDC-IDP`).
+> ⚠️ **Not production-grade.** No real account system, consent screen, persistent keys, token revocation, or TLS enforcement. Refresh tokens and RP-initiated logout are implemented for testing semantics only and are in-memory. Bind to loopback (`127.0.0.1`) and never expose to the internet. See the design doc in `ttmp/` (ticket `MOCK-OIDC-IDP`).
 
 ## Run
 
@@ -24,11 +24,12 @@ The OIDC provider config is a **reusable Glazed field section** (`internal/secti
 
 | Flag | Env | Config key | Default | Meaning |
 |------|-----|------------|---------|---------|
-| `--issuer` | `TINYIDP_ISSUER` | `oidc.issuer` | `http://localhost:5556` | Issuer URL; endpoints derived from it. |
+| `--issuer` | `TINYIDP_ISSUER` | `oidc.issuer` | `http://localhost:5556` | Issuer URL; endpoints derived from it. Path-based issuers such as `http://localhost:5556/realms/demo` are supported. |
 | `--addr` | `TINYIDP_ADDR` | `oidc.addr` | `127.0.0.1:5556` | Listen address (loopback by default). |
 | `--client-id` | `TINYIDP_CLIENT_ID` | `oidc.client-id` | `dev-client` | Accepted client ID. |
 | `--client-secret` | `TINYIDP_CLIENT_SECRET` | `oidc.client-secret` | (empty) | If set, `/token` enforces it; if empty, client is public. |
 | `--redirect-uris` | `TINYIDP_REDIRECT_URIS` | `oidc.redirect-uris` | `http://localhost:3000/callback,http://127.0.0.1:3000/callback` | Allowlist (repeatable flag / list in config). |
+| `--users-file` | `TINYIDP_USERS_FILE` | `oidc.users-file` | (empty) | Optional YAML/JSON file with seeded users and claims. |
 
 ### Examples
 
@@ -58,11 +59,67 @@ oidc:
   client-secret: dev-secret
   redirect-uris:
     - http://localhost:8080/callback
+  users-file: ./users.yaml
 ```
 
 ```bash
 go run ./cmd/tinyidp serve --config-file tinyidp.yaml
 ```
+
+Checked-in portable examples live under `examples/configs/`:
+
+| File | Use |
+|------|-----|
+| `examples/configs/dev-root.yaml` | Basic root-issuer dev setup on `localhost:5556`. |
+| `examples/configs/personal-inbox-root.yaml` | xgoja personal-inbox smoke setup with a root issuer. |
+| `examples/configs/personal-inbox-realm.yaml` | xgoja personal-inbox smoke setup with a path-based issuer URL. |
+| `examples/configs/public-spa-pkce.yaml` | Builtin public SPA client that preserves PKCE-required behavior. |
+| `examples/configs/confidential-web-app.yaml` | Builtin confidential web-app client with local `dev-secret`. |
+
+`oidc.users-file` is currently resolved relative to the process working directory. For portable examples, run tinyidp from the repository root or use an absolute users-file path.
+
+### Seeded users
+
+By default, any login derives a stable synthetic user. For tests that need fixed subjects or app-specific claim shapes, pass a users file:
+
+```yaml
+users:
+  - login: alice
+    sub: user-alice-fixed
+    email: alice@example.test
+    name: Alice Inbox
+    password: alice-password
+    email_verified: true
+    groups: [inbox-users]
+    roles: [writer]
+    tenant: personal
+    preferred_username: alice
+    locale: en-US
+  - login: bob
+    sub: user-bob-fixed
+    email: bob@example.test
+    name: Bob Inbox
+    password: bob-password
+    email-verified: true
+    groups: [inbox-users]
+    roles: [reader]
+    tenant: personal
+    # Raw claims remain available for provider-specific or unusual shapes.
+    claims:
+      feature_flags: [compact-inbox]
+```
+
+```bash
+go run ./cmd/tinyidp serve --users-file ./users.yaml
+```
+
+A ready-to-copy personal-inbox fixture is available at `examples/users/personal-inbox-users.yaml`.
+
+Seeded users override builtins with the same login, so you can keep using `alice` and `bob` while making their `sub`, `email`, `name`, and claims deterministic for a test suite.
+
+`password` is optional. When it is omitted or empty, that seeded user keeps the default local-test behavior and any submitted password is accepted. When `password` is set, the authorize form must submit the exact fixture password or tinyidp returns `401 invalid login or password` without creating a session or authorization code. These are plain local test fixtures, not production credentials.
+
+Common authorization claims can be written as top-level generic fields: `groups`, `roles`, `tenant`, `preferred_username`, and `locale`. These expand into ordinary top-level ID token and userinfo claims. The raw `claims` map is still the escape hatch for provider-specific or unusual claim shapes; explicit `claims` values override the generic fields when the same claim name appears in both places.
 
 ### Profiles (switch setups with one flag)
 
@@ -102,10 +159,15 @@ go run ./cmd/tinyidp serve --print-schema                   # show the command's
 
 ```bash
 go run ./cmd/tinyidp help                # browse topics
-go run ./cmd/tinyidp help getting-started  # install + first login
-go run ./cmd/tinyidp help tutorial      # guided scenario walkthrough
-go run ./cmd/tinyidp help scenarios      # the scenario catalog
-go run ./cmd/tinyidp help reference      # config, clients, endpoints
+go run ./cmd/tinyidp help getting-started                  # install + first login
+go run ./cmd/tinyidp help user-guide                       # operational guide
+go run ./cmd/tinyidp help developer-guide                  # implementation guide
+go run ./cmd/tinyidp help tutorial-first-rp-login          # first RP login
+go run ./cmd/tinyidp help tutorial-seeded-users-and-claims # users, passwords, claims
+go run ./cmd/tinyidp help tutorial-xgoja-personal-inbox    # xgoja Steps 06/07/08
+go run ./cmd/tinyidp help tutorial                         # guided scenario walkthrough
+go run ./cmd/tinyidp help scenarios                        # the scenario catalog
+go run ./cmd/tinyidp help reference                        # config, clients, endpoints
 ```
 
 ## Configure your app (RP)
@@ -146,12 +208,45 @@ So `--client-id public-spa --redirect-uris http://localhost:9090/cb` yields a `p
 | `GET /.well-known/openid-configuration` | Discovery metadata. |
 | `GET /jwks` | Public signing keys (JWKS). |
 | `GET /authorize` | Authorization endpoint (login form → code). |
-| `POST /token` | Token endpoint (code → ID + access token). |
+| `POST /token` | Token endpoint (`authorization_code` and `refresh_token`). |
 | `GET /userinfo` | UserInfo (bearer access token → claims). |
+| `GET /end-session` | RP-initiated logout. |
 | `GET /healthz` | Liveness. |
+| `GET/POST /debug/*` | Loopback-only introspection, reset, and JWKS failure-mode controls. |
+
+When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/token`, `/userinfo`, `/jwks`, and `/end-session` endpoint URLs. Root routes remain available for simple local testing. Path-based issuers are URL-shape compatibility only; seeded-user claims stay provider-neutral.
+
+## xgoja personal-inbox smoke ergonomics
+
+From the xgoja Step 06 example directory, you can continue using the existing Makefile variables while pointing them at tinyidp:
+
+```bash
+TINYIDP_ROOT=/path/to/2026-06-22--mock-oidc-idp \
+TINYIDP_ISSUER=http://127.0.0.1:19087 \
+TINYIDP_USERS_FILE=/path/to/2026-06-22--mock-oidc-idp/examples/users/personal-inbox-users.yaml \
+make tinyidp-smoke
+```
+
+For a path-based issuer:
+
+```bash
+TINYIDP_ROOT=/path/to/2026-06-22--mock-oidc-idp \
+TINYIDP_ISSUER=http://127.0.0.1:19087/realms/personal-inbox \
+TINYIDP_USERS_FILE=/path/to/2026-06-22--mock-oidc-idp/examples/users/personal-inbox-users.yaml \
+make tinyidp-smoke
+```
+
+Step 07 can reuse the same users file to exercise Alice/Bob inbox isolation. Step 08's device authorization flow remains implemented by the generated xgoja host; tinyidp supplies browser-login OIDC behavior, not an external device authorization endpoint.
+
+Common symptoms:
+
+- `users file ... no such file`: run from the tinyidp repo root or pass an absolute `TINYIDP_USERS_FILE`.
+- `redirect_uri not allowed for this client`: make the app public base URL match the config's redirect URI.
+- discovery works at `/` but not under a path: use a path-based issuer and fetch discovery under that same prefix.
 
 ## Status
 
 - **Phase 0–4** — baseline OIDC happy path, multiple synthetic users, scenario registry, self-documenting login page, failure scenarios (done).
 - **Glazed CLI** — reusable `oidc` field section, layered config (flags/env/config), **profiles** (`--profile` resolves `profiles.yaml`), **`print-config`** command (done).
-- **Phase 5–12** — multiple clients, sessions, claims, debug UI, refresh tokens, JWKS rotation, logout, Go test helper (deferred; see `ttmp/.../reference/02-implementation-phases-and-tasks.md`).
+- **Phase 5–11** — multiple clients, sessions, claims, debug UI, refresh tokens, JWKS rotation, and RP-initiated logout (done).
+- **Phase 12** — Go test helper package (deferred; see `ttmp/.../reference/02-implementation-phases-and-tasks.md`).

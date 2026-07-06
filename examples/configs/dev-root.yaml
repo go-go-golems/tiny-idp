@@ -1,0 +1,11 @@
+# Basic root-issuer tinyidp setup for local development.
+# Run from the repository root:
+#   go run ./cmd/tinyidp serve --config-file examples/configs/dev-root.yaml
+#   go run ./cmd/tinyidp print-config --config-file examples/configs/dev-root.yaml
+oidc:
+  issuer: http://localhost:5556
+  addr: 127.0.0.1:5556
+  client-id: dev-client
+  redirect-uris:
+    - http://localhost:3000/callback
+    - http://127.0.0.1:3000/callback

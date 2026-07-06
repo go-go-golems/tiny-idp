@@ -42,11 +42,12 @@ and config-file schema never drift between them.
 
 | Flag | Env | Default | Purpose |
 |------|-----|---------|---------|
-| `--issuer` | `TINYIDP_ISSUER` | `http://localhost:5556` | Issuer URL; endpoints are derived from it. |
+| `--issuer` | `TINYIDP_ISSUER` | `http://localhost:5556` | Issuer URL; endpoints are derived from it. Path-based issuers such as `http://localhost:5556/realms/demo` are supported. |
 | `--addr` | `TINYIDP_ADDR` | `127.0.0.1:5556` | Listen address (loopback by default; set `0.0.0.0:5556` for LAN). |
 | `--client-id` | `TINYIDP_CLIENT_ID` | `dev-client` | Client ID. If it matches a builtin, the config is merged into it. |
 | `--client-secret` | `TINYIDP_CLIENT_SECRET` | (empty) | If set, `/token` enforces it; if empty, the client is public. |
 | `--redirect-uris` | `TINYIDP_REDIRECT_URIS` | `http://localhost:3000/callback,http://127.0.0.1:3000/callback` | Allowlist of redirect URIs (repeat the flag or pass a list). |
+| `--users-file` | `TINYIDP_USERS_FILE` | (empty) | Optional YAML/JSON file with seeded users and claims. |
 
 ### Precedence
 
@@ -75,8 +76,21 @@ live under the `oidc` section slug:
       client-secret: dev-secret
       redirect-uris:
         - http://localhost:8080/callback
+      users-file: ./users.yaml
 
 Pass it with `tinyidp serve --config-file config.yaml`.
+
+Portable examples are checked in under `examples/configs/`:
+
+| File | Purpose |
+|------|---------|
+| `dev-root.yaml` | Basic root-issuer setup for local development. |
+| `personal-inbox-root.yaml` | xgoja personal-inbox setup with a root issuer. |
+| `personal-inbox-realm.yaml` | xgoja personal-inbox setup with a path-based issuer URL. |
+| `public-spa-pkce.yaml` | Builtin public SPA client while preserving PKCE-required behavior. |
+| `confidential-web-app.yaml` | Builtin confidential web-app client with local `dev-secret`. |
+
+`oidc.users-file` is resolved relative to the process working directory. For the checked-in examples, run from the tinyidp repository root or pass an absolute users-file path.
 
 ### Profiles
 
@@ -103,6 +117,59 @@ non-default profile with no file is an error, never a silent fallback.
 
     tinyidp serve --profile dev
     TINYIDP_PROFILE=ci tinyidp serve
+
+## Seeded users
+
+By default, tinyidp derives a stable synthetic user from whatever login is typed. For integration tests that need fixed subjects or app-specific claims, pass `--users-file` (or `oidc.users-file` in config). The file may be YAML or JSON:
+
+    users:
+      - login: alice
+        sub: user-alice-fixed
+        email: alice@example.test
+        name: Alice Inbox
+        password: alice-password
+        email_verified: true
+        groups: [inbox-users]
+        roles: [writer]
+        tenant: personal
+        preferred_username: alice
+        locale: en-US
+      - login: bob
+        sub: user-bob-fixed
+        email: bob@example.test
+        name: Bob Inbox
+        password: bob-password
+        email-verified: true
+        groups: [inbox-users]
+        roles: [reader]
+        tenant: personal
+        claims:
+          feature_flags: [compact-inbox]
+
+Seeded users are registered as normal scenarios. They override builtins with the same login and appear on the login page under "Seeded users" by default.
+
+`password` is optional. If it is omitted or empty, the seeded user remains permissive and any submitted password is accepted. If it is set, authorize POST must submit the exact fixture password; wrong or missing passwords return `401 invalid login or password` and no session or authorization code is created. Passwords are plain local test fixture values, not production credentials.
+
+Generic top-level claim helpers are available for common authorization fixtures: `groups`, `roles`, `tenant`, `preferred_username`, and `locale`. These expand into ordinary top-level claims in both the ID token and userinfo response. The raw `claims` map remains available for provider-specific or unusual shapes; explicit `claims` entries override generic helper fields with the same claim name. Use `omit_claims` when a seeded user should deliberately omit a base claim such as `email`.
+
+### Seeded-user fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `login` | string | Required login/scenario name. Normalized before registration. |
+| `sub` | string | Optional fixed subject. Defaults to deterministic synthetic subject derived from login. |
+| `email` | string | Optional fixed email. Defaults to login or `login@example.test`. |
+| `name` | string | Optional display name. Defaults to login local part. |
+| `password` | string | Optional fixture password. Empty means any submitted password is accepted. |
+| `email_verified` / `email-verified` | bool | Optional email verification claim. Both spellings are accepted. |
+| `groups` | list[string] | Generic top-level `groups` claim. Whitespace-only entries are dropped. |
+| `roles` | list[string] | Generic top-level `roles` claim. Whitespace-only entries are dropped. |
+| `tenant` | string | Generic top-level `tenant` claim. |
+| `preferred_username` | string | Generic top-level preferred username claim. |
+| `locale` | string | Generic top-level locale claim. |
+| `claims` | object | Raw extra claims. Values here override generic helper fields with the same name. |
+| `omit_claims` | list[string] | Claims to delete from ID token and userinfo after extra claims are merged. |
+| `category` | string | Login-page quick-pick category. Defaults to `Seeded users`. |
 
 ## Clients
 
@@ -139,6 +206,8 @@ registers a new permissive client.
 | `/end-session` | GET | RP-initiated logout. See Logout below. |
 | `/healthz` | GET | Liveness (`ok`). |
 | `/debug/*` | GET/POST | Loopback-only introspection. See Debug UI below. |
+
+If `--issuer` includes a path component, tinyidp registers the same endpoints under that prefix as well as at the root. For example, issuer `http://localhost:5556/realms/demo` serves discovery at `/realms/demo/.well-known/openid-configuration` and advertises endpoint URLs under `/realms/demo`. This is useful when an app expects an issuer URL with a path while keeping the root issuer workflow available for simple local runs. Path-based issuers are URL-shape compatibility only; seeded-user claims remain generic and provider-neutral.
 
 ## Behaviors
 
@@ -224,9 +293,16 @@ against a log without exposing the full token in a listing.
 | Config flag has no effect. | A higher-precedence source overrode it. | Run `tinyidp serve --print-parsed-fields` to see which source won. |
 | `--redirect-uris` replaced the builtin's URIs. | It does not — it unions them. | The merge preserves builtin properties; the configured URI is added, not swapped. |
 | Debug endpoints return 403. | The request is not from loopback. | Call them from the same host; they are loopback-only by design. |
+| Users file cannot be read. | `oidc.users-file` was relative to a different working directory. | Run from the tinyidp repository root or pass an absolute users-file path. |
+| xgoja login redirects but callback fails. | The app base URL does not match the configured redirect URI. | Match `TINYIDP_BASE_URL` and `oidc.redirect-uris`, for example `http://127.0.0.1:19794/auth/callback`. |
 
 ## See also
 
 - `tinyidp help getting-started` — install and first login.
+- `tinyidp help user-guide` — operational guide for running tinyidp against relying parties.
+- `tinyidp help developer-guide` — implementation guide for extending tinyidp.
+- `tinyidp help tutorial-first-rp-login` — first relying-party login walkthrough.
+- `tinyidp help tutorial-seeded-users-and-claims` — deterministic users and claim fixtures.
+- `tinyidp help tutorial-xgoja-personal-inbox` — xgoja personal-inbox smoke workflow.
 - `tinyidp help tutorial` — a guided walkthrough of scenarios.
 - `tinyidp help scenarios` — the full scenario catalog and model.

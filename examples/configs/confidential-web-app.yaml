@@ -1,0 +1,11 @@
+# Confidential web-app client example.
+# `web-app` is a builtin confidential client. The dev-secret value is suitable
+# only for local tests and examples.
+oidc:
+  issuer: http://127.0.0.1:19101
+  addr: 127.0.0.1:19101
+  client-id: web-app
+  client-secret: dev-secret
+  redirect-uris:
+    - http://localhost:8080/callback
+    - http://127.0.0.1:8080/callback

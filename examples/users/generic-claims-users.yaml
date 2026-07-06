@@ -1,0 +1,31 @@
+# Generic seeded-user authorization claims for tinyidp.
+#
+# These fields are provider-neutral. They expand to top-level ID token and
+# userinfo claims. Use the raw `claims` map only when a test needs an unusual
+# or provider-specific shape.
+users:
+  - login: alice
+    password: alice-password
+    sub: user-alice-fixed
+    email: alice@example.test
+    name: Alice Inbox
+    email_verified: true
+    groups: [inbox-users, engineering]
+    roles: [writer]
+    tenant: personal
+    preferred_username: alice
+    locale: en-US
+
+  - login: bob
+    password: bob-password
+    sub: user-bob-fixed
+    email: bob@example.test
+    name: Bob Inbox
+    email-verified: true
+    groups: [inbox-users]
+    roles: [reader]
+    tenant: personal
+    preferred_username: bob
+    locale: en-US
+    claims:
+      feature_flags: [compact-inbox]

@@ -15,13 +15,13 @@ import (
 // loopback: a request whose RemoteAddr is not 127.0.0.1/::1 is rejected with
 // 403, so exposing the server to a LAN (OIDC_ADDR=0.0.0.0:...) does not also
 // expose debug state.
-func (s *Server) debugRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/debug", s.debugIndex)
-	mux.HandleFunc("/debug/sessions", s.debugSessions)
-	mux.HandleFunc("/debug/codes", s.debugCodes)
-	mux.HandleFunc("/debug/tokens", s.debugTokens)
-	mux.HandleFunc("/debug/jwks-mode", s.debugJWKSMode)
-	mux.HandleFunc("/debug/reset", s.debugReset)
+func (s *Server) debugRoutesAt(mux *http.ServeMux, prefix string) {
+	mux.HandleFunc(prefix+"/debug", s.debugIndex)
+	mux.HandleFunc(prefix+"/debug/sessions", s.debugSessions)
+	mux.HandleFunc(prefix+"/debug/codes", s.debugCodes)
+	mux.HandleFunc(prefix+"/debug/tokens", s.debugTokens)
+	mux.HandleFunc(prefix+"/debug/jwks-mode", s.debugJWKSMode)
+	mux.HandleFunc(prefix+"/debug/reset", s.debugReset)
 }
 
 // requireLoopback rejects non-loopback requests. Returns true if the request

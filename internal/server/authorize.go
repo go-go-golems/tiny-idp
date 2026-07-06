@@ -63,6 +63,10 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sc, _ := s.registry.Lookup(login)
+		if !passwordAccepted(sc, r.PostForm.Get("password")) {
+			http.Error(w, "invalid login or password", http.StatusUnauthorized)
+			return
+		}
 
 		// Auth-error scenarios redirect back to the RP with an OAuth error
 		// instead of issuing a code (no session is created).
@@ -166,6 +170,10 @@ func (s *Server) parseAuthorizeRequest(v url.Values) (authorizeRequest, error) {
 		return ar, errText("this client requires PKCE (code_challenge required)")
 	}
 	return ar, nil
+}
+
+func passwordAccepted(sc scenario.Scenario, submitted string) bool {
+	return sc.Password == "" || submitted == sc.Password
 }
 
 func hiddenAuthorizeFields(ar authorizeRequest) []hiddenField {

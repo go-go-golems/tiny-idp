@@ -12,6 +12,8 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: README.md
+      Note: Path-based issuer documentation (commit 64a6165)
     - Path: cmd/tinyidp/main.go
       Note: Phase 0 implementation (commit d473d513)
     - Path: cmd/tinyidp/main_test.go
@@ -39,10 +41,16 @@ RelatedFiles:
       Note: Phase 10 multi-key signJWT + jwks + shared keys + jwksMode (commit d75aa44)
     - Path: internal/server/logout.go
       Note: Phase 11 /end-session handler (commit d75aa44)
+    - Path: internal/server/server.go
+      Note: Path-based issuer route registration (commit 64a6165)
     - Path: internal/server/server_test.go
-      Note: Phase 4 matrix tests (Phase 4)
+      Note: |-
+        Phase 4 matrix tests (Phase 4)
+        Prefixed OIDC flow regression test (commit 64a6165)
     - Path: internal/server/static/login.html
-      Note: embedded login form with quick-pick buttons (Phase 3)
+      Note: |-
+        embedded login form with quick-pick buttons (Phase 3)
+        Relative authorize form action for root and prefixed issuers (commit 64a6165)
     - Path: internal/server/token.go
       Note: |-
         scenario TokenError + MutateClaims threading (commit 6454cd3)
@@ -58,6 +66,7 @@ LastUpdated: 2026-06-22T15:10:00-04:00
 WhatFor: Trace what was built, why, what failed, and how to review/continue the mock IdP work.
 WhenToUse: Read before resuming work on MOCK-OIDC-IDP; append a new Step for each chunk of work.
 ---
+
 
 
 
@@ -998,3 +1007,111 @@ This step added the `/end-session` endpoint so relying parties can initiate logo
 - New `Client.PostLogoutRedirectURIs` field; builtins: dev-client → localhost:3000/127.0.0.1:3000; public-spa & web-app → localhost:8080.
 - `id_token_hint` decoded via `base64.RawURLEncoding` payload parse (no signature check); `sub` drives `deleteSessionsBySub`.
 - Test count: 113 (server 60, cmds 10, client 12, scenario 5, user 5, oidc 4, +5 in doc/main).
+
+## Step 16: Support Keycloak-style path-based issuer routes
+
+This step closed the remaining gap between the xgoja personal-inbox tinyidp proof and a Keycloak-shaped issuer URL. tinyidp can now be started with an issuer such as `http://127.0.0.1:19187/realms/personal-inbox`; discovery is served at `/realms/personal-inbox/.well-known/openid-configuration`, the advertised endpoints stay under that same path, and the ID token `iss` claim uses the full path-based issuer.
+
+The implementation keeps root endpoints available for the simple local workflow while adding prefix routes derived from the configured issuer path. The login form now posts with a relative `action="authorize"`, which makes the same embedded page work both at `/authorize` and at `/realms/<name>/authorize` without per-request template branching.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the tinyidp/xgoja integration work beyond the already-green root-issuer smokes by implementing the deferred Keycloak-style realm-path issuer compatibility.
+
+**Inferred user intent:** The user wants the mock IdP to be closer to the Keycloak replacement target, not just a root-issuer workaround.
+
+**Commit (code):** 64a6165 — "feat: support path-based issuer routes"
+
+### What I did
+
+- Added issuer-path route registration in `internal/server/server.go`.
+- Replaced the login form's absolute `/authorize` form action with a relative `authorize` action so prefixed authorize pages submit back to their prefixed route.
+- Updated debug route registration to accept a prefix as well.
+- Added `TestIssuerPathPrefixRoutes`, covering prefixed discovery, authorize GET/POST, token exchange, ID token `iss`, and prefixed userinfo.
+- Documented path-based issuers in `README.md`, `tinyidp help reference`, and `tinyidp help getting-started` source pages.
+- Marked the docmgr task “Support Keycloak-style path-based issuer routes” complete.
+
+### Why
+
+- xgoja's first tinyidp smoke used a root issuer as a feasibility step, but Keycloak tutorials commonly configure issuers under `/realms/<realm>`.
+- Supporting path-based issuers lets tinyidp replace a larger class of Keycloak smoke configurations without changing relying-party assumptions about issuer shape.
+
+### What worked
+
+Targeted and full tinyidp validation passed:
+
+```bash
+gofmt -w internal/server/server.go internal/server/debug.go internal/server/server_test.go
+GOWORK=off go test ./internal/server -run 'TestIssuerPathPrefixRoutes|TestDiscovery|TestFullFlow|TestLogin' -count=1
+GOWORK=off go test ./... -count=1
+GOWORK=off go build ./cmd/tinyidp
+```
+
+Relevant output:
+
+```text
+ok  	github.com/manuel/tinyidp/internal/server	0.376s
+ok  	github.com/manuel/tinyidp/internal/server	6.851s
+```
+
+The xgoja Step 06 tinyidp smoke also passed with a path-based issuer:
+
+```bash
+cd /home/manuel/workspaces/2026-06-12/goja-express-auth/go-go-goja
+make -C examples/xgoja/23-personal-knowledge-inbox/06-browser-login-keycloak tinyidp-smoke \
+  TINYIDP_ROOT=/home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp \
+  TINYIDP_ADDR=127.0.0.1:19187 \
+  TINYIDP_APP_ADDR=127.0.0.1:19895 \
+  TINYIDP_ISSUER=http://127.0.0.1:19187/realms/personal-inbox
+```
+
+Relevant output:
+
+```text
+ok tinyidp login smoke; session email=alice@example.test
+ok tinyidp replacement smoke
+```
+
+### What didn't work
+
+- No implementation test failures occurred after the first edit. I did catch one documentation/code-review issue before committing: the new test had been inserted under the old `fullFlow` helper comment, so I moved the comment back above `fullFlow` and added a specific test comment.
+
+### What I learned
+
+- Path-based issuer support does not require a separate `--base-path` flag if the configured issuer already carries the path. The server can derive the route prefix from `issuer.Path` and keep the CLI surface smaller.
+- A relative HTML form action is the simplest way to keep an embedded login page prefix-agnostic.
+
+### What was tricky to build
+
+- The route prefix must be chosen at route-registration time, but tests often set the final `httptest.Server` issuer URL after the server starts. The test handles this by constructing the server with a placeholder issuer that has the desired path, registering routes, then replacing only the issuer host with the `httptest` URL before requests.
+- Root routes are intentionally still registered. That preserves existing root-issuer tests and simple local examples while adding the Keycloak-shaped path for compatibility tests.
+
+### What warrants a second pair of eyes
+
+- Whether serving both root and prefixed routes for a path-based issuer is preferable to strict prefix-only behavior. I chose dual registration for backward compatibility and local convenience.
+- Whether debug endpoints should be available under the issuer prefix. They remain loopback-guarded, but exposing them under both paths may be broader than necessary.
+
+### What should be done in the future
+
+- Run the Step 07 and Step 08 xgoja tinyidp smokes with path-based issuers as an additional integration matrix.
+- Consider adding a small CLI note or warning when `--issuer` has a path and `--addr` differs from its host/port, because users may conflate bind address and public issuer.
+
+### Code review instructions
+
+- Start at `internal/server/server.go`: `RegisterRoutes`, `registerRoutesAt`, and `issuerPathPrefix`.
+- Review `internal/server/static/login.html` to confirm the relative form action is intentional.
+- Review `internal/server/server_test.go` `TestIssuerPathPrefixRoutes` for the full prefixed OIDC flow.
+- Validate with:
+
+```bash
+GOWORK=off go test ./... -count=1
+GOWORK=off go build ./cmd/tinyidp
+```
+
+### Technical details
+
+- Root issuer remains unchanged: `/authorize`, `/token`, `/userinfo`, `/jwks`, `/end-session`.
+- Path issuer example: `--issuer http://127.0.0.1:5556/realms/demo` registers `/realms/demo/authorize`, `/realms/demo/token`, `/realms/demo/userinfo`, `/realms/demo/jwks`, `/realms/demo/end-session`, `/realms/demo/.well-known/openid-configuration`, and `/realms/demo/healthz`.
+- Discovery still derives endpoint URLs as `issuer + "/<endpoint>"`, so no extra URL-construction path was needed.

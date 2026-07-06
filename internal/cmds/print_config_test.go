@@ -65,6 +65,7 @@ func TestPrintConfigEmitsResolvedDefaults(t *testing.T) {
 	assert.Equal(t, "http://localhost:5556", rowVal(row, "issuer"))
 	assert.Equal(t, "127.0.0.1:5556", rowVal(row, "addr"))
 	assert.Equal(t, "dev-client", rowVal(row, "client_id"))
+	assert.Equal(t, "", rowVal(row, "users_file"))
 }
 
 // TestPrintConfigReflectsEnvOverride verifies that values resolved above
@@ -73,6 +74,7 @@ func TestPrintConfigEmitsResolvedDefaults(t *testing.T) {
 // the defaults.
 func TestPrintConfigReflectsEnvOverride(t *testing.T) {
 	t.Setenv("TINYIDP_CLIENT_ID", "seen-by-print-config")
+	t.Setenv("TINYIDP_USERS_FILE", "/tmp/tinyidp-users.yaml")
 
 	cmd, err := NewPrintConfigCommand()
 	require.NoError(t, err)
@@ -89,6 +91,7 @@ func TestPrintConfigReflectsEnvOverride(t *testing.T) {
 
 	require.Len(t, proc.rows, 1)
 	assert.Equal(t, "seen-by-print-config", rowVal(proc.rows[0], "client_id"))
+	assert.Equal(t, "/tmp/tinyidp-users.yaml", rowVal(proc.rows[0], "users_file"))
 }
 
 // TestPrintConfigReflectsProfileOverride verifies that a profile value

@@ -71,6 +71,7 @@ Examples:
   tinyidp print-config
   tinyidp print-config --profile dev
   tinyidp print-config --client-id my-app --output yaml
+  tinyidp print-config --users-file ./users.yaml
   TINYIDP_CLIENT_ID=env-app tinyidp print-config
 `),
 		cmds.WithSections(oidcSection, glazedSection, commandSettingsSection),
@@ -97,6 +98,7 @@ func (c *PrintConfigCommand) RunIntoGlazeProcessor(
 		types.MRP("client_id", cfg.ClientID),
 		types.MRP("client_secret", cfg.ClientSecret),
 		types.MRP("redirect_uris", cfg.RedirectURIs),
+		types.MRP("users_file", cfg.UsersFile),
 	)
 	return gp.AddRow(ctx, row)
 }

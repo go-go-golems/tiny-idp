@@ -139,3 +139,14 @@ Step 15: Phase 11 RP-initiated logout — /end-session (id_token_hint deletes by
 
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/server/logout.go — /end-session handler (commit d75aa44)
 - /home/manuel/code/wesen/2026-06-22--mock-oidc-idp/internal/client/client.go — PostLogoutRedirectURIs + AllowsPostLogoutRedirectURI + Merge (commit d75aa44)
+
+## 2026-07-04
+
+Step 16: added Keycloak-style path-based issuer route support and validated xgoja Step 06 against /realms/personal-inbox (commit 64a6165).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/server.go — Registers root and issuer-path route sets
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/server_test.go — Covers prefixed discovery/authorize/token/userinfo
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/06/22/MOCK-OIDC-IDP--mock-oidc-identity-provider-for-local-testing-keycloak-replacement/reference/01-implementation-diary.md — Step 16 diary
+

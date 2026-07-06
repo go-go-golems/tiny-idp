@@ -56,6 +56,122 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	return s, ts
 }
 
+// TestIssuerPathPrefixRoutes proves tinyidp can serve Keycloak-shaped issuer
+// URLs such as /realms/<name> while still deriving discovery metadata and ID
+// token issuer claims from the configured path-based issuer.
+func TestIssuerPathPrefixRoutes(t *testing.T) {
+	const prefix = "/realms/personal-inbox"
+
+	s, err := New(Options{Issuer: "http://issuer.test" + prefix})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	s.clients.Register(client.Client{
+		ID:                     "dev-client",
+		RedirectURIs:           []string{"https://app.test/cb"},
+		PostLogoutRedirectURIs: []string{"https://app.test/logout"},
+	})
+	mux := http.NewServeMux()
+	s.RegisterRoutes(mux)
+	ts := httptest.NewServer(WithCORS(mux))
+	t.Cleanup(ts.Close)
+	s.issuer = ts.URL + prefix
+
+	resp, err := ts.Client().Get(ts.URL + prefix + "/.well-known/openid-configuration")
+	if err != nil {
+		t.Fatalf("prefixed discovery: %v", err)
+	}
+	var discovery map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+		resp.Body.Close()
+		t.Fatalf("decode discovery: %v", err)
+	}
+	resp.Body.Close()
+	if discovery["issuer"] != s.issuer {
+		t.Fatalf("issuer = %v want %s", discovery["issuer"], s.issuer)
+	}
+	if discovery["authorization_endpoint"] != s.issuer+"/authorize" {
+		t.Fatalf("authorization_endpoint = %v", discovery["authorization_endpoint"])
+	}
+	if discovery["token_endpoint"] != s.issuer+"/token" {
+		t.Fatalf("token_endpoint = %v", discovery["token_endpoint"])
+	}
+	if discovery["jwks_uri"] != s.issuer+"/jwks" {
+		t.Fatalf("jwks_uri = %v", discovery["jwks_uri"])
+	}
+
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "dev-client")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid profile email")
+	auth.Set("state", "prefixed-state")
+	auth.Set("nonce", "prefixed-nonce")
+
+	formResp, err := ts.Client().Get(ts.URL + prefix + "/authorize?" + auth.Encode())
+	if err != nil {
+		t.Fatalf("prefixed authorize GET: %v", err)
+	}
+	formBody, _ := io.ReadAll(formResp.Body)
+	formResp.Body.Close()
+	if formResp.StatusCode != http.StatusOK || !strings.Contains(string(formBody), `action="authorize"`) {
+		t.Fatalf("prefixed authorize form = %d %q", formResp.StatusCode, formBody)
+	}
+
+	c := ts.Client()
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }
+	postResp, err := c.PostForm(ts.URL+prefix+"/authorize", authorizeForm("alice", auth))
+	if err != nil {
+		t.Fatalf("prefixed authorize POST: %v", err)
+	}
+	loc, err := postResp.Location()
+	postResp.Body.Close()
+	if err != nil {
+		t.Fatalf("prefixed authorize redirect location: %v", err)
+	}
+	if loc.Query().Get("state") != "prefixed-state" {
+		t.Fatalf("state not echoed: %s", loc.String())
+	}
+	code := loc.Query().Get("code")
+	if code == "" {
+		t.Fatalf("no code in prefixed redirect: %s", loc.String())
+	}
+
+	tokForm := url.Values{}
+	tokForm.Set("grant_type", "authorization_code")
+	tokForm.Set("code", code)
+	tokForm.Set("redirect_uri", "https://app.test/cb")
+	tokForm.Set("client_id", "dev-client")
+	tokenResp, err := ts.Client().PostForm(ts.URL+prefix+"/token", tokForm)
+	if err != nil {
+		t.Fatalf("prefixed token exchange: %v", err)
+	}
+	defer tokenResp.Body.Close()
+	var tokenBody map[string]any
+	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenBody); err != nil {
+		t.Fatalf("decode prefixed token response: %v", err)
+	}
+	if tokenResp.StatusCode != http.StatusOK {
+		t.Fatalf("prefixed token status %d: %v", tokenResp.StatusCode, tokenBody)
+	}
+	claims := verifyIDTokenSignature(t, ts, tokenBody["id_token"].(string))
+	if claims["iss"] != s.issuer {
+		t.Fatalf("id token iss = %v want %s", claims["iss"], s.issuer)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+prefix+"/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenBody["access_token"].(string))
+	uiResp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("prefixed userinfo: %v", err)
+	}
+	defer uiResp.Body.Close()
+	if uiResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(uiResp.Body)
+		t.Fatalf("prefixed userinfo status %d: %s", uiResp.StatusCode, body)
+	}
+}
+
 // fullFlow drives authorize (GET form -> POST login) -> token -> userinfo for
 // the given login and extra authorize params (code_challenge / code_verifier /
 // etc.) and returns the parsed token response, the verified ID token claims,
@@ -174,6 +290,17 @@ func authorizePostRedirect(t *testing.T, ts *httptest.Server, form url.Values) *
 		t.Fatalf("no Location: %v", err)
 	}
 	return loc
+}
+
+func postAuthorizeNoRedirect(t *testing.T, ts *httptest.Server, form url.Values) *http.Response {
+	t.Helper()
+	c := ts.Client()
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := c.PostForm(ts.URL+"/authorize", form)
+	if err != nil {
+		t.Fatalf("authorize POST: %v", err)
+	}
+	return resp
 }
 
 // authorizeForm builds a POST form for the given login + authorize params.
@@ -513,6 +640,130 @@ func TestScenarioHookIsThreadedThroughFlow(t *testing.T) {
 	}
 	if claims["sub"] != user.FromLogin("dave").Sub {
 		t.Fatalf("sub = %v, want dave's sub", claims["sub"])
+	}
+}
+
+func TestSeededUserPasswordValidation(t *testing.T) {
+	s, ts := newTestServer(t)
+	seeded, err := scenario.SeededUsersToScenarios([]scenario.SeededUser{
+		{Login: "alice", Password: "alice-password", Sub: "user-alice-fixed"},
+		{Login: "bob", Sub: "user-bob-fixed"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.registry.RegisterAll(seeded)
+
+	auth := url.Values{}
+	auth.Set("response_type", "code")
+	auth.Set("client_id", "dev-client")
+	auth.Set("redirect_uri", "https://app.test/cb")
+	auth.Set("scope", "openid profile email")
+	auth.Set("state", "pw-state")
+	auth.Set("nonce", "pw-nonce")
+
+	form := authorizeForm("alice", auth)
+	form.Set("password", "alice-password")
+	loc := authorizePostRedirect(t, ts, form)
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("correct password did not issue code: %s", loc.String())
+	}
+
+	wrong := authorizeForm("alice", auth)
+	wrong.Set("password", "wrong-password")
+	resp := postAuthorizeNoRedirect(t, ts, wrong)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong password status = %d body=%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "invalid login or password") {
+		t.Fatalf("wrong password body = %q", body)
+	}
+
+	missing := authorizeForm("alice", auth)
+	missing.Del("password")
+	resp = postAuthorizeNoRedirect(t, ts, missing)
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("missing password status = %d body=%s", resp.StatusCode, body)
+	}
+
+	s.mu.Lock()
+	sessionCount := len(s.sessions)
+	codeCount := len(s.codes)
+	s.mu.Unlock()
+	if sessionCount != 1 || codeCount != 1 {
+		t.Fatalf("wrong/missing passwords created state: sessions=%d codes=%d", sessionCount, codeCount)
+	}
+
+	permissive := authorizeForm("bob", auth)
+	permissive.Set("password", "anything")
+	loc = authorizePostRedirect(t, ts, permissive)
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("unprotected seeded user did not issue code: %s", loc.String())
+	}
+
+	builtin := authorizeForm("viewer", auth)
+	builtin.Set("password", "anything")
+	loc = authorizePostRedirect(t, ts, builtin)
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("builtin user did not issue code: %s", loc.String())
+	}
+}
+
+func TestSeededUserScenarioIsThreadedThroughFlow(t *testing.T) {
+	s, ts := newTestServer(t)
+	seeded, err := scenario.SeededUsersToScenarios([]scenario.SeededUser{
+		{
+			Login:             "alice",
+			Sub:               "user-alice-fixed",
+			Email:             "alice@inbox.test",
+			Name:              "Alice Inbox",
+			Groups:            []string{"inbox-users"},
+			Roles:             []string{"writer"},
+			Tenant:            "personal",
+			PreferredUsername: "alice",
+			Locale:            "en-US",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.registry.RegisterAll(seeded)
+
+	_, claims, ui := fullFlow(t, ts, "alice", nil)
+	if claims["sub"] != "user-alice-fixed" || ui["sub"] != "user-alice-fixed" {
+		t.Fatalf("seeded sub not used: id=%v userinfo=%v", claims["sub"], ui["sub"])
+	}
+	if claims["email"] != "alice@inbox.test" || ui["email"] != "alice@inbox.test" {
+		t.Fatalf("seeded email not used: id=%v userinfo=%v", claims["email"], ui["email"])
+	}
+	if claims["tenant"] != "personal" || ui["tenant"] != "personal" {
+		t.Fatalf("seeded tenant not used: id=%v userinfo=%v", claims["tenant"], ui["tenant"])
+	}
+	if claims["preferred_username"] != "alice" || ui["preferred_username"] != "alice" {
+		t.Fatalf("seeded preferred_username not used: id=%v userinfo=%v", claims["preferred_username"], ui["preferred_username"])
+	}
+	if claims["locale"] != "en-US" || ui["locale"] != "en-US" {
+		t.Fatalf("seeded locale not used: id=%v userinfo=%v", claims["locale"], ui["locale"])
+	}
+	groups, ok := claims["groups"].([]any)
+	if !ok || len(groups) != 1 || groups[0] != "inbox-users" {
+		t.Fatalf("seeded groups not used in ID token: %#v", claims["groups"])
+	}
+	uiGroups, ok := ui["groups"].([]any)
+	if !ok || len(uiGroups) != 1 || uiGroups[0] != "inbox-users" {
+		t.Fatalf("seeded groups not used in userinfo: %#v", ui["groups"])
+	}
+	roles, ok := claims["roles"].([]any)
+	if !ok || len(roles) != 1 || roles[0] != "writer" {
+		t.Fatalf("seeded roles not used in ID token: %#v", claims["roles"])
+	}
+	uiRoles, ok := ui["roles"].([]any)
+	if !ok || len(uiRoles) != 1 || uiRoles[0] != "writer" {
+		t.Fatalf("seeded roles not used in userinfo: %#v", ui["roles"])
 	}
 }
 
