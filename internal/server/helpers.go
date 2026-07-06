@@ -30,13 +30,17 @@ func tokenError(w http.ResponseWriter, status int, code, desc string) {
 // randomB64 returns n bytes of crypto-random data as raw URL-safe base64.
 // Used for authorization codes and opaque access tokens.
 func randomB64(n int) string {
+	return b64(randomBytes(n))
+}
+
+func randomBytes(n int) []byte {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		// rand.Read failing indicates a broken system CSPRNG; panicking is
 		// correct because nothing the server can do afterward is safe.
 		panic(err)
 	}
-	return b64(b)
+	return b
 }
 
 // hasScope reports whether the space-separated scope string contains wanted.

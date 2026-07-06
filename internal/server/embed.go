@@ -13,9 +13,15 @@ import (
 //go:embed static/login.html
 var loginHTML string
 
-// loginPage is the parsed login template. Parsed once at package init; the
-// template is safe for concurrent execution.
-var loginPage = template.Must(template.New("login").Parse(loginHTML))
+//go:embed static/device.html
+var deviceHTML string
+
+// loginPage and devicePage are parsed once at package init; templates are safe
+// for concurrent execution.
+var (
+	loginPage  = template.Must(template.New("login").Parse(loginHTML))
+	devicePage = template.Must(template.New("device").Parse(deviceHTML))
+)
 
 // hiddenField is a hidden form input echoed back from the authorize request
 // so the POST /authorize (login submit) reconstructs the original OAuth/OIDC

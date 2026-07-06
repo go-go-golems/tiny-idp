@@ -13,13 +13,22 @@ Owners: []
 RelatedFiles:
     - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DEVICE-001--oauth-device-authorization-grant-for-tinyidp/design-doc/01-device-authorization-grant-design-and-implementation-guide.md
       Note: Primary device authorization design guide created in Step 1
+    - Path: repo://internal/server/device.go
+      Note: Native device authorization endpoints and state
+    - Path: repo://internal/server/device_test.go
+      Note: Device authorization server tests
+    - Path: repo://internal/server/static/device.html
+      Note: Browser approval form
+    - Path: repo://internal/server/token.go
+      Note: Device-code token polling and shared token issuance helpers
 ExternalSources:
-    - "OAuth 2.0 Device Authorization Grant RFC 8628: https://www.rfc-editor.org/rfc/rfc8628"
+    - 'OAuth 2.0 Device Authorization Grant RFC 8628: https://www.rfc-editor.org/rfc/rfc8628'
 Summary: Chronological diary for designing native OAuth device authorization grant support in tinyidp.
 LastUpdated: 2026-07-06T00:00:00-04:00
 WhatFor: Read before implementing tinyidp-native device authorization grant endpoints.
 WhenToUse: Use when resuming TINYIDP-DEVICE-001 or reviewing device authorization design decisions.
 ---
+
 
 # Diary
 
@@ -110,3 +119,93 @@ Ticket path:
 ```text
 /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DEVICE-001--oauth-device-authorization-grant-for-tinyidp
 ```
+
+## Step 2: Implement native device authorization core and server tests
+
+This step implemented the runtime core for tinyidp-native OAuth Device Authorization Grant support. The server now has device grant state, root and path-prefixed device endpoints, a browser approval form, token endpoint polling support, discovery metadata, and debug visibility.
+
+The implementation keeps the feature aligned with the rest of tinyidp: state is in memory, users are resolved through the scenario registry, fixture passwords are validated with the same policy as browser login, and access/ID/refresh token issuance reuses the existing token machinery.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, let's build the ticket in its entirety, commit at appropriate intervals, keep a detailed diary as you work"
+
+**Assistant interpretation:** Implement `TINYIDP-DEVICE-001` fully, not just design it, with focused commits, detailed diary entries, docmgr task tracking, validation, and review notes.
+
+**Inferred user intent:** The user wants native device authorization support delivered with the same documentation discipline as the previous tinyidp follow-up work.
+
+**Commit (code):** pending — core device authorization implementation slice.
+
+### What I did
+
+- Added `internal/server/device.go` with:
+  - device grant constants and state types,
+  - `POST /device_authorization`,
+  - `GET/POST /device`,
+  - user-code generation and normalization,
+  - approval/denial handling.
+- Added `internal/server/static/device.html` and embedded it through `internal/server/embed.go`.
+- Added `deviceGrants` state to `Server` and route registration in `server.go`.
+- Added `device_authorization_endpoint` and device-code grant metadata to discovery.
+- Extended `/token` dispatch with `urn:ietf:params:oauth:grant-type:device_code`.
+- Refactored token issuance into helpers so authorization-code and device-code paths share access-token and ID-token construction.
+- Added `/debug/device-grants` and included device grant counts in `/debug`.
+- Added `internal/server/device_test.go` with helper, discovery, start, pending, slow-down, approval, denial, expiry, client mismatch, one-time use, seeded-user claims, and path-prefix route coverage.
+
+### Why
+
+- Device authorization needs shared state between a polling client and a browser approval path. The existing `Server` state/mutex pattern is the right place for that state.
+- Token polling must be a real token endpoint grant, not a separate app-specific endpoint, so clients can use standard OAuth Device Authorization Grant semantics.
+
+### What worked
+
+- Focused device tests passed.
+- Full server package tests passed.
+
+### What didn't work
+
+- The first disallowed-scope test used `public-spa` with `openid not-allowed`, but built-in clients currently have empty `AllowedScopes`, which means permissive scope behavior. The test was corrected to use `profile email` without `openid`, which is invalid for this OIDC-oriented device flow.
+
+### What I learned
+
+- The existing built-in clients are deliberately permissive about scopes unless `AllowedScopes` is set. Device endpoint tests must account for that policy.
+- The token endpoint
+ polling path had to be careful about ordering: unknown/expired/client-mismatch checks should happen before rate limiting so callers receive meaningful terminal errors.
+
+### What was tricky to build
+
+- The first token implementation duplicated authorization-code claim construction. I refactored access-token and ID-token creation into helpers so device-code responses inherit the same claim behavior, including generic seeded-user extra claims and scenario mutations.
+- User code lookup is by human-entered code, not device code. I added normalization that ignores hyphens and spaces and uppercases values so copy/paste or hand-entry differences do not break approval.
+- `slow_down` tests would otherwise sleep for five seconds. The tests explicitly age `LastPoll` inside server state after asserting slow-down behavior so the success path remains fast and deterministic.
+
+### What warrants a second pair of eyes
+
+- Review the `slow_down` behavior in `tokenDeviceCode`: it updates `LastPoll` on every too-fast poll, which penalizes aggressive clients until they back off for a full interval.
+- Review one-time use semantics: approved grants are deleted during successful token exchange; denied and expired grants remain until reset for debug visibility.
+- Review the approval form behavior: it uses direct seeded-user login/password validation and does not yet reuse an existing browser session cookie.
+
+### What should be done in the future
+
+- Add CLI/help docs and README examples for the device grant.
+- Add an end-to-end command-line smoke script or tutorial using `curl`.
+- Decide whether expired/denied grants should be garbage-collected opportunistically.
+
+### Code review instructions
+
+- Start with `internal/server/device.go` for endpoint/state behavior.
+- Then read `internal/server/token.go` around `tokenDeviceCode`, `issueAccessToken`, and `issueIDToken`.
+- Check route/discovery/debug integration in `server.go`, `jwt.go`, and `debug.go`.
+- Validate with:
+  - `go test ./internal/server -run 'TestDevice' -count=1`
+  - `go test ./internal/server -count=1`
+
+### Technical details
+
+Validation commands run:
+
+```bash
+go test ./internal/server -run 'TestDevice' -count=1
+go test ./internal/server -count=1
+```
+
+Both passed after correcting the scope-negative test.

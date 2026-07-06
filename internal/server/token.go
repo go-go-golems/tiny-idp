@@ -57,8 +57,10 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		s.tokenAuthorizationCode(w, r, clientID, c)
 	case "refresh_token":
 		s.tokenRefresh(w, r, clientID, c)
+	case deviceGrantType:
+		s.tokenDeviceCode(w, r, clientID)
 	default:
-		tokenError(w, http.StatusBadRequest, "unsupported_grant_type", "only authorization_code and refresh_token are supported")
+		tokenError(w, http.StatusBadRequest, "unsupported_grant_type", "only authorization_code, refresh_token, and device_code are supported")
 	}
 }
 
@@ -103,43 +105,9 @@ func (s *Server) tokenAuthorizationCode(w http.ResponseWriter, r *http.Request, 
 		time.Sleep(10 * time.Second)
 	}
 
-	access := randomB64(32)
-	s.mu.Lock()
-	s.tokens[access] = accessToken{
-		User:     ac.User,
-		Expires:  now.Add(time.Hour),
-		Scenario: ac.Scenario,
-	}
-	s.mu.Unlock()
+	access := s.issueAccessToken(ac.User, ac.Scenario, now)
 
-	claims := map[string]any{
-		"iss":            s.issuer,
-		"sub":            ac.User.Sub,
-		"aud":            ac.ClientID,
-		"exp":            now.Add(time.Hour).Unix(),
-		"iat":            now.Unix(),
-		"auth_time":      ac.AuthTime.Unix(),
-		"email":          ac.User.Email,
-		"email_verified": true,
-		"name":           ac.User.Name,
-	}
-	if ac.Nonce != "" {
-		claims["nonce"] = ac.Nonce
-	}
-	// Phase 7: merge the scenario's declarative extra claims (groups, roles,
-	// tenant, etc.) before MutateClaims so a mutator can still override.
-	for k, v := range ac.Scenario.ExtraClaims {
-		claims[k] = v
-	}
-	// Phase 7: omit claims the scenario marks as absent (e.g. no-email).
-	for _, k := range ac.Scenario.OmitClaims {
-		delete(claims, k)
-	}
-	if ac.Scenario.MutateClaims != nil {
-		ac.Scenario.MutateClaims(claims, now)
-	}
-
-	idToken, err := s.signJWT(claims, ac.Scenario)
+	idToken, err := s.issueIDToken(ac.User, ac.Scenario, ac.ClientID, ac.Nonce, ac.AuthTime, now)
 	if err != nil {
 		tokenError(w, http.StatusInternalServerError, "server_error", "could not sign token")
 		return
@@ -192,14 +160,7 @@ func (s *Server) tokenRefresh(w http.ResponseWriter, r *http.Request, clientID s
 	}
 
 	now := time.Now()
-	access := randomB64(32)
-	s.mu.Lock()
-	s.tokens[access] = accessToken{
-		User:     rtok.User,
-		Expires:  now.Add(time.Hour),
-		Scenario: rtok.Scenario,
-	}
-	s.mu.Unlock()
+	access := s.issueAccessToken(rtok.User, rtok.Scenario, now)
 
 	// Issue a rotated refresh token.
 	newRT := s.issueRefreshToken(rtok.User, rtok.Scenario, rtok.ClientID, rtok.Scope, now)
@@ -213,6 +174,130 @@ func (s *Server) tokenRefresh(w http.ResponseWriter, r *http.Request, clientID s
 		"scope":         rtok.Scope,
 		"refresh_token": newRT,
 	})
+}
+
+func (s *Server) tokenDeviceCode(w http.ResponseWriter, r *http.Request, clientID string) {
+	deviceCode := r.Form.Get("device_code")
+	now := time.Now()
+
+	s.mu.Lock()
+	grant, ok := s.deviceGrants[deviceCode]
+	s.mu.Unlock()
+
+	if !ok {
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "unknown device code")
+		return
+	}
+	if now.After(grant.Expires) {
+		tokenError(w, http.StatusBadRequest, "expired_token", "device code expired")
+		return
+	}
+	if grant.ClientID != clientID {
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "client_id mismatch")
+		return
+	}
+
+	s.mu.Lock()
+	grant = s.deviceGrants[deviceCode]
+	if !grant.LastPoll.IsZero() && now.Sub(grant.LastPoll) < grant.Interval {
+		grant.SlowDownCount++
+		grant.LastPoll = now
+		s.deviceGrants[deviceCode] = grant
+		s.mu.Unlock()
+		tokenError(w, http.StatusBadRequest, "slow_down", "polling too quickly")
+		return
+	}
+	grant.LastPoll = now
+	s.deviceGrants[deviceCode] = grant
+	s.mu.Unlock()
+
+	switch grant.Status {
+	case devicePending:
+		tokenError(w, http.StatusBadRequest, "authorization_pending", "device authorization is pending")
+		return
+	case deviceDenied:
+		tokenError(w, http.StatusBadRequest, "access_denied", "device authorization denied")
+		return
+	case deviceApproved:
+		// Continue below.
+	default:
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "invalid device grant state")
+		return
+	}
+
+	s.mu.Lock()
+	latest, ok := s.deviceGrants[deviceCode]
+	if ok && latest.Status == deviceApproved && latest.ClientID == clientID {
+		delete(s.deviceGrants, deviceCode)
+		grant = latest
+	}
+	s.mu.Unlock()
+	if !ok || grant.Status != deviceApproved {
+		tokenError(w, http.StatusBadRequest, "invalid_grant", "device grant already used")
+		return
+	}
+
+	access := s.issueAccessToken(grant.User, grant.Scenario, now)
+	resp := map[string]any{
+		"access_token": access,
+		"token_type":   "Bearer",
+		"expires_in":   3600,
+		"scope":        grant.Scope,
+	}
+	if hasScope(grant.Scope, "openid") {
+		idToken, err := s.issueIDToken(grant.User, grant.Scenario, grant.ClientID, "", grant.AuthTime, now)
+		if err != nil {
+			tokenError(w, http.StatusInternalServerError, "server_error", "could not sign token")
+			return
+		}
+		resp["id_token"] = idToken
+	}
+	if hasScope(grant.Scope, "offline_access") {
+		resp["refresh_token"] = s.issueRefreshToken(grant.User, grant.Scenario, grant.ClientID, grant.Scope, now)
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) issueAccessToken(u user.User, sc *scenario.Scenario, now time.Time) string {
+	access := randomB64(32)
+	s.mu.Lock()
+	s.tokens[access] = accessToken{
+		User:     u,
+		Expires:  now.Add(time.Hour),
+		Scenario: sc,
+	}
+	s.mu.Unlock()
+	return access
+}
+
+func (s *Server) issueIDToken(u user.User, sc *scenario.Scenario, clientID, nonce string, authTime, now time.Time) (string, error) {
+	claims := map[string]any{
+		"iss":            s.issuer,
+		"sub":            u.Sub,
+		"aud":            clientID,
+		"exp":            now.Add(time.Hour).Unix(),
+		"iat":            now.Unix(),
+		"auth_time":      authTime.Unix(),
+		"email":          u.Email,
+		"email_verified": true,
+		"name":           u.Name,
+	}
+	if nonce != "" {
+		claims["nonce"] = nonce
+	}
+	for k, v := range sc.ExtraClaims {
+		claims[k] = v
+	}
+	for _, k := range sc.OmitClaims {
+		delete(claims, k)
+	}
+	if sc.MutateClaims != nil {
+		sc.MutateClaims(claims, now)
+	}
+	return s.signJWT(claims, sc)
 }
 
 // issueRefreshToken stores a new refresh token and returns its opaque value.

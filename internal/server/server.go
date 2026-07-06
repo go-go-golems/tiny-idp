@@ -44,6 +44,7 @@ type Server struct {
 	tokens        map[string]accessToken
 	sessions      map[string]*session
 	refreshTokens map[string]refreshToken
+	deviceGrants  map[string]deviceGrant
 }
 
 // authCode is a one-time authorization code awaiting exchange at /token.
@@ -111,6 +112,7 @@ func New(opts Options) (*Server, error) {
 		tokens:        map[string]accessToken{},
 		sessions:      map[string]*session{},
 		refreshTokens: map[string]refreshToken{},
+		deviceGrants:  map[string]deviceGrant{},
 	}, nil
 }
 
@@ -134,6 +136,8 @@ func (s *Server) registerRoutesAt(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(prefix+"/.well-known/openid-configuration", s.discovery)
 	mux.HandleFunc(prefix+"/jwks", s.jwks)
 	mux.HandleFunc(prefix+"/authorize", s.authorize)
+	mux.HandleFunc(prefix+"/device_authorization", s.deviceAuthorization)
+	mux.HandleFunc(prefix+"/device", s.device)
 	mux.HandleFunc(prefix+"/token", s.token)
 	mux.HandleFunc(prefix+"/userinfo", s.userinfo)
 	mux.HandleFunc(prefix+"/end-session", s.endSession)
