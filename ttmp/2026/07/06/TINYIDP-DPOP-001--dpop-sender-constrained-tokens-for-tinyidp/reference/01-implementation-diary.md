@@ -232,7 +232,7 @@ The validation included the full repository test suite, a CLI build, help render
 
 **Inferred user intent:** The user wants DPoP to be usable by future local-test clients and understandable from the help system, not only present in source code.
 
-**Commit (code):** pending — DPoP docs and validation slice.
+**Commit (code):** 25b0d9a136fe3a930f449df09887133e49c5a563 — "docs: document tinyidp dpop support"
 
 ### What I did
 

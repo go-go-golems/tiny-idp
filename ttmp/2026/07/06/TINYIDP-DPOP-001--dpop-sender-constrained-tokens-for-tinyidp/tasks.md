@@ -71,6 +71,6 @@ WhenToUse: Use while implementing or reviewing tinyidp DPoP support.
 - [x] Run manual DPoP curl or Go smoke
 - [x] Update diary with exact validation output
 - [x] Run `docmgr doctor --ticket TINYIDP-DPOP-001 --stale-after 30`
-- [ ] Commit implementation and docs
+- [x] Commit implementation and docs
 - [ ] Upload final implementation bundle to reMarkable
 - [ ] Close ticket
