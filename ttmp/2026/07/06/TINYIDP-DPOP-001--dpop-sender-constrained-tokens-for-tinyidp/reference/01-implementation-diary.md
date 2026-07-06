@@ -312,3 +312,70 @@ $ go run ./cmd/tinyidp help tutorial-dpop >/tmp/tinyidp-dpop-help.txt
 $ go run /tmp/tinyidp_dpop_smoke.go
 ok dpop smoke DPoP userinfo {"email":"alice@example.test","email_verified":true,"name":"alice","sub":"user-NfTfZYYJ1idFA58J4RDISA"}
 ```
+
+## Step 4: Upload final DPoP implementation bundle and close the ticket
+
+This step published the completed DPoP ticket package to reMarkable and closed `TINYIDP-DPOP-001`. The final bundle includes the ticket index, design guide, implementation diary, task list, and changelog.
+
+The ticket is now in the same state as the device authorization ticket: implementation complete, docs complete, validation recorded, and review artifacts available both in git and on reMarkable.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Finish DPoP ticket bookkeeping and publish the final implementation package.
+
+**Inferred user intent:** The user wants the DPoP implementation to be fully ticketed, uploaded, and closed after validation.
+
+**Commit (code):** pending — closure bookkeeping.
+
+### What I did
+
+- Uploaded `TINYIDP-DPOP-001 final implementation.pdf` to `/ai/2026/07/06/TINYIDP-DPOP-001`.
+- Checked the final upload task.
+- Closed `TINYIDP-DPOP-001`.
+- Reran `docmgr doctor` after closure.
+
+### Why
+
+- The final upload makes the completed design and implementation diary available for offline review.
+- Closing the ticket records that implementation, validation, docs, and publishing are complete.
+
+### What worked
+
+- `remarquee upload bundle ... --non-interactive` succeeded.
+- `docmgr ticket close --ticket TINYIDP-DPOP-001` succeeded.
+- `docmgr doctor --ticket TINYIDP-DPOP-001 --stale-after 30` passed after closure.
+
+### What didn't work
+
+- No failures occurred in this step.
+
+### What I learned
+
+- The earlier design upload failed once because a literal `\n` in the quoted user prompt was interpreted by the PDF toolchain as a LaTeX command. Replacing it with an actual line break fixed the bundle rendering.
+
+### What was tricky to build
+
+- The important ordering was to upload the final implementation bundle after the validation and documentation commits, then close the ticket and run doctor so the ticket state is consistent.
+
+### What warrants a second pair of eyes
+
+- Confirm whether both the design-only and final implementation PDFs should remain in the same reMarkable folder.
+
+### What should be done in the future
+
+- If DPoP review changes behavior, add a follow-up diary/changelog entry rather than reopening the closed ticket unless the scope changes substantially.
+
+### Code review instructions
+
+- Review the final DPoP commit sequence and the reMarkable bundle path.
+- Use the ticket's design guide and diary as the implementation narrative.
+
+### Technical details
+
+Upload output:
+
+```text
+OK: uploaded TINYIDP-DPOP-001 final implementation.pdf -> /ai/2026/07/06/TINYIDP-DPOP-001
+```

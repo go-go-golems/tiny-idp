@@ -1,7 +1,7 @@
 ---
 Title: DPoP sender-constrained tokens for tinyidp
 Ticket: TINYIDP-DPOP-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - auth
@@ -14,10 +14,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-06T17:59:21.474556135-04:00
+LastUpdated: 2026-07-06T18:17:09.731160173-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # DPoP sender-constrained tokens for tinyidp
 
