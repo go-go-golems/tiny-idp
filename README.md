@@ -165,11 +165,18 @@ go run ./cmd/tinyidp help developer-guide                  # implementation guid
 go run ./cmd/tinyidp help tutorial-first-rp-login          # first RP login
 go run ./cmd/tinyidp help tutorial-seeded-users-and-claims # users, passwords, claims
 go run ./cmd/tinyidp help tutorial-device-authorization    # OAuth device-code login
+go run ./cmd/tinyidp help tutorial-dpop                    # DPoP sender-constrained tokens
 go run ./cmd/tinyidp help tutorial-xgoja-personal-inbox    # xgoja Steps 06/07/08
 go run ./cmd/tinyidp help tutorial                         # guided scenario walkthrough
 go run ./cmd/tinyidp help scenarios                        # the scenario catalog
 go run ./cmd/tinyidp help reference                        # config, clients, endpoints
 ```
+
+## DPoP sender-constrained tokens
+
+tinyidp supports DPoP-bound access tokens for local and integration tests. If a `/token` request includes a valid `DPoP` proof JWT, tinyidp stores the proof key thumbprint with the issued opaque access token and returns `token_type: DPoP`. Calling `/userinfo` with that token then requires `Authorization: DPoP <token>` plus a fresh proof signed by the same key and containing the correct `ath` hash of the access token.
+
+Bearer behavior remains unchanged when no `DPoP` header is present. Refresh tokens issued from a DPoP-bound flow are bound to the same key and require matching DPoP proofs during rotation. See `tinyidp help tutorial-dpop`.
 
 ## Device authorization grant
 

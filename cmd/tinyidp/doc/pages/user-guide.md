@@ -29,7 +29,7 @@ Use `tinyidp help developer-guide` if you want to modify tinyidp itself. Use `ti
 
 ## What tinyidp provides
 
-tinyidp implements the OIDC authorization-code flow and OAuth device-code flow for local development and integration tests. It serves discovery, JWKS, authorize, device authorization, token, userinfo, logout, health, and debug endpoints. It stores all runtime state in memory and generates signing keys at startup.
+tinyidp implements the OIDC authorization-code flow, OAuth device-code flow, and opt-in DPoP sender-constrained tokens for local development and integration tests. It serves discovery, JWKS, authorize, device authorization, token, userinfo, logout, health, and debug endpoints. It stores all runtime state in memory and generates signing keys at startup.
 
 The default server is intentionally local:
 
@@ -161,6 +161,14 @@ Use the raw `claims` map for unusual shapes:
 
 If the same claim name appears in a generic field and in `claims`, the explicit `claims` value wins. `omit_claims` deletes claims from ID token and userinfo after claims are assembled.
 
+## Use DPoP-bound access tokens
+
+DPoP lets a client bind an access token to a proof key. Include a valid `DPoP` proof JWT on the `/token` request to receive `token_type: DPoP`. The resulting access token must be used at `/userinfo` with `Authorization: DPoP <token>` and another proof signed by the same key.
+
+The `/userinfo` proof must include `ath`, the base64url SHA-256 hash of the access token. tinyidp also rejects replayed proof `jti` values. Existing bearer flows continue to work when no `DPoP` header is present.
+
+See `tinyidp help tutorial-dpop` for the full request shape and implementation limits.
+
 ## Use device authorization for CLI or constrained-device tests
 
 Device authorization lets a non-browser client ask the user to approve in a browser. Start the flow with:
@@ -218,5 +226,6 @@ Use `/debug/jwks-mode` to simulate JWKS failures:
 - `tinyidp help tutorial-first-rp-login` — walk through the full browser login flow.
 - `tinyidp help tutorial-seeded-users-and-claims` — build deterministic users and claims.
 - `tinyidp help tutorial-device-authorization` — walk through device-code approval and polling.
+- `tinyidp help tutorial-dpop` — obtain and use DPoP-bound access tokens.
 - `tinyidp help tutorial-xgoja-personal-inbox` — use tinyidp with the xgoja personal-inbox examples.
 - `tinyidp help reference` — complete lookup reference.

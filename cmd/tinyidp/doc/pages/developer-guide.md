@@ -72,6 +72,7 @@ type Server struct {
     sessions      map[string]*session
     refreshTokens map[string]refreshToken
     deviceGrants  map[string]deviceGrant
+    dpopReplay    map[string]time.Time
 }
 ```
 
@@ -161,6 +162,21 @@ This supports issuer URLs such as:
 The path prefix is a routing concern only. Do not use path-based issuers to infer provider-specific claim behavior. Claims are defined by scenarios and seeded users.
 
 When changing routing, test discovery, authorize, device authorization, device approval, token, userinfo, JWKS, logout, health, and debug routes under both root and path prefixes.
+
+## DPoP workflow
+
+DPoP support lives in `internal/server/dpop.go`, with call sites in `token.go` and `userinfo.go`. The proof validator parses compact JWTs, validates the JOSE header, verifies ES256 or RS256 signatures, computes the RFC 7638 JWK thumbprint, checks `htm`, `htu`, `iat`, `jti`, optional `ath`, and records proof IDs in the replay cache.
+
+Implementation boundaries:
+
+- `accessToken.DPoPJKT` stores the proof key thumbprint for DPoP-bound opaque access tokens.
+- `refreshToken.DPoPJKT` preserves the binding across refresh-token rotation.
+- `Server.dpopReplay` stores proof replay keys and expires them opportunistically.
+- Token requests without `DPoP` preserve bearer behavior.
+- Token requests with valid `DPoP` proofs return `token_type: DPoP` and bind the issued token metadata.
+- `/userinfo` requires `Authorization: DPoP` and an `ath` proof only when the access token is DPoP-bound.
+
+When changing this flow, test both the proof validator and the HTTP endpoints. The validator catches cryptographic and request-binding mistakes; the endpoint tests prove the metadata is used correctly.
 
 ## Device authorization workflow
 
@@ -259,6 +275,8 @@ For xgoja integration, use the personal-inbox tutorial smokes in the `go-go-goja
 | Creating a session before credential validation. | Failed login can leave valid auth state behind. | Validate first, then create session and code. |
 | Reusing an approved device code. | Device codes are bearer credentials and must be one-time use. | Delete the grant during successful token exchange. |
 | Testing device polling with real sleeps. | It slows the suite and makes tests flaky. | Mutate `LastPoll`/`Expires` under the server mutex. |
+| Accepting a DPoP-bound token as bearer. | It removes the sender constraint the token was issued with. | Require `Authorization: DPoP` and a matching proof. |
+| Forgetting `ath` on resource proofs. | The proof is not bound to the access token value. | Require `ath` for `/userinfo` when `DPoPJKT` is set. |
 
 ## See also
 

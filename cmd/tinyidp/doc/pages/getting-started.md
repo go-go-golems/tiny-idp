@@ -34,8 +34,8 @@ tokens, wrong audiences, broken userinfo, missing JWKS keys, and more.
 Beyond the happy path it also models the behaviors a real IdP exposes:
 multiple clients (public, confidential, and permissive), IdP sessions
 with `prompt` and `max_age`, refresh tokens with rotation, multi-key
-JWKS, RP-initiated logout, and the OAuth Device Authorization Grant for
-CLI or constrained-device tests.
+JWKS, RP-initiated logout, the OAuth Device Authorization Grant for
+CLI or constrained-device tests, and DPoP sender-constrained access tokens.
 
 ## What it is not
 
@@ -135,6 +135,7 @@ state without adding log statements.
 - `tinyidp help tutorial-first-rp-login` — a focused first relying-party login walkthrough.
 - `tinyidp help tutorial-seeded-users-and-claims` — deterministic Alice/Bob fixtures with passwords and claims.
 - `tinyidp help tutorial-device-authorization` — CLI-friendly device-code approval and polling.
+- `tinyidp help tutorial-dpop` — DPoP proof JWTs and sender-constrained userinfo calls.
 - `tinyidp help tutorial-xgoja-personal-inbox` — xgoja personal-inbox Steps 06, 07, and 08 with root and path issuers.
 - `tinyidp help tutorial` — a guided walkthrough that exercises the happy path and then failure scenarios.
 - `tinyidp help scenarios` — the full catalog of scenarios and the model behind them.

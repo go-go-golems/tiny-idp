@@ -14,6 +14,12 @@ Owners: []
 RelatedFiles:
     - Path: /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DPOP-001--dpop-sender-constrained-tokens-for-tinyidp/design-doc/01-dpop-design-and-implementation-guide.md
       Note: Primary DPoP design and implementation guide created in Step 1
+    - Path: repo://README.md
+      Note: DPoP overview and help link
+    - Path: repo://cmd/tinyidp/doc/pages/reference.md
+      Note: DPoP endpoint behavior reference
+    - Path: repo://cmd/tinyidp/doc/pages/tutorial-dpop.md
+      Note: DPoP usage tutorial
     - Path: repo://internal/server/dpop.go
       Note: DPoP proof parsing, verification, thumbprints, ath, and replay cache
     - Path: repo://internal/server/dpop_test.go
@@ -29,6 +35,7 @@ LastUpdated: 2026-07-06T00:00:00-04:00
 WhatFor: Read before resuming TINYIDP-DPOP-001 or reviewing DPoP implementation decisions.
 WhenToUse: Use when implementing DPoP proof validation, token binding, replay protection, docs, or smoke tests.
 ---
+
 
 
 # Diary
@@ -134,7 +141,7 @@ The implementation keeps existing bearer behavior intact. A token request withou
 
 **Inferred user intent:** The user wants working sender-constrained token support, not only a DPoP design package.
 
-**Commit (code):** pending — DPoP implementation slice.
+**Commit (code):** 302046535251c8ebc4348a2202e3fcf61c4e2fae — "feat: add dpop-bound tokens"
 
 ### What I did
 
@@ -209,4 +216,99 @@ ok  	github.com/manuel/tinyidp/internal/server	0.891s
 
 $ go test ./internal/server -count=1
 ok  	github.com/manuel/tinyidp/internal/server	17.249s
+```
+
+## Step 3: Document and validate DPoP support
+
+This step added the user-facing DPoP documentation and completed the first full validation pass. The README, reference, user guide, developer guide, and a new `tutorial-dpop` Glazed help page now explain how tinyidp issues and enforces DPoP-bound opaque access tokens.
+
+The validation included the full repository test suite, a CLI build, help rendering, and a manual Go smoke that started tinyidp, performed an authorization-code login, exchanged the code with a DPoP proof, and called `/userinfo` with a matching `ath` proof.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Finish the DPoP implementation by documenting how to use and review it, then validate it end-to-end.
+
+**Inferred user intent:** The user wants DPoP to be usable by future local-test clients and understandable from the help system, not only present in source code.
+
+**Commit (code):** pending — DPoP docs and validation slice.
+
+### What I did
+
+- Added `cmd/tinyidp/doc/pages/tutorial-dpop.md`.
+- Updated README with a DPoP overview and help link.
+- Updated `getting-started.md`, `user-guide.md`, `developer-guide.md`, `reference.md`, and `tutorial.md`.
+- Ran the full test suite and build.
+- Rendered `tinyidp help tutorial-dpop`.
+- Ran a manual Go smoke from `/tmp/tinyidp_dpop_smoke.go` against a live tinyidp server.
+
+### Why
+
+- DPoP requires clients to understand proof JWT structure, `ath`, token type, and replay behavior. The help page gives enough protocol shape to write a small client without reading the implementation.
+- The smoke validates the real HTTP boundary rather than only in-process tests.
+
+### What worked
+
+- Full repository tests passed.
+- CLI build passed.
+- The help page rendered successfully.
+- The manual smoke printed a DPoP token response and a successful userinfo body for Alice.
+
+### What didn't work
+
+- No new failures occurred in this step.
+
+### What I learned
+
+- The manual smoke can post directly to `/authorize` because tinyidp's local login form has no CSRF/session prerequisite. That keeps DPoP smoke setup focused on proof generation and token use.
+- The help renderer wraps long headings and lines, but the content remains usable.
+
+### What was tricky to build
+
+- The documentation needed to be precise about what is and is not protected. DPoP binds access-token use and refresh-token rotation; it does not replace authorization-code, device-code, or seeded-user login validation.
+- The smoke had to compute `ath` exactly as the server does: raw SHA-256 over the opaque access-token string, then unpadded base64url encoding.
+
+### What warrants a second pair of eyes
+
+- Review whether the tutorial should include a checked-in proof-generation helper or keep proof generation as client-owned.
+- Review whether `tutorial-dpop` should be top-level in the help listing or remain a linked tutorial.
+
+### What should be done in the future
+
+- Consider promoting the manual smoke into a checked-in script if DPoP becomes part of release validation.
+- Consider adding nonce support in a future ticket.
+
+### Code review instructions
+
+- Start with `cmd/tinyidp/doc/pages/tutorial-dpop.md` for usage semantics.
+- Then compare the help text against `internal/server/dpop.go`, `token.go`, and `userinfo.go`.
+- Re-run:
+  - `GOWORK=off go test ./... -count=1`
+  - `GOWORK=off go build ./cmd/tinyidp`
+  - `go run ./cmd/tinyidp help tutorial-dpop`
+
+### Technical details
+
+Validation output:
+
+```text
+$ GOWORK=off go test ./... -count=1
+?   	github.com/manuel/tinyidp/cmd/tinyidp	[no test files]
+?   	github.com/manuel/tinyidp/cmd/tinyidp/doc	[no test files]
+ok  	github.com/manuel/tinyidp/internal/client	0.023s
+ok  	github.com/manuel/tinyidp/internal/cmds	0.020s
+ok  	github.com/manuel/tinyidp/internal/scenario	0.005s
+ok  	github.com/manuel/tinyidp/internal/sections/oidc	0.005s
+ok  	github.com/manuel/tinyidp/internal/server	10.679s
+ok  	github.com/manuel/tinyidp/internal/user	0.003s
+
+$ GOWORK=off go build ./cmd/tinyidp
+# passed with no output
+
+$ go run ./cmd/tinyidp help tutorial-dpop >/tmp/tinyidp-dpop-help.txt
+# rendered successfully
+
+$ go run /tmp/tinyidp_dpop_smoke.go
+ok dpop smoke DPoP userinfo {"email":"alice@example.test","email_verified":true,"name":"alice","sub":"user-NfTfZYYJ1idFA58J4RDISA"}
 ```

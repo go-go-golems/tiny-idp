@@ -32,3 +32,12 @@ Implemented DPoP proof validation, opaque token binding, refresh-token binding, 
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/dpop.go — Core DPoP implementation
 - /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/internal/server/dpop_test.go — DPoP test coverage
 
+
+## 2026-07-06
+
+Documented DPoP usage and validated tests, build, help rendering, and a manual Go smoke.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/cmd/tinyidp/doc/pages/tutorial-dpop.md — DPoP tutorial
+

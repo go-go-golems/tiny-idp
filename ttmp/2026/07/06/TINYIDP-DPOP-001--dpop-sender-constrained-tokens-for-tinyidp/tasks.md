@@ -60,17 +60,17 @@ WhenToUse: Use while implementing or reviewing tinyidp DPoP support.
 - [x] Preserve bearer userinfo behavior for unbound access tokens
 - [x] Add token endpoint DPoP tests
 - [x] Add userinfo DPoP tests
-- [ ] Add device-code DPoP test coverage
-- [ ] Update README
-- [ ] Update Glazed reference docs
-- [ ] Add or update DPoP tutorial/help page
+- [x] Add device-code DPoP test coverage
+- [x] Update README
+- [x] Update Glazed reference docs
+- [x] Add or update DPoP tutorial/help page
 - [x] Run `go test ./internal/server -run 'TestDPoP|TestDevice' -count=1`
-- [ ] Run `GOWORK=off go test ./... -count=1`
-- [ ] Run `GOWORK=off go build ./cmd/tinyidp`
-- [ ] Smoke-render DPoP help page
-- [ ] Run manual DPoP curl or Go smoke
-- [ ] Update diary with exact validation output
-- [ ] Run `docmgr doctor --ticket TINYIDP-DPOP-001 --stale-after 30`
+- [x] Run `GOWORK=off go test ./... -count=1`
+- [x] Run `GOWORK=off go build ./cmd/tinyidp`
+- [x] Smoke-render DPoP help page
+- [x] Run manual DPoP curl or Go smoke
+- [x] Update diary with exact validation output
+- [x] Run `docmgr doctor --ticket TINYIDP-DPOP-001 --stale-after 30`
 - [ ] Commit implementation and docs
 - [ ] Upload final implementation bundle to reMarkable
 - [ ] Close ticket

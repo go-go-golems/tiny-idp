@@ -213,6 +213,25 @@ If `--issuer` includes a path component, tinyidp registers the same endpoints un
 
 ## Behaviors
 
+### DPoP sender-constrained tokens
+
+tinyidp implements opt-in DPoP sender-constrained access tokens. If a token request includes a valid `DPoP` proof JWT, tinyidp computes the proof JWK thumbprint, stores it beside the opaque access token, and returns `token_type: DPoP`. If the request omits `DPoP`, tinyidp returns the existing bearer response.
+
+Discovery advertises:
+
+    "dpop_signing_alg_values_supported": ["ES256", "RS256"]
+
+DPoP behavior:
+
+- Token endpoint proofs must use `typ: dpop+jwt`, `alg: ES256` or `RS256`, a public JWK, `jti`, `htm`, `htu`, and fresh `iat`.
+- `/userinfo` calls for DPoP-bound tokens must use `Authorization: DPoP <token>` and a fresh `DPoP` proof whose key matches the token binding.
+- `/userinfo` proofs must include `ath`, the base64url SHA-256 hash of the access token.
+- Reusing a proof `jti` with the same key is rejected by the in-memory replay cache.
+- Refresh tokens issued from DPoP-bound flows are bound to the same key and require matching DPoP proofs during rotation.
+- Nonce support is not implemented in the first DPoP release.
+
+For a guided explanation, see `tinyidp help tutorial-dpop`.
+
 ### Device Authorization Grant
 
 tinyidp implements the OAuth 2.0 Device Authorization Grant for local and integration-test clients. A device starts with `POST /device_authorization`, then polls `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` while the user approves or denies the request in a browser at `/device`.
