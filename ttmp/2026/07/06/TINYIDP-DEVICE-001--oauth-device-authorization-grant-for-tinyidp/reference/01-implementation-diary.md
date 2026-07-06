@@ -315,3 +315,87 @@ ok
 started CTQY-T96M
 ok device curl smoke ['access_token', 'expires_in', 'id_token', 'refresh_token', 'scope', 'token_type']
 ```
+
+## Step 4: Close ticket and upload final implementation bundle
+
+This step closed the docmgr ticket after all implementation tasks were complete, reran ticket hygiene checks, and uploaded a final implementation bundle to reMarkable. The bundle includes the ticket index, original design guide, implementation diary, task checklist, and changelog.
+
+This makes the completed implementation package available alongside the earlier design-only upload, so review can happen from the repository or from the reMarkable folder.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Finish the bookkeeping after implementation and publish the final ticket state.
+
+**Inferred user intent:** The user wants the completed ticket to be closed, validated, committed, and available as a reviewable document bundle.
+
+**Commit (code):** 735f0ba6e5e780617e1071b41a7b484a7bbe84f6 — "docs: close device authorization ticket"
+
+### What I did
+
+- Checked the final implementation task.
+- Closed `TINYIDP-DEVICE-001` with `docmgr ticket close`.
+- Ran `docmgr doctor --ticket TINYIDP-DEVICE-001 --stale-after 30` successfully.
+- Uploaded a final bundle to reMarkable at `/ai/2026/07/06/TINYIDP-DEVICE-001`.
+
+### Why
+
+- Closing the ticket records that implementation, docs, validation, and review material are complete.
+- The final upload keeps the completed diary and task/changelog state with the design guide.
+
+### What worked
+
+- `docmgr doctor` passed after closing the ticket.
+- `remarquee upload bundle --dry-run ... --non-interactive` succeeded.
+- `remarquee upload bundle ... --non-interactive` uploaded `TINYIDP-DEVICE-001 final implementation.pdf`.
+
+### What didn't work
+
+- No failures occurred in this step.
+
+### What I learned
+
+- Using a distinct bundle name avoids overwriting the earlier design-only upload while keeping both files in the same remote ticket folder.
+
+### What was tricky to build
+
+- The main bookkeeping detail was ordering: close/check/commit first, then upload the final document state so the reMarkable artifact reflects the closed ticket rather than the pre-close version.
+
+### What warrants a second pair of eyes
+
+- Confirm whether the final upload should replace the design-only bundle in the future or whether keeping both is preferable.
+
+### What should be done in the future
+
+- If the PR is updated after review, add a follow-up changelog entry rather than reopening this implementation diary unless behavior changes.
+
+### Code review instructions
+
+- Check the final commit sequence:
+  - `f896475 feat: add native device authorization grant`
+  - `10ca17f docs: document tinyidp device authorization`
+  - `735f0ba docs: close device authorization ticket`
+- Review the reMarkable upload path if using the PDF bundle for offline review.
+
+### Technical details
+
+Upload commands:
+
+```bash
+remarquee upload bundle --dry-run ... \
+  --name "TINYIDP-DEVICE-001 final implementation" \
+  --remote-dir "/ai/2026/07/06/TINYIDP-DEVICE-001" \
+  --toc-depth 2 --non-interactive
+
+remarquee upload bundle ... \
+  --name "TINYIDP-DEVICE-001 final implementation" \
+  --remote-dir "/ai/2026/07/06/TINYIDP-DEVICE-001" \
+  --toc-depth 2 --non-interactive
+```
+
+Upload output:
+
+```text
+OK: uploaded TINYIDP-DEVICE-001 final implementation.pdf -> /ai/2026/07/06/TINYIDP-DEVICE-001
+```

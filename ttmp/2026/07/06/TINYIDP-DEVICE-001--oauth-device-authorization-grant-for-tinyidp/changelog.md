@@ -50,3 +50,12 @@ Documented native device authorization and validated the full repository with te
 
 Ticket closed
 
+
+## 2026-07-06
+
+Uploaded final implementation bundle to reMarkable at /ai/2026/07/06/TINYIDP-DEVICE-001.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-06-12/goja-express-auth/2026-06-22--mock-oidc-idp/ttmp/2026/07/06/TINYIDP-DEVICE-001--oauth-device-authorization-grant-for-tinyidp/reference/01-implementation-diary.md — Records final reMarkable upload
+
