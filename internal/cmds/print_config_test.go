@@ -66,6 +66,7 @@ func TestPrintConfigEmitsResolvedDefaults(t *testing.T) {
 	assert.Equal(t, "127.0.0.1:5556", rowVal(row, "addr"))
 	assert.Equal(t, "dev-client", rowVal(row, "client_id"))
 	assert.Equal(t, "", rowVal(row, "users_file"))
+	assert.Equal(t, "mock", rowVal(row, "engine"))
 }
 
 // TestPrintConfigReflectsEnvOverride verifies that values resolved above

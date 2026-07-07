@@ -76,3 +76,10 @@ type Store interface {
 	SessionStore
 	KeyStore
 }
+
+// PersistentReporter lets startup validation distinguish production-capable
+// durable stores from development-only stores without depending on concrete
+// package names.
+type PersistentReporter interface {
+	Persistent() bool
+}

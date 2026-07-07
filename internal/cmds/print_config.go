@@ -99,6 +99,7 @@ func (c *PrintConfigCommand) RunIntoGlazeProcessor(
 		types.MRP("client_secret", cfg.ClientSecret),
 		types.MRP("redirect_uris", cfg.RedirectURIs),
 		types.MRP("users_file", cfg.UsersFile),
+		types.MRP("engine", cfg.Engine),
 	)
 	return gp.AddRow(ctx, row)
 }

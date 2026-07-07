@@ -363,3 +363,7 @@ func (s *Store) RetireSigningKey(_ context.Context, kid string) error {
 }
 
 func EqualHash(a, b []byte) bool { return bytes.Equal(a, b) }
+
+// Persistent reports whether the store survives process restarts. Memory never
+// does, so production validation rejects it unless tests explicitly override.
+func (s *Store) Persistent() bool { return false }

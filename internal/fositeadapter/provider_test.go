@@ -1,0 +1,142 @@
+package fositeadapter_test
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/manuel/tinyidp/internal/domain"
+	"github.com/manuel/tinyidp/internal/fositeadapter"
+	"github.com/manuel/tinyidp/internal/keys"
+	"github.com/manuel/tinyidp/internal/store/memory"
+)
+
+func TestStrictAuthorizationCodeFlow(t *testing.T) {
+	ctx := context.Background()
+	secretKey := []byte("test-secret-key")
+	st := memory.New()
+	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://rp.example/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+
+	verifier := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	challenge := s256(verifier)
+	form := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {"spa"},
+		"redirect_uri":          {"http://rp.example/callback"},
+		"scope":                 {"openid profile email offline_access"},
+		"state":                 {"state-1"},
+		"nonce":                 {"nonce-1"},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+		"login":                 {"alice"},
+	}
+	noRedirect := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noRedirect.Post(ts.URL+"/authorize", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("authorize status = %d", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	cb, err := url.Parse(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := cb.Query().Get("code")
+	if code == "" || cb.Query().Get("state") != "state-1" {
+		t.Fatalf("bad callback location: %s", loc)
+	}
+
+	tokResp, err := http.PostForm(ts.URL+"/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {"spa"},
+		"code":          {code},
+		"redirect_uri":  {"http://rp.example/callback"},
+		"code_verifier": {verifier},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tokResp.Body.Close()
+	if tokResp.StatusCode != http.StatusOK {
+		t.Fatalf("token status = %d", tokResp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(tokResp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["id_token"] == "" || body["access_token"] == "" || body["refresh_token"] == "" {
+		t.Fatalf("missing token fields: %#v", body)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+body["access_token"].(string))
+	uiResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer uiResp.Body.Close()
+	if uiResp.StatusCode != http.StatusOK {
+		t.Fatalf("userinfo status = %d", uiResp.StatusCode)
+	}
+	var claims map[string]any
+	if err := json.NewDecoder(uiResp.Body).Decode(&claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims["sub"] != "user-alice" || claims["email"] != "alice@example.test" {
+		t.Fatalf("bad userinfo: %#v", claims)
+	}
+}
+
+func TestStrictProviderHasNoDebugRoute(t *testing.T) {
+	st := memory.New()
+	key, _ := keys.GenerateRSA("kid-1", time.Now())
+	_ = st.CreateSigningKey(context.Background(), key)
+	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/debug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("/debug status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func s256(v string) string {
+	sum := sha256.Sum256([]byte(v))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}

@@ -65,6 +65,10 @@ func NewSection() (schema.Section, error) {
 				fields.WithDefault(""),
 				fields.WithHelp("Optional YAML/JSON file with seeded users and claims"),
 			),
+			fields.New("engine", fields.TypeString,
+				fields.WithDefault("mock"),
+				fields.WithHelp("Provider engine: mock for local failure simulation, fosite for strict production-like behavior"),
+			),
 		),
 	)
 }

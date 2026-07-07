@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-go-golems/glazed/pkg/cli"
 	"github.com/go-go-golems/glazed/pkg/cmds"
@@ -16,9 +17,13 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/manuel/tinyidp/internal/client"
+	"github.com/manuel/tinyidp/internal/domain"
+	"github.com/manuel/tinyidp/internal/fositeadapter"
+	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/sections/oidc"
 	"github.com/manuel/tinyidp/internal/server"
+	"github.com/manuel/tinyidp/internal/store/memory"
 )
 
 // ServeCommand runs the mock OIDC IdP HTTP server. It implements
@@ -86,22 +91,40 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 		return err
 	}
 
-	srv, err := server.New(server.Options{
-		Issuer:   cfg.Issuer,
-		Clients:  buildClientRegistry(cfg),
-		Registry: registry,
-	})
-	if err != nil {
-		return fmt.Errorf("build server: %w", err)
+	mux := http.NewServeMux()
+	clientRegistry := buildClientRegistry(cfg)
+	clientCount := len(clientRegistry.All())
+	engine := cfg.Engine
+	if engine == "" {
+		engine = "mock"
 	}
 
-	mux := http.NewServeMux()
-	srv.RegisterRoutes(mux)
+	switch engine {
+	case "mock":
+		srv, err := server.New(server.Options{
+			Issuer:   cfg.Issuer,
+			Clients:  clientRegistry,
+			Registry: registry,
+		})
+		if err != nil {
+			return fmt.Errorf("build server: %w", err)
+		}
+		srv.RegisterRoutes(mux)
+	case "fosite":
+		strict, err := buildStrictProvider(cfg, clientRegistry, registry)
+		if err != nil {
+			return fmt.Errorf("build strict engine: %w", err)
+		}
+		mux.Handle("/", strict.Handler())
+	default:
+		return fmt.Errorf("unknown engine %q (want mock or fosite)", engine)
+	}
 
 	log.Info().
 		Str("addr", cfg.Addr).
-		Str("issuer", srv.Issuer()).
-		Int("clients", len(srv.Clients().All())).
+		Str("issuer", cfg.Issuer).
+		Str("engine", engine).
+		Int("clients", clientCount).
 		Msg("tinyidp listening")
 
 	errCh := make(chan error, 1)
@@ -161,4 +184,96 @@ func buildScenarioRegistry(cfg *oidc.Settings) (*scenario.Registry, error) {
 	}
 	r.RegisterAll(seeded)
 	return r, nil
+}
+
+var strictDevSecretKey = []byte("tinyidp-strict-dev-secret-key")
+
+func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios *scenario.Registry) (*fositeadapter.Provider, error) {
+	st := memory.New()
+	for _, c := range clients.All() {
+		dc := domain.Client{
+			ID:                     c.ID,
+			Public:                 c.Secret == "",
+			RedirectURIs:           c.RedirectURIs,
+			PostLogoutRedirectURIs: c.PostLogoutRedirectURIs,
+			AllowedScopes:          c.AllowedScopes,
+			RequirePKCE:            true,
+			AccessTokenTTL:         time.Hour,
+			IDTokenTTL:             time.Hour,
+			RefreshTokenTTL:        24 * time.Hour,
+		}
+		if len(dc.AllowedScopes) == 0 {
+			dc.AllowedScopes = []string{"openid", "profile", "email", "offline_access"}
+		}
+		if c.Secret != "" {
+			dc.Public = false
+			dc.SecretHash = domain.HashSecret(strictDevSecretKey, c.Secret)
+		}
+		if err := st.PutClient(context.Background(), dc); err != nil {
+			return nil, err
+		}
+	}
+	for _, sc := range scenarios.All() {
+		u := domain.User{ID: sc.User.Sub, Sub: sc.User.Sub, Email: sc.User.Email, Name: sc.User.Name, EmailVerified: true}
+		applyScenarioClaims(&u, sc.ExtraClaims)
+		if err := st.PutUser(context.Background(), sc.Name, u); err != nil {
+			return nil, err
+		}
+	}
+	key, err := keys.GenerateRSA("strict-dev-key-1", time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if err := st.CreateSigningKey(context.Background(), key); err != nil {
+		return nil, err
+	}
+	return fositeadapter.NewProvider(fositeadapter.Options{Issuer: cfg.Issuer, Store: st, SecretKey: strictDevSecretKey, Mode: domain.DevMode})
+}
+
+func applyScenarioClaims(u *domain.User, claims map[string]any) {
+	for k, v := range claims {
+		switch k {
+		case "email_verified":
+			if b, ok := v.(bool); ok {
+				u.EmailVerified = b
+			}
+		case "preferred_username":
+			if s, ok := v.(string); ok {
+				u.PreferredUsername = s
+			}
+		case "tenant":
+			if s, ok := v.(string); ok {
+				u.Tenant = s
+			}
+		case "locale":
+			if s, ok := v.(string); ok {
+				u.Locale = s
+			}
+		case "groups":
+			u.Groups = stringSlice(v)
+		case "roles":
+			u.Roles = stringSlice(v)
+		case "name":
+			if s, ok := v.(string); ok {
+				u.Name = s
+			}
+		}
+	}
+}
+
+func stringSlice(v any) []string {
+	switch x := v.(type) {
+	case []string:
+		return append([]string(nil), x...)
+	case []any:
+		out := make([]string, 0, len(x))
+		for _, item := range x {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

@@ -1,11 +1,13 @@
 package keys
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -71,3 +73,27 @@ func ThumbprintJWK(j JWK) string {
 }
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+
+// SignJWT signs a compact JWT with RS256 using the given signing key.
+func SignJWT(key domain.SigningKey, claims map[string]any) (string, error) {
+	priv, err := ParseRSAPrivateKey(key)
+	if err != nil {
+		return "", err
+	}
+	header := map[string]any{"typ": "JWT", "alg": "RS256", "kid": key.ID}
+	h, err := json.Marshal(header)
+	if err != nil {
+		return "", err
+	}
+	c, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+	input := b64(h) + "." + b64(c)
+	sum := sha256.Sum256([]byte(input))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, sum[:])
+	if err != nil {
+		return "", err
+	}
+	return input + "." + b64(sig), nil
+}
