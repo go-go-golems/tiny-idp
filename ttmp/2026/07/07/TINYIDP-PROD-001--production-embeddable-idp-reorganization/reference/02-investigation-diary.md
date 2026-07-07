@@ -12,6 +12,8 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://docs/conformance.md
+      Note: Step 13 conformance documentation
     - Path: repo://go.mod
       Note: Step 8 dependency change
     - Path: repo://internal/audit/audit.go
@@ -20,6 +22,8 @@ RelatedFiles:
       Note: Phase 7 implementation recorded in diary
     - Path: repo://internal/domain/types.go
       Note: Phase 1 implementation recorded in diary
+    - Path: repo://internal/fositeadapter/audit_reason.go
+      Note: Step 13 audit hardening
     - Path: repo://internal/fositeadapter/consent.go
       Note: |-
         Step 10 consent policy implementation
@@ -40,8 +44,12 @@ RelatedFiles:
       Note: Step 9 durable Fosite storage implementation
     - Path: repo://internal/fositeadapter/sqlstore_test.go
       Note: Step 12 refresh-token reuse coverage
+    - Path: repo://internal/keys/rotation.go
+      Note: Step 13 key rotation
     - Path: repo://internal/store/sqlite/store.go
       Note: Phase 6 implementation recorded in diary
+    - Path: repo://scripts/run-conformance.sh
+      Note: Step 13 validation script
     - Path: repo://ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/design-doc/01-production-embeddable-idp-design-and-implementation-guide.md
       Note: Primary design deliverable written during this diary
     - Path: repo://ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/reference/01-oidc-intern-textbook.md
@@ -54,6 +62,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -1267,4 +1276,134 @@ internal/store/sqlite/migrations/001_schema.sql
 internal/fositeadapter/consent.go
 internal/fositeadapter/consent_test.go
 internal/fositeadapter/sqlstore_test.go
+```
+
+## Step 13: Close the remaining strict-engine hardening loop
+
+I treated the user's instruction to “do it all” as permission to finish the remaining production-readiness items that had been repeatedly called out as next steps. This pass focused on things that make the strict engine reviewable and operable: stable audit reason codes, schema ownership, key rotation, ID Token/JWKS validation, and runbooks.
+
+The result is not a claim of external OpenID Foundation certification, but it does turn the remaining local gaps into code, tests, and explicit operational documentation. The strict engine now has a CI-friendly conformance script plus manual instructions for the external suite.
+
+### Prompt Context
+
+**User prompt (verbatim):** "do it all."
+
+**Assistant interpretation:** Complete the remaining hardening targets rather than stopping after one more small increment.
+
+**Inferred user intent:** The user wants the strict production engine to be as close as practical to production-ready in this session, with tests, docs, and bookkeeping updated.
+
+**Commit (code):** 8005ed3f2df2f12b3f93be91e298098cc6bf41e6 — "Complete strict IdP hardening loop"
+
+### What I did
+
+- Added audit reason normalization:
+  - `internal/fositeadapter/audit_reason.go` maps Fosite RFC6749 errors to stable snake-case reason codes.
+  - strict provider token/authorize audit paths now use normalized reasons instead of raw error text.
+  - added `TestAuditReasonsUseStableCodes`.
+- Moved Fosite SQLite schema ownership:
+  - Fosite protocol tables and indexes now live in `internal/store/sqlite/migrations/001_schema.sql`.
+  - `internal/fositeadapter/sqlstore.go` no longer runs adapter-owned startup DDL.
+- Added signing-key rotation support:
+  - `internal/keys.RotateRSA` creates a new key, activates it, and retires the previous active key while leaving it in `VerificationKeys`.
+  - memory and SQLite tests verify old/new key visibility and durable retired-key retention.
+- Strengthened ID Token validation coverage:
+  - strict authorization-code flow test now verifies the ID Token signature against JWKS.
+  - the test validates `kid`, `alg`, issuer, audience, nonce, and numeric expiry.
+  - strict OIDC sessions now set the active signing key ID as the JWT `kid` header.
+- Added production runbooks:
+  - `docs/security-profile.md`
+  - `docs/storage.md`
+  - `docs/key-rotation.md`
+  - `docs/conformance.md`
+  - `scripts/run-conformance.sh`
+
+### Why
+
+- Stable audit reason codes are necessary for alerting, dashboards, and tests; raw Fosite error strings are too verbose and version-sensitive.
+- Schema belongs to the store/migration layer, not adapter construction.
+- Key rotation must retain old verification keys long enough for relying parties to validate already-issued ID Tokens.
+- A signed ID Token is not enough; relying parties validate by selecting the JWKS key matching the `kid` header.
+- Production readiness needs written operational gates, not only code.
+
+### What worked
+
+- Focused tests passed:
+
+```bash
+go test ./internal/keys ./internal/store/sqlite ./internal/fositeadapter
+```
+
+- The local conformance script passed:
+
+```bash
+scripts/run-conformance.sh
+```
+
+### What didn't work
+
+- The first ID Token JWKS validation test failed because Fosite emitted a JWT header without `kid`:
+
+```text
+bad token header: map[string]interface {}{"alg":"RS256", "typ":"JWT"}
+```
+
+  I fixed this by adding the active signing key ID to the OIDC session headers in `newOIDCSession`.
+
+- The next ID Token validation attempt assumed `aud` was a string. Fosite emits `aud` as an array for this flow:
+
+```text
+"aud": []interface {}{"spa"}
+```
+
+  I fixed the test helper to accept both string and array audience encodings.
+
+### What I learned
+
+- Fosite's signer does not automatically infer a `kid` from the private key returned by the key getter; the adapter must set the JWT header explicitly.
+- Keeping Fosite schema in SQLite migrations makes the durable store much easier to reason about because all tables are visible in one place.
+
+### What was tricky to build
+
+- Key rotation had to avoid a moment where the old key disappeared from JWKS. The helper creates the new key, activates it, then retires the old key so `VerificationKeys` includes both the active new key and the retired old key.
+- ID Token validation needed to avoid overfitting to one JSON representation of `aud`; OIDC consumers commonly need to handle both string and array forms.
+
+### What warrants a second pair of eyes
+
+- Review the key-retention model. Retired keys currently remain visible through `VerificationKeys`; a future cleanup job should remove them only after token lifetime plus skew.
+- Review whether `internal/keys.RotateRSA` should be exposed through a public embedded API command or left as an internal helper for now.
+- Review the conformance runbook against the exact OpenID Foundation test plan selected for certification.
+
+### What should be done in the future
+
+- Run the external OpenID Foundation conformance suite against a public HTTPS deployment and store the export in the ticket source bundle.
+- Add a cleanup job for expired protocol rows, sessions, consents, and old retired keys.
+- Add explicit public API affordances for key rotation and consent revocation if external embedders need them outside this module.
+
+### Code review instructions
+
+- Start with `internal/fositeadapter/audit_reason.go` and the modified audit calls in `provider.go`.
+- Review `internal/store/sqlite/migrations/001_schema.sql` against `internal/fositeadapter/sqlstore.go`.
+- Review `internal/keys/rotation.go` and the memory/SQLite rotation tests.
+- Review the ID Token/JWKS helper in `internal/fositeadapter/provider_test.go`.
+- Run `scripts/run-conformance.sh`.
+
+### Technical details
+
+Key files:
+
+```text
+internal/fositeadapter/audit_reason.go
+internal/fositeadapter/provider.go
+internal/fositeadapter/hardening_test.go
+internal/fositeadapter/provider_test.go
+internal/fositeadapter/sqlstore.go
+internal/store/sqlite/migrations/001_schema.sql
+internal/keys/rotation.go
+internal/keys/rotation_test.go
+internal/store/sqlite/store_test.go
+docs/security-profile.md
+docs/storage.md
+docs/key-rotation.md
+docs/conformance.md
+scripts/run-conformance.sh
 ```

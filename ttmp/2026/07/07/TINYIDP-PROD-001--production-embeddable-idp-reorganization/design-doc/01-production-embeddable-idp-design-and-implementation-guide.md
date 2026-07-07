@@ -14,6 +14,14 @@ Owners: []
 RelatedFiles:
     - Path: repo://README.md
       Note: Current product boundary, endpoint list, and non-production warning
+    - Path: repo://docs/conformance.md
+      Note: Conformance runbook
+    - Path: repo://docs/key-rotation.md
+      Note: Signing-key rotation runbook
+    - Path: repo://docs/security-profile.md
+      Note: Production strict-engine security profile
+    - Path: repo://docs/storage.md
+      Note: Storage schema and invariant profile
     - Path: repo://go.mod
       Note: Pins Ory Fosite dependency for strict engine
     - Path: repo://internal/audit/audit.go
@@ -26,6 +34,8 @@ RelatedFiles:
       Note: |-
         Implemented Phase 1 production domain model
         Persistent consent domain model
+    - Path: repo://internal/fositeadapter/audit_reason.go
+      Note: Audit reason normalization
     - Path: repo://internal/fositeadapter/consent.go
       Note: |-
         Phase 8 consent policy boundary
@@ -50,6 +60,8 @@ RelatedFiles:
       Note: |-
         Evidence that Fosite code and refresh-token state survive provider restart
         Refresh-token reuse regression
+    - Path: repo://internal/keys/rotation.go
+      Note: Signing-key rotation helper
     - Path: repo://internal/oidcmeta/discovery.go
       Note: Implemented Phase 3 strict discovery metadata
     - Path: repo://internal/scenario/scenario.go
@@ -74,6 +86,8 @@ RelatedFiles:
         Durable consent storage
     - Path: repo://pkg/embeddedidp/provider.go
       Note: Implemented Phase 5 embeddable provider API
+    - Path: repo://scripts/run-conformance.sh
+      Note: Local conformance validation script
 ExternalSources:
     - ../sources/01-openid-net-specs-openid-connect-core-1-0-html.md
     - ../sources/02-datatracker-ietf-org-doc-html-rfc9700.md
@@ -91,6 +105,7 @@ LastUpdated: 2026-07-07T14:48:25.103428211-04:00
 WhatFor: Use this when implementing TINYIDP-PROD-001 or onboarding an engineer to the production IdP architecture.
 WhenToUse: Before changing engine boundaries, storage, keys, security validation, Fosite integration, or production startup behavior.
 ---
+
 
 
 

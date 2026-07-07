@@ -39,3 +39,8 @@
 - [x] Phase 8.6: Add rate-limiting hook and default fixed-window implementation for login and token paths <!-- t:scb2 -->
 - [x] Phase 8.7: Persist consent grants in the domain stores and make production strict provider default to durable consent <!-- t:s16e -->
 - [x] Phase 8.8: Add Fosite SQLite refresh-token reuse/rotation regression coverage <!-- t:57j9 -->
+- [x] Phase 8.9: Normalize strict-engine audit reason codes for Fosite/OAuth errors <!-- t:l66e -->
+- [x] Phase 8.10: Move Fosite SQLite protocol schema into store migrations <!-- t:f5o2 -->
+- [x] Phase 8.11: Add signing-key rotation helper and durable retired-key tests <!-- t:m4px -->
+- [x] Phase 8.12: Validate strict ID Tokens against JWKS in tests <!-- t:4ivd -->
+- [x] Phase 8.13: Add strict-engine security, storage, key rotation, and conformance runbooks <!-- t:g5e1 -->

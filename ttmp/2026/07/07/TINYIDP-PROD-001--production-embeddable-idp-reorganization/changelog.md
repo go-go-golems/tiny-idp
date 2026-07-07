@@ -118,3 +118,18 @@ Added persistent consent records to domain/storage/memory/SQLite stores, made pr
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/storage/interfaces.go — Consent store contract
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/store.go — SQLite consent persistence
 
+
+## 2026-07-07
+
+Completed remaining strict-engine hardening items: stable audit reason codes, Fosite schema ownership in SQLite migrations, RSA signing-key rotation with retired-key verification retention, ID Token JWKS validation coverage, and production security/storage/conformance runbooks.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/docs/conformance.md — Strict-engine conformance runbook
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/audit_reason.go — Stable audit reason normalization
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Audit normalization and ID Token kid header
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore.go — Fosite store no longer owns schema DDL
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/keys/rotation.go — Signing-key rotation helper
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/migrations/001_schema.sql — Domain and Fosite schema ownership
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/scripts/run-conformance.sh — Local conformance validation script
+
