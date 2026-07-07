@@ -16,12 +16,20 @@ RelatedFiles:
       Note: Current product boundary, endpoint list, and non-production warning
     - Path: repo://go.mod
       Note: Pins Ory Fosite dependency for strict engine
+    - Path: repo://internal/audit/audit.go
+      Note: Phase 8 structured audit events and sink
     - Path: repo://internal/client/client.go
       Note: Current client registry, exact redirect matching, and builtin client semantics
     - Path: repo://internal/cmds/serve.go
       Note: Implemented Phase 7 CLI engine switch
     - Path: repo://internal/domain/types.go
       Note: Implemented Phase 1 production domain model
+    - Path: repo://internal/fositeadapter/consent.go
+      Note: Phase 8 consent policy boundary
+    - Path: repo://internal/fositeadapter/csrf.go
+      Note: Phase 8 strict login CSRF protection
+    - Path: repo://internal/fositeadapter/hardening_test.go
+      Note: Phase 8 hardening test evidence
     - Path: repo://internal/fositeadapter/provider.go
       Note: |-
         Implemented Phase 4 strict adapter seam and handler spike
@@ -67,6 +75,7 @@ LastUpdated: 2026-07-07T14:48:25.103428211-04:00
 WhatFor: Use this when implementing TINYIDP-PROD-001 or onboarding an engineer to the production IdP architecture.
 WhenToUse: Before changing engine boundaries, storage, keys, security validation, Fosite integration, or production startup behavior.
 ---
+
 
 
 

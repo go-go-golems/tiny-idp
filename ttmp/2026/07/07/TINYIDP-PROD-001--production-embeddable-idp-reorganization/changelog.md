@@ -80,3 +80,16 @@ Implemented durable SQLite-backed Fosite protocol store and restart tests for au
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — Restart durability test for code and refresh-token flows
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/store.go — Exposes SQL handle for protocol-state adapter
 
+
+## 2026-07-07
+
+Implemented Phase 8 hardening foundation: strict login CSRF protection, security headers, no-store token behavior, structured audit sink/events, and consent policy interfaces/defaults.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/audit/audit.go — Structured audit sink
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/consent.go — Consent policy interface and implementations
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/csrf.go — CSRF cookie/token issue and validation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/hardening_test.go — Hardening tests
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Security headers, audit emissions, consent checks, no-store token handling
+

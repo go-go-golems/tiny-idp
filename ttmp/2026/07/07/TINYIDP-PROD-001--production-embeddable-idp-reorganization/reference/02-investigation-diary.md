@@ -14,10 +14,16 @@ Owners: []
 RelatedFiles:
     - Path: repo://go.mod
       Note: Step 8 dependency change
+    - Path: repo://internal/audit/audit.go
+      Note: Step 10 audit implementation
     - Path: repo://internal/cmds/serve.go
       Note: Phase 7 implementation recorded in diary
     - Path: repo://internal/domain/types.go
       Note: Phase 1 implementation recorded in diary
+    - Path: repo://internal/fositeadapter/consent.go
+      Note: Step 10 consent policy implementation
+    - Path: repo://internal/fositeadapter/csrf.go
+      Note: Step 10 hardening implementation
     - Path: repo://internal/fositeadapter/provider.go
       Note: |-
         Phase 4 implementation recorded in diary
@@ -38,6 +44,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -912,4 +919,132 @@ internal/fositeadapter/sqlstore.go
 internal/fositeadapter/sqlstore_test.go
 internal/fositeadapter/provider.go
 internal/store/sqlite/store.go
+```
+
+## Step 10: Implement Phase 8 hardening foundation
+
+I implemented the first hardening layer for the strict Fosite-backed engine. This pass focused on controls that belong directly on the current browser/protocol boundary: CSRF protection for login form POSTs, security headers on strict engine responses, no-store token response behavior, structured audit events, and a consent policy boundary.
+
+The implementation avoids moving mock-only behavior into production. The mock server remains unchanged. The hardening code lives in the strict adapter and the embedded provider API, so callers can supply audit sinks and consent policies when embedding the provider.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, hardening."
+
+**Assistant interpretation:** Proceed to Phase 8 and implement concrete security hardening rather than stopping at the Fosite/storage integration.
+
+**Inferred user intent:** The user wants the production side to move toward secure-by-default behavior with browser-request protections, auditability, and policy hooks.
+
+**Commit (code):** 60a94df3ba5da7fe989702023876c5ebdac41e40 — "Harden strict IdP browser and audit paths"
+
+### What I did
+
+- Added `internal/audit`:
+  - `Event` with time, name, client ID, subject, request ID, result, reason, and safe structured fields.
+  - `Sink` interface.
+  - `NoopSink` default.
+  - `MemorySink` for tests.
+- Added strict login CSRF protection in `internal/fositeadapter/csrf.go`:
+  - GET `/authorize` issues a signed CSRF token and `HttpOnly`, `SameSite=Lax` cookie.
+  - POST `/authorize` validates the submitted token against the cookie and HMAC.
+  - Successful authorization clears the CSRF cookie.
+  - Cookie `Secure` follows adapter/embedded cookie configuration.
+- Added security headers around the strict provider handler:
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY`
+  - `Referrer-Policy: no-referrer`
+  - `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'`
+- Added `Cache-Control: no-store` on login form rendering and token endpoint responses.
+- Added audit emission for:
+  - `authorize.request.rejected`
+  - `authorize.request.accepted`
+  - `login.csrf_rejected`
+  - `login.failure`
+  - `login.success`
+  - `consent.required`
+  - `consent.granted`
+  - `token.request.rejected`
+  - `token.request.accepted`
+- Added `internal/fositeadapter/consent.go`:
+  - `ConsentPolicy` interface.
+  - `AlwaysSkipConsent` default.
+  - `RememberConsent` in-memory implementation.
+- Exposed `Audit` and `Consent` through `pkg/embeddedidp.Options` and passed them into the strict adapter.
+- Updated tests to obtain CSRF tokens from GET `/authorize` before POSTing login.
+- Added hardening tests for CSRF rejection/audit and security headers.
+
+### Why
+
+- Login form POSTs are browser-originating state-changing requests and need CSRF protection independent of OAuth `state`.
+- Security headers reduce clickjacking, MIME-sniffing, referrer leakage, and unintended embedding of IdP pages.
+- Token responses should explicitly avoid caching.
+- Production identity flows need structured audit events without logging raw codes, tokens, passwords, or client secrets.
+- Consent policy must be an explicit extension point before a real consent UI/storage flow is added.
+
+### What worked
+
+- Strict adapter hardening tests passed:
+
+```bash
+go test ./internal/fositeadapter -v
+```
+
+- Full suite passed:
+
+```bash
+go test ./...
+```
+
+### What didn't work
+
+- Existing strict authorization tests initially posted directly to `/authorize`, which is exactly what CSRF protection should reject. I updated the tests to first GET `/authorize`, extract the hidden CSRF token and cookie, then POST with both values.
+
+### What I learned
+
+- Adding CSRF changed test shape in a useful way: tests now exercise the same browser sequence that a real login page uses.
+- Keeping the audit sink as a small interface avoided introducing logging dependencies into protocol code and kept tests deterministic.
+
+### What was tricky to build
+
+- The strict engine does not yet have a durable IdP browser session layer. That means full multi-page consent UX is not safe to implement as a separate POST without adding authenticated server-side session state. I added the consent policy boundary and explicit approval field handling but kept `AlwaysSkipConsent` as the default until the session/consent UI is implemented properly.
+- The CSRF cookie path must respect path-based issuers, so `cookiePath()` uses the issuer path and falls back to `/`.
+- Audit events must avoid raw secrets. I emitted client IDs, subjects, request IDs, grant type, results, and reason categories, but not raw authorization codes, access tokens, refresh tokens, passwords, or client secrets.
+
+### What warrants a second pair of eyes
+
+- Review the CSP. It is intentionally strict and may need nonce-based relaxation when real templates include styles or scripts.
+- Review the consent boundary. It is not a full consent UX yet because that requires persistent IdP browser sessions.
+- Review audit reason strings. Some currently use error text from Fosite; if those strings are too verbose for production logs, map them to stable reason codes.
+
+### What should be done in the future
+
+- Add server-side IdP sessions with secure cookies and persistent session hashes.
+- Add a real consent page backed by server-side authenticated session state.
+- Add rate-limiting hooks for login and token endpoints.
+- Add audit event documentation and log redaction tests.
+
+### Code review instructions
+
+- Start with `internal/fositeadapter/csrf.go` for the browser POST protection.
+- Review `internal/fositeadapter/provider.go` around `authorize`, `token`, and `securityHeaders`.
+- Review `internal/audit/audit.go` for event shape and test sink.
+- Validate with:
+
+```bash
+go test ./internal/fositeadapter -v
+go test ./...
+```
+
+### Technical details
+
+Key files:
+
+```text
+internal/audit/audit.go
+internal/fositeadapter/csrf.go
+internal/fositeadapter/consent.go
+internal/fositeadapter/provider.go
+internal/fositeadapter/hardening_test.go
+pkg/embeddedidp/options.go
+pkg/embeddedidp/provider.go
 ```

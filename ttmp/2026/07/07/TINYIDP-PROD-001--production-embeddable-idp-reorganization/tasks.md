@@ -31,3 +31,7 @@
 - [x] Phase 7.3: Add dual-engine smoke/config tests and update docs <!-- t:4cgi -->
 - [x] Phase 4.4: Replace strict handwritten adapter spike with real Ory Fosite composition <!-- t:fwic -->
 - [x] Phase 6.4: Implement durable SQLite-backed Fosite protocol store for authorization codes, PKCE, OIDC sessions, access tokens, and refresh tokens <!-- t:6crz -->
+- [x] Phase 8.1: Add CSRF protection for strict login form and tests <!-- t:txu5 -->
+- [x] Phase 8.2: Add strict security headers and no-store behavior for browser/protocol responses <!-- t:nhcv -->
+- [x] Phase 8.3: Add structured audit sink and emit security events without raw secrets <!-- t:smfq -->
+- [x] Phase 8.4: Add consent policy interface and default skip/remember implementations <!-- t:zv9d -->
