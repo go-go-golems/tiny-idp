@@ -107,14 +107,14 @@ func NewProvider(opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs, config: cfg}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
 	strategy := compose.CommonStrategy{CoreStrategy: core, OpenIDConnectTokenStrategy: oidc, Signer: oidc.Signer}
 	p.oauth2 = compose.Compose(
 		cfg,
-		fs,
+		fs.store,
 		strategy,
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2PKCEFactory,
@@ -126,7 +126,19 @@ func NewProvider(opts Options) (*Provider, error) {
 	return p, nil
 }
 
-func buildFositeStore(st storage.Store, cfg *fosite.Config, plainSecrets map[string]string) (*fositememory.MemoryStore, error) {
+type composedFositeStore struct {
+	store       interface{}
+	memoryStore *fositememory.MemoryStore
+}
+
+func buildFositeStore(st storage.Store, cfg *fosite.Config, plainSecrets map[string]string) (*composedFositeStore, error) {
+	if sqlProvider, ok := st.(sqlDBProvider); ok {
+		s, err := newSQLFositeStore(sqlProvider.SQLDB(), st, cfg, plainSecrets)
+		if err != nil {
+			return nil, err
+		}
+		return &composedFositeStore{store: s}, nil
+	}
 	fs := fositememory.NewMemoryStore()
 	clients, err := st.ListClients(context.Background())
 	if err != nil {
@@ -158,7 +170,7 @@ func buildFositeStore(st storage.Store, cfg *fosite.Config, plainSecrets map[str
 		}
 		fs.Clients[c.ID] = fc
 	}
-	return fs, nil
+	return &composedFositeStore{store: fs, memoryStore: fs}, nil
 }
 
 func (p *Provider) activePrivateKey(ctx context.Context) (interface{}, error) {
