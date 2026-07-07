@@ -29,3 +29,4 @@
 - [x] Phase 7.1: Add tinyidp serve --engine mock|fosite flag with mock default <!-- t:obc6 -->
 - [x] Phase 7.2: Wire strict engine into CLI shared issuer/client/users config <!-- t:0nuc -->
 - [x] Phase 7.3: Add dual-engine smoke/config tests and update docs <!-- t:4cgi -->
+- [x] Phase 4.4: Replace strict handwritten adapter spike with real Ory Fosite composition <!-- t:fwic -->

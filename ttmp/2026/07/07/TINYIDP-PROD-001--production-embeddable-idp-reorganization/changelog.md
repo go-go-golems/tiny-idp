@@ -59,3 +59,13 @@ Implemented phases 4-7 scaffold: strict adapter seam and end-to-end code flow, e
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/store.go — SQLite persistent store
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Public embedded provider API
 
+
+## 2026-07-07
+
+Replaced strict handwritten adapter spike with real Ory Fosite composition for authorize, token, refresh, OIDC ID token generation, and UserInfo token introspection.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/go.mod — Added github.com/ory/fosite dependency
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Real Fosite-backed strict adapter
+

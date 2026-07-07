@@ -12,12 +12,16 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://go.mod
+      Note: Step 8 dependency change
     - Path: repo://internal/cmds/serve.go
       Note: Phase 7 implementation recorded in diary
     - Path: repo://internal/domain/types.go
       Note: Phase 1 implementation recorded in diary
     - Path: repo://internal/fositeadapter/provider.go
-      Note: Phase 4 implementation recorded in diary
+      Note: |-
+        Phase 4 implementation recorded in diary
+        Step 8 real Fosite implementation
     - Path: repo://internal/store/sqlite/store.go
       Note: Phase 6 implementation recorded in diary
     - Path: repo://ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/design-doc/01-production-embeddable-idp-design-and-implementation-guide.md
@@ -32,6 +36,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -676,5 +681,115 @@ internal/store/sqlite/store.go
 internal/store/sqlite/migrations/001_schema.sql
 internal/cmds/serve.go
 internal/sections/oidc/section.go
+examples/embedded/main.go
+```
+
+## Step 8: Replace the strict adapter spike with real Ory Fosite
+
+I replaced the handwritten strict protocol internals in `internal/fositeadapter` with a real Ory Fosite composition. The package boundary stayed the same, but `/authorize`, `/token`, refresh-token handling, authorization-code persistence, PKCE validation, ID Token generation, token response writing, and token introspection now go through Fosite's provider APIs.
+
+This closes the caveat from Step 7. The adapter is still intentionally narrow: tinyidp owns login lookup, scope-grant policy, discovery, JWKS, and UserInfo claim rendering, while Fosite owns OAuth/OIDC protocol machinery.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, do it."
+
+**Assistant interpretation:** Replace the previous strict in-repo spike with real Ory Fosite integration now, rather than leaving it as a future hardening task.
+
+**Inferred user intent:** The user wants the Phase 4 implementation to match the design promise: a genuinely Fosite-backed strict engine, not just a compatible scaffold.
+
+**Commit (code):** c3fc49e852827d29526f74aaf7e6813b5bd58a94 — "Use Ory Fosite for strict IdP adapter"
+
+### What I did
+
+- Added `github.com/ory/fosite v0.49.0` to `go.mod` and `go.sum`.
+- Reworked `internal/fositeadapter/provider.go` to:
+  - Build a `fosite.Config` with Authorization Code lifetimes, token lifetimes, issuer, `EnforcePKCE`, `EnforcePKCEForPublicClients`, `EnablePKCEPlainChallengeMethod=false`, `ExactScopeStrategy`, and `offline_access` refresh-token scope.
+  - Seed a Fosite `storage.MemoryStore` from the project domain client store.
+  - Compose a real `fosite.OAuth2Provider` with:
+    - `compose.OAuth2AuthorizeExplicitFactory`
+    - `compose.OAuth2PKCEFactory`
+    - `compose.OAuth2RefreshTokenGrantFactory`
+    - `compose.OpenIDConnectExplicitFactory`
+    - `compose.OpenIDConnectRefreshFactory`
+    - `compose.OAuth2TokenIntrospectionFactory`
+  - Use `compose.NewOAuth2HMACStrategy` for OAuth2 opaque tokens/codes.
+  - Use `compose.NewOpenIDConnectStrategy` with the active project signing key for ID Tokens.
+  - Use `NewAuthorizeRequest`, `NewAuthorizeResponse`, `WriteAuthorizeResponse`, `NewAccessRequest`, `NewAccessResponse`, and `WriteAccessResponse` in the handlers.
+  - Use `IntrospectToken` for UserInfo bearer-token validation.
+- Updated the strict CLI conversion to provide plaintext dev client secrets only to the adapter so Fosite can BCrypt-hash legacy dev secrets for its own client store.
+- Adjusted the embedded example to use a public PKCE client, because production callers should not pass HMAC-hashed secrets to Fosite as if they were BCrypt hashes.
+- Updated strict authorization-code-flow tests for Fosite's redirect status and entropy requirements.
+
+### Why
+
+- Fosite is the planned owner of OAuth/OIDC protocol validation.
+- Keeping handwritten protocol internals would leave the strict engine with the same long-term maintenance problem as the mock.
+- The previous scaffold proved package shape, but this step makes the adapter real.
+
+### What worked
+
+- Full test suite passes:
+
+```bash
+go test ./...
+```
+
+- `go run ./cmd/tinyidp print-config --engine fosite` works and shows `engine: fosite`.
+- The strict end-to-end test still covers authorize → code → token → ID/access/refresh token → UserInfo.
+- `/debug` remains absent from the strict provider.
+
+### What didn't work
+
+- The first Fosite run returned `invalid_state` because Fosite enforces state entropy. I updated the test to use a longer state and nonce instead of weakening the production configuration.
+- The first authorization response returned an insecure-redirect error for `http://rp.example/callback`. Fosite's secure redirect checker permits localhost-style development HTTP, so I changed the test redirect URI to `http://localhost/callback`.
+- The first Fosite authorization response returned a server error because the test `GlobalSecret` was shorter than the HMAC strategy requires. I changed the test secret to a 32+ byte value.
+- The first UserInfo attempt failed with `request_unauthorized` because the Fosite composition did not include a token introspection handler. I added `compose.OAuth2TokenIntrospectionFactory` so `IntrospectToken` can validate access tokens for UserInfo.
+
+### What I learned
+
+- Fosite's defaults are useful security pressure: entropy and redirect-scheme checks caught weak test inputs immediately.
+- Fosite stores client secrets as BCrypt hashes. Our domain-level HMAC secret hash is useful for opaque token lookup, but it is not a Fosite client-secret hash. The adapter must either receive BCrypt hashes or receive plaintext only at config-conversion time and hash them internally.
+
+### What was tricky to build
+
+- The adapter has two stores now: the project `storage.Store` for users, clients, signing keys, and JWKS, and Fosite's protocol store for authorization codes, PKCE sessions, access tokens, refresh tokens, and OIDC sessions. This is acceptable for the current strict dev engine, but persistent production Fosite storage still needs a domain-backed implementation later.
+- UserInfo needed Fosite token introspection rather than direct access-token hash lookup because Fosite now owns token issuance.
+- ID Token claims need to be placed into `openid.DefaultSession` before `NewAuthorizeResponse`, so Fosite can carry them through code exchange and token generation.
+
+### What warrants a second pair of eyes
+
+- Review `buildFositeStore`: production embedding should prefer BCrypt client-secret hashes in `domain.Client.SecretHash`; the CLI path uses plaintext dev secrets only during conversion.
+- Review whether `OAuth2TokenIntrospectionFactory` should be documented as required for UserInfo even if the public introspection endpoint remains optional.
+- Review persistence expectations: Fosite's memory store is fine for strict dev compatibility, but a production durable Fosite store is still a future storage-hardening task.
+
+### What should be done in the future
+
+- Implement a Fosite storage adapter backed by the project SQLite store so production embedded deployments do not rely on Fosite memory storage.
+- Add CSRF, consent, audit, and secure cookie sessions in the hardening phase.
+- Add ID Token validation tests that parse the JWT header/claims and verify against JWKS.
+
+### Code review instructions
+
+- Start with `internal/fositeadapter/provider.go` and look for the `compose.Compose` call.
+- Confirm only code, PKCE, refresh, OpenID explicit/refresh, and introspection handlers are composed.
+- Review `internal/fositeadapter/provider_test.go` for the end-to-end strict flow.
+- Validate with:
+
+```bash
+go test ./...
+go run ./cmd/tinyidp print-config --engine fosite
+```
+
+### Technical details
+
+Key files:
+
+```text
+go.mod
+go.sum
+internal/fositeadapter/provider.go
+internal/fositeadapter/provider_test.go
+internal/cmds/serve.go
 examples/embedded/main.go
 ```

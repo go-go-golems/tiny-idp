@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,9 +21,9 @@ import (
 
 func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	ctx := context.Background()
-	secretKey := []byte("test-secret-key")
+	secretKey := []byte("test-secret-key-32-bytes-minimum!!")
 	st := memory.New()
-	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://rp.example/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"}); err != nil {
@@ -48,10 +49,10 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	form := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {"spa"},
-		"redirect_uri":          {"http://rp.example/callback"},
+		"redirect_uri":          {"http://localhost/callback"},
 		"scope":                 {"openid profile email offline_access"},
-		"state":                 {"state-1"},
-		"nonce":                 {"nonce-1"},
+		"state":                 {"state-1234567890"},
+		"nonce":                 {"nonce-1234567890"},
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"login":                 {"alice"},
@@ -62,7 +63,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusFound {
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("authorize status = %d", resp.StatusCode)
 	}
 	loc := resp.Header.Get("Location")
@@ -71,7 +72,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	code := cb.Query().Get("code")
-	if code == "" || cb.Query().Get("state") != "state-1" {
+	if code == "" || cb.Query().Get("state") != "state-1234567890" {
 		t.Fatalf("bad callback location: %s", loc)
 	}
 
@@ -79,7 +80,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		"grant_type":    {"authorization_code"},
 		"client_id":     {"spa"},
 		"code":          {code},
-		"redirect_uri":  {"http://rp.example/callback"},
+		"redirect_uri":  {"http://localhost/callback"},
 		"code_verifier": {verifier},
 	})
 	if err != nil {
@@ -105,7 +106,8 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	}
 	defer uiResp.Body.Close()
 	if uiResp.StatusCode != http.StatusOK {
-		t.Fatalf("userinfo status = %d", uiResp.StatusCode)
+		b, _ := io.ReadAll(uiResp.Body)
+		t.Fatalf("userinfo status = %d body=%s", uiResp.StatusCode, b)
 	}
 	var claims map[string]any
 	if err := json.NewDecoder(uiResp.Body).Decode(&claims); err != nil {
@@ -113,6 +115,27 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	}
 	if claims["sub"] != "user-alice" || claims["email"] != "alice@example.test" {
 		t.Fatalf("bad userinfo: %#v", claims)
+	}
+
+	refreshResp, err := http.PostForm(ts.URL+"/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {"spa"},
+		"refresh_token": {body["refresh_token"].(string)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer refreshResp.Body.Close()
+	if refreshResp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(refreshResp.Body)
+		t.Fatalf("refresh status = %d body=%s", refreshResp.StatusCode, b)
+	}
+	var refreshed map[string]any
+	if err := json.NewDecoder(refreshResp.Body).Decode(&refreshed); err != nil {
+		t.Fatal(err)
+	}
+	if refreshed["access_token"] == "" || refreshed["refresh_token"] == "" {
+		t.Fatalf("missing refreshed token fields: %#v", refreshed)
 	}
 }
 

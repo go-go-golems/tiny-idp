@@ -1,14 +1,14 @@
-// Package fositeadapter contains the strict production-like OAuth/OIDC adapter
-// seam. The first implementation is intentionally small and dependency-light so
-// domain, storage, metadata, keys, embedded API, and CLI wiring can be tested
-// before binding the codebase to a concrete Fosite version. The exported handler
-// shape and factory list match the planned Fosite composition boundary.
+// Package fositeadapter contains the strict production-like OAuth/OIDC adapter.
+// Fosite owns protocol request parsing, authorization-code persistence, PKCE
+// validation, token exchange, refresh-token handling, and response writing. The
+// surrounding package owns product behavior: discovery/JWKS, login lookup,
+// scope granting policy, and UserInfo claim rendering.
 package fositeadapter
 
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -16,6 +16,12 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ory/fosite"
+	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/handler/openid"
+	fositememory "github.com/ory/fosite/storage"
+	fositejwt "github.com/ory/fosite/token/jwt"
 
 	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/keys"
@@ -29,6 +35,7 @@ var ProductionHandlerFactories = []string{
 	"OAuth2RefreshTokenGrantFactory",
 	"OpenIDConnectExplicitFactory",
 	"OpenIDConnectRefreshFactory",
+	"OAuth2TokenIntrospectionFactory",
 }
 
 type Options struct {
@@ -40,16 +47,18 @@ type Options struct {
 	AccessTokenTTL  time.Duration
 	IDTokenTTL      time.Duration
 	RefreshTokenTTL time.Duration
+	// ClientSecrets optionally supplies plaintext client secrets for callers that
+	// are converting legacy/dev config into Fosite's BCrypt client store. The
+	// production embedded API should prefer BCrypt hashes in domain.Client.SecretHash.
+	ClientSecrets map[string]string
 }
 
 type Provider struct {
-	issuer     oidcmeta.Issuer
-	store      storage.Store
-	secretKey  []byte
-	codeTTL    time.Duration
-	accessTTL  time.Duration
-	idTTL      time.Duration
-	refreshTTL time.Duration
+	issuer      oidcmeta.Issuer
+	store       storage.Store
+	fositeStore *fositememory.MemoryStore
+	oauth2      fosite.OAuth2Provider
+	config      *fosite.Config
 }
 
 func NewProvider(opts Options) (*Provider, error) {
@@ -61,7 +70,7 @@ func NewProvider(opts Options) (*Provider, error) {
 		return nil, fmt.Errorf("store is required")
 	}
 	if len(opts.SecretKey) == 0 {
-		opts.SecretKey = []byte("tinyidp-dev-secret-key")
+		opts.SecretKey = []byte("tinyidp-dev-secret-key-at-least-32-bytes")
 	}
 	if opts.CodeTTL == 0 {
 		opts.CodeTTL = 5 * time.Minute
@@ -75,7 +84,93 @@ func NewProvider(opts Options) (*Provider, error) {
 	if opts.RefreshTokenTTL == 0 {
 		opts.RefreshTokenTTL = 24 * time.Hour
 	}
-	return &Provider{issuer: iss, store: opts.Store, secretKey: opts.SecretKey, codeTTL: opts.CodeTTL, accessTTL: opts.AccessTokenTTL, idTTL: opts.IDTokenTTL, refreshTTL: opts.RefreshTokenTTL}, nil
+
+	cfg := &fosite.Config{
+		GlobalSecret:                   opts.SecretKey,
+		AccessTokenLifespan:            opts.AccessTokenTTL,
+		RefreshTokenLifespan:           opts.RefreshTokenTTL,
+		AuthorizeCodeLifespan:          opts.CodeTTL,
+		IDTokenLifespan:                opts.IDTokenTTL,
+		IDTokenIssuer:                  iss.String(),
+		EnforcePKCE:                    true,
+		EnforcePKCEForPublicClients:    true,
+		EnablePKCEPlainChallengeMethod: false,
+		ScopeStrategy:                  fosite.ExactScopeStrategy,
+		RefreshTokenScopes:             []string{"offline_access"},
+		MinParameterEntropy:            8,
+		RedirectSecureChecker: func(_ context.Context, u *url.URL) bool {
+			return u.Scheme == "https" || u.Hostname() == "localhost" || strings.HasPrefix(u.Hostname(), "127.")
+		},
+	}
+
+	fs, err := buildFositeStore(opts.Store, cfg, opts.ClientSecrets)
+	if err != nil {
+		return nil, err
+	}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs, config: cfg}
+
+	core := compose.NewOAuth2HMACStrategy(cfg)
+	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
+	strategy := compose.CommonStrategy{CoreStrategy: core, OpenIDConnectTokenStrategy: oidc, Signer: oidc.Signer}
+	p.oauth2 = compose.Compose(
+		cfg,
+		fs,
+		strategy,
+		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2PKCEFactory,
+		compose.OAuth2RefreshTokenGrantFactory,
+		compose.OpenIDConnectExplicitFactory,
+		compose.OpenIDConnectRefreshFactory,
+		compose.OAuth2TokenIntrospectionFactory,
+	)
+	return p, nil
+}
+
+func buildFositeStore(st storage.Store, cfg *fosite.Config, plainSecrets map[string]string) (*fositememory.MemoryStore, error) {
+	fs := fositememory.NewMemoryStore()
+	clients, err := st.ListClients(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	hasher := &fosite.BCrypt{Config: cfg}
+	for _, c := range clients {
+		fc := &fosite.DefaultClient{
+			ID:            c.ID,
+			Public:        c.Public,
+			RedirectURIs:  append([]string(nil), c.RedirectURIs...),
+			ResponseTypes: []string{"code"},
+			GrantTypes:    []string{"authorization_code", "refresh_token"},
+			Scopes:        append([]string(nil), c.AllowedScopes...),
+		}
+		if len(fc.Scopes) == 0 {
+			fc.Scopes = []string{"openid", "profile", "email", "offline_access"}
+		}
+		if !c.Public {
+			if secret, ok := plainSecrets[c.ID]; ok {
+				hashed, err := hasher.Hash(context.Background(), []byte(secret))
+				if err != nil {
+					return nil, err
+				}
+				fc.Secret = hashed
+			} else if len(c.SecretHash) > 0 && strings.HasPrefix(string(c.SecretHash), "$2") {
+				fc.Secret = append([]byte(nil), c.SecretHash...)
+			}
+		}
+		fs.Clients[c.ID] = fc
+	}
+	return fs, nil
+}
+
+func (p *Provider) activePrivateKey(ctx context.Context) (interface{}, error) {
+	key, err := p.store.ActiveSigningKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	priv, err := keys.ParseRSAPrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return (*rsa.PrivateKey)(priv), nil
 }
 
 func (p *Provider) Handler() http.Handler {
@@ -129,23 +224,12 @@ func (p *Provider) readyz(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ready\n"))
 }
 
-type authRequest struct {
-	ResponseType        string
-	ClientID            string
-	RedirectURI         string
-	Scope               string
-	State               string
-	Nonce               string
-	CodeChallenge       string
-	CodeChallengeMethod string
-}
-
 func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		ar, err := p.parseAuthorize(r.Context(), r.URL.Query())
+		ar, err := p.oauth2.NewAuthorizeRequest(fosite.NewContext(), r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -155,9 +239,9 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
 		}
-		ar, err := p.parseAuthorize(r.Context(), r.PostForm)
+		ar, err := p.oauth2.NewAuthorizeRequest(fosite.NewContext(), r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
 		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
@@ -170,55 +254,18 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid login", http.StatusUnauthorized)
 			return
 		}
-		p.issueCodeAndRedirect(w, r, ar, u)
+		p.grantRequestedScopes(ar)
+		p.grantRequestedAudience(ar)
+		session := p.newOIDCSession(u, ar)
+		response, err := p.oauth2.NewAuthorizeResponse(fosite.NewContext(), ar, session)
+		if err != nil {
+			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
+			return
+		}
+		p.oauth2.WriteAuthorizeResponse(r.Context(), w, ar, response)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func (p *Provider) parseAuthorize(ctx context.Context, v url.Values) (authRequest, error) {
-	ar := authRequest{ResponseType: v.Get("response_type"), ClientID: v.Get("client_id"), RedirectURI: v.Get("redirect_uri"), Scope: v.Get("scope"), State: v.Get("state"), Nonce: v.Get("nonce"), CodeChallenge: v.Get("code_challenge"), CodeChallengeMethod: v.Get("code_challenge_method")}
-	if ar.ResponseType != "code" {
-		return ar, fmt.Errorf("unsupported response_type")
-	}
-	client, err := p.store.GetClient(ctx, ar.ClientID)
-	if err != nil || client.Disabled {
-		return ar, fmt.Errorf("unknown client_id")
-	}
-	if !client.AllowsRedirectURI(ar.RedirectURI) {
-		return ar, fmt.Errorf("redirect_uri not allowed for this client")
-	}
-	scopes := domain.ParseScopes(ar.Scope)
-	if !domain.HasScope(scopes, "openid") {
-		return ar, fmt.Errorf("scope must include openid")
-	}
-	if !client.AllowsScope(scopes) {
-		return ar, fmt.Errorf("scope not allowed for this client")
-	}
-	if ar.CodeChallenge == "" || ar.CodeChallengeMethod != "S256" {
-		return ar, fmt.Errorf("S256 PKCE is required")
-	}
-	return ar, nil
-}
-
-func (p *Provider) issueCodeAndRedirect(w http.ResponseWriter, r *http.Request, ar authRequest, u domain.User) {
-	now := time.Now()
-	code := randomB64(32)
-	codeHash := domain.HashSecret(p.secretKey, code)
-	grantID := "grant-" + randomB64(16)
-	_ = p.store.CreateGrant(r.Context(), domain.Grant{ID: grantID, UserID: u.ID, ClientID: ar.ClientID, Scope: domain.ParseScopes(ar.Scope), AuthTime: now, CreatedAt: now, ExpiresAt: now.Add(p.refreshTTL)})
-	if err := p.store.CreateAuthorizationCode(r.Context(), domain.AuthorizationCode{CodeHash: codeHash, ClientID: ar.ClientID, UserID: u.ID, GrantID: grantID, RedirectURI: ar.RedirectURI, Scope: domain.ParseScopes(ar.Scope), Nonce: ar.Nonce, PKCEChallenge: ar.CodeChallenge, PKCEMethod: ar.CodeChallengeMethod, AuthTime: now, ExpiresAt: now.Add(p.codeTTL)}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	ru, _ := url.Parse(ar.RedirectURI)
-	q := ru.Query()
-	q.Set("code", code)
-	if ar.State != "" {
-		q.Set("state", ar.State)
-	}
-	ru.RawQuery = q.Encode()
-	http.Redirect(w, r, ru.String(), http.StatusFound)
 }
 
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
@@ -230,141 +277,97 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 		tokenError(w, http.StatusBadRequest, "invalid_request", "invalid form")
 		return
 	}
-	clientID, client, ok := p.authenticateClient(w, r)
-	if !ok {
-		return
-	}
-	switch r.Form.Get("grant_type") {
-	case "authorization_code":
-		p.tokenCode(w, r, clientID, client)
-	case "refresh_token":
-		p.tokenRefresh(w, r, clientID)
-	default:
-		tokenError(w, http.StatusBadRequest, "unsupported_grant_type", "only authorization_code and refresh_token are supported")
-	}
-}
-
-func (p *Provider) authenticateClient(w http.ResponseWriter, r *http.Request) (string, domain.Client, bool) {
-	clientID, basicSecret, hasBasic := r.BasicAuth()
-	if clientID == "" {
-		clientID = r.Form.Get("client_id")
-	}
-	client, err := p.store.GetClient(r.Context(), clientID)
-	if err != nil || client.Disabled {
-		tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_id")
-		return "", domain.Client{}, false
-	}
-	if !client.Public {
-		secret := r.Form.Get("client_secret")
-		if hasBasic {
-			secret = basicSecret
-		}
-		if len(client.SecretHash) == 0 || string(domain.HashSecret(p.secretKey, secret)) != string(client.SecretHash) {
-			tokenError(w, http.StatusUnauthorized, "invalid_client", "bad client_secret")
-			return "", domain.Client{}, false
-		}
-	}
-	return clientID, client, true
-}
-
-func (p *Provider) tokenCode(w http.ResponseWriter, r *http.Request, clientID string, _ domain.Client) {
-	now := time.Now()
-	codeHash := domain.HashSecret(p.secretKey, r.Form.Get("code"))
-	ac, err := p.store.ConsumeAuthorizationCode(r.Context(), codeHash, now)
+	accessRequest, err := p.oauth2.NewAccessRequest(fosite.NewContext(), r, openid.NewDefaultSession())
 	if err != nil {
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "unknown, expired, or consumed code")
+		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
-	if ac.ClientID != clientID || ac.RedirectURI != r.Form.Get("redirect_uri") {
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "client_id or redirect_uri mismatch")
-		return
-	}
-	if !verifyS256(ac.PKCEChallenge, r.Form.Get("code_verifier")) {
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "PKCE verification failed")
-		return
-	}
-	u, err := p.store.GetUser(r.Context(), ac.UserID)
+	p.grantRequestedAccessScopes(accessRequest)
+	response, err := p.oauth2.NewAccessResponse(fosite.NewContext(), accessRequest)
 	if err != nil {
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "unknown user")
+		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
-	idToken, err := p.issueIDToken(r.Context(), u, ac, now)
-	if err != nil {
-		tokenError(w, http.StatusInternalServerError, "server_error", "could not sign token")
-		return
-	}
-	access := randomB64(32)
-	_ = p.store.CreateAccessToken(r.Context(), domain.AccessToken{TokenHash: domain.HashSecret(p.secretKey, access), GrantID: ac.GrantID, ClientID: ac.ClientID, UserID: ac.UserID, Scope: ac.Scope, CreatedAt: now, ExpiresAt: now.Add(p.accessTTL)})
-	resp := map[string]any{"access_token": access, "token_type": "Bearer", "expires_in": int(p.accessTTL.Seconds()), "scope": strings.Join(ac.Scope, " "), "id_token": idToken}
-	if domain.HasScope(ac.Scope, "offline_access") {
-		rt := randomB64(32)
-		_ = p.store.CreateRefreshToken(r.Context(), domain.RefreshToken{TokenHash: domain.HashSecret(p.secretKey, rt), GrantID: ac.GrantID, ClientID: ac.ClientID, UserID: ac.UserID, Scope: ac.Scope, CreatedAt: now, ExpiresAt: now.Add(p.refreshTTL)})
-		resp["refresh_token"] = rt
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
-	writeJSON(w, http.StatusOK, resp)
-}
-
-func (p *Provider) tokenRefresh(w http.ResponseWriter, r *http.Request, clientID string) {
-	now := time.Now()
-	oldHash := domain.HashSecret(p.secretKey, r.Form.Get("refresh_token"))
-	old, err := p.store.GetRefreshToken(r.Context(), oldHash)
-	if err != nil || old.ClientID != clientID {
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "unknown refresh token")
-		return
-	}
-	newRT := randomB64(32)
-	next := domain.RefreshToken{TokenHash: domain.HashSecret(p.secretKey, newRT), GrantID: old.GrantID, ClientID: old.ClientID, UserID: old.UserID, Scope: old.Scope, CreatedAt: now, ExpiresAt: now.Add(p.refreshTTL)}
-	if _, err := p.store.RotateRefreshToken(r.Context(), oldHash, next, now); err != nil {
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "refresh token rejected")
-		return
-	}
-	access := randomB64(32)
-	_ = p.store.CreateAccessToken(r.Context(), domain.AccessToken{TokenHash: domain.HashSecret(p.secretKey, access), GrantID: old.GrantID, ClientID: old.ClientID, UserID: old.UserID, Scope: old.Scope, CreatedAt: now, ExpiresAt: now.Add(p.accessTTL)})
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
-	writeJSON(w, http.StatusOK, map[string]any{"access_token": access, "token_type": "Bearer", "expires_in": int(p.accessTTL.Seconds()), "scope": strings.Join(old.Scope, " "), "refresh_token": newRT})
-}
-
-func (p *Provider) issueIDToken(ctx context.Context, u domain.User, ac domain.AuthorizationCode, now time.Time) (string, error) {
-	key, err := p.store.ActiveSigningKey(ctx)
-	if err != nil {
-		return "", err
-	}
-	claims := map[string]any{"iss": p.issuer.String(), "sub": u.Sub, "aud": ac.ClientID, "exp": now.Add(p.idTTL).Unix(), "iat": now.Unix(), "auth_time": ac.AuthTime.Unix()}
-	if ac.Nonce != "" {
-		claims["nonce"] = ac.Nonce
-	}
-	for k, v := range domain.ClaimsForScopes(u, ac.Scope) {
-		if k != "sub" {
-			claims[k] = v
-		}
-	}
-	return keys.SignJWT(key, claims)
+	p.oauth2.WriteAccessResponse(r.Context(), w, accessRequest, response)
 }
 
 func (p *Provider) userinfo(w http.ResponseWriter, r *http.Request) {
-	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if tok == "" {
-		http.Error(w, "missing bearer token", http.StatusUnauthorized)
-		return
-	}
-	at, err := p.store.GetAccessToken(r.Context(), domain.HashSecret(p.secretKey, tok))
-	if err != nil || (!at.ExpiresAt.IsZero() && time.Now().After(at.ExpiresAt)) || at.RevokedAt != nil {
+	session := openid.NewDefaultSession()
+	_, requester, err := p.oauth2.IntrospectToken(fosite.NewContext(), fosite.AccessTokenFromRequest(r), fosite.AccessToken, session)
+	if err != nil {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
 	}
-	u, err := p.store.GetUser(r.Context(), at.UserID)
-	if err != nil {
-		http.Error(w, "unknown user", http.StatusUnauthorized)
-		return
+	claims := map[string]any{"sub": requester.GetSession().GetSubject()}
+	if oidcSession, ok := requester.GetSession().(*openid.DefaultSession); ok && oidcSession.Claims != nil {
+		for k, v := range oidcSession.Claims.Extra {
+			claims[k] = v
+		}
 	}
-	writeJSON(w, http.StatusOK, domain.ClaimsForScopes(u, at.Scope))
+	writeJSON(w, http.StatusOK, claims)
 }
 
-func hidden(ar authRequest) string {
-	fields := map[string]string{"response_type": ar.ResponseType, "client_id": ar.ClientID, "redirect_uri": ar.RedirectURI, "scope": ar.Scope, "state": ar.State, "nonce": ar.Nonce, "code_challenge": ar.CodeChallenge, "code_challenge_method": ar.CodeChallengeMethod}
+func (p *Provider) grantRequestedScopes(ar fosite.AuthorizeRequester) {
+	clientScopes := map[string]struct{}{}
+	for _, s := range ar.GetClient().GetScopes() {
+		clientScopes[s] = struct{}{}
+	}
+	for _, s := range ar.GetRequestedScopes() {
+		if _, ok := clientScopes[s]; ok {
+			ar.GrantScope(s)
+		}
+	}
+}
+
+func (p *Provider) grantRequestedAudience(ar fosite.AuthorizeRequester) {
+	for _, a := range ar.GetRequestedAudience() {
+		ar.GrantAudience(a)
+	}
+}
+
+func (p *Provider) grantRequestedAccessScopes(ar fosite.AccessRequester) {
+	clientScopes := map[string]struct{}{}
+	for _, s := range ar.GetClient().GetScopes() {
+		clientScopes[s] = struct{}{}
+	}
+	for _, s := range ar.GetRequestedScopes() {
+		if _, ok := clientScopes[s]; ok {
+			ar.GrantScope(s)
+		}
+	}
+}
+
+func (p *Provider) newOIDCSession(u domain.User, ar fosite.AuthorizeRequester) *openid.DefaultSession {
+	now := time.Now().UTC()
+	claims := &fositejwt.IDTokenClaims{
+		Issuer:      p.issuer.String(),
+		Subject:     u.Sub,
+		Audience:    []string{ar.GetClient().GetID()},
+		Nonce:       ar.GetRequestForm().Get("nonce"),
+		IssuedAt:    now,
+		RequestedAt: ar.GetRequestedAt(),
+		AuthTime:    now,
+		Extra:       map[string]interface{}{},
+	}
+	for k, v := range domain.ClaimsForScopes(u, []string{"profile", "email"}) {
+		if k != "sub" {
+			claims.Extra[k] = v
+		}
+	}
+	return &openid.DefaultSession{Claims: claims, Headers: &fositejwt.Headers{}, Subject: u.Sub, Username: u.PreferredUsername, ExpiresAt: map[fosite.TokenType]time.Time{}}
+}
+
+func hidden(ar fosite.AuthorizeRequester) string {
+	fields := map[string]string{
+		"response_type":         strings.Join(ar.GetResponseTypes(), " "),
+		"client_id":             ar.GetClient().GetID(),
+		"redirect_uri":          ar.GetRedirectURI().String(),
+		"scope":                 strings.Join(ar.GetRequestedScopes(), " "),
+		"state":                 ar.GetState(),
+		"nonce":                 ar.GetRequestForm().Get("nonce"),
+		"code_challenge":        ar.GetRequestForm().Get("code_challenge"),
+		"code_challenge_method": ar.GetRequestForm().Get("code_challenge_method"),
+	}
 	var b strings.Builder
 	for k, v := range fields {
 		_, _ = fmt.Fprintf(&b, `<input type="hidden" name="%s" value="%s">`, k, htmlEscape(v))
@@ -383,16 +386,12 @@ func randomB64(n int) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-func verifyS256(challenge, verifier string) bool {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:]) == challenge
-}
-
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
 func tokenError(w http.ResponseWriter, status int, code, desc string) {
 	writeJSON(w, status, map[string]string{"error": code, "error_description": desc})
 }

@@ -186,10 +186,11 @@ func buildScenarioRegistry(cfg *oidc.Settings) (*scenario.Registry, error) {
 	return r, nil
 }
 
-var strictDevSecretKey = []byte("tinyidp-strict-dev-secret-key")
+var strictDevSecretKey = []byte("tinyidp-strict-dev-secret-key-32-bytes-min")
 
 func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios *scenario.Registry) (*fositeadapter.Provider, error) {
 	st := memory.New()
+	plainClientSecrets := map[string]string{}
 	for _, c := range clients.All() {
 		dc := domain.Client{
 			ID:                     c.ID,
@@ -207,7 +208,7 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 		}
 		if c.Secret != "" {
 			dc.Public = false
-			dc.SecretHash = domain.HashSecret(strictDevSecretKey, c.Secret)
+			plainClientSecrets[c.ID] = c.Secret
 		}
 		if err := st.PutClient(context.Background(), dc); err != nil {
 			return nil, err
@@ -227,7 +228,7 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 	if err := st.CreateSigningKey(context.Background(), key); err != nil {
 		return nil, err
 	}
-	return fositeadapter.NewProvider(fositeadapter.Options{Issuer: cfg.Issuer, Store: st, SecretKey: strictDevSecretKey, Mode: domain.DevMode})
+	return fositeadapter.NewProvider(fositeadapter.Options{Issuer: cfg.Issuer, Store: st, SecretKey: strictDevSecretKey, Mode: domain.DevMode, ClientSecrets: plainClientSecrets})
 }
 
 func applyScenarioClaims(u *domain.User, claims map[string]any) {

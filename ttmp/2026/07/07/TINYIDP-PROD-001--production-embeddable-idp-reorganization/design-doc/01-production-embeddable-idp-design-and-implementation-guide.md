@@ -14,6 +14,8 @@ Owners: []
 RelatedFiles:
     - Path: repo://README.md
       Note: Current product boundary, endpoint list, and non-production warning
+    - Path: repo://go.mod
+      Note: Pins Ory Fosite dependency for strict engine
     - Path: repo://internal/client/client.go
       Note: Current client registry, exact redirect matching, and builtin client semantics
     - Path: repo://internal/cmds/serve.go
@@ -21,7 +23,9 @@ RelatedFiles:
     - Path: repo://internal/domain/types.go
       Note: Implemented Phase 1 production domain model
     - Path: repo://internal/fositeadapter/provider.go
-      Note: Implemented Phase 4 strict adapter seam and handler spike
+      Note: |-
+        Implemented Phase 4 strict adapter seam and handler spike
+        Real Fosite-backed adapter replacing the strict handwritten spike
     - Path: repo://internal/oidcmeta/discovery.go
       Note: Implemented Phase 3 strict discovery metadata
     - Path: repo://internal/scenario/scenario.go
@@ -59,6 +63,7 @@ LastUpdated: 2026-07-07T14:48:25.103428211-04:00
 WhatFor: Use this when implementing TINYIDP-PROD-001 or onboarding an engineer to the production IdP architecture.
 WhenToUse: Before changing engine boundaries, storage, keys, security validation, Fosite integration, or production startup behavior.
 ---
+
 
 
 

@@ -17,9 +17,9 @@ import (
 func main() {
 	ctx := context.Background()
 	st := memory.New()
-	secretKey := []byte("example-secret-key")
+	secretKey := []byte("example-secret-key-32-bytes-minimum")
 	_ = st.PutClient(ctx, domain.Client{
-		ID: "example-app", Public: false, SecretHash: domain.HashSecret(secretKey, "example-secret"),
+		ID: "example-app", Public: true,
 		RedirectURIs:  []string{"http://localhost:8080/callback"},
 		AllowedScopes: []string{"openid", "profile", "email", "offline_access"},
 		RequirePKCE:   true,
