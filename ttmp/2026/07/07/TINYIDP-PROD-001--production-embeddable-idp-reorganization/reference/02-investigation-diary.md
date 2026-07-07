@@ -698,7 +698,7 @@ This closes the caveat from Step 7. The adapter is still intentionally narrow: t
 
 **Inferred user intent:** The user wants the Phase 4 implementation to match the design promise: a genuinely Fosite-backed strict engine, not just a compatible scaffold.
 
-**Commit (code):** c3fc49e852827d29526f74aaf7e6813b5bd58a94 — "Use Ory Fosite for strict IdP adapter"
+**Commit (code):** 572901a2ca8d6aacd6051ec0df0215ff3060bc3b — "Use Ory Fosite for strict IdP adapter"
 
 ### What I did
 
