@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/domain"
+	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
 	"github.com/manuel/tinyidp/internal/storage"
 )
@@ -31,6 +33,8 @@ type Options struct {
 	Store                           storage.Store
 	Cookie                          CookieConfig
 	Token                           TokenConfig
+	Audit                           audit.Sink
+	Consent                         fositeadapter.ConsentPolicy
 	AllowInMemoryStoresInProduction bool
 }
 

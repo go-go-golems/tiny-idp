@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -57,8 +58,13 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		"code_challenge_method": {"S256"},
 		"login":                 {"alice"},
 	}
+	csrfToken, csrfCookie := fetchCSRF(t, ts.URL, form)
+	form.Set("csrf_token", csrfToken)
 	noRedirect := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := noRedirect.Post(ts.URL+"/authorize", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	reqAuth, _ := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
+	reqAuth.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqAuth.AddCookie(csrfCookie)
+	resp, err := noRedirect.Do(reqAuth)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,6 +163,38 @@ func TestStrictProviderHasNoDebugRoute(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("/debug status = %d, want 404", resp.StatusCode)
 	}
+}
+
+func fetchCSRF(t *testing.T, baseURL string, form url.Values) (string, *http.Cookie) {
+	t.Helper()
+	q := cloneValues(form)
+	q.Del("login")
+	resp, err := http.Get(baseURL + "/authorize?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	re := regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
+	m := re.FindStringSubmatch(string(body))
+	if len(m) != 2 {
+		t.Fatalf("csrf token not found in %s", body)
+	}
+	for _, c := range resp.Cookies() {
+		if c.Name == "tinyidp_csrf" {
+			return m[1], c
+		}
+	}
+	t.Fatal("csrf cookie not found")
+	return "", nil
+}
+
+func cloneValues(v url.Values) url.Values {
+	out := make(url.Values, len(v))
+	for k, vv := range v {
+		out[k] = append([]string(nil), vv...)
+	}
+	return out
 }
 
 func s256(v string) string {

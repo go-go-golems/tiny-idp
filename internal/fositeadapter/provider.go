@@ -23,6 +23,7 @@ import (
 	fositememory "github.com/ory/fosite/storage"
 	fositejwt "github.com/ory/fosite/token/jwt"
 
+	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
@@ -51,14 +52,22 @@ type Options struct {
 	// are converting legacy/dev config into Fosite's BCrypt client store. The
 	// production embedded API should prefer BCrypt hashes in domain.Client.SecretHash.
 	ClientSecrets map[string]string
+	CookieSecure  bool
+	Audit         audit.Sink
+	Consent       ConsentPolicy
 }
 
 type Provider struct {
-	issuer      oidcmeta.Issuer
-	store       storage.Store
-	fositeStore *fositememory.MemoryStore
-	oauth2      fosite.OAuth2Provider
-	config      *fosite.Config
+	issuer       oidcmeta.Issuer
+	store        storage.Store
+	fositeStore  *fositememory.MemoryStore
+	oauth2       fosite.OAuth2Provider
+	config       *fosite.Config
+	mode         domain.Mode
+	csrfKey      []byte
+	cookieSecure bool
+	audit        audit.Sink
+	consent      ConsentPolicy
 }
 
 func NewProvider(opts Options) (*Provider, error) {
@@ -69,8 +78,17 @@ func NewProvider(opts Options) (*Provider, error) {
 	if opts.Store == nil {
 		return nil, fmt.Errorf("store is required")
 	}
+	if opts.Mode == "" {
+		opts.Mode = domain.DevMode
+	}
 	if len(opts.SecretKey) == 0 {
 		opts.SecretKey = []byte("tinyidp-dev-secret-key-at-least-32-bytes")
+	}
+	if opts.Audit == nil {
+		opts.Audit = audit.NoopSink{}
+	}
+	if opts.Consent == nil {
+		opts.Consent = AlwaysSkipConsent{}
 	}
 	if opts.CodeTTL == 0 {
 		opts.CodeTTL = 5 * time.Minute
@@ -107,7 +125,7 @@ func NewProvider(opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, audit: opts.Audit, consent: opts.Consent}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -192,7 +210,17 @@ func (p *Provider) Handler() http.Handler {
 	if prefix != "" && prefix != "/" {
 		p.registerAt(mux, prefix)
 	}
-	return mux
+	return p.securityHeaders(mux)
+}
+
+func (p *Provider) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (p *Provider) registerAt(mux *http.ServeMux, prefix string) {
@@ -241,39 +269,77 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		ar, err := p.oauth2.NewAuthorizeRequest(fosite.NewContext(), r)
 		if err != nil {
+			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", err.Error())
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
+		csrf := p.issueCSRF(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = fmt.Fprintf(w, `<html><body><form method="post"><input name="login" autocomplete="username"><input name="password" type="password" autocomplete="current-password">%s<button type="submit">Login</button></form></body></html>`, hidden(ar))
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = fmt.Fprintf(w, `<html><body><form method="post"><input name="login" autocomplete="username"><input name="password" type="password" autocomplete="current-password"><input type="hidden" name="csrf_token" value="%s"><label><input type="checkbox" name="consent_approved" value="true"> Approve requested access</label>%s<button type="submit">Login</button></form></body></html>`, htmlEscape(csrf), hidden(ar))
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
 		}
+		if !p.validateCSRF(r) {
+			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.csrf_rejected", Result: "rejected", Reason: "invalid_csrf"})
+			http.Error(w, "invalid csrf token", http.StatusBadRequest)
+			return
+		}
 		ar, err := p.oauth2.NewAuthorizeRequest(fosite.NewContext(), r)
 		if err != nil {
+			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", err.Error())
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
 		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
 		if login == "" {
+			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "missing_login"})
 			http.Error(w, "login is required", http.StatusBadRequest)
 			return
 		}
 		u, err := p.store.GetUserByLogin(r.Context(), login)
 		if err != nil {
+			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "invalid_login"})
 			http.Error(w, "invalid login", http.StatusUnauthorized)
 			return
+		}
+		client, err := p.store.GetClient(r.Context(), ar.GetClient().GetID())
+		if err != nil {
+			http.Error(w, "unknown client", http.StatusBadRequest)
+			return
+		}
+		scopes := []string(ar.GetRequestedScopes())
+		requireConsent, err := p.consent.RequireConsent(r.Context(), u, client, scopes)
+		if err != nil {
+			http.Error(w, "consent policy failed", http.StatusInternalServerError)
+			return
+		}
+		if requireConsent && r.PostForm.Get("consent_approved") != "true" {
+			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "consent.required", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "not_approved"})
+			http.Error(w, "consent required", http.StatusForbidden)
+			return
+		}
+		if requireConsent {
+			if err := p.consent.RecordConsent(r.Context(), u, client, scopes); err != nil {
+				http.Error(w, "record consent failed", http.StatusInternalServerError)
+				return
+			}
+			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "consent.granted", ClientID: client.ID, Subject: u.Sub, Result: "accepted"})
 		}
 		p.grantRequestedScopes(ar)
 		p.grantRequestedAudience(ar)
 		session := p.newOIDCSession(u, ar)
 		response, err := p.oauth2.NewAuthorizeResponse(fosite.NewContext(), ar, session)
 		if err != nil {
+			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", err.Error())
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
+		p.clearCSRF(w)
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.success", ClientID: client.ID, Subject: u.Sub, Result: "accepted"})
+		p.emit(r.Context(), audit.New("authorize.request.accepted"), ar, "accepted", "")
 		p.oauth2.WriteAuthorizeResponse(r.Context(), w, ar, response)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -281,25 +347,32 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	if r.Method != http.MethodPost {
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", Result: "rejected", Reason: "method_not_allowed"})
 		tokenError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", Result: "rejected", Reason: "invalid_form"})
 		tokenError(w, http.StatusBadRequest, "invalid_request", "invalid form")
 		return
 	}
 	accessRequest, err := p.oauth2.NewAccessRequest(fosite.NewContext(), r, openid.NewDefaultSession())
 	if err != nil {
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: err.Error()})
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
 	p.grantRequestedAccessScopes(accessRequest)
 	response, err := p.oauth2.NewAccessResponse(fosite.NewContext(), accessRequest)
 	if err != nil {
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "rejected", Reason: err.Error()})
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
+	_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.accepted", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "accepted", Fields: map[string]string{"grant_type": strings.Join(accessRequest.GetGrantTypes(), " ")}})
 	p.oauth2.WriteAccessResponse(r.Context(), w, accessRequest, response)
 }
 
@@ -406,4 +479,18 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func tokenError(w http.ResponseWriter, status int, code, desc string) {
 	writeJSON(w, status, map[string]string{"error": code, "error_description": desc})
+}
+
+func (p *Provider) emit(ctx context.Context, e audit.Event, ar fosite.AuthorizeRequester, result, reason string) {
+	e.Result = result
+	e.Reason = reason
+	if ar != nil {
+		if ar.GetClient() != nil {
+			e.ClientID = ar.GetClient().GetID()
+		}
+		if ar.GetID() != "" {
+			e.RequestID = ar.GetID()
+		}
+	}
+	_ = p.audit.Emit(ctx, e)
 }

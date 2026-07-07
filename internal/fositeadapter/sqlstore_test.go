@@ -2,8 +2,6 @@ package fositeadapter_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -96,12 +94,17 @@ func authorizeForCode(t *testing.T, baseURL, verifier string) string {
 		"scope":                 {"openid profile email offline_access"},
 		"state":                 {"state-1234567890"},
 		"nonce":                 {"nonce-1234567890"},
-		"code_challenge":        {s256Local(verifier)},
+		"code_challenge":        {s256(verifier)},
 		"code_challenge_method": {"S256"},
 		"login":                 {"alice"},
 	}
+	csrfToken, csrfCookie := fetchCSRF(t, baseURL, form)
+	form.Set("csrf_token", csrfToken)
 	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := client.Post(baseURL+"/authorize", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	reqAuth, _ := http.NewRequest(http.MethodPost, baseURL+"/authorize", strings.NewReader(form.Encode()))
+	reqAuth.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqAuth.AddCookie(csrfCookie)
+	resp, err := client.Do(reqAuth)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,9 +168,4 @@ func refreshToken(t *testing.T, baseURL, token string) map[string]any {
 		t.Fatal(err)
 	}
 	return out
-}
-
-func s256Local(v string) string {
-	sum := sha256.Sum256([]byte(v))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
