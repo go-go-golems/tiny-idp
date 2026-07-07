@@ -22,6 +22,8 @@ RelatedFiles:
       Note: |-
         Phase 4 implementation recorded in diary
         Step 8 real Fosite implementation
+    - Path: repo://internal/fositeadapter/sqlstore.go
+      Note: Step 9 durable Fosite storage implementation
     - Path: repo://internal/store/sqlite/store.go
       Note: Phase 6 implementation recorded in diary
     - Path: repo://ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/design-doc/01-production-embeddable-idp-design-and-implementation-guide.md
@@ -36,6 +38,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -792,4 +795,121 @@ internal/fositeadapter/provider.go
 internal/fositeadapter/provider_test.go
 internal/cmds/serve.go
 examples/embedded/main.go
+```
+
+## Step 9: Add durable SQLite-backed Fosite protocol storage
+
+I continued from the real Fosite integration by removing the most important remaining shortcut: Fosite protocol state no longer has to live in Fosite's memory store when the project store is SQLite-backed. The adapter now detects stores that expose the underlying SQLite handle and uses a dedicated SQL-backed Fosite store for authorization codes, PKCE requests, OIDC sessions, access tokens, refresh tokens, and JWT replay records.
+
+This matters because a production embedded IdP cannot lose outstanding authorization codes, access-token introspection state, or refresh-token state merely because the provider object is rebuilt. The new test proves the critical restart behavior by issuing a code with one provider instance, exchanging it after reopening the SQLite database with a second provider instance, and using the refresh token after reopening with a third provider instance.
+
+### Prompt Context
+
+**User prompt (verbatim):** "don't take any shortcuts"
+
+**Assistant interpretation:** Continue beyond the real Fosite composition and remove the in-memory Fosite protocol-state shortcut by implementing durable protocol storage for SQLite.
+
+**Inferred user intent:** The user wants the production side to be real enough to support restart-stable embedded deployments, not only a dev-mode strict engine.
+
+**Commit (code):** 949ec1d808d5675adcf37c8e86ca6d158e9694ed — "Persist Fosite protocol state in SQLite"
+
+### What I did
+
+- Added `internal/fositeadapter/sqlstore.go`.
+- Added a SQLite-backed Fosite store wrapper that implements the Fosite storage methods used by the composed handlers:
+  - `GetClient`
+  - `CreateAuthorizeCodeSession`
+  - `GetAuthorizeCodeSession`
+  - `InvalidateAuthorizeCodeSession`
+  - `CreatePKCERequestSession`
+  - `GetPKCERequestSession`
+  - `DeletePKCERequestSession`
+  - `CreateOpenIDConnectSession`
+  - `GetOpenIDConnectSession`
+  - `DeleteOpenIDConnectSession`
+  - `CreateAccessTokenSession`
+  - `GetAccessTokenSession`
+  - `DeleteAccessTokenSession`
+  - `CreateRefreshTokenSession`
+  - `GetRefreshTokenSession`
+  - `DeleteRefreshTokenSession`
+  - `RevokeRefreshToken`
+  - `RevokeAccessToken`
+  - `RotateRefreshToken`
+  - JWT replay methods used by Fosite extension paths.
+- Added `SQLDB() *sql.DB` to `internal/store/sqlite.Store` so the Fosite adapter can share the same SQLite file without exposing ownership of closing the handle.
+- Changed `internal/fositeadapter.NewProvider` so:
+  - SQLite-backed stores use the durable SQL Fosite store.
+  - Non-SQL dev stores still use Fosite's memory store for local strict-engine tests.
+- Added `internal/fositeadapter/sqlstore_test.go` to prove restart durability:
+  - provider 1 creates an authorization code;
+  - provider 2 exchanges that code after reopening SQLite;
+  - provider 3 uses the refresh token after reopening SQLite again.
+
+### Why
+
+- Real Fosite composition was necessary but insufficient for production if all Fosite state remained in memory.
+- Authorization codes and refresh tokens are protocol state. They must survive provider object restart when the host selected a persistent SQLite store.
+
+### What worked
+
+- The new restart-durability test passed:
+
+```bash
+go test ./internal/fositeadapter -run TestFositeSQLiteStoreSurvivesProviderRestart -v
+```
+
+- The full test suite passed:
+
+```bash
+go test ./...
+```
+
+### What didn't work
+
+- My first attempt to inspect multiple Fosite docs in one `go doc` command failed because `go doc` expects one package/symbol target at a time. I reran the relevant docs separately and then inspected Fosite's `storage.MemoryStore` implementation as the behavioral reference.
+
+### What I learned
+
+- Fosite's memory store persists several distinct state classes: authorization code state, PKCE state, OIDC session state, access-token state, refresh-token state, request-id indexes, and JTI replay records. A durable adapter has to model those separately rather than dumping a single token table into SQLite.
+- Fosite's `fosite.Request` can be reconstructed if we persist the request ID, request time, client, requested/granted scopes, request form, requested/granted audience, and the `openid.DefaultSession` fields used for ID Token generation and UserInfo.
+
+### What was tricky to build
+
+- `fosite.Requester` contains interfaces for `Client` and `Session`, so it cannot be safely JSON-marshaled directly and restored without type information. I implemented explicit `persistedRequest`, `persistedClient`, and `persistedSession` structs and convert them back to `fosite.Request`, `fosite.DefaultClient`, and `openid.DefaultSession`.
+- Refresh-token rotation requires request-id based revocation because Fosite associates access/refresh tokens belonging to the same request. The SQL store mirrors Fosite's memory behavior by indexing access and refresh tokens by `request_id` and marking refresh tokens inactive on rotation.
+- The adapter has to avoid a method-name collision with the project store's `GetClient(ctx,id) (domain.Client,error)`. I solved this with a wrapper type rather than trying to make `internal/store/sqlite.Store` directly implement Fosite's `GetClient(ctx,id) (fosite.Client,error)`.
+
+### What warrants a second pair of eyes
+
+- Review the explicit requester serialization format in `internal/fositeadapter/sqlstore.go`. It is intentionally narrow and supports the session/client types this adapter creates.
+- Review whether token-family reuse handling should be stricter than Fosite's memory-store-compatible inactive-token behavior. The project domain refresh-token store has family revocation semantics; the Fosite SQL adapter currently mirrors Fosite's request-id revocation semantics.
+- Review the `SQLDB()` exposure on the SQLite store. It is scoped and documented, but it is still a boundary decision.
+
+### What should be done in the future
+
+- Add migrations for the Fosite protocol tables into `internal/store/sqlite/migrations` instead of creating them from the adapter at provider startup.
+- Add database transaction wrappers around multi-step revocation paths if multi-process SQLite use becomes a target.
+- Add tests for refresh-token reuse after rotation with the SQL Fosite store.
+
+### Code review instructions
+
+- Start with `internal/fositeadapter/sqlstore.go` and compare method behavior to Fosite's `storage.MemoryStore`.
+- Review `internal/fositeadapter/sqlstore_test.go` to understand the restart-durability guarantee.
+- Validate with:
+
+```bash
+go test ./internal/fositeadapter -run TestFositeSQLiteStoreSurvivesProviderRestart -v
+go test ./...
+```
+
+### Technical details
+
+Key files:
+
+```text
+internal/fositeadapter/sqlstore.go
+internal/fositeadapter/sqlstore_test.go
+internal/fositeadapter/provider.go
+internal/store/sqlite/store.go
 ```

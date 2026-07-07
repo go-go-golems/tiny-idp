@@ -30,3 +30,4 @@
 - [x] Phase 7.2: Wire strict engine into CLI shared issuer/client/users config <!-- t:0nuc -->
 - [x] Phase 7.3: Add dual-engine smoke/config tests and update docs <!-- t:4cgi -->
 - [x] Phase 4.4: Replace strict handwritten adapter spike with real Ory Fosite composition <!-- t:fwic -->
+- [x] Phase 6.4: Implement durable SQLite-backed Fosite protocol store for authorization codes, PKCE, OIDC sessions, access tokens, and refresh tokens <!-- t:6crz -->

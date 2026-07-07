@@ -69,3 +69,14 @@ Replaced strict handwritten adapter spike with real Ory Fosite composition for a
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/go.mod — Added github.com/ory/fosite dependency
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Real Fosite-backed strict adapter
 
+
+## 2026-07-07
+
+Implemented durable SQLite-backed Fosite protocol store and restart tests for authorization-code exchange plus refresh-token use across provider restarts.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore.go — SQLite-backed Fosite protocol storage
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — Restart durability test for code and refresh-token flows
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/store.go — Exposes SQL handle for protocol-state adapter
+
