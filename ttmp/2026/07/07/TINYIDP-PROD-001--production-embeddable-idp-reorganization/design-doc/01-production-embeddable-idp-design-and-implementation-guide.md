@@ -23,9 +23,13 @@ RelatedFiles:
     - Path: repo://internal/cmds/serve.go
       Note: Implemented Phase 7 CLI engine switch
     - Path: repo://internal/domain/types.go
-      Note: Implemented Phase 1 production domain model
+      Note: |-
+        Implemented Phase 1 production domain model
+        Persistent consent domain model
     - Path: repo://internal/fositeadapter/consent.go
-      Note: Phase 8 consent policy boundary
+      Note: |-
+        Phase 8 consent policy boundary
+        Stored consent policy
     - Path: repo://internal/fositeadapter/csrf.go
       Note: Phase 8 strict login CSRF protection
     - Path: repo://internal/fositeadapter/hardening_test.go
@@ -43,7 +47,9 @@ RelatedFiles:
     - Path: repo://internal/fositeadapter/sqlstore.go
       Note: Durable Fosite protocol-state storage for production SQLite deployments
     - Path: repo://internal/fositeadapter/sqlstore_test.go
-      Note: Evidence that Fosite code and refresh-token state survive provider restart
+      Note: |-
+        Evidence that Fosite code and refresh-token state survive provider restart
+        Refresh-token reuse regression
     - Path: repo://internal/oidcmeta/discovery.go
       Note: Implemented Phase 3 strict discovery metadata
     - Path: repo://internal/scenario/scenario.go
@@ -57,11 +63,15 @@ RelatedFiles:
     - Path: repo://internal/server/token.go
       Note: Current token exchange, code consumption, refresh rotation, and response cache headers
     - Path: repo://internal/storage/interfaces.go
-      Note: Implemented Phase 2 storage contracts
+      Note: |-
+        Implemented Phase 2 storage contracts
+        Consent storage interface
     - Path: repo://internal/store/memory/store.go
       Note: Implemented Phase 2 memory store
     - Path: repo://internal/store/sqlite/store.go
-      Note: Implemented Phase 6 SQLite store
+      Note: |-
+        Implemented Phase 6 SQLite store
+        Durable consent storage
     - Path: repo://pkg/embeddedidp/provider.go
       Note: Implemented Phase 5 embeddable provider API
 ExternalSources:
@@ -81,6 +91,7 @@ LastUpdated: 2026-07-07T14:48:25.103428211-04:00
 WhatFor: Use this when implementing TINYIDP-PROD-001 or onboarding an engineer to the production IdP architecture.
 WhenToUse: Before changing engine boundaries, storage, keys, security validation, Fosite integration, or production startup behavior.
 ---
+
 
 
 
@@ -224,7 +235,7 @@ The scenario registry maps typed login names to behavior. It supports seeded pas
 | Authorization codes | Raw code stored in process memory. | Store only hash, one-time transaction, expiry cleanup, audit. |
 | Refresh tokens | Raw tokens in memory; rotation deletes old token. | Hash storage, family links, reuse detection, family revocation. |
 | Login | Synthetic login and optional fixture password. | Pluggable login handler, password/upstream implementations, CSRF, rate-limiting hooks, audit. |
-| Consent | No real consent policy. | Policy interface with skip/require/remember implementations. |
+| Consent | No real consent policy. | Policy interface with dev skip behavior and durable stored consent in production. |
 | Sessions | Raw cookie ID key in memory; not Secure. | Hash-backed server-side sessions, Secure cookies, issuer path, revocation, production validation. |
 | Debug | Loopback-only `/debug/*`. | No debug routes in production engine. |
 | Discovery | Mock-oriented capabilities. | Strict metadata matching production-supported capabilities. |
@@ -760,7 +771,9 @@ type ConsentPolicy interface {
 Defaults:
 
 - `DevMode`: `AlwaysSkipConsent`.
-- `ProductionMode`: `RememberConsent`.
+- `ProductionMode`: `StoredConsent`, backed by the configured domain store so approvals survive process restarts when SQLite is used.
+
+Stored consent records use normalized scope sets. This keeps `openid email` and `email openid email` equivalent while still requiring a fresh approval when the requested set changes.
 
 ### Key management
 

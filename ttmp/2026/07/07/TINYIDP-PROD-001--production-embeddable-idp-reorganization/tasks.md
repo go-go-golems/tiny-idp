@@ -37,3 +37,5 @@
 - [x] Phase 8.4: Add consent policy interface and default skip/remember implementations <!-- t:zv9d -->
 - [x] Phase 8.5: Add server-side IdP browser sessions with secure opaque cookies and silent authorization reuse <!-- t:83kh -->
 - [x] Phase 8.6: Add rate-limiting hook and default fixed-window implementation for login and token paths <!-- t:scb2 -->
+- [x] Phase 8.7: Persist consent grants in the domain stores and make production strict provider default to durable consent <!-- t:s16e -->
+- [x] Phase 8.8: Add Fosite SQLite refresh-token reuse/rotation regression coverage <!-- t:57j9 -->

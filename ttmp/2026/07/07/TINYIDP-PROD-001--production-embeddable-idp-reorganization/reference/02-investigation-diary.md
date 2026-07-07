@@ -21,7 +21,11 @@ RelatedFiles:
     - Path: repo://internal/domain/types.go
       Note: Phase 1 implementation recorded in diary
     - Path: repo://internal/fositeadapter/consent.go
-      Note: Step 10 consent policy implementation
+      Note: |-
+        Step 10 consent policy implementation
+        Step 12 stored-consent implementation
+    - Path: repo://internal/fositeadapter/consent_test.go
+      Note: Step 12 consent policy tests
     - Path: repo://internal/fositeadapter/csrf.go
       Note: Step 10 hardening implementation
     - Path: repo://internal/fositeadapter/provider.go
@@ -34,6 +38,8 @@ RelatedFiles:
       Note: Step 11 session hardening implementation
     - Path: repo://internal/fositeadapter/sqlstore.go
       Note: Step 9 durable Fosite storage implementation
+    - Path: repo://internal/fositeadapter/sqlstore_test.go
+      Note: Step 12 refresh-token reuse coverage
     - Path: repo://internal/store/sqlite/store.go
       Note: Phase 6 implementation recorded in diary
     - Path: repo://ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/design-doc/01-production-embeddable-idp-design-and-implementation-guide.md
@@ -48,6 +54,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -1158,4 +1165,106 @@ internal/fositeadapter/provider.go
 internal/fositeadapter/session_test.go
 pkg/embeddedidp/options.go
 pkg/embeddedidp/provider.go
+```
+
+## Step 12: Persist consent and add refresh-token reuse coverage
+
+I continued the hardening work by replacing the remaining in-memory-only consent path with a real domain/storage concept. Production-mode strict providers now default to a stored consent policy, which means user approvals can survive process restarts when the embedding application uses the SQLite store.
+
+I also added a Fosite-level SQLite refresh-token reuse regression test. The lower-level store suite already covered refresh reuse detection, but this new test proves the actual strict token endpoint rejects reuse after rotation when Fosite is backed by the durable SQLite protocol store.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the production-readiness implementation from the previous hardening increment without stopping at session/rate-limit scaffolding.
+
+**Inferred user intent:** The user wants the remaining production gaps to be closed incrementally, with validation, docs, and commits after coherent slices.
+
+**Commit (code):** 7167fd4f548e5b61480d4df35ef99758fd0756a9 — "Persist strict IdP consent grants"
+
+### What I did
+
+- Added `domain.Consent` with user ID, client ID, normalized scopes, grant time, optional expiry, and optional revocation time.
+- Added `storage.ConsentStore` to the shared store contract.
+- Implemented consent persistence in:
+  - `internal/store/memory.Store`;
+  - `internal/store/sqlite.Store`;
+  - SQLite schema migration DDL.
+- Added `domain.NormalizeScopes` so consent keys are stable across scope ordering and duplicate input.
+- Added `fositeadapter.StoredConsent` and `NewStoredConsent`.
+- Changed `fositeadapter.NewProvider` so production mode defaults to stored consent when no custom `ConsentPolicy` is supplied; development mode keeps the previous skip-consent default.
+- Added consent tests for:
+  - normalized stored-consent approval;
+  - revocation requiring consent again;
+  - production-mode default consent requirement.
+- Added `TestFositeSQLiteRefreshTokenReuseIsRejected`, which exercises refresh-token rotation through the real `/token` endpoint and confirms old refresh-token reuse fails.
+
+### Why
+
+- Consent is security-relevant authorization state and cannot remain process-local for production deployments.
+- Production defaults should fail toward explicit user approval, while development defaults can remain convenient for local testing.
+- Refresh-token reuse is one of the most important durable-state correctness properties because reuse can indicate token theft.
+
+### What worked
+
+- Focused tests passed:
+
+```bash
+go test ./internal/fositeadapter -run 'TestStoredConsent|TestProductionProviderDefaults' -v
+go test ./internal/fositeadapter -run 'TestFositeSQLiteRefreshTokenReuseIsRejected|TestFositeSQLiteStoreSurvivesProviderRestart' -v
+```
+
+- Full suite passed:
+
+```bash
+go test ./...
+```
+
+### What didn't work
+
+- The first refresh-token reuse test attempt returned a 404 HTML page while fetching CSRF. The cause was that the helper requested `profile email` scopes but the test client initially allowed only `openid offline_access`; Fosite redirected to the callback with an error, and the default client followed the redirect. I fixed the client fixture to allow the same scopes used by the helper.
+
+### What I learned
+
+- Scope normalization belongs in the domain layer, not just the consent policy, because both memory and SQLite stores need the same key semantics.
+- The production default can be stricter without breaking existing tests by keying the behavior on `domain.ProductionMode`; dev mode remains unchanged.
+
+### What was tricky to build
+
+- Consent records need stable keys even when requests present scopes in different orders or with duplicates. The solution was `domain.NormalizeScopes`, used both before storing records and before lookup/revocation.
+- The refresh-token reuse endpoint test depended on the shared authorization helper, so the client fixture had to match that helper's requested scopes exactly.
+
+### What warrants a second pair of eyes
+
+- Review whether consent lookup should accept prior consent for a superset of scopes. This implementation requires an exact normalized scope set, which is strict and simple but can prompt again for smaller/larger variants.
+- Review migration strategy before long-lived deployments. The current SQLite migration file uses `CREATE TABLE IF NOT EXISTS`, which is acceptable for current development but should evolve into numbered additive migrations.
+
+### What should be done in the future
+
+- Add consent expiry policy configuration to the embedded API.
+- Add a consent-management/revocation API for embedding applications.
+- Move Fosite SQL table creation out of adapter startup DDL and into migrations.
+
+### Code review instructions
+
+- Start with `internal/domain/types.go` and `internal/domain/scopes.go`.
+- Then review `internal/storage/interfaces.go` and the memory/SQLite store implementations.
+- Review `internal/fositeadapter/consent.go` for policy semantics and default production behavior in `provider.go`.
+- Validate with `go test ./...`.
+
+### Technical details
+
+Key files:
+
+```text
+internal/domain/types.go
+internal/domain/scopes.go
+internal/storage/interfaces.go
+internal/store/memory/store.go
+internal/store/sqlite/store.go
+internal/store/sqlite/migrations/001_schema.sql
+internal/fositeadapter/consent.go
+internal/fositeadapter/consent_test.go
+internal/fositeadapter/sqlstore_test.go
 ```

@@ -105,3 +105,16 @@ Extended Phase 8 hardening with server-side IdP browser sessions, prompt=none lo
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/session.go — Server-side session cookie and lookup
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/session_test.go — Session reuse and prompt=none tests
 
+
+## 2026-07-07
+
+Added persistent consent records to domain/storage/memory/SQLite stores, made production strict provider default to stored consent, and added refresh-token reuse regression coverage for SQLite-backed Fosite state.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/domain/types.go — Consent domain model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/consent.go — Stored consent policy
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — Refresh-token reuse regression
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/storage/interfaces.go — Consent store contract
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/store.go — SQLite consent persistence
+
