@@ -52,6 +52,12 @@ type RefreshTokenStore interface {
 	RevokeRefreshTokenFamily(ctx context.Context, tokenHash []byte, at time.Time) error
 }
 
+type ConsentStore interface {
+	PutConsent(ctx context.Context, consent domain.Consent) error
+	GetConsent(ctx context.Context, userID, clientID string, scopes []string) (domain.Consent, error)
+	RevokeConsent(ctx context.Context, userID, clientID string, scopes []string, at time.Time) error
+}
+
 type SessionStore interface {
 	CreateSession(ctx context.Context, session domain.Session) error
 	GetSession(ctx context.Context, idHash []byte) (domain.Session, error)
@@ -73,6 +79,7 @@ type Store interface {
 	AuthorizationCodeStore
 	AccessTokenStore
 	RefreshTokenStore
+	ConsentStore
 	SessionStore
 	KeyStore
 }

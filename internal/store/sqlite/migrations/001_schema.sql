@@ -5,5 +5,7 @@ CREATE TABLE IF NOT EXISTS authorization_codes (hash TEXT PRIMARY KEY, data BLOB
 CREATE TABLE IF NOT EXISTS access_tokens (hash TEXT PRIMARY KEY, data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS refresh_tokens (hash TEXT PRIMARY KEY, grant_id TEXT NOT NULL, data BLOB NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_grant_id ON refresh_tokens(grant_id);
+CREATE TABLE IF NOT EXISTS consents (key TEXT PRIMARY KEY, user_id TEXT NOT NULL, client_id TEXT NOT NULL, data BLOB NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_consents_user_client ON consents(user_id, client_id);
 CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS signing_keys (id TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 0, data BLOB NOT NULL);

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
 	"encoding/hex"
@@ -290,6 +291,40 @@ func (s *Store) revokeFamily(ctx context.Context, grantID string, at time.Time) 
 		}
 	}
 	return rows.Err()
+}
+
+func consentKey(userID, clientID string, scopes []string) string {
+	parts := append([]string{userID, clientID}, domain.NormalizeScopes(scopes)...)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Store) PutConsent(ctx context.Context, consent domain.Consent) error {
+	consent.Scope = domain.NormalizeScopes(consent.Scope)
+	b, _ := enc(consent)
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO consents(key,user_id,client_id,data) VALUES(?,?,?,?)`, consentKey(consent.UserID, consent.ClientID, consent.Scope), consent.UserID, consent.ClientID, b)
+	return err
+}
+func (s *Store) GetConsent(ctx context.Context, userID, clientID string, scopes []string) (domain.Consent, error) {
+	var b []byte
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM consents WHERE key=?`, consentKey(userID, clientID, scopes)).Scan(&b)
+	if err == sql.ErrNoRows {
+		return domain.Consent{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return domain.Consent{}, err
+	}
+	return dec[domain.Consent](b)
+}
+func (s *Store) RevokeConsent(ctx context.Context, userID, clientID string, scopes []string, at time.Time) error {
+	c, err := s.GetConsent(ctx, userID, clientID, scopes)
+	if err != nil {
+		return err
+	}
+	c.RevokedAt = &at
+	b, _ := enc(c)
+	_, err = s.db.ExecContext(ctx, `UPDATE consents SET data=? WHERE key=?`, b, consentKey(userID, clientID, scopes))
+	return err
 }
 
 func (s *Store) CreateSession(ctx context.Context, sess domain.Session) error {

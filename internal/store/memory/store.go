@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ type Store struct {
 	codes        map[string]domain.AuthorizationCode
 	access       map[string]domain.AccessToken
 	refresh      map[string]domain.RefreshToken
+	consents     map[string]domain.Consent
 	sessions     map[string]domain.Session
 	keys         map[string]domain.SigningKey
 }
@@ -36,6 +38,7 @@ func New() *Store {
 		codes:        map[string]domain.AuthorizationCode{},
 		access:       map[string]domain.AccessToken{},
 		refresh:      map[string]domain.RefreshToken{},
+		consents:     map[string]domain.Consent{},
 		sessions:     map[string]domain.Session{},
 		keys:         map[string]domain.SigningKey{},
 	}
@@ -265,6 +268,41 @@ func (s *Store) revokeRefreshFamilyLocked(grantID string, at time.Time) {
 			s.refresh[k] = t
 		}
 	}
+}
+
+func consentKey(userID, clientID string, scopes []string) string {
+	return userID + "\x00" + clientID + "\x00" + strings.Join(domain.NormalizeScopes(scopes), " ")
+}
+
+func (s *Store) PutConsent(_ context.Context, consent domain.Consent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	consent.Scope = domain.NormalizeScopes(consent.Scope)
+	s.consents[consentKey(consent.UserID, consent.ClientID, consent.Scope)] = consent
+	return nil
+}
+
+func (s *Store) GetConsent(_ context.Context, userID, clientID string, scopes []string) (domain.Consent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.consents[consentKey(userID, clientID, scopes)]
+	if !ok {
+		return domain.Consent{}, storage.ErrNotFound
+	}
+	return c, nil
+}
+
+func (s *Store) RevokeConsent(_ context.Context, userID, clientID string, scopes []string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := consentKey(userID, clientID, scopes)
+	c, ok := s.consents[k]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	c.RevokedAt = &at
+	s.consents[k] = c
+	return nil
 }
 
 func (s *Store) CreateSession(_ context.Context, session domain.Session) error {

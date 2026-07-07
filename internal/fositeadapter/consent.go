@@ -2,9 +2,12 @@ package fositeadapter
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"time"
 
 	"github.com/manuel/tinyidp/internal/domain"
+	"github.com/manuel/tinyidp/internal/storage"
 )
 
 type ConsentPolicy interface {
@@ -19,6 +22,42 @@ func (AlwaysSkipConsent) RequireConsent(context.Context, domain.User, domain.Cli
 }
 func (AlwaysSkipConsent) RecordConsent(context.Context, domain.User, domain.Client, []string) error {
 	return nil
+}
+
+type StoredConsent struct {
+	store storage.ConsentStore
+	ttl   time.Duration
+}
+
+func NewStoredConsent(store storage.ConsentStore, ttl time.Duration) *StoredConsent {
+	return &StoredConsent{store: store, ttl: ttl}
+}
+
+func (p *StoredConsent) RequireConsent(ctx context.Context, user domain.User, client domain.Client, scopes []string) (bool, error) {
+	consent, err := p.store.GetConsent(ctx, user.ID, client.ID, scopes)
+	if errors.Is(err, storage.ErrNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	now := time.Now().UTC()
+	if consent.RevokedAt != nil {
+		return true, nil
+	}
+	if !consent.ExpiresAt.IsZero() && now.After(consent.ExpiresAt) {
+		return true, nil
+	}
+	return false, nil
+}
+
+func (p *StoredConsent) RecordConsent(ctx context.Context, user domain.User, client domain.Client, scopes []string) error {
+	now := time.Now().UTC()
+	consent := domain.Consent{UserID: user.ID, ClientID: client.ID, Scope: domain.NormalizeScopes(scopes), GrantedAt: now}
+	if p.ttl > 0 {
+		consent.ExpiresAt = now.Add(p.ttl)
+	}
+	return p.store.PutConsent(ctx, consent)
 }
 
 type RememberConsent struct {
@@ -41,7 +80,7 @@ func (p *RememberConsent) RecordConsent(_ context.Context, user domain.User, cli
 }
 func consentKey(user domain.User, client domain.Client, scopes []string) string {
 	key := user.ID + "\x00" + client.ID
-	for _, s := range scopes {
+	for _, s := range domain.NormalizeScopes(scopes) {
 		key += "\x00" + s
 	}
 	return key

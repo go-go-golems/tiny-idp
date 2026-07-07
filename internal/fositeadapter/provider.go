@@ -92,7 +92,11 @@ func NewProvider(opts Options) (*Provider, error) {
 		opts.Audit = audit.NoopSink{}
 	}
 	if opts.Consent == nil {
-		opts.Consent = AlwaysSkipConsent{}
+		if opts.Mode == domain.ProductionMode {
+			opts.Consent = NewStoredConsent(opts.Store, 0)
+		} else {
+			opts.Consent = AlwaysSkipConsent{}
+		}
 	}
 	if opts.RateLimiter == nil {
 		opts.RateLimiter = AllowAllRateLimiter{}

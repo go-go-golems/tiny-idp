@@ -101,6 +101,33 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		}
 	})
 
+	t.Run("consent is normalized and revocable", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Now()
+		consent := domain.Consent{UserID: "u", ClientID: "c", Scope: []string{"email", "openid", "email"}, GrantedAt: now}
+		if err := st.PutConsent(ctx, consent); err != nil {
+			t.Fatalf("put consent: %v", err)
+		}
+		got, err := st.GetConsent(ctx, "u", "c", []string{"openid", "email"})
+		if err != nil {
+			t.Fatalf("get consent: %v", err)
+		}
+		if len(got.Scope) != 2 || got.Scope[0] != "email" || got.Scope[1] != "openid" {
+			t.Fatalf("scope not normalized: %#v", got.Scope)
+		}
+		if err := st.RevokeConsent(ctx, "u", "c", []string{"email", "openid"}, now); err != nil {
+			t.Fatalf("revoke consent: %v", err)
+		}
+		revoked, err := st.GetConsent(ctx, "u", "c", []string{"openid", "email"})
+		if err != nil {
+			t.Fatalf("get revoked consent: %v", err)
+		}
+		if revoked.RevokedAt == nil {
+			t.Fatalf("consent was not revoked")
+		}
+	})
+
 	t.Run("active signing key and verification keys", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)

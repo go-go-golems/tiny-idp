@@ -104,6 +104,18 @@ type RefreshToken struct {
 	ReuseDetectedAt *time.Time
 }
 
+// Consent records a user's approval for a client and a normalized set of
+// scopes. Consent is intentionally server-side state so prompt/consent behavior
+// survives provider restarts and does not depend on browser-controlled data.
+type Consent struct {
+	UserID    string
+	ClientID  string
+	Scope     []string
+	GrantedAt time.Time
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+}
+
 // Session is a server-side IdP browser session. The browser cookie carries a
 // random handle; storage keeps only IDHash.
 type Session struct {

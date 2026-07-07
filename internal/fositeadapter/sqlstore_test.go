@@ -18,6 +18,46 @@ import (
 	"github.com/manuel/tinyidp/internal/store/sqlite"
 )
 
+func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "idp.db")
+	secretKey := []byte("sqlite-fosite-secret-key-32-bytes")
+	st, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-reuse", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(provider.Handler())
+	defer ts.Close()
+
+	verifier := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	code := authorizeForCode(t, ts.URL, verifier)
+	tokens := exchangeCode(t, ts.URL, code, verifier)
+	oldRefresh := tokens["refresh_token"].(string)
+	firstRefresh := refreshToken(t, ts.URL, oldRefresh)
+	if firstRefresh["refresh_token"] == "" || firstRefresh["refresh_token"] == oldRefresh {
+		t.Fatalf("refresh token was not rotated: %#v", firstRefresh)
+	}
+	refreshTokenMustFail(t, ts.URL, oldRefresh)
+}
+
 func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "idp.db")
@@ -146,6 +186,23 @@ func exchangeCode(t *testing.T, baseURL, code, verifier string) map[string]any {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func refreshTokenMustFail(t *testing.T, baseURL, token string) {
+	t.Helper()
+	resp, err := http.PostForm(baseURL+"/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {"spa"},
+		"refresh_token": {token},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("refresh reuse unexpectedly succeeded: %s", b)
+	}
 }
 
 func refreshToken(t *testing.T, baseURL, token string) map[string]any {
