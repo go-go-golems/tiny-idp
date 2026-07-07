@@ -285,7 +285,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		ar, err := p.oauth2.NewAuthorizeRequest(fosite.NewContext(), r)
 		if err != nil {
-			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", err.Error())
+			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
@@ -326,7 +326,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 		}
 		ar, err := p.oauth2.NewAuthorizeRequest(fosite.NewContext(), r)
 		if err != nil {
-			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", err.Error())
+			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
@@ -377,14 +377,14 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 	}
 	accessRequest, err := p.oauth2.NewAccessRequest(fosite.NewContext(), r, openid.NewDefaultSession())
 	if err != nil {
-		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: err.Error()})
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: auditReason(err)})
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
 	p.grantRequestedAccessScopes(accessRequest)
 	response, err := p.oauth2.NewAccessResponse(fosite.NewContext(), accessRequest)
 	if err != nil {
-		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "rejected", Reason: err.Error()})
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "rejected", Reason: auditReason(err)})
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
@@ -438,7 +438,7 @@ func (p *Provider) grantRequestedAccessScopes(ar fosite.AccessRequester) {
 	}
 }
 
-func (p *Provider) newOIDCSession(u domain.User, ar fosite.AuthorizeRequester, authTime time.Time) *openid.DefaultSession {
+func (p *Provider) newOIDCSession(ctx context.Context, u domain.User, ar fosite.AuthorizeRequester, authTime time.Time) *openid.DefaultSession {
 	now := time.Now().UTC()
 	claims := &fositejwt.IDTokenClaims{
 		Issuer:      p.issuer.String(),
@@ -455,7 +455,11 @@ func (p *Provider) newOIDCSession(u domain.User, ar fosite.AuthorizeRequester, a
 			claims.Extra[k] = v
 		}
 	}
-	return &openid.DefaultSession{Claims: claims, Headers: &fositejwt.Headers{}, Subject: u.Sub, Username: u.PreferredUsername, ExpiresAt: map[fosite.TokenType]time.Time{}}
+	headers := fositejwt.NewHeaders()
+	if key, err := p.store.ActiveSigningKey(ctx); err == nil && key.ID != "" {
+		headers.Add("kid", key.ID)
+	}
+	return &openid.DefaultSession{Claims: claims, Headers: headers, Subject: u.Sub, Username: u.PreferredUsername, ExpiresAt: map[fosite.TokenType]time.Time{}}
 }
 
 func hidden(ar fosite.AuthorizeRequester) string {
@@ -499,7 +503,7 @@ func tokenError(w http.ResponseWriter, status int, code, desc string) {
 
 func (p *Provider) emit(ctx context.Context, e audit.Event, ar fosite.AuthorizeRequester, result, reason string) {
 	e.Result = result
-	e.Reason = reason
+	e.Reason = cleanAuditReason(reason)
 	if ar != nil {
 		if ar.GetClient() != nil {
 			e.ClientID = ar.GetClient().GetID()
@@ -554,10 +558,10 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 	}
 	p.grantRequestedScopes(ar)
 	p.grantRequestedAudience(ar)
-	session := p.newOIDCSession(u, ar, authTime)
+	session := p.newOIDCSession(r.Context(), u, ar, authTime)
 	response, err := p.oauth2.NewAuthorizeResponse(fosite.NewContext(), ar, session)
 	if err != nil {
-		p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", err.Error())
+		p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 		return
 	}

@@ -50,6 +50,37 @@ func TestAuthorizeRequiresCSRFAndEmitsAudit(t *testing.T) {
 	}
 }
 
+func TestAuditReasonsUseStableCodes(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	key, _ := keys.GenerateRSA("kid-1", time.Now())
+	_ = st.CreateSigningKey(ctx, key)
+	sink := audit.NewMemorySink()
+	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("audit-reason-secret-32-bytes!!!!"), Audit: sink})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+	resp, err := http.PostForm(ts.URL+"/token", url.Values{"grant_type": {"authorization_code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("token request unexpectedly succeeded")
+	}
+	for _, e := range sink.Events() {
+		if e.Name == "token.request.rejected" {
+			if e.Reason == "" || strings.Contains(e.Reason, " ") || strings.Contains(e.Reason, "(") {
+				t.Fatalf("unstable audit reason: %#v", e)
+			}
+			return
+		}
+	}
+	t.Fatalf("token rejection audit event not found: %#v", sink.Events())
+}
+
 func TestSecurityHeadersOnDiscovery(t *testing.T) {
 	st := memory.New()
 	key, _ := keys.GenerateRSA("kid-1", time.Now())

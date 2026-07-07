@@ -2,10 +2,13 @@ package fositeadapter_test
 
 import (
 	"context"
+	"crypto"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -103,6 +106,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	if body["id_token"] == "" || body["access_token"] == "" || body["refresh_token"] == "" {
 		t.Fatalf("missing token fields: %#v", body)
 	}
+	verifyIDTokenAgainstJWKS(t, ts.URL, body["id_token"].(string), "http://127.0.0.1:5556", "spa", "nonce-1234567890")
 
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer "+body["access_token"].(string))
@@ -195,6 +199,93 @@ func cloneValues(v url.Values) url.Values {
 		out[k] = append([]string(nil), vv...)
 	}
 	return out
+}
+
+func verifyIDTokenAgainstJWKS(t *testing.T, baseURL, token, issuer, audience, nonce string) {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("id_token has %d parts", len(parts))
+	}
+	var header map[string]any
+	if b, err := base64.RawURLEncoding.DecodeString(parts[0]); err != nil {
+		t.Fatal(err)
+	} else if err := json.Unmarshal(b, &header); err != nil {
+		t.Fatal(err)
+	}
+	kid, _ := header["kid"].(string)
+	if header["alg"] != "RS256" || kid == "" {
+		t.Fatalf("bad token header: %#v", header)
+	}
+	resp, err := http.Get(baseURL + "/jwks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var jwks struct {
+		Keys []struct {
+			Kid string `json:"kid"`
+			Alg string `json:"alg"`
+			N   string `json:"n"`
+			E   string `json:"e"`
+		} `json:"keys"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
+		t.Fatal(err)
+	}
+	var pub *rsa.PublicKey
+	for _, k := range jwks.Keys {
+		if k.Kid != kid {
+			continue
+		}
+		nBytes, err := base64.RawURLEncoding.DecodeString(k.N)
+		if err != nil {
+			t.Fatal(err)
+		}
+		eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pub = &rsa.PublicKey{N: new(big.Int).SetBytes(nBytes), E: int(new(big.Int).SetBytes(eBytes).Int64())}
+	}
+	if pub == nil {
+		t.Fatalf("jwks missing kid %q", kid)
+	}
+	input := parts[0] + "." + parts[1]
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(input))
+	if err := rsa.VerifyPKCS1v15(pub, crypto.SHA256, sum[:], sig); err != nil {
+		t.Fatalf("id_token signature verification failed: %v", err)
+	}
+	var claims map[string]any
+	if b, err := base64.RawURLEncoding.DecodeString(parts[1]); err != nil {
+		t.Fatal(err)
+	} else if err := json.Unmarshal(b, &claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims["iss"] != issuer || claims["nonce"] != nonce || !claimHasAudience(claims["aud"], audience) {
+		t.Fatalf("bad id_token claims: %#v", claims)
+	}
+	if _, ok := claims["exp"].(float64); !ok {
+		t.Fatalf("missing numeric exp: %#v", claims)
+	}
+}
+
+func claimHasAudience(v any, audience string) bool {
+	switch x := v.(type) {
+	case string:
+		return x == audience
+	case []any:
+		for _, item := range x {
+			if s, ok := item.(string); ok && s == audience {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func s256(v string) string {

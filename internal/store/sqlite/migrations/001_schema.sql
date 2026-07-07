@@ -9,3 +9,12 @@ CREATE TABLE IF NOT EXISTS consents (key TEXT PRIMARY KEY, user_id TEXT NOT NULL
 CREATE INDEX IF NOT EXISTS idx_consents_user_client ON consents(user_id, client_id);
 CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS signing_keys (id TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 0, data BLOB NOT NULL);
+
+CREATE TABLE IF NOT EXISTS fosite_authorize_codes (signature TEXT PRIMARY KEY, active INTEGER NOT NULL, request_json BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS fosite_pkces (signature TEXT PRIMARY KEY, request_json BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS fosite_oidc_sessions (signature TEXT PRIMARY KEY, request_json BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS fosite_access_tokens (signature TEXT PRIMARY KEY, request_id TEXT NOT NULL, request_json BLOB NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_fosite_access_request_id ON fosite_access_tokens(request_id);
+CREATE TABLE IF NOT EXISTS fosite_refresh_tokens (signature TEXT PRIMARY KEY, request_id TEXT NOT NULL, active INTEGER NOT NULL, access_token_signature TEXT NOT NULL, request_json BLOB NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_fosite_refresh_request_id ON fosite_refresh_tokens(request_id);
+CREATE TABLE IF NOT EXISTS fosite_jtis (jti TEXT PRIMARY KEY, expires_at TIMESTAMP NOT NULL);
