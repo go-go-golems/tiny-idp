@@ -34,6 +34,12 @@ RelatedFiles:
       Note: |-
         Implemented Phase 4 strict adapter seam and handler spike
         Real Fosite-backed adapter replacing the strict handwritten spike
+    - Path: repo://internal/fositeadapter/ratelimit.go
+      Note: Phase 8 rate-limiting hook and default implementation
+    - Path: repo://internal/fositeadapter/session.go
+      Note: Phase 8 server-side IdP browser sessions
+    - Path: repo://internal/fositeadapter/session_test.go
+      Note: Phase 8 session reuse and prompt=none test evidence
     - Path: repo://internal/fositeadapter/sqlstore.go
       Note: Durable Fosite protocol-state storage for production SQLite deployments
     - Path: repo://internal/fositeadapter/sqlstore_test.go
@@ -75,6 +81,7 @@ LastUpdated: 2026-07-07T14:48:25.103428211-04:00
 WhatFor: Use this when implementing TINYIDP-PROD-001 or onboarding an engineer to the production IdP architecture.
 WhenToUse: Before changing engine boundaries, storage, keys, security validation, Fosite integration, or production startup behavior.
 ---
+
 
 
 

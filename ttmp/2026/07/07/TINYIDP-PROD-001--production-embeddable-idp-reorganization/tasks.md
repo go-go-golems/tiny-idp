@@ -35,3 +35,5 @@
 - [x] Phase 8.2: Add strict security headers and no-store behavior for browser/protocol responses <!-- t:nhcv -->
 - [x] Phase 8.3: Add structured audit sink and emit security events without raw secrets <!-- t:smfq -->
 - [x] Phase 8.4: Add consent policy interface and default skip/remember implementations <!-- t:zv9d -->
+- [x] Phase 8.5: Add server-side IdP browser sessions with secure opaque cookies and silent authorization reuse <!-- t:83kh -->
+- [x] Phase 8.6: Add rate-limiting hook and default fixed-window implementation for login and token paths <!-- t:scb2 -->

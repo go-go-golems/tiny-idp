@@ -93,3 +93,15 @@ Implemented Phase 8 hardening foundation: strict login CSRF protection, security
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/hardening_test.go — Hardening tests
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Security headers, audit emissions, consent checks, no-store token handling
 
+
+## 2026-07-07
+
+Extended Phase 8 hardening with server-side IdP browser sessions, prompt=none login_required handling, silent authorization reuse, consent continuation from an existing session, and rate-limiting hooks/defaults.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Session-aware authorize flow and rate-limit enforcement
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/ratelimit.go — Rate-limiter interface and fixed-window implementation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/session.go — Server-side session cookie and lookup
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/session_test.go — Session reuse and prompt=none tests
+

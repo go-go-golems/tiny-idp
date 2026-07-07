@@ -28,6 +28,10 @@ RelatedFiles:
       Note: |-
         Phase 4 implementation recorded in diary
         Step 8 real Fosite implementation
+    - Path: repo://internal/fositeadapter/ratelimit.go
+      Note: Step 11 rate-limit hardening implementation
+    - Path: repo://internal/fositeadapter/session.go
+      Note: Step 11 session hardening implementation
     - Path: repo://internal/fositeadapter/sqlstore.go
       Note: Step 9 durable Fosite storage implementation
     - Path: repo://internal/store/sqlite/store.go
@@ -44,6 +48,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -1045,6 +1050,112 @@ internal/fositeadapter/csrf.go
 internal/fositeadapter/consent.go
 internal/fositeadapter/provider.go
 internal/fositeadapter/hardening_test.go
+pkg/embeddedidp/options.go
+pkg/embeddedidp/provider.go
+```
+
+## Step 11: Add server-side IdP sessions and rate-limiting hooks
+
+I continued hardening by adding the server-side IdP browser session layer that the previous CSRF/consent pass deliberately left as future work. The strict provider can now create an opaque browser session after login, store only a keyed hash of the session handle, silently issue authorization codes for later authorize requests with a valid session, and return `login_required` for `prompt=none` requests when no valid session is present.
+
+I also added a rate-limiting abstraction and a fixed-window implementation. The default remains allow-all so existing tests and embeddings are not broken, but production callers can now wire a limiter through `embeddedidp.Options` and the strict adapter enforces it on login and token paths.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 10)
+
+**Assistant interpretation:** Continue production hardening beyond the first browser controls and avoid leaving the provider without sessions or rate-limiting hooks.
+
+**Inferred user intent:** The user wants the production side to be materially closer to a real embeddable IdP, not just a protocol/token service.
+
+**Commit (code):** 958232d3e68b2e43fb65479d2ab5703276927890 — "Add strict IdP sessions and rate limiting hooks"
+
+### What I did
+
+- Added `internal/fositeadapter/session.go`:
+  - `tinyidp_session` opaque cookie.
+  - keyed HMAC hash storage using the existing `domain.Session` record.
+  - server-side session creation after login.
+  - session lookup, expiry, revocation, and disabled-user checks.
+  - issuer-path-scoped, `HttpOnly`, `SameSite=Lax`, optionally `Secure` cookie settings.
+- Updated strict `/authorize` behavior:
+  - GET with valid session and no `prompt=login` can silently issue an authorization code.
+  - GET with `prompt=none` and no session redirects with `login_required` via Fosite error handling.
+  - GET with valid session but required consent renders a continuation form instead of asking for credentials again.
+  - POST can continue from an existing session without a login field, which is needed for consent continuation.
+  - POST login creates a server-side IdP session before completing authorization.
+- Added `internal/fositeadapter/session_test.go`:
+  - verifies session cookie issuance;
+  - verifies silent authorization code issuance from an existing session;
+  - verifies `prompt=none` without a session returns `login_required`.
+- Added `internal/fositeadapter/ratelimit.go`:
+  - `RateLimiter` interface;
+  - `AllowAllRateLimiter` default;
+  - `FixedWindowRateLimiter` implementation.
+- Wired `RateLimiter` through `fositeadapter.Options` and `embeddedidp.Options`.
+- Enforced rate limiting on login POST and token POST paths with audit events for rejections.
+
+### Why
+
+- The IdP session is distinct from RP application sessions and is required for OIDC semantics such as silent authorization, `prompt=none`, `prompt=login`, and consent continuation.
+- Rate-limiting needs to be a hook because embedded deployments may use in-process, reverse-proxy, Redis, or host-application limiters.
+
+### What worked
+
+- Focused session test passed:
+
+```bash
+go test ./internal/fositeadapter -run TestBrowserSessionSilentAuthorizeAndPromptNone -v
+```
+
+- Full suite passed:
+
+```bash
+go test ./...
+```
+
+### What didn't work
+
+- The first session test failed because the test secret was 31 bytes, and Fosite requires a 32-byte HMAC secret. I fixed the test secret length.
+- The session test initially exposed the generic Fosite `server_error` message; enabling debug responses only for dev mode made local test failures diagnosable without enabling debug messages in production mode.
+
+### What I learned
+
+- Fosite's OIDC prompt/max_age validation depends on `auth_time`, so the strict provider needs to preserve the original browser-session authentication time and pass it into the OIDC session when silently authorizing.
+- Consent continuation needs an authenticated browser session; otherwise the provider cannot know which user is approving scopes without asking for credentials again.
+
+### What was tricky to build
+
+- The authorize handler now has three distinct branches: unauthenticated login, authenticated silent authorization, and authenticated consent continuation. Keeping those branches explicit made it easier to avoid accidentally bypassing consent or CSRF.
+- Session cookies need to share the same path logic as CSRF cookies so path-based issuers work correctly.
+
+### What warrants a second pair of eyes
+
+- Review the authorize flow for prompt semantics. `prompt=login` currently forces the login form despite an existing session; `prompt=none` without a session uses Fosite's `login_required` error.
+- Review the rate-limit keys. They currently use path category plus `RemoteAddr` and client ID for token requests. Deployments behind proxies may need trusted-proxy normalization.
+
+### What should be done in the future
+
+- Persist consent records instead of using only in-memory `RememberConsent`.
+- Add trusted proxy handling for remote address normalization.
+- Add tests for `prompt=login` and `max_age` once the session UX is expanded.
+
+### Code review instructions
+
+- Start with `internal/fositeadapter/session.go`.
+- Then review the GET/POST branches in `internal/fositeadapter/provider.go`.
+- Review `internal/fositeadapter/session_test.go` for session behavior.
+- Review `internal/fositeadapter/ratelimit.go` and decide how production deployments should supply limiter keys.
+
+### Technical details
+
+Key files:
+
+```text
+internal/fositeadapter/session.go
+internal/fositeadapter/ratelimit.go
+internal/fositeadapter/provider.go
+internal/fositeadapter/session_test.go
 pkg/embeddedidp/options.go
 pkg/embeddedidp/provider.go
 ```
