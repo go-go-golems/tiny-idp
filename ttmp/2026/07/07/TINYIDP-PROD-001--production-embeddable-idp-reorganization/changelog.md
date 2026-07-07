@@ -34,3 +34,28 @@ Uploaded design guide, intern textbook, and source index bundle to reMarkable at
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/design-doc/01-production-embeddable-idp-design-and-implementation-guide.md — Uploaded in bundle
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/reference/01-oidc-intern-textbook.md — Uploaded in bundle
 
+
+## 2026-07-07
+
+Implemented phases 1-3 foundation: domain models/validation, storage interfaces, memory store test suite, OIDC metadata helpers, and key/JWKS helpers (commit 05b7189).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/domain/types.go — Production domain model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/keys/keys.go — RSA key and JWKS helpers
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/oidcmeta/discovery.go — Production discovery metadata
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/storage/interfaces.go — Store contracts
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/memory/store.go — Memory store implementation
+
+
+## 2026-07-07
+
+Implemented phases 4-7 scaffold: strict adapter seam and end-to-end code flow, embedded provider API and validation, SQLite store with migrations and restart key test, and tinyidp serve --engine mock|fosite wiring (commit 1a796cf).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve.go — CLI engine selection
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Strict production-like adapter seam
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/store.go — SQLite persistent store
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Public embedded provider API
+

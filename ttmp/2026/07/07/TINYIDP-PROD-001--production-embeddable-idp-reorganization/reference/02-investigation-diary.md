@@ -12,6 +12,14 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://internal/cmds/serve.go
+      Note: Phase 7 implementation recorded in diary
+    - Path: repo://internal/domain/types.go
+      Note: Phase 1 implementation recorded in diary
+    - Path: repo://internal/fositeadapter/provider.go
+      Note: Phase 4 implementation recorded in diary
+    - Path: repo://internal/store/sqlite/store.go
+      Note: Phase 6 implementation recorded in diary
     - Path: repo://ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/design-doc/01-production-embeddable-idp-design-and-implementation-guide.md
       Note: Primary design deliverable written during this diary
     - Path: repo://ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/reference/01-oidc-intern-textbook.md
@@ -24,6 +32,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 # Diary
@@ -358,4 +367,314 @@ Primary docs:
 ```text
 ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/design-doc/01-production-embeddable-idp-design-and-implementation-guide.md
 ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/reference/01-oidc-intern-textbook.md
+```
+
+## Step 5: Add precise phase tasks and commit the ticket package
+
+I expanded the ticket task list into phase-level tracking items before starting code. The tasks now break phases 1 through 7 into concrete substeps for domain modeling, validation, storage interfaces, memory persistence, metadata, keys, strict adapter work, embedded API, SQLite, and CLI engine selection.
+
+This step also committed the ticket package that had been created earlier: downloaded sources, design guide, intern textbook, diary, tasks, changelog, and index files. That gives the implementation work a stable documentation baseline.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, add etailed phases and tasks per phase so we can precisely keep track of what you are working on.
+Then work on this task by task, keeping a detailed diary as you work, and do phases 1-7. I am going swimming for a while so you should really go at it and get it all done for when I come back, don't stop midway. 
+
+commit at appropriate intervals."
+
+**Assistant interpretation:** Expand the ticket with detailed implementation tasks, then implement phases 1 through 7 autonomously, updating the diary and committing at meaningful boundaries.
+
+**Inferred user intent:** The user wants progress to be trackable while they are away and wants commits that separate documentation, foundation work, and implementation work.
+
+**Commit (code):** 3039365092ed10adf5bc38b61d04492f6dbf8493 — "Docs: expand production IdP phase tasks"
+
+### What I did
+
+- Added 21 phase tasks to `tasks.md`:
+  - Phase 1 domain model and validation tasks.
+  - Phase 2 storage interfaces and memory store tasks.
+  - Phase 3 OIDC metadata and key/JWKS tasks.
+  - Phase 4 strict adapter seam and authorization-code-flow spike tasks.
+  - Phase 5 embedded provider API tasks.
+  - Phase 6 SQLite persistence tasks.
+  - Phase 7 CLI engine-switch tasks.
+- Committed the full ticket package and sources.
+
+### Why
+
+- The user asked for precise task tracking before implementation.
+- Committing the ticket state first makes later code commits easier to review independently.
+
+### What worked
+
+- `docmgr task add` created stable task IDs for every phase subtask.
+- The first commit captured the documentation baseline.
+
+### What didn't work
+
+- The initial commit was larger than ideal because the prior turn had created all source downloads and documents but had not committed them yet.
+
+### What I learned
+
+- Future ticket creation work should commit the ticket package immediately after upload/validation, before the next user asks for implementation.
+
+### What was tricky to build
+
+- The phase list needed to be detailed enough for tracking without exploding into dozens of tiny tasks that would make bookkeeping slower than implementation. I grouped each phase into three concrete tasks.
+
+### What warrants a second pair of eyes
+
+- Review whether the phase task names should become separate follow-up tickets once the production code leaves scaffold/spike status.
+
+### What should be done in the future
+
+- Keep phase tasks checked as code lands, not all at final handoff.
+
+### Code review instructions
+
+- Review `tasks.md` and confirm phase names match the design guide.
+- Use `git show --stat 3039365` to see the documentation baseline.
+
+### Technical details
+
+Commands included:
+
+```bash
+docmgr task add --ticket TINYIDP-PROD-001 --text "Phase 1.1: ..."
+git add ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization
+git commit -m "Docs: expand production IdP phase tasks"
+```
+
+## Step 6: Implement phases 1 through 3 foundation packages
+
+I implemented the production foundation before touching HTTP routing. This created project-owned domain types, validation rules, storage contracts, a concurrency-safe memory store, strict OIDC discovery helpers, and RSA/JWKS helpers. These packages give later phases a shared vocabulary that does not depend on the current mock server package.
+
+The implementation deliberately keeps production semantics out of the mock engine. The current `internal/server` package remains unchanged; new production-facing packages live beside it.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 5)
+
+**Assistant interpretation:** Work through phases in order and commit at the foundation boundary.
+
+**Inferred user intent:** The user wants durable progress that can be reviewed and continued even if later phases need refinement.
+
+**Commit (code):** 05b7189c9fe75f3a9c48fecb894791b8a6c0a50c — "Add production IdP domain and stores"
+
+### What I did
+
+- Added `internal/domain`:
+  - `Client`, `User`, `Grant`, `AuthorizationCode`, `AccessToken`, `RefreshToken`, `Session`, and `SigningKey`.
+  - `Mode` with `DevMode` and `ProductionMode`.
+  - Validation for empty client IDs, wildcard redirects, redirect fragments, production HTTP redirect URIs, public-client PKCE requirements, and subject/email mistakes.
+  - Scope parsing/deduplication and claim filtering by scope.
+  - HMAC-SHA256 secret hashing helper.
+- Added `internal/storage`:
+  - Store interfaces for clients, users, grants, authorization codes, access tokens, refresh tokens, sessions, and keys.
+  - Shared store test suite covering one-time code consumption, parallel code consumption, expired code rejection, refresh-token rotation/reuse detection, and signing key activation.
+- Added `internal/store/memory`:
+  - Concurrency-safe maps for all store interfaces.
+  - Refresh-token family revocation on reuse detection.
+  - `Persistent() bool` reporting false for production validation.
+- Added `internal/oidcmeta`:
+  - Issuer parsing and validation.
+  - Path-based discovery path construction.
+  - Conservative production discovery metadata that advertises `code` and `S256` only.
+- Added `internal/keys`:
+  - RSA key generation.
+  - PEM parsing.
+  - Public JWKS construction.
+  - Public-only JWKS tests.
+
+### Why
+
+- The production provider needs domain and persistence contracts before an HTTP engine can be meaningful.
+- Shared tests force memory and future SQLite stores to preserve the same replay and rotation invariants.
+
+### What worked
+
+- Targeted tests passed:
+
+```bash
+go test ./internal/domain ./internal/storage ./internal/store/memory ./internal/oidcmeta ./internal/keys
+```
+
+- Store suite found and codified the expected one-winner behavior for concurrent authorization-code consumption.
+
+### What didn't work
+
+- N/A for this step.
+
+### What I learned
+
+- The memory store can model refresh-token family reuse detection more strictly than the original mock by retaining consumed refresh-token records instead of deleting them.
+- Treating empty `AllowedScopes` as deny-by-default in the production domain prevents accidental permissive clients; the mock keeps its own legacy permissive behavior separately.
+
+### What was tricky to build
+
+- The store suite had to verify concurrency without making timing assumptions. I used concurrent goroutines racing to consume the same code and asserted exactly one success.
+- Refresh-token reuse detection had to preserve the old token record after rotation so a second use can be identified as reuse instead of a generic unknown token.
+
+### What warrants a second pair of eyes
+
+- The production redirect URI validation currently permits HTTP loopback in dev mode and rejects non-loopback HTTP in production. Review whether production should also reject loopback HTTP clients unless a separate explicit local-client escape hatch is provided.
+- The domain `AllowedScopes` deny-by-default behavior differs from the mock client's empty-allowed-scopes behavior intentionally; reviewers should confirm this split is acceptable.
+
+### What should be done in the future
+
+- Add fuzz tests for issuer parsing, redirect URI parsing, and scope parsing.
+- Add password-hash utilities once real password login is implemented.
+
+### Code review instructions
+
+- Start at `internal/domain/types.go` and `internal/domain/validate.go`.
+- Then review `internal/storage/testsuite.go`, because it defines behavioral contracts that every store must satisfy.
+- Validate with:
+
+```bash
+go test ./internal/domain ./internal/storage ./internal/store/memory ./internal/oidcmeta ./internal/keys
+```
+
+### Technical details
+
+Key files:
+
+```text
+internal/domain/types.go
+internal/domain/validate.go
+internal/storage/interfaces.go
+internal/storage/testsuite.go
+internal/store/memory/store.go
+internal/oidcmeta/discovery.go
+internal/keys/keys.go
+```
+
+## Step 7: Implement phases 4 through 7 strict engine scaffold
+
+I implemented the strict engine scaffold, embedded provider API, SQLite persistence, and CLI engine switch. The result is a working production-like path that supports strict Authorization Code + S256 PKCE, discovery, JWKS, token exchange, refresh rotation, UserInfo, no debug routes, `pkg/embeddedidp.New`, a SQLite store, and `tinyidp serve --engine fosite` wiring.
+
+There is an important caveat: the package is named `internal/fositeadapter` and exposes the intended Fosite adapter seam plus the explicit production handler list, but this commit does not yet bind to Ory Fosite itself. The handler is a strict in-repo spike that lets phases 5 through 7 compile and run while preserving the future adapter boundary. The next production-hardening pass should replace the handwritten strict protocol internals with actual Fosite composition behind the same package boundary.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 5)
+
+**Assistant interpretation:** Continue through phases 4-7 and commit after the strict engine, embedded API, SQLite, and CLI wiring compile and pass tests.
+
+**Inferred user intent:** The user wants an end-to-end scaffold rather than isolated packages only.
+
+**Commit (code):** 1a796cf2b12f28d1227f6549a88ab9411b51b0d3 — "Add strict embedded IdP engine scaffold"
+
+### What I did
+
+- Extended `internal/keys` with `SignJWT` for RS256 compact JWT signing.
+- Added `internal/fositeadapter`:
+  - Explicit `ProductionHandlerFactories` list matching the planned Fosite composition.
+  - Strict discovery, JWKS, authorize, token, UserInfo, health, and readiness handlers.
+  - S256 PKCE requirement.
+  - One-time code consumption through the store.
+  - ID Token signing from the active signing key.
+  - Opaque access tokens and rotating refresh tokens.
+  - Tests for end-to-end authorization-code flow and absence of `/debug`.
+- Added `pkg/embeddedidp`:
+  - Public `Options`, `Provider`, and `New` API.
+  - Production validation for HTTPS issuer, secure cookies, persistent store reporting, configured clients, and active signing key.
+  - Tests for production validation and no debug route.
+- Added `internal/store/sqlite`:
+  - Embedded migration schema.
+  - JSON-backed SQLite implementation for every store interface.
+  - Store-suite test against SQLite.
+  - Restart-stable signing-key test.
+- Added `examples/embedded`:
+  - Minimal build-ignored example showing `embeddedidp.New` wiring.
+- Added `--engine` to the OIDC settings section and print-config output.
+- Updated `internal/cmds/serve.go`:
+  - Default `engine=mock` preserves existing behavior.
+  - `engine=fosite` builds the strict provider over a memory store seeded from current clients and scenarios.
+  - Unknown engines fail with a clear error.
+- Added `internal/cmds/strict_engine_test.go` for discovery and debug-route smoke coverage.
+
+### Why
+
+- Phases 4 through 7 needed a runnable path, not just APIs.
+- The strict provider lets developers start compatibility testing with `tinyidp serve --engine fosite` while the mock remains the default.
+- SQLite persistence proves the store contracts are not memory-only.
+
+### What worked
+
+- Full test suite passed:
+
+```bash
+go test ./...
+```
+
+- Strict adapter end-to-end test exercises:
+  - authorize POST,
+  - code callback,
+  - token exchange,
+  - ID/access/refresh token response,
+  - UserInfo.
+- SQLite store passed the same store suite as memory.
+- Signing keys persisted across SQLite reopen.
+- CLI strict-engine smoke test confirmed discovery works and `/debug` is absent.
+
+### What didn't work
+
+- I did not integrate the real Ory Fosite dependency in this pass. The adapter seam is present, and the strict handler follows the intended Authorization Code + PKCE behavior, but Fosite's `NewAuthorizeRequest`, `NewAccessRequest`, and response writers are not yet used.
+- The SQLite implementation is intentionally simple and JSON-backed. It is suitable for exercising the persistence contract, but it is not yet the final relational schema described in the design guide.
+- Login in the strict engine is a minimal form/post flow backed by seeded users. It is not a hardened login subsystem with CSRF, audit, rate limiting, or consent yet.
+
+### What I learned
+
+- The existing scenario registry can seed a strict dev engine well enough for compatibility tests, but scenario failure behavior is intentionally ignored in strict mode.
+- Keeping `mock` as the default made CLI wiring low-risk: existing tests continued to pass, and strict behavior is opt-in.
+
+### What was tricky to build
+
+- The strict engine needed to share current client/user config without importing mock-only behavior into production packages. I solved this by converting `client.Client` and `scenario.Scenario` values into `domain.Client` and `domain.User` inside `internal/cmds/serve.go` only.
+- SQLite refresh-token reuse detection had to update token-family records while avoiding assumptions about relational columns. I used JSON records plus indexed `grant_id` as an interim representation.
+- The test for authorization redirect initially used `http.PostForm`, which followed the redirect to `rp.example` and failed DNS lookup. I fixed the test by using an HTTP client with `CheckRedirect: http.ErrUseLastResponse`.
+
+### What warrants a second pair of eyes
+
+- `internal/fositeadapter/provider.go` should be reviewed as a spike, not as the final Fosite integration. The next pass should replace handwritten strict protocol handling with actual Ory Fosite calls behind this boundary.
+- `internal/store/sqlite/store.go` should be reviewed for transaction boundaries before production use. The current mutex-backed implementation passes the suite but is not a final multi-process concurrency design.
+- `pkg/embeddedidp.Options` should be reviewed before external consumers rely on it.
+- The strict engine currently uses a dev in-memory store when started from the CLI. Production embedding should use SQLite or another persistent store.
+
+### What should be done in the future
+
+- Replace the strict handwritten protocol internals with Ory Fosite composition.
+- Add CSRF, consent, audit events, secure cookie sessions, and rate-limiting hooks in the Phase 8 hardening pass.
+- Normalize SQLite schema from JSON-backed records into explicit columns before declaring storage stable.
+- Add `tinyidp print-config` docs for the new `engine` field.
+
+### Code review instructions
+
+- Start with the public API in `pkg/embeddedidp/options.go` and `pkg/embeddedidp/provider.go`.
+- Review strict protocol flow in `internal/fositeadapter/provider.go`.
+- Review persistence behavior in `internal/store/sqlite/store.go` and `internal/storage/testsuite.go` together.
+- Review CLI wiring in `internal/cmds/serve.go` and confirm `mock` remains default.
+- Validate with:
+
+```bash
+go test ./...
+go run ./cmd/tinyidp print-config
+go run ./cmd/tinyidp print-config --engine fosite
+```
+
+### Technical details
+
+Key files:
+
+```text
+internal/fositeadapter/provider.go
+internal/fositeadapter/provider_test.go
+pkg/embeddedidp/options.go
+pkg/embeddedidp/provider.go
+internal/store/sqlite/store.go
+internal/store/sqlite/migrations/001_schema.sql
+internal/cmds/serve.go
+internal/sections/oidc/section.go
+examples/embedded/main.go
 ```
