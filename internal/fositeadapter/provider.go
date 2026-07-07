@@ -48,6 +48,7 @@ type Options struct {
 	AccessTokenTTL  time.Duration
 	IDTokenTTL      time.Duration
 	RefreshTokenTTL time.Duration
+	SessionTTL      time.Duration
 	// ClientSecrets optionally supplies plaintext client secrets for callers that
 	// are converting legacy/dev config into Fosite's BCrypt client store. The
 	// production embedded API should prefer BCrypt hashes in domain.Client.SecretHash.
@@ -55,6 +56,7 @@ type Options struct {
 	CookieSecure  bool
 	Audit         audit.Sink
 	Consent       ConsentPolicy
+	RateLimiter   RateLimiter
 }
 
 type Provider struct {
@@ -68,6 +70,8 @@ type Provider struct {
 	cookieSecure bool
 	audit        audit.Sink
 	consent      ConsentPolicy
+	rateLimiter  RateLimiter
+	sessionTTL   time.Duration
 }
 
 func NewProvider(opts Options) (*Provider, error) {
@@ -90,6 +94,9 @@ func NewProvider(opts Options) (*Provider, error) {
 	if opts.Consent == nil {
 		opts.Consent = AlwaysSkipConsent{}
 	}
+	if opts.RateLimiter == nil {
+		opts.RateLimiter = AllowAllRateLimiter{}
+	}
 	if opts.CodeTTL == 0 {
 		opts.CodeTTL = 5 * time.Minute
 	}
@@ -102,9 +109,14 @@ func NewProvider(opts Options) (*Provider, error) {
 	if opts.RefreshTokenTTL == 0 {
 		opts.RefreshTokenTTL = 24 * time.Hour
 	}
+	if opts.SessionTTL == 0 {
+		opts.SessionTTL = 24 * time.Hour
+	}
 
+	sendDebug := opts.Mode != domain.ProductionMode
 	cfg := &fosite.Config{
 		GlobalSecret:                   opts.SecretKey,
+		SendDebugMessagesToClients:     sendDebug,
 		AccessTokenLifespan:            opts.AccessTokenTTL,
 		RefreshTokenLifespan:           opts.RefreshTokenTTL,
 		AuthorizeCodeLifespan:          opts.CodeTTL,
@@ -125,7 +137,7 @@ func NewProvider(opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, audit: opts.Audit, consent: opts.Consent}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, audit: opts.Audit, consent: opts.Consent, rateLimiter: opts.RateLimiter, sessionTTL: opts.SessionTTL}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -273,13 +285,34 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
-		csrf := p.issueCSRF(w)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		_, _ = fmt.Fprintf(w, `<html><body><form method="post"><input name="login" autocomplete="username"><input name="password" type="password" autocomplete="current-password"><input type="hidden" name="csrf_token" value="%s"><label><input type="checkbox" name="consent_approved" value="true"> Approve requested access</label>%s<button type="submit">Login</button></form></body></html>`, htmlEscape(csrf), hidden(ar))
+		u, sess, hasSession := p.readBrowserSession(r)
+		if hasSession && !promptHas(ar.GetRequestForm().Get("prompt"), "login") {
+			client, _ := p.store.GetClient(r.Context(), ar.GetClient().GetID())
+			requireConsent, err := p.consent.RequireConsent(r.Context(), u, client, []string(ar.GetRequestedScopes()))
+			if err != nil {
+				http.Error(w, "consent policy failed", http.StatusInternalServerError)
+				return
+			}
+			if !requireConsent {
+				p.finishAuthorize(w, r, ar, u, sess.AuthTime, false)
+				return
+			}
+			p.renderInteraction(w, ar, false, true)
+			return
+		}
+		if promptHas(ar.GetRequestForm().Get("prompt"), "none") {
+			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrLoginRequired)
+			return
+		}
+		p.renderInteraction(w, ar, true, true)
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		if !p.rateLimiter.Allow(r.Context(), "authorize:"+r.RemoteAddr) {
+			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.rate_limited", Result: "rejected", Reason: "rate_limited"})
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return
 		}
 		if !p.validateCSRF(r) {
@@ -293,54 +326,28 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
+		u, sess, hasSession := p.readBrowserSession(r)
+		authTime := sess.AuthTime
 		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
-		if login == "" {
+		if login != "" {
+			u, err = p.store.GetUserByLogin(r.Context(), login)
+			if err != nil {
+				_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "invalid_login"})
+				http.Error(w, "invalid login", http.StatusUnauthorized)
+				return
+			}
+			authTime = time.Now().UTC()
+			if err := p.createBrowserSession(w, r, u, authTime); err != nil {
+				http.Error(w, "create session failed", http.StatusInternalServerError)
+				return
+			}
+			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.success", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
+		} else if !hasSession {
 			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "missing_login"})
 			http.Error(w, "login is required", http.StatusBadRequest)
 			return
 		}
-		u, err := p.store.GetUserByLogin(r.Context(), login)
-		if err != nil {
-			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "invalid_login"})
-			http.Error(w, "invalid login", http.StatusUnauthorized)
-			return
-		}
-		client, err := p.store.GetClient(r.Context(), ar.GetClient().GetID())
-		if err != nil {
-			http.Error(w, "unknown client", http.StatusBadRequest)
-			return
-		}
-		scopes := []string(ar.GetRequestedScopes())
-		requireConsent, err := p.consent.RequireConsent(r.Context(), u, client, scopes)
-		if err != nil {
-			http.Error(w, "consent policy failed", http.StatusInternalServerError)
-			return
-		}
-		if requireConsent && r.PostForm.Get("consent_approved") != "true" {
-			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "consent.required", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "not_approved"})
-			http.Error(w, "consent required", http.StatusForbidden)
-			return
-		}
-		if requireConsent {
-			if err := p.consent.RecordConsent(r.Context(), u, client, scopes); err != nil {
-				http.Error(w, "record consent failed", http.StatusInternalServerError)
-				return
-			}
-			_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "consent.granted", ClientID: client.ID, Subject: u.Sub, Result: "accepted"})
-		}
-		p.grantRequestedScopes(ar)
-		p.grantRequestedAudience(ar)
-		session := p.newOIDCSession(u, ar)
-		response, err := p.oauth2.NewAuthorizeResponse(fosite.NewContext(), ar, session)
-		if err != nil {
-			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", err.Error())
-			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
-			return
-		}
-		p.clearCSRF(w)
-		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.success", ClientID: client.ID, Subject: u.Sub, Result: "accepted"})
-		p.emit(r.Context(), audit.New("authorize.request.accepted"), ar, "accepted", "")
-		p.oauth2.WriteAuthorizeResponse(r.Context(), w, ar, response)
+		p.finishAuthorize(w, r, ar, u, authTime, r.PostForm.Get("consent_approved") == "true")
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -357,6 +364,11 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", Result: "rejected", Reason: "invalid_form"})
 		tokenError(w, http.StatusBadRequest, "invalid_request", "invalid form")
+		return
+	}
+	if !p.rateLimiter.Allow(r.Context(), "token:"+r.Form.Get("client_id")+":"+r.RemoteAddr) {
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: "rate_limited"})
+		tokenError(w, http.StatusTooManyRequests, "temporarily_unavailable", "rate limited")
 		return
 	}
 	accessRequest, err := p.oauth2.NewAccessRequest(fosite.NewContext(), r, openid.NewDefaultSession())
@@ -422,7 +434,7 @@ func (p *Provider) grantRequestedAccessScopes(ar fosite.AccessRequester) {
 	}
 }
 
-func (p *Provider) newOIDCSession(u domain.User, ar fosite.AuthorizeRequester) *openid.DefaultSession {
+func (p *Provider) newOIDCSession(u domain.User, ar fosite.AuthorizeRequester, authTime time.Time) *openid.DefaultSession {
 	now := time.Now().UTC()
 	claims := &fositejwt.IDTokenClaims{
 		Issuer:      p.issuer.String(),
@@ -431,7 +443,7 @@ func (p *Provider) newOIDCSession(u domain.User, ar fosite.AuthorizeRequester) *
 		Nonce:       ar.GetRequestForm().Get("nonce"),
 		IssuedAt:    now,
 		RequestedAt: ar.GetRequestedAt(),
-		AuthTime:    now,
+		AuthTime:    authTime.UTC(),
 		Extra:       map[string]interface{}{},
 	}
 	for k, v := range domain.ClaimsForScopes(u, []string{"profile", "email"}) {
@@ -493,4 +505,59 @@ func (p *Provider) emit(ctx context.Context, e audit.Event, ar fosite.AuthorizeR
 		}
 	}
 	_ = p.audit.Emit(ctx, e)
+}
+
+func (p *Provider) renderInteraction(w http.ResponseWriter, ar fosite.AuthorizeRequester, needLogin, includeConsent bool) {
+	csrf := p.issueCSRF(w)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	loginFields := ""
+	button := "Continue"
+	if needLogin {
+		loginFields = `<input name="login" autocomplete="username"><input name="password" type="password" autocomplete="current-password">`
+		button = "Login"
+	}
+	consent := ""
+	if includeConsent {
+		consent = `<label><input type="checkbox" name="consent_approved" value="true"> Approve requested access</label>`
+	}
+	_, _ = fmt.Fprintf(w, `<html><body><form method="post">%s<input type="hidden" name="csrf_token" value="%s">%s%s<button type="submit">%s</button></form></body></html>`, loginFields, htmlEscape(csrf), consent, hidden(ar), button)
+}
+
+func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, u domain.User, authTime time.Time, consentApproved bool) {
+	client, err := p.store.GetClient(r.Context(), ar.GetClient().GetID())
+	if err != nil {
+		http.Error(w, "unknown client", http.StatusBadRequest)
+		return
+	}
+	scopes := []string(ar.GetRequestedScopes())
+	requireConsent, err := p.consent.RequireConsent(r.Context(), u, client, scopes)
+	if err != nil {
+		http.Error(w, "consent policy failed", http.StatusInternalServerError)
+		return
+	}
+	if requireConsent && !consentApproved {
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "consent.required", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "not_approved"})
+		http.Error(w, "consent required", http.StatusForbidden)
+		return
+	}
+	if requireConsent {
+		if err := p.consent.RecordConsent(r.Context(), u, client, scopes); err != nil {
+			http.Error(w, "record consent failed", http.StatusInternalServerError)
+			return
+		}
+		_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "consent.granted", ClientID: client.ID, Subject: u.Sub, Result: "accepted"})
+	}
+	p.grantRequestedScopes(ar)
+	p.grantRequestedAudience(ar)
+	session := p.newOIDCSession(u, ar, authTime)
+	response, err := p.oauth2.NewAuthorizeResponse(fosite.NewContext(), ar, session)
+	if err != nil {
+		p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", err.Error())
+		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
+		return
+	}
+	p.clearCSRF(w)
+	p.emit(r.Context(), audit.New("authorize.request.accepted"), ar, "accepted", "")
+	p.oauth2.WriteAuthorizeResponse(r.Context(), w, ar, response)
 }

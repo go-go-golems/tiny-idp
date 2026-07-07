@@ -35,6 +35,7 @@ type Options struct {
 	Token                           TokenConfig
 	Audit                           audit.Sink
 	Consent                         fositeadapter.ConsentPolicy
+	RateLimiter                     fositeadapter.RateLimiter
 	AllowInMemoryStoresInProduction bool
 }
 

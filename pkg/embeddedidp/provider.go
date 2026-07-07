@@ -16,7 +16,7 @@ func New(opts Options) (*Provider, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
-	adapter, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, Audit: opts.Audit, Consent: opts.Consent})
+	adapter, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, Audit: opts.Audit, Consent: opts.Consent, RateLimiter: opts.RateLimiter})
 	if err != nil {
 		return nil, err
 	}
