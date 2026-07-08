@@ -29,6 +29,20 @@ scripts/run-conformance.sh
 
 The script runs the protocol/security regression tests that are suitable for CI without external services.
 
+## Hosted OpenID Foundation suite automation
+
+Use `scripts/oidf_hosted_runner.py` after logging into `https://www.certification.openid.net` in a browser and copying the active `JSESSIONID` cookie.
+
+```bash
+export OIDF_JSESSIONID='<cookie value>'
+scripts/oidf_hosted_runner.py \
+  --plan '<plan id>' \
+  --remaining \
+  --artifacts ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python
+```
+
+The Python runner creates test instances through the suite API, polls `/api/info`, saves `/api/info` and `/api/log` JSON artifacts, and follows exported authorization URLs with an HTTP browser session. It submits the tiny-idp login/consent form as `alice` and reproduces the suite's implicit callback POST so code-flow responses continue without manual JavaScript. It stops on failures, timeouts, or manual review states unless `--keep-going` is supplied.
+
 ## Manual OpenID Foundation suite preparation
 
 1. Start `tinyidp` strict engine on a publicly reachable HTTPS URL.
@@ -42,8 +56,8 @@ The script runs the protocol/security regression tests that are suitable for CI 
    - `jwks_uri`
    - `response_types_supported: ["code"]`
    - `code_challenge_methods_supported: ["S256"]`
-5. Run the suite.
-6. Save the suite export under the ticket/source bundle.
+5. Run the suite manually or with `scripts/oidf_hosted_runner.py`.
+6. Save the suite export or captured `/api/info` and `/api/log` artifacts under the ticket/source bundle.
 7. Do not mark a profile conformant until all failures have either been fixed or mapped to an intentionally unsupported feature.
 
 ## Required evidence for release

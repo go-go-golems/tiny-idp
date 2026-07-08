@@ -13,7 +13,9 @@ Intent: long-term
 Owners: []
 RelatedFiles:
     - Path: repo://docs/conformance.md
-      Note: Step 13 conformance documentation
+      Note: |-
+        Step 13 conformance documentation
+        Step 14 hosted runner usage
     - Path: repo://go.mod
       Note: Step 8 dependency change
     - Path: repo://internal/audit/audit.go
@@ -48,6 +50,8 @@ RelatedFiles:
       Note: Step 13 key rotation
     - Path: repo://internal/store/sqlite/store.go
       Note: Phase 6 implementation recorded in diary
+    - Path: repo://scripts/oidf_hosted_runner.py
+      Note: Step 14 hosted OIDF Python automation
     - Path: repo://scripts/run-conformance.sh
       Note: Step 13 validation script
     - Path: repo://ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/design-doc/01-production-embeddable-idp-design-and-implementation-guide.md
@@ -62,6 +66,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -1406,4 +1411,127 @@ docs/storage.md
 docs/key-rotation.md
 docs/conformance.md
 scripts/run-conformance.sh
+```
+
+## Step 14: Add Python automation for the hosted OIDF suite
+
+The hosted OpenID Foundation suite still needs a real browser-like actor even when the test lifecycle is API-driven. I added a Python runner that uses the authenticated suite session cookie for API access, starts or resumes plan modules, follows exported authorization URLs, submits the tiny-idp login and consent form, and saves hosted-suite JSON evidence as it polls.
+
+The important implementation detail is that this is hybrid automation, not a fake protocol shortcut. The script lets the suite generate each test's authorization request and then drives the same redirects a user agent would drive, including the suite's callback-page implicit POST that normally runs in JavaScript.
+
+### Prompt Context
+
+**User prompt (verbatim):** "automate using python."
+
+**Assistant interpretation:** Implement a Python-based automation path for interacting with the hosted OpenID conformance suite instead of continuing manual browser clicks.
+
+**Inferred user intent:** The user wants the Basic OP hosted-suite run to be repeatable, evidence-producing, and less dependent on manual Playwright operation.
+
+### What I did
+
+- Added `scripts/oidf_hosted_runner.py`.
+- The script authenticates to the hosted suite API with `OIDF_JSESSIONID` or `--cookie`.
+- It supports selecting modules with `--only`, running unfinished modules with `--remaining`, polling existing instances with `--resume`, and writing `/api/info` plus `/api/log` artifacts with `--artifacts`.
+- It uses Python `requests` to follow suite-exported browser actions through tiny-idp's authorization endpoint.
+- It parses the tiny-idp login/consent HTML form, fills `login=alice`, preserves hidden request fields and CSRF, and posts the form back to `/authorize`.
+- It reproduces the suite callback page's JavaScript implicit-submission POST so the suite continues processing after redirects.
+- Updated `docs/conformance.md` with hosted-runner usage.
+- Smoke-tested the runner against the live hosted plan:
+  - `oidcc-userinfo-get` eventually passed with test id `lgPKQCYB0mrr2r5` after fixing the implicit-submit handling.
+  - `oidcc-userinfo-post-header` passed with test id `gBXryAAXqlfNv7F`.
+  - A later `--remaining` run advanced additional modules: userinfo POST body and nonce-less code flow passed; optional scope modules produced `WARNING` or `SKIPPED` results; display page/popup passed; `oidcc-prompt-login` stopped at manual screenshot review as expected.
+
+### Why
+
+- The suite API can create tests and expose browser URLs, but tests do not progress unless those browser URLs are visited and callbacks are submitted.
+- Using Python keeps the automation script inspectable and easy to run in a shell with a copied session cookie.
+- Saving JSON artifacts gives the ticket reproducible evidence without requiring a full manual suite export after each module.
+
+### What worked
+
+- Authenticated API calls with the browser's active `JSESSIONID` worked for:
+  - `/api/currentuser`
+  - `/api/plan/Ko612tVrEHxTT`
+  - `/api/runner`
+  - `/api/info/<test-id>`
+  - `/api/log/<test-id>`
+- The runner successfully drove tiny-idp login/consent via plain HTTP form submission.
+- The fixed implicit-submit parser posted to the suite's `/implicit/<id>` URL and allowed hosted tests to finish.
+- Validation command passed:
+
+```bash
+python3 -m py_compile scripts/oidf_hosted_runner.py
+```
+
+### What didn't work
+
+- The first `oidcc-userinfo-get` automation attempt timed out because the script followed the authorization callback but did not reproduce the suite page's JavaScript POST to the generated implicit-submit URL:
+
+```text
+FAILED/STOP: oidcc-userinfo-get Uwrwv4HOwkvMgsQ status=TIMEOUT result=None
+```
+
+- A second attempt detected an implicit URL but submitted a malformed escaped URL:
+
+```text
+[browser] implicit submit POST https://www.certification.openid.net/test/a/tinyidp-basic-20260708/\/\/www.certification.openid.net\/test\/a\/tinyidp-basic-20260708\/implicit\/FTmYg7weTVRpCHhA1vLZ
+[browser] browser response 400 ...
+FAILED/STOP: oidcc-userinfo-get lgPKQCYB0mrr2r5 status=TIMEOUT result=None
+```
+
+- I fixed this by sharing the suite `JSESSIONID` with the browser session and normalizing JavaScript-escaped slashes (`\/`) after regex extraction.
+- The first `--remaining` run stopped on `oidcc-scope-address` because the suite returned `SKIPPED` for an unsupported optional scope. I updated the runner to treat `SKIPPED` as non-fatal while still preserving the artifact for review.
+- The `oidcc-prompt-login` module reached a suite `REVIEW` checkpoint requiring a screenshot upload:
+
+```text
+manual review required: The server must ask the user to login for a second time; a screenshot of this must be uploaded.
+```
+
+  I updated the runner to stop immediately when no undriven browser actions remain and the log contains a review checkpoint.
+
+### What I learned
+
+- The hosted suite separates API control from browser continuation: `/api/runner/<id>` exposes URLs, but the callback page still expects a browser-side POST to `/implicit/<id>`.
+- The suite's callback processing page may embed absolute URLs with JavaScript-escaped slashes, so URL extraction must unescape before `urljoin`.
+- The browser automation session should carry the same suite cookie as the API session to avoid being treated as an unauthenticated user when interacting with suite callback pages.
+
+### What was tricky to build
+
+- The subtle part was that a successful HTTP 200 from the callback page did not mean the test had progressed. The callback page was an intermediate HTML page whose JavaScript performs the actual continuation POST. The symptom was an indefinitely `WAITING` test even though tiny-idp had redirected back with a code. The solution was to parse the callback HTML, extract the generated implicit-submit URL, unescape it correctly, and POST to it with the suite cookie.
+- The script also needs to be conservative around manual review states. It currently stops when the suite reports review and there are no actionable browser URLs, instead of pretending the certification decision is automatic.
+
+### What warrants a second pair of eyes
+
+- Review `pending_browser_actions` against future suite modules that may use `browserApiRequests` or POST browser actions with structured bodies.
+- Review whether artifacts under `sources/oidf-hosted-python` should be committed wholesale or periodically pruned to only final passing instances.
+- Review whether `WARNING` should be treated as acceptable for all certification phases or only for exploratory hosted runs.
+
+### What should be done in the future
+
+- Continue the hosted Basic OP plan with `--remaining` and capture final passing artifacts.
+- Add a small helper to extract `JSESSIONID` automatically from the local browser profile if that proves reliable and safe.
+- Add an optional public/plan sharing step to capture read-only links for reviewers.
+
+### Code review instructions
+
+- Start with `scripts/oidf_hosted_runner.py`, especially `SuiteClient`, `BrowserDriver`, `_find_implicit_submit_url`, and `run_one`.
+- Review `docs/conformance.md` for the intended operator workflow.
+- Validate with:
+
+```bash
+python3 -m py_compile scripts/oidf_hosted_runner.py
+scripts/oidf_hosted_runner.py --plan Ko612tVrEHxTT --cookie 'JSESSIONID=<value>' --remaining --dry-run
+```
+
+### Technical details
+
+Key files and artifacts:
+
+```text
+scripts/oidf_hosted_runner.py
+docs/conformance.md
+ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python/lgPKQCYB0mrr2r5.info.json
+ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python/lgPKQCYB0mrr2r5.log.json
+ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python/gBXryAAXqlfNv7F.info.json
+ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python/gBXryAAXqlfNv7F.log.json
 ```

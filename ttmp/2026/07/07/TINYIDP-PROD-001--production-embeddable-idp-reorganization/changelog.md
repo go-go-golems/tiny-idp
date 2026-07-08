@@ -133,3 +133,13 @@ Completed remaining strict-engine hardening items: stable audit reason codes, Fo
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/migrations/001_schema.sql — Domain and Fosite schema ownership
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/scripts/run-conformance.sh — Local conformance validation script
 
+
+## 2026-07-07
+
+Step 14: add Python automation for hosted OIDF Basic OP suite and capture initial passing artifacts
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/docs/conformance.md — Operator usage for Python runner
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/scripts/oidf_hosted_runner.py — Hosted-suite API/browser automation
+

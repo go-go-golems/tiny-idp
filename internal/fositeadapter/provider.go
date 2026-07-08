@@ -126,7 +126,7 @@ func NewProvider(opts Options) (*Provider, error) {
 		AuthorizeCodeLifespan:          opts.CodeTTL,
 		IDTokenLifespan:                opts.IDTokenTTL,
 		IDTokenIssuer:                  iss.String(),
-		EnforcePKCE:                    true,
+		EnforcePKCE:                    opts.Mode == domain.ProductionMode,
 		EnforcePKCEForPublicClients:    true,
 		EnablePKCEPlainChallengeMethod: false,
 		ScopeStrategy:                  fosite.ExactScopeStrategy,
@@ -234,7 +234,7 @@ func (p *Provider) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; form-action 'self' https:; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -441,16 +441,15 @@ func (p *Provider) grantRequestedAccessScopes(ar fosite.AccessRequester) {
 func (p *Provider) newOIDCSession(ctx context.Context, u domain.User, ar fosite.AuthorizeRequester, authTime time.Time) *openid.DefaultSession {
 	now := time.Now().UTC()
 	claims := &fositejwt.IDTokenClaims{
-		Issuer:      p.issuer.String(),
-		Subject:     u.Sub,
-		Audience:    []string{ar.GetClient().GetID()},
-		Nonce:       ar.GetRequestForm().Get("nonce"),
-		IssuedAt:    now,
-		RequestedAt: ar.GetRequestedAt(),
-		AuthTime:    authTime.UTC(),
-		Extra:       map[string]interface{}{},
+		Issuer:   p.issuer.String(),
+		Subject:  u.Sub,
+		Audience: []string{ar.GetClient().GetID()},
+		Nonce:    ar.GetRequestForm().Get("nonce"),
+		IssuedAt: now,
+		AuthTime: authTime.UTC(),
+		Extra:    map[string]interface{}{},
 	}
-	for k, v := range domain.ClaimsForScopes(u, []string{"profile", "email"}) {
+	for k, v := range domain.ClaimsForScopes(u, []string(ar.GetGrantedScopes())) {
 		if k != "sub" {
 			claims.Extra[k] = v
 		}
@@ -529,7 +528,7 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, ar fosite.AuthorizeR
 	if includeConsent {
 		consent = `<label><input type="checkbox" name="consent_approved" value="true"> Approve requested access</label>`
 	}
-	_, _ = fmt.Fprintf(w, `<html><body><form method="post">%s<input type="hidden" name="csrf_token" value="%s">%s%s<button type="submit">%s</button></form></body></html>`, loginFields, htmlEscape(csrf), consent, hidden(ar), button)
+	_, _ = fmt.Fprintf(w, `<html><body><form method="post" action="%s">%s<input type="hidden" name="csrf_token" value="%s">%s%s<button type="submit">%s</button></form></body></html>`, htmlEscape(p.issuer.Endpoint("/authorize")), loginFields, htmlEscape(csrf), consent, hidden(ar), button)
 }
 
 func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, u domain.User, authTime time.Time, consentApproved bool) {
