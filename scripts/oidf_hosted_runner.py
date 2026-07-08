@@ -70,6 +70,12 @@ class SuiteClient:
         sess.headers.update({"Accept": "application/json"})
         return cls(base_url=base_url.rstrip("/"), session=sess)
 
+    @classmethod
+    def from_api_token(cls, base_url: str, token: str) -> "SuiteClient":
+        sess = requests.Session()
+        sess.headers.update({"Accept": "application/json", "Authorization": f"Bearer {token}"})
+        return cls(base_url=base_url.rstrip("/"), session=sess)
+
     def api(self, method: str, path: str, **kwargs: Any) -> Any:
         url = self.base_url + path
         resp = self.session.request(method, url, timeout=60, **kwargs)
@@ -311,6 +317,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run hosted OIDF conformance plan modules with Python automation")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--cookie", default=os.environ.get("OIDF_JSESSIONID"), help="JSESSIONID value or 'JSESSIONID=...' string")
+    parser.add_argument("--api-token", default=os.environ.get("OIDF_API_TOKEN"), help="Hosted suite API bearer token from /tokens.html")
     parser.add_argument("--plan", required=True, help="Hosted suite test plan id")
     parser.add_argument("--only", action="append", help="Run only this test module name; may be repeated")
     parser.add_argument("--remaining", action="store_true", help="Run only plan modules with no instances yet")
@@ -325,12 +332,18 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
-    if not args.cookie:
-        print("error: pass --cookie or set OIDF_JSESSIONID", file=sys.stderr)
+    if not args.cookie and not args.api_token:
+        print("error: pass --api-token/set OIDF_API_TOKEN, or pass --cookie/set OIDF_JSESSIONID", file=sys.stderr)
         return 2
-    cookie = args.cookie.split("=", 1)[1] if args.cookie.startswith("JSESSIONID=") else args.cookie
+    cookie = args.cookie.split("=", 1)[1] if args.cookie and args.cookie.startswith("JSESSIONID=") else args.cookie
 
-    suite = SuiteClient.from_cookie(args.base_url, cookie)
+    suite = SuiteClient.from_api_token(args.base_url, args.api_token) if args.api_token else SuiteClient.from_cookie(args.base_url, cookie)
+    if args.api_token and not cookie:
+        print(
+            "warning: using API token for suite API calls, but no JSESSIONID was provided for browser callback pages; "
+            "dry-run/status modes work, but OP browser flows may still need --cookie/OIDF_JSESSIONID",
+            file=sys.stderr,
+        )
     try:
         user = suite.current_user()
     except Exception as e:
