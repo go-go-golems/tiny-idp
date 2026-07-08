@@ -11,8 +11,16 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/tinyidp/main.go
+      Note: Root command wiring for admin subtree (commit 3b3a155)
+    - Path: repo://docs/users-and-passwords.md
+      Note: Operator documentation for user/password behavior and CLI (commit 3b3a155)
+    - Path: repo://internal/admin/users.go
+      Note: Admin service for user/password operations (commit 3b3a155)
     - Path: repo://internal/authn/password.go
       Note: Password authentication service with lockout and audit behavior (commit ff5f30c)
+    - Path: repo://internal/cmds/admin.go
+      Note: tinyidp admin user command tree (commit 3b3a155)
     - Path: repo://internal/domain/types.go
       Note: Password credential and account-security domain models (commit 24e0323)
     - Path: repo://internal/fositeadapter/provider.go
@@ -37,6 +45,7 @@ LastUpdated: 2026-07-08T01:05:00-04:00
 WhatFor: Use this to resume or review the password-storage design work.
 WhenToUse: Read before implementing TINYIDP-USERS-001 or updating its design guide.
 ---
+
 
 
 
@@ -241,3 +250,79 @@ This step moves the ticket from storage-only infrastructure to behavior change: 
 - Public login failure response: `invalid login or password` with HTTP 401.
 - Stable audit reasons: `invalid_credentials`, `account_disabled`, `account_locked`.
 - Provider default: production uses credential-backed authentication; dev permits missing credentials for compatibility.
+
+## Step 4: Add Admin User/Password Commands and Documentation
+
+I added the first operational user/password management surface. A new `tinyidp admin user` command tree can create users with password credentials, set passwords, inspect users, disable users, and re-enable users against a SQLite database. The command layer is intentionally thin; the reusable `internal/admin.Service` owns user creation, password hashing, duplicate-login checks, password replacement, and disabled-state updates.
+
+This step completes the implementation scope of the ticket: password hashes are modeled and persisted, strict login can verify them, and operators now have a CLI path to create and maintain them.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Finish the ticket by adding operational user/password commands, documentation, validation, and a focused commit.
+
+**Inferred user intent:** Make the password system usable from the tinyidp binary rather than only through tests or direct store calls.
+
+**Commit (code):** 3b3a155 — "Add user password admin commands"
+
+### What I did
+- Added `internal/admin.Service` for user/password operations.
+- Implemented `CreateUser`, `SetPassword`, `SetUserDisabled`, and `GetUserByLogin` service methods.
+- Added service tests proving created users can authenticate, duplicate logins fail, set-password updates credentials, and disabled users cannot authenticate.
+- Added `tinyidp admin` and `tinyidp admin user` command wiring.
+- Added CLI subcommands:
+  - `tinyidp admin --db <path> user create`
+  - `tinyidp admin --db <path> user set-password`
+  - `tinyidp admin --db <path> user get`
+  - `tinyidp admin --db <path> user disable`
+  - `tinyidp admin --db <path> user enable`
+- Added `docs/users-and-passwords.md` with data model, strict login behavior, and command examples.
+- Ran validation:
+  - `go test ./internal/admin ./internal/cmds ./cmd/tinyidp`
+  - `go test ./...`
+  - `scripts/run-conformance.sh`
+
+### Why
+- A production password system needs an operational way to create and rotate credentials.
+- Commands should use the same service/store/hash path as the provider so CLI-created credentials are immediately usable by strict login.
+- Documentation is needed because password handling has shell-history and audit implications.
+
+### What worked
+- Adding the admin command as a direct Cobra subtree fit the existing root command cleanly.
+- The admin service reused `authn.PasswordService.HashCredential`, avoiding a second hashing path.
+- Existing SQLite migrations let the CLI create/open a DB and ensure credential tables exist.
+
+### What didn't work
+- No blocking failures in this step. One implementation detail was adjusted before testing: the command file initially carried an unnecessary `os` import solely to satisfy an unused placeholder; I removed it and kept the command code focused.
+
+### What I learned
+- The current structured-production-config ticket has not landed yet, so admin commands need a simple explicit `--db` flag for now. This keeps user/password operations usable without depending on future config work.
+- The admin service boundary is valuable even for a small command tree because it keeps Cobra flag parsing separate from credential mutations.
+
+### What was tricky to build
+- The command had to be safe enough for real credentials without a full operator config system. I chose `--password-from-stdin` as the preferred path and kept `--password` available only for throwaway/local use, documenting that tradeoff.
+- User creation must write both `domain.User` and `PasswordCredential`. The current store interface does not expose transactions, so the service performs user creation then credential creation and returns any credential error. A future SQLite-specific transaction helper would make this fully atomic.
+
+### What warrants a second pair of eyes
+- Review the temporary `--db` admin runtime. It should likely be replaced or supplemented by structured config once `TINYIDP-PROD-CONFIG-001` is implemented.
+- Review whether `CreateUser` should roll back the user record if credential creation fails before this is used in production.
+- Review command output shape before treating it as stable automation API.
+
+### What should be done in the future
+- Add config-backed admin runtime after structured config lands.
+- Add transactional user+credential creation for SQLite.
+- Add session/grant revocation on password reset and user disable.
+- Add interactive terminal password prompt support in addition to stdin.
+
+### Code review instructions
+- Start with `internal/admin/users.go` for the service boundary.
+- Then review `internal/cmds/admin.go` for CLI flag mapping and password input behavior.
+- Read `docs/users-and-passwords.md` to verify operator-facing docs match implementation.
+- Validate with `go test ./...` and `scripts/run-conformance.sh`.
+
+### Technical details
+- CLI database flag: `tinyidp admin --db ./tinyidp.db ...`.
+- Preferred password input: `--password-from-stdin`.
+- The admin service emits `admin.user.created`, `admin.user.password_changed`, `admin.user.disabled`, and `admin.user.enabled` audit events.

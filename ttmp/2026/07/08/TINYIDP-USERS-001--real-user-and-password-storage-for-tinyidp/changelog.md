@@ -40,3 +40,19 @@ Step 3: added password authentication service, lockout/audit behavior, provider 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/authn/password.go — Authentication service
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Login integration
 
+
+## 2026-07-08
+
+Step 4: added admin user/password service, tinyidp admin user commands, operator docs, and full validation with go test ./... plus scripts/run-conformance.sh (commit 3b3a155).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/docs/users-and-passwords.md — Documentation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/admin/users.go — Admin service
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/admin.go — Admin CLI
+
+
+## 2026-07-08
+
+Ticket closed
+

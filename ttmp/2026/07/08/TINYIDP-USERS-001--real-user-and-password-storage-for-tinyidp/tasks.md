@@ -7,4 +7,4 @@
 - [x] Implement memory and SQLite credential stores with migration <!-- t:m6i9 -->
 - [x] Implement password authentication service with lockout and audit <!-- t:j2vt -->
 - [x] Wire strict provider login to password authenticator in production <!-- t:xmod -->
-- [ ] Add admin user/password commands and documentation <!-- t:fz1g -->
+- [x] Add admin user/password commands and documentation <!-- t:fz1g -->
