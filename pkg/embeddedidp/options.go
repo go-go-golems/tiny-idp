@@ -36,6 +36,7 @@ type Options struct {
 	Audit                           audit.Sink
 	Consent                         fositeadapter.ConsentPolicy
 	RateLimiter                     fositeadapter.RateLimiter
+	Authenticator                   fositeadapter.PasswordAuthenticator
 	AllowInMemoryStoresInProduction bool
 }
 

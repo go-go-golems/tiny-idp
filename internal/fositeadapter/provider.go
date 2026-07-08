@@ -24,6 +24,7 @@ import (
 	fositejwt "github.com/ory/fosite/token/jwt"
 
 	"github.com/manuel/tinyidp/internal/audit"
+	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
@@ -37,6 +38,10 @@ var ProductionHandlerFactories = []string{
 	"OpenIDConnectExplicitFactory",
 	"OpenIDConnectRefreshFactory",
 	"OAuth2TokenIntrospectionFactory",
+}
+
+type PasswordAuthenticator interface {
+	AuthenticatePassword(ctx context.Context, login, password string, meta authn.LoginMetadata) (authn.AuthResult, error)
 }
 
 type Options struct {
@@ -57,21 +62,23 @@ type Options struct {
 	Audit         audit.Sink
 	Consent       ConsentPolicy
 	RateLimiter   RateLimiter
+	Authenticator PasswordAuthenticator
 }
 
 type Provider struct {
-	issuer       oidcmeta.Issuer
-	store        storage.Store
-	fositeStore  *fositememory.MemoryStore
-	oauth2       fosite.OAuth2Provider
-	config       *fosite.Config
-	mode         domain.Mode
-	csrfKey      []byte
-	cookieSecure bool
-	audit        audit.Sink
-	consent      ConsentPolicy
-	rateLimiter  RateLimiter
-	sessionTTL   time.Duration
+	issuer        oidcmeta.Issuer
+	store         storage.Store
+	fositeStore   *fositememory.MemoryStore
+	oauth2        fosite.OAuth2Provider
+	config        *fosite.Config
+	mode          domain.Mode
+	csrfKey       []byte
+	cookieSecure  bool
+	audit         audit.Sink
+	consent       ConsentPolicy
+	rateLimiter   RateLimiter
+	authenticator PasswordAuthenticator
+	sessionTTL    time.Duration
 }
 
 func NewProvider(opts Options) (*Provider, error) {
@@ -100,6 +107,18 @@ func NewProvider(opts Options) (*Provider, error) {
 	}
 	if opts.RateLimiter == nil {
 		opts.RateLimiter = AllowAllRateLimiter{}
+	}
+	if opts.Authenticator == nil {
+		policy := authn.DefaultPasswordPolicy()
+		if opts.Mode != domain.ProductionMode {
+			policy.AllowPasswordless = true
+			policy.LockoutThreshold = 0
+		}
+		authenticator, err := authn.NewPasswordService(opts.Store, authn.Options{Audit: opts.Audit, Policy: policy})
+		if err != nil {
+			return nil, fmt.Errorf("build password authenticator: %w", err)
+		}
+		opts.Authenticator = authenticator
 	}
 	if opts.CodeTTL == 0 {
 		opts.CodeTTL = 5 * time.Minute
@@ -141,7 +160,7 @@ func NewProvider(opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, audit: opts.Audit, consent: opts.Consent, rateLimiter: opts.RateLimiter, sessionTTL: opts.SessionTTL}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, audit: opts.Audit, consent: opts.Consent, rateLimiter: opts.RateLimiter, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -341,12 +360,13 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 		authTime := sess.AuthTime
 		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
 		if login != "" {
-			u, err = p.store.GetUserByLogin(r.Context(), login)
+			result, err := p.authenticator.AuthenticatePassword(r.Context(), login, r.PostForm.Get("password"), authn.LoginMetadata{RemoteAddr: r.RemoteAddr, UserAgent: r.UserAgent(), ClientID: ar.GetClient().GetID()})
 			if err != nil {
-				_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "invalid_login"})
-				http.Error(w, "invalid login", http.StatusUnauthorized)
+				_ = p.audit.Emit(r.Context(), audit.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: authn.AuditReason(err)})
+				http.Error(w, "invalid login or password", http.StatusUnauthorized)
 				return
 			}
+			u = result.User
 			authTime = time.Now().UTC()
 			if err := p.createBrowserSession(w, r, u, authTime); err != nil {
 				http.Error(w, "create session failed", http.StatusInternalServerError)

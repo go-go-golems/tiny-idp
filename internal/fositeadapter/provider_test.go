@@ -17,9 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
+	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
 )
 
@@ -327,4 +329,87 @@ func claimHasAudience(v any, audience string) bool {
 func s256(v string) string {
 	sum := sha256.Sum256([]byte(v))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing.T) {
+	ctx := context.Background()
+	secretKey := []byte("password-auth-secret-32-bytes!!!!")
+	st := memory.New()
+	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := authn.NewPasswordService(st, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := svc.HashCredential("u1", "alice", []byte("alice-password"), time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutPasswordCredential(ctx, credential); err != nil {
+		t.Fatal(err)
+	}
+	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: secretKey, Mode: domain.ProductionMode, Authenticator: svc, Consent: fositeadapter.AlwaysSkipConsent{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+
+	verifier := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	form := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {"spa"},
+		"redirect_uri":          {"http://localhost/callback"},
+		"scope":                 {"openid"},
+		"state":                 {"state-1234567890"},
+		"nonce":                 {"nonce-1234567890"},
+		"code_challenge":        {s256(verifier)},
+		"code_challenge_method": {"S256"},
+		"login":                 {"alice"},
+		"password":              {"wrong-password"},
+	}
+	csrfToken, csrfCookie := fetchCSRF(t, ts.URL, form)
+	form.Set("csrf_token", csrfToken)
+	noRedirect := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	reqAuth, _ := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
+	reqAuth.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqAuth.AddCookie(csrfCookie)
+	resp, err := noRedirect.Do(reqAuth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong password status = %d, want 401", resp.StatusCode)
+	}
+
+	form.Set("password", "alice-password")
+	csrfToken, csrfCookie = fetchCSRF(t, ts.URL, form)
+	form.Set("csrf_token", csrfToken)
+	reqAuth, _ = http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
+	reqAuth.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqAuth.AddCookie(csrfCookie)
+	resp, err = noRedirect.Do(reqAuth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("correct password status = %d", resp.StatusCode)
+	}
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("correct password did not issue code: %s", loc.String())
+	}
 }
