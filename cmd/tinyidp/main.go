@@ -85,5 +85,8 @@ func main() {
 	cobra.CheckErr(err)
 	rootCmd.AddCommand(printConfigCobraCmd)
 
+	// `tinyidp admin` — operational user/password administration commands.
+	rootCmd.AddCommand(cmds.NewAdminCommand())
+
 	cobra.CheckErr(rootCmd.Execute())
 }
