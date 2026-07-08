@@ -1427,6 +1427,8 @@ The important implementation detail is that this is hybrid automation, not a fak
 
 **Inferred user intent:** The user wants the Basic OP hosted-suite run to be repeatable, evidence-producing, and less dependent on manual Playwright operation.
 
+**Commit (code):** d1ce6d8cedd1186eeff5c7010f6af942e69e1943 — "Automate hosted OIDF conformance runner"
+
 ### What I did
 
 - Added `scripts/oidf_hosted_runner.py`.

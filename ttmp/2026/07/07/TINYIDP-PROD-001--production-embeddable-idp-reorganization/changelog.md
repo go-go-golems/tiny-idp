@@ -143,3 +143,12 @@ Step 14: add Python automation for hosted OIDF Basic OP suite and capture initia
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/docs/conformance.md — Operator usage for Python runner
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/scripts/oidf_hosted_runner.py — Hosted-suite API/browser automation
 
+
+## 2026-07-07
+
+Step 14 docs: record hosted OIDF Python runner commit d1ce6d8
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/reference/02-investigation-diary.md — Step 14 commit hash
+
