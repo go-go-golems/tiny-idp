@@ -1560,7 +1560,7 @@ I fixed those behaviors and reran the affected hosted modules. The plan is now d
 
 **Inferred user intent:** The user wants the certification run advanced as far as possible and wants implementation fixes committed when they are clearly needed.
 
-**Commit (code):** 9c56326fa8def1c01b39ce537ed54e6288cd572e — "Fix strict OIDC prompt and request object edges"
+**Commit (code):** 4a0179405938d7ffc13b7559b2d51c7690d4e46c — "Fix strict OIDC prompt and request object edges"
 
 ### What I did
 
