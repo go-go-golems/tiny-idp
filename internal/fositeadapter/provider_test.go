@@ -23,6 +23,42 @@ import (
 	"github.com/manuel/tinyidp/internal/store/memory"
 )
 
+func TestUnsupportedRequestObjectRedirectsWithStableError(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := keys.GenerateRSA("kid-1", time.Now())
+	if err := st.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: []byte("request-object-secret-32-bytes!!")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+
+	claims := map[string]string{"response_type": "code", "client_id": "spa", "redirect_uri": "http://localhost/callback", "scope": "openid", "state": "state-request-object", "nonce": "nonce-request-object"}
+	payload, _ := json.Marshal(claims)
+	requestObject := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`)) + "." + base64.RawURLEncoding.EncodeToString(payload) + "."
+	q := url.Values{"client_id": {"spa"}, "redirect_uri": {"http://localhost/callback"}, "response_type": {"code"}, "scope": {"openid"}, "request": {requestObject}}
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Get(ts.URL + "/authorize?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status=%d, want redirect", resp.StatusCode)
+	}
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	if loc.Query().Get("error") != "request_not_supported" || loc.Query().Get("state") != "state-request-object" {
+		t.Fatalf("unexpected redirect: %s", loc.String())
+	}
+}
+
 func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	ctx := context.Background()
 	secretKey := []byte("test-secret-key-32-bytes-minimum!!")

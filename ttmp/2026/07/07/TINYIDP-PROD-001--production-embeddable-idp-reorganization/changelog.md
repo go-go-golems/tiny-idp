@@ -152,3 +152,13 @@ Step 14 docs: record hosted OIDF Python runner commit d1ce6d8
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/reference/02-investigation-diary.md — Step 14 commit hash
 
+
+## 2026-07-07
+
+Step 15: continue hosted OIDF Basic OP run and fix prompt/max-age/request-object strict-engine behavior
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Hosted OIDF protocol fixes
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/session.go — Max-age session helper
+

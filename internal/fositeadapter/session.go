@@ -2,6 +2,7 @@ package fositeadapter
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,4 +45,15 @@ func promptHas(prompt, want string) bool {
 		}
 	}
 	return false
+}
+
+func sessionSatisfiesMaxAge(authTime time.Time, maxAgeValue string) bool {
+	if maxAgeValue == "" {
+		return true
+	}
+	maxAge, err := strconv.ParseInt(maxAgeValue, 10, 64)
+	if err != nil || maxAge <= 0 {
+		return true
+	}
+	return !authTime.Add(time.Duration(maxAge) * time.Second).Before(time.Now().UTC())
 }

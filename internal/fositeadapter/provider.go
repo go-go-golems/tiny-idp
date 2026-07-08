@@ -283,14 +283,21 @@ func (p *Provider) readyz(w http.ResponseWriter, r *http.Request) {
 func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		if p.rejectUnsupportedRequestObject(w, r) {
+			return
+		}
 		ar, err := p.oauth2.NewAuthorizeRequest(fosite.NewContext(), r)
 		if err != nil {
+			if ar != nil && ar.GetRequestForm().Get("max_age") != "" && !promptHas(ar.GetRequestForm().Get("prompt"), "none") {
+				p.renderInteraction(w, ar, true, true)
+				return
+			}
 			p.emit(r.Context(), audit.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
 			return
 		}
 		u, sess, hasSession := p.readBrowserSession(r)
-		if hasSession && !promptHas(ar.GetRequestForm().Get("prompt"), "login") {
+		if hasSession && !promptHas(ar.GetRequestForm().Get("prompt"), "login") && sessionSatisfiesMaxAge(sess.AuthTime, ar.GetRequestForm().Get("max_age")) {
 			client, _ := p.store.GetClient(r.Context(), ar.GetClient().GetID())
 			requireConsent, err := p.consent.RequireConsent(r.Context(), u, client, []string(ar.GetRequestedScopes()))
 			if err != nil {
@@ -449,6 +456,10 @@ func (p *Provider) newOIDCSession(ctx context.Context, u domain.User, ar fosite.
 		AuthTime: authTime.UTC(),
 		Extra:    map[string]interface{}{},
 	}
+	prompt := ar.GetRequestForm().Get("prompt")
+	if promptHas(prompt, "none") || promptHas(prompt, "login") || ar.GetRequestForm().Get("max_age") != "" {
+		claims.RequestedAt = now
+	}
 	for k, v := range domain.ClaimsForScopes(u, []string(ar.GetGrantedScopes())) {
 		if k != "sub" {
 			claims.Extra[k] = v
@@ -477,6 +488,87 @@ func hidden(ar fosite.AuthorizeRequester) string {
 		_, _ = fmt.Fprintf(&b, `<input type="hidden" name="%s" value="%s">`, k, htmlEscape(v))
 	}
 	return b.String()
+}
+
+func (p *Provider) rejectUnsupportedRequestObject(w http.ResponseWriter, r *http.Request) bool {
+	requestObject := r.URL.Query().Get("request")
+	if requestObject == "" {
+		return false
+	}
+	claims := requestObjectClaims(requestObject)
+	clientID := firstNonEmpty(r.URL.Query().Get("client_id"), stringClaim(claims, "client_id"))
+	queryRedirectURI := r.URL.Query().Get("redirect_uri")
+	if queryRedirectURI != "" && !p.clientAllowsRedirect(r.Context(), clientID, queryRedirectURI) {
+		http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
+		return true
+	}
+	redirectURI := firstNonEmpty(queryRedirectURI, stringClaim(claims, "redirect_uri"))
+	if clientID == "" || redirectURI == "" || !p.clientAllowsRedirect(r.Context(), clientID, redirectURI) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"request_not_supported","error_description":"The OP does not support use of the request parameter."}`))
+		return true
+	}
+	loc, err := url.Parse(redirectURI)
+	if err != nil {
+		http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
+		return true
+	}
+	q := loc.Query()
+	q.Set("error", "request_not_supported")
+	q.Set("error_description", "The OP does not support use of the request parameter.")
+	if state := stringClaim(claims, "state"); state != "" {
+		q.Set("state", state)
+	}
+	loc.RawQuery = q.Encode()
+	http.Redirect(w, r, loc.String(), http.StatusFound)
+	return true
+}
+
+func requestObjectClaims(requestObject string) map[string]any {
+	parts := strings.Split(requestObject, ".")
+	if len(parts) < 2 {
+		return nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil
+	}
+	return claims
+}
+
+func stringClaim(claims map[string]any, key string) string {
+	if claims == nil {
+		return ""
+	}
+	v, _ := claims[key].(string)
+	return v
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (p *Provider) clientAllowsRedirect(ctx context.Context, clientID, redirectURI string) bool {
+	client, err := p.store.GetClient(ctx, clientID)
+	if err != nil {
+		return false
+	}
+	for _, allowed := range client.RedirectURIs {
+		if allowed == redirectURI {
+			return true
+		}
+	}
+	return false
 }
 
 func htmlEscape(s string) string {

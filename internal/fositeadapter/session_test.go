@@ -73,7 +73,36 @@ func TestBrowserSessionSilentAuthorizeAndPromptNone(t *testing.T) {
 		t.Fatalf("silent authorize did not issue code: %s", loc.String())
 	}
 
+	time.Sleep(2 * time.Second)
+	q.Set("state", "state-max-age-1234567890")
+	q.Set("max_age", "1")
+	maxAgeReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/authorize?"+q.Encode(), nil)
+	maxAgeReq.AddCookie(sessionCookie)
+	maxAge, err := http.DefaultClient.Do(maxAgeReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer maxAge.Body.Close()
+	if maxAge.StatusCode != http.StatusOK {
+		t.Fatalf("expired max_age status=%d, want login form", maxAge.StatusCode)
+	}
+	q.Del("max_age")
+
 	q.Set("prompt", "none")
+	q.Set("state", "state-3234567890")
+	withCookieReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/authorize?"+q.Encode(), nil)
+	withCookieReq.AddCookie(sessionCookie)
+	withCookie, err := client.Do(withCookieReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer withCookie.Body.Close()
+	loc, _ = url.Parse(withCookie.Header.Get("Location"))
+	if loc.Query().Get("code") == "" || loc.Query().Get("error") != "" {
+		t.Fatalf("prompt=none with session did not issue code: %s", loc.String())
+	}
+
+	q.Set("state", "state-4234567890")
 	noCookieReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/authorize?"+q.Encode(), nil)
 	noCookie, err := client.Do(noCookieReq)
 	if err != nil {

@@ -38,10 +38,17 @@ RelatedFiles:
       Note: |-
         Phase 4 implementation recorded in diary
         Step 8 real Fosite implementation
+        Step 15 prompt/max-age/request-object hosted OIDF fixes
+    - Path: repo://internal/fositeadapter/provider_test.go
+      Note: Step 15 request-object regression coverage
     - Path: repo://internal/fositeadapter/ratelimit.go
       Note: Step 11 rate-limit hardening implementation
     - Path: repo://internal/fositeadapter/session.go
-      Note: Step 11 session hardening implementation
+      Note: |-
+        Step 11 session hardening implementation
+        Step 15 max-age session helper
+    - Path: repo://internal/fositeadapter/session_test.go
+      Note: Step 15 prompt/max-age regression coverage
     - Path: repo://internal/fositeadapter/sqlstore.go
       Note: Step 9 durable Fosite storage implementation
     - Path: repo://internal/fositeadapter/sqlstore_test.go
@@ -66,6 +73,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -1536,4 +1544,108 @@ ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sourc
 ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python/lgPKQCYB0mrr2r5.log.json
 ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python/gBXryAAXqlfNv7F.info.json
 ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python/gBXryAAXqlfNv7F.log.json
+```
+
+## Step 15: Continue hosted OIDF run and fix prompt/max-age/request-object edge cases
+
+The Python runner progressed the hosted Basic OP plan through the remaining browser-heavy modules. During that run, the suite exposed three strict-engine gaps: `prompt=none` with an existing session needed Fosite-compatible `RequestedAt`, expired `max_age` needed to force a fresh login page instead of returning `login_required`, and unsupported unsigned request objects needed browser-visible redirect/error-page behavior instead of a bare JSON response.
+
+I fixed those behaviors and reran the affected hosted modules. The plan is now down to one known configuration blocker: the refresh-token module expects distinct `client` and `client2`, but the existing hosted plan was created with both set to `web-app`/`dev-secret`, so the cross-client refresh-token misuse check cannot fail as intended on that plan.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok continue"
+
+**Assistant interpretation:** Continue the hosted OIDF suite run, using the automation and fixing blockers as they appear.
+
+**Inferred user intent:** The user wants the certification run advanced as far as possible and wants implementation fixes committed when they are clearly needed.
+
+**Commit (code):** 9c56326fa8def1c01b39ce537ed54e6288cd572e — "Fix strict OIDC prompt and request object edges"
+
+### What I did
+
+- Continued `scripts/oidf_hosted_runner.py --remaining` against plan `Ko612tVrEHxTT`.
+- Uploaded required review screenshots for:
+  - `oidcc-prompt-login` (`JL0IqvBrBLRVbpB`)
+  - `oidcc-max-age-1` (`oSwhtwEwi1ieXCm`)
+  - `oidcc-ensure-registered-redirect-uri` (`xZC6nQZBEr1OeMR`)
+  - `oidcc-ensure-request-object-with-redirect-uri` (`9YRMjvJqTC37icW`)
+- Fixed prompt/max-age session handling:
+  - `prompt=none` with a valid existing session now sets OIDC `RequestedAt` so Fosite accepts silent reuse.
+  - expired `max_age` now renders a login page instead of silently reusing the browser session or returning an immediate authorization error.
+- Fixed unsupported request-object handling:
+  - valid redirect URI receives an authorization error redirect with `request_not_supported` and `state`.
+  - invalid query `redirect_uri` produces a local error page, satisfying redirect URI safety tests.
+- Added regression tests for prompt-none session reuse, expired max-age login prompt, and request-object unsupported redirects.
+
+### Why
+
+- OIDC prompt and max-age semantics are not only token-claim details; they affect whether the OP may silently reuse an existing browser session.
+- Fosite validates `prompt=none`, `prompt=login`, and `max_age` against `AuthTime` and `RequestedAt`; our strict adapter must set those values consistently when reusing or refreshing sessions.
+- Unsupported request objects must still be handled safely: redirect only to an allowed redirect URI, preserve `state`, and never fall back to an unregistered/default redirect URI.
+
+### What worked
+
+- Local validation passed:
+
+```bash
+go test ./...
+scripts/run-conformance.sh
+docmgr doctor --ticket TINYIDP-PROD-001 --stale-after 30
+```
+
+- Hosted modules fixed or advanced after changes:
+  - `oidcc-prompt-none-logged-in`: `MtW9l7G0x25fJ7w` passed.
+  - `oidcc-max-age-1`: `oSwhtwEwi1ieXCm` finished `REVIEW` after screenshot upload.
+  - `oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported`: `W6bLCRwlS1YePL3` finished `SKIPPED`.
+  - `oidcc-ensure-request-object-with-redirect-uri`: `9YRMjvJqTC37icW` finished `REVIEW` after screenshot upload.
+  - `oidcc-ensure-request-with-valid-pkce-succeeds`: `E8VgG05dfIpf1Fb` passed.
+
+### What didn't work
+
+- `oidcc-refresh-token` failed on this existing plan because both configured suite clients are the same logical client:
+
+```text
+ValidateErrorFromTokenEndpointResponseError FAILURE The authorization server was expected to return an error, but the 'error' field in the response is either null or empty
+```
+
+  The suite attempted to use a refresh token “issued to client 2” with “client 1”, but this plan has `client` and `client2` both configured as `web-app` with `dev-secret`, so the server correctly sees the same client.
+
+### What I learned
+
+- The hosted Basic OP suite's static-client profile still needs distinct client credentials for the refresh-token cross-client misuse module.
+- Some OIDF `REVIEW` outcomes are successful terminal outcomes after screenshot upload, not code failures.
+- Request-object tests can be satisfied by an explicit `request_not_supported` redirect when the redirect URI is valid; invalid redirect URI cases must stay on a local error page.
+
+### What was tricky to build
+
+- `max_age` was tricky because Fosite returns `login_required` during request creation when the current session no longer satisfies max-age. The adapter must detect this case and render the login page for interactive requests, while still returning `login_required` for `prompt=none`.
+- The request-object redirect-uri case was subtle: the unsigned request object contained a valid redirect URI in the JWT payload, while the outer query had an invalid redirect URI. Redirecting to the payload URI looked convenient but violated the suite's “do not use a default redirect URI” safety check.
+
+### What warrants a second pair of eyes
+
+- Review the `rejectUnsupportedRequestObject` helper to ensure it rejects request objects narrowly and safely without accidentally advertising request-object support.
+- Review whether the strict CLI should accept multiple explicit client definitions so future hosted plans can configure distinct `client` and `client2` without code changes.
+
+### What should be done in the future
+
+- Create a fresh hosted Basic OP plan with distinct static clients, e.g. `web-app` and `web-app-2`, and start the strict server with both clients registered.
+- Decide whether to retain review screenshots in the repo or only keep sanitized metadata/log summaries.
+
+### Code review instructions
+
+- Review `internal/fositeadapter/provider.go` around `authorize`, `newOIDCSession`, and `rejectUnsupportedRequestObject`.
+- Review `internal/fositeadapter/session.go` for `sessionSatisfiesMaxAge`.
+- Review `internal/fositeadapter/session_test.go` and `internal/fositeadapter/provider_test.go` for regression coverage.
+- Validate with `go test ./...` and `scripts/run-conformance.sh`.
+
+### Technical details
+
+Key files:
+
+```text
+internal/fositeadapter/provider.go
+internal/fositeadapter/session.go
+internal/fositeadapter/session_test.go
+internal/fositeadapter/provider_test.go
 ```
