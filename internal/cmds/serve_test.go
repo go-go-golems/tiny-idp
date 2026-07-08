@@ -71,6 +71,19 @@ func TestBuildClientRegistryRegistersNewPermissiveClient(t *testing.T) {
 // TestBuildClientRegistryDefaultKeepsBuiltins verifies the default case
 // (dev-client, no overrides) still has all three builtins present and dev-client
 // unchanged by the merge (its configured defaults equal its builtin defaults).
+func TestBuildClientRegistryRegistersExtraClients(t *testing.T) {
+	cfg := &oidc.Settings{
+		ClientID:     "web-app",
+		RedirectURIs: []string{"http://localhost:9090/cb"},
+		ExtraClients: []string{"web-app-2|dev-secret-2|http://localhost:9090/cb|http://localhost:9090/cb2"},
+	}
+	r := buildClientRegistry(cfg)
+	c, ok := r.Lookup("web-app-2")
+	require.True(t, ok)
+	assert.Equal(t, "dev-secret-2", c.Secret)
+	assert.Equal(t, []string{"http://localhost:9090/cb", "http://localhost:9090/cb2"}, c.RedirectURIs)
+}
+
 func TestBuildClientRegistryDefaultKeepsBuiltins(t *testing.T) {
 	cfg := &oidc.Settings{
 		ClientID:     "dev-client",

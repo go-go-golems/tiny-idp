@@ -162,3 +162,13 @@ Step 15: continue hosted OIDF Basic OP run and fix prompt/max-age/request-object
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Hosted OIDF protocol fixes
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/session.go — Max-age session helper
 
+
+## 2026-07-07
+
+Step 16: add strict CLI extra clients and pass hosted refresh-token module on distinct-client plan
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/docs/conformance.md — Distinct-client hosted refresh-token runbook
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve.go — Extra strict client registry support
+

@@ -16,6 +16,7 @@ type Settings struct {
 	ClientID     string   `glazed:"client-id"`
 	ClientSecret string   `glazed:"client-secret"`
 	RedirectURIs []string `glazed:"redirect-uris"`
+	ExtraClients []string `glazed:"extra-clients"`
 	UsersFile    string   `glazed:"users-file"`
 	Engine       string   `glazed:"engine"`
 }

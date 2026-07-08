@@ -43,6 +43,19 @@ scripts/oidf_hosted_runner.py \
 
 The Python runner creates test instances through the suite API, polls `/api/info`, saves `/api/info` and `/api/log` JSON artifacts, and follows exported authorization URLs with an HTTP browser session. It submits the tiny-idp login/consent form as `alice` and reproduces the suite's implicit callback POST so code-flow responses continue without manual JavaScript. It stops on failures, timeouts, or manual review states unless `--keep-going` is supplied.
 
+For hosted Basic OP refresh-token tests, configure distinct static clients in the suite and start the strict CLI with an extra client that shares the suite callback redirect URI:
+
+```bash
+CB='https://www.certification.openid.net/test/a/<alias>/callback'
+tinyidp serve --engine fosite \
+  --issuer '<public issuer>' \
+  --client-id web-app \
+  --client-secret dev-secret \
+  --redirect-uris "$CB" \
+  --redirect-uris "$CB?dummy1=lorem&dummy2=ipsum" \
+  --extra-clients "web-app-2|dev-secret-2|$CB|$CB?dummy1=lorem&dummy2=ipsum"
+```
+
 ## Manual OpenID Foundation suite preparation
 
 1. Start `tinyidp` strict engine on a publicly reachable HTTPS URL.

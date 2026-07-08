@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-go-golems/glazed/pkg/cli"
@@ -170,7 +171,30 @@ func buildClientRegistry(cfg *oidc.Settings) *client.Registry {
 		// New permissive client (no secret, PKCE optional, all scopes).
 		r.Register(configured)
 	}
+	for _, spec := range cfg.ExtraClients {
+		if c, ok := parseExtraClientSpec(spec); ok {
+			r.Register(c)
+		}
+	}
 	return r
+}
+
+func parseExtraClientSpec(spec string) (client.Client, bool) {
+	parts := strings.Split(spec, "|")
+	if len(parts) < 3 || strings.TrimSpace(parts[0]) == "" {
+		return client.Client{}, false
+	}
+	redirects := make([]string, 0, len(parts)-2)
+	for _, redirect := range parts[2:] {
+		redirect = strings.TrimSpace(redirect)
+		if redirect != "" {
+			redirects = append(redirects, redirect)
+		}
+	}
+	if len(redirects) == 0 {
+		return client.Client{}, false
+	}
+	return client.Client{ID: strings.TrimSpace(parts[0]), Secret: strings.TrimSpace(parts[1]), RedirectURIs: redirects}, true
 }
 
 func buildScenarioRegistry(cfg *oidc.Settings) (*scenario.Registry, error) {

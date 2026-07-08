@@ -16,12 +16,17 @@ RelatedFiles:
       Note: |-
         Step 13 conformance documentation
         Step 14 hosted runner usage
+        Step 16 distinct-client hosted runbook
     - Path: repo://go.mod
       Note: Step 8 dependency change
     - Path: repo://internal/audit/audit.go
       Note: Step 10 audit implementation
     - Path: repo://internal/cmds/serve.go
-      Note: Phase 7 implementation recorded in diary
+      Note: |-
+        Phase 7 implementation recorded in diary
+        Step 16 extra-client registry parsing
+    - Path: repo://internal/cmds/serve_test.go
+      Note: Step 16 extra-client regression
     - Path: repo://internal/domain/types.go
       Note: Phase 1 implementation recorded in diary
     - Path: repo://internal/fositeadapter/audit_reason.go
@@ -55,6 +60,10 @@ RelatedFiles:
       Note: Step 12 refresh-token reuse coverage
     - Path: repo://internal/keys/rotation.go
       Note: Step 13 key rotation
+    - Path: repo://internal/sections/oidc/section.go
+      Note: Step 16 extra-client CLI flag
+    - Path: repo://internal/sections/oidc/settings.go
+      Note: Step 16 extra-client settings
     - Path: repo://internal/store/sqlite/store.go
       Note: Phase 6 implementation recorded in diary
     - Path: repo://scripts/oidf_hosted_runner.py
@@ -73,6 +82,7 @@ LastUpdated: 2026-07-07T14:48:25.256086109-04:00
 WhatFor: Use this to resume or review the research/design work for TINYIDP-PROD-001.
 WhenToUse: Before continuing implementation, upload, validation, or ticket bookkeeping.
 ---
+
 
 
 
@@ -1648,4 +1658,92 @@ internal/fositeadapter/provider.go
 internal/fositeadapter/session.go
 internal/fositeadapter/session_test.go
 internal/fositeadapter/provider_test.go
+```
+
+## Step 16: Add extra strict CLI clients and pass hosted refresh-token cross-client test
+
+The remaining hosted refresh-token failure was not a Fosite storage bug. The existing hosted plan configured both `client` and `client2` as the same static client, so the suite's “use client 2 refresh token with client 1” misuse check could not fail. I added a small strict-CLI affordance for extra static clients, created a fresh hosted plan with distinct clients, restarted the strict server with `web-app-2`, and reran the refresh-token module successfully.
+
+This keeps the production API direction clean: the embeddable provider already accepts a store with arbitrary clients; the new CLI flag is only a development/conformance convenience for registering additional clients without writing a custom storage bootstrapper.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead"
+
+**Assistant interpretation:** Proceed with the next concrete step to resolve the refresh-token hosted-suite blocker.
+
+**Inferred user intent:** The user wants the conformance run completed rather than stopping at the known client-configuration limitation.
+
+### What I did
+
+- Added `--extra-clients` to the OIDC serve section.
+- Added strict CLI parsing for extra clients in the form `client-id|secret|redirect-uri[|redirect-uri...]`.
+- Added registry test coverage for extra-client registration.
+- Updated `docs/conformance.md` with the distinct-client hosted-suite command pattern.
+- Created hosted plan `Geeb9MBn659ah` with alias `tinyidp-basic-20260708b` and distinct static clients:
+  - `client`: `web-app` / `dev-secret`
+  - `client2`: `web-app-2` / `dev-secret-2`
+- Restarted strict CLI with:
+
+```bash
+--extra-clients "web-app-2|dev-secret-2|https://www.certification.openid.net/test/a/tinyidp-basic-20260708b/callback|https://www.certification.openid.net/test/a/tinyidp-basic-20260708b/callback?dummy1=lorem&dummy2=ipsum"
+```
+
+- Ran the hosted refresh-token module against the new plan.
+
+### Why
+
+- The suite's refresh-token test intentionally checks client binding by using a refresh token issued to `client2` at `client1`'s token endpoint authentication.
+- A plan where both clients are the same client cannot validate that behavior.
+- The CLI needed a way to register a second confidential client with the suite's generated redirect URI.
+
+### What worked
+
+- Local tests for command/client registry changes passed.
+- Hosted refresh-token module passed on the distinct-client plan:
+
+```text
+oidcc-refresh-token: s6Wy9BgOnvhsEG5 FINISHED PASSED
+```
+
+### What didn't work
+
+- The original plan `Ko612tVrEHxTT` remains unable to prove refresh-token cross-client rejection because its `client` and `client2` config are identical. I left that plan's raw artifacts uncommitted because they may contain transient protocol tokens/codes.
+
+### What I learned
+
+- The hosted suite configuration is part of the test's correctness. Passing the same client twice can make a server look wrong even when its refresh-token binding logic is correct.
+- A small CLI-only multi-client affordance is enough for hosted certification without changing the embeddable provider's storage abstractions.
+
+### What was tricky to build
+
+- The extra-client flag needed a shell-friendly syntax that preserves URLs containing `://` and query strings. A pipe-separated format avoids splitting on URL colons.
+- The hosted suite appends alias-specific callback paths, so the strict server must be restarted with redirect URIs that match the newly created plan alias.
+
+### What warrants a second pair of eyes
+
+- Review whether `--extra-clients` should remain a simple conformance/dev flag or grow into structured config-file support with validation errors for malformed specs.
+- Review whether temporary hosted plan `Geeb9MBn659ah` should become the canonical Basic OP plan for final evidence, or whether a fresh final plan should be created after all code is committed.
+
+### What should be done in the future
+
+- Run a fresh full Basic OP plan using the distinct-client setup so every module belongs to one final plan/export.
+- Sanitize and summarize hosted artifacts before committing any evidence bundle.
+
+### Code review instructions
+
+- Review `internal/sections/oidc/section.go` and `settings.go` for the new flag.
+- Review `internal/cmds/serve.go` for `parseExtraClientSpec` and registry registration.
+- Review `internal/cmds/serve_test.go` for the extra-client regression.
+
+### Technical details
+
+Key files:
+
+```text
+internal/sections/oidc/section.go
+internal/sections/oidc/settings.go
+internal/cmds/serve.go
+internal/cmds/serve_test.go
+docs/conformance.md
 ```
