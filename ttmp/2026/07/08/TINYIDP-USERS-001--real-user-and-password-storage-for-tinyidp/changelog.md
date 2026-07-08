@@ -30,3 +30,13 @@ Step 2: added Argon2id password hashing, credential/account-security domain mode
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/passwordhash/argon2id.go — Password hashing primitive
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/sqlite/migrations/002_password_credentials.sql — Credential persistence schema
 
+
+## 2026-07-08
+
+Step 3: added password authentication service, lockout/audit behavior, provider authenticator hook, strict login password verification, and embeddable authenticator option (commit ff5f30c).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/authn/password.go — Authentication service
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Login integration
+
