@@ -28,7 +28,10 @@ type Client struct {
 	Disabled               bool
 }
 
-// User is an OIDC subject known to the provider.
+// User is an OIDC subject known to the provider. It intentionally carries
+// profile/account state only; password hashes and credential lifecycle metadata
+// live in PasswordCredential so they are never exposed through userinfo/profile
+// claim paths by accident.
 type User struct {
 	ID                string
 	Sub               string
@@ -44,6 +47,46 @@ type User struct {
 	LockedUntil       *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+}
+
+// PasswordCredential is the durable password verifier for one user login. The
+// PasswordHash field contains a self-describing encoded hash, never a plaintext
+// password. Keeping credentials separate from User keeps OIDC profile data and
+// credential secrets on different access paths.
+type PasswordCredential struct {
+	UserID            string
+	Login             string
+	PasswordHash      []byte
+	HashAlgorithm     string
+	HashParams        PasswordHashParams
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	PasswordChangedAt time.Time
+	MustChangeAtLogin bool
+	Disabled          bool
+}
+
+// PasswordHashParams records the parameters used to derive PasswordHash. The
+// encoded hash is authoritative for verification; these fields make admin and
+// diagnostics output possible without parsing hashes everywhere.
+type PasswordHashParams struct {
+	MemoryKiB   uint32
+	Iterations  uint32
+	Parallelism uint8
+	SaltLength  uint32
+	KeyLength   uint32
+}
+
+// AccountSecurityState tracks password-login failure and lockout state. It is
+// separated from PasswordCredential so a password reset can preserve or clear
+// security counters deliberately.
+type AccountSecurityState struct {
+	UserID                string
+	FailedLoginCount      int
+	FirstFailedLoginAt    *time.Time
+	LastFailedLoginAt     *time.Time
+	LockedUntil           *time.Time
+	LastSuccessfulLoginAt *time.Time
 }
 
 // Grant records a user/client/scope authorization relationship.

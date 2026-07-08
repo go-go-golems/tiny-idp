@@ -128,6 +128,61 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		}
 	})
 
+	t.Run("password credentials and account security state", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Now().UTC()
+		credential := domain.PasswordCredential{UserID: "u1", Login: "alice", PasswordHash: []byte("encoded-hash"), HashAlgorithm: "argon2id-v1", CreatedAt: now, UpdatedAt: now, PasswordChangedAt: now}
+		if err := st.PutPasswordCredential(ctx, credential); err != nil {
+			t.Fatalf("put credential: %v", err)
+		}
+		byLogin, err := st.GetPasswordCredentialByLogin(ctx, "alice")
+		if err != nil {
+			t.Fatalf("get by login: %v", err)
+		}
+		if byLogin.UserID != "u1" || string(byLogin.PasswordHash) != "encoded-hash" {
+			t.Fatalf("bad credential by login: %#v", byLogin)
+		}
+		byUser, err := st.GetPasswordCredentialByUserID(ctx, "u1")
+		if err != nil {
+			t.Fatalf("get by user: %v", err)
+		}
+		if byUser.Login != "alice" {
+			t.Fatalf("bad credential by user: %#v", byUser)
+		}
+		if err := st.PutPasswordCredential(ctx, domain.PasswordCredential{UserID: "u2", Login: "alice", PasswordHash: []byte("other")}); !errors.Is(err, ErrDuplicate) {
+			t.Fatalf("duplicate login got %v, want %v", err, ErrDuplicate)
+		}
+		lockedUntil := now.Add(time.Minute)
+		state := domain.AccountSecurityState{UserID: "u1", FailedLoginCount: 2, LockedUntil: &lockedUntil}
+		if err := st.PutAccountSecurityState(ctx, state); err != nil {
+			t.Fatalf("put security state: %v", err)
+		}
+		gotState, err := st.GetAccountSecurityState(ctx, "u1")
+		if err != nil {
+			t.Fatalf("get security state: %v", err)
+		}
+		if gotState.FailedLoginCount != 2 || gotState.LockedUntil == nil {
+			t.Fatalf("bad security state: %#v", gotState)
+		}
+		if err := st.ResetAccountSecurityState(ctx, "u1", now); err != nil {
+			t.Fatalf("reset security state: %v", err)
+		}
+		reset, err := st.GetAccountSecurityState(ctx, "u1")
+		if err != nil {
+			t.Fatalf("get reset state: %v", err)
+		}
+		if reset.FailedLoginCount != 0 || reset.LockedUntil != nil || reset.LastSuccessfulLoginAt == nil {
+			t.Fatalf("bad reset state: %#v", reset)
+		}
+		if err := st.DeletePasswordCredential(ctx, "u1"); err != nil {
+			t.Fatalf("delete credential: %v", err)
+		}
+		if _, err := st.GetPasswordCredentialByUserID(ctx, "u1"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("deleted credential got %v, want not found", err)
+		}
+	})
+
 	t.Run("active signing key and verification keys", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)

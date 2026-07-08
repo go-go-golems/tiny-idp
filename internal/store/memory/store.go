@@ -17,30 +17,36 @@ import (
 type Store struct {
 	mu sync.Mutex
 
-	clients      map[string]domain.Client
-	usersByID    map[string]domain.User
-	usersByLogin map[string]string
-	grants       map[string]domain.Grant
-	codes        map[string]domain.AuthorizationCode
-	access       map[string]domain.AccessToken
-	refresh      map[string]domain.RefreshToken
-	consents     map[string]domain.Consent
-	sessions     map[string]domain.Session
-	keys         map[string]domain.SigningKey
+	clients            map[string]domain.Client
+	usersByID          map[string]domain.User
+	usersByLogin       map[string]string
+	credentialsByUser  map[string]domain.PasswordCredential
+	credentialsByLogin map[string]string
+	accountSecurity    map[string]domain.AccountSecurityState
+	grants             map[string]domain.Grant
+	codes              map[string]domain.AuthorizationCode
+	access             map[string]domain.AccessToken
+	refresh            map[string]domain.RefreshToken
+	consents           map[string]domain.Consent
+	sessions           map[string]domain.Session
+	keys               map[string]domain.SigningKey
 }
 
 func New() *Store {
 	return &Store{
-		clients:      map[string]domain.Client{},
-		usersByID:    map[string]domain.User{},
-		usersByLogin: map[string]string{},
-		grants:       map[string]domain.Grant{},
-		codes:        map[string]domain.AuthorizationCode{},
-		access:       map[string]domain.AccessToken{},
-		refresh:      map[string]domain.RefreshToken{},
-		consents:     map[string]domain.Consent{},
-		sessions:     map[string]domain.Session{},
-		keys:         map[string]domain.SigningKey{},
+		clients:            map[string]domain.Client{},
+		usersByID:          map[string]domain.User{},
+		usersByLogin:       map[string]string{},
+		credentialsByUser:  map[string]domain.PasswordCredential{},
+		credentialsByLogin: map[string]string{},
+		accountSecurity:    map[string]domain.AccountSecurityState{},
+		grants:             map[string]domain.Grant{},
+		codes:              map[string]domain.AuthorizationCode{},
+		access:             map[string]domain.AccessToken{},
+		refresh:            map[string]domain.RefreshToken{},
+		consents:           map[string]domain.Consent{},
+		sessions:           map[string]domain.Session{},
+		keys:               map[string]domain.SigningKey{},
 	}
 }
 
@@ -105,6 +111,87 @@ func (s *Store) GetUserByLogin(_ context.Context, login string) (domain.User, er
 		return domain.User{}, storage.ErrNotFound
 	}
 	return u, nil
+}
+
+func (s *Store) PutPasswordCredential(_ context.Context, credential domain.PasswordCredential) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existingUserID, ok := s.credentialsByLogin[credential.Login]; ok && existingUserID != credential.UserID {
+		return storage.ErrDuplicate
+	}
+	if old, ok := s.credentialsByUser[credential.UserID]; ok && old.Login != credential.Login {
+		delete(s.credentialsByLogin, old.Login)
+	}
+	s.credentialsByUser[credential.UserID] = credential
+	s.credentialsByLogin[credential.Login] = credential.UserID
+	return nil
+}
+
+func (s *Store) GetPasswordCredentialByLogin(_ context.Context, login string) (domain.PasswordCredential, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	userID, ok := s.credentialsByLogin[login]
+	if !ok {
+		return domain.PasswordCredential{}, storage.ErrNotFound
+	}
+	credential, ok := s.credentialsByUser[userID]
+	if !ok {
+		return domain.PasswordCredential{}, storage.ErrNotFound
+	}
+	return credential, nil
+}
+
+func (s *Store) GetPasswordCredentialByUserID(_ context.Context, userID string) (domain.PasswordCredential, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	credential, ok := s.credentialsByUser[userID]
+	if !ok {
+		return domain.PasswordCredential{}, storage.ErrNotFound
+	}
+	return credential, nil
+}
+
+func (s *Store) DeletePasswordCredential(_ context.Context, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	credential, ok := s.credentialsByUser[userID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	delete(s.credentialsByUser, userID)
+	delete(s.credentialsByLogin, credential.Login)
+	return nil
+}
+
+func (s *Store) GetAccountSecurityState(_ context.Context, userID string) (domain.AccountSecurityState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, ok := s.accountSecurity[userID]
+	if !ok {
+		return domain.AccountSecurityState{}, storage.ErrNotFound
+	}
+	return state, nil
+}
+
+func (s *Store) PutAccountSecurityState(_ context.Context, state domain.AccountSecurityState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.accountSecurity[state.UserID] = state
+	return nil
+}
+
+func (s *Store) ResetAccountSecurityState(_ context.Context, userID string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.accountSecurity[userID]
+	state.UserID = userID
+	state.FailedLoginCount = 0
+	state.FirstFailedLoginAt = nil
+	state.LastFailedLoginAt = nil
+	state.LockedUntil = nil
+	state.LastSuccessfulLoginAt = &now
+	s.accountSecurity[userID] = state
+	return nil
 }
 
 func (s *Store) CreateGrant(_ context.Context, grant domain.Grant) error {

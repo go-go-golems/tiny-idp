@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -48,12 +49,28 @@ func (s *Store) Persistent() bool { return true }
 func (s *Store) SQLDB() *sql.DB { return s.db }
 
 func (s *Store) Migrate(ctx context.Context) error {
-	b, err := migrations.ReadFile("migrations/001_schema.sql")
+	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, string(b))
-	return err
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		b, err := migrations.ReadFile("migrations/" + name)
+		if err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, string(b)); err != nil {
+			return fmt.Errorf("apply migration %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func hashKey(b []byte) string        { return hex.EncodeToString(b) }
@@ -123,6 +140,69 @@ func (s *Store) GetUserByLogin(ctx context.Context, login string) (domain.User, 
 		return domain.User{}, err
 	}
 	return dec[domain.User](b)
+}
+
+func (s *Store) PutPasswordCredential(ctx context.Context, credential domain.PasswordCredential) error {
+	if existing, err := s.GetPasswordCredentialByLogin(ctx, credential.Login); err == nil && existing.UserID != credential.UserID {
+		return storage.ErrDuplicate
+	} else if err != nil && err != storage.ErrNotFound {
+		return err
+	}
+	b, _ := enc(credential)
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO password_credentials(user_id,login,data) VALUES(?,?,?)`, credential.UserID, credential.Login, b)
+	return mapDup(err)
+}
+func (s *Store) GetPasswordCredentialByLogin(ctx context.Context, login string) (domain.PasswordCredential, error) {
+	var b []byte
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM password_credentials WHERE login=?`, login).Scan(&b)
+	if err == sql.ErrNoRows {
+		return domain.PasswordCredential{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return domain.PasswordCredential{}, err
+	}
+	return dec[domain.PasswordCredential](b)
+}
+func (s *Store) GetPasswordCredentialByUserID(ctx context.Context, userID string) (domain.PasswordCredential, error) {
+	var b []byte
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM password_credentials WHERE user_id=?`, userID).Scan(&b)
+	if err == sql.ErrNoRows {
+		return domain.PasswordCredential{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return domain.PasswordCredential{}, err
+	}
+	return dec[domain.PasswordCredential](b)
+}
+func (s *Store) DeletePasswordCredential(ctx context.Context, userID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM password_credentials WHERE user_id=?`, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+func (s *Store) GetAccountSecurityState(ctx context.Context, userID string) (domain.AccountSecurityState, error) {
+	var b []byte
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM account_security_states WHERE user_id=?`, userID).Scan(&b)
+	if err == sql.ErrNoRows {
+		return domain.AccountSecurityState{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return domain.AccountSecurityState{}, err
+	}
+	return dec[domain.AccountSecurityState](b)
+}
+func (s *Store) PutAccountSecurityState(ctx context.Context, state domain.AccountSecurityState) error {
+	b, _ := enc(state)
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO account_security_states(user_id,data) VALUES(?,?)`, state.UserID, b)
+	return err
+}
+func (s *Store) ResetAccountSecurityState(ctx context.Context, userID string, now time.Time) error {
+	state := domain.AccountSecurityState{UserID: userID, LastSuccessfulLoginAt: &now}
+	return s.PutAccountSecurityState(ctx, state)
 }
 
 func (s *Store) CreateGrant(ctx context.Context, g domain.Grant) error {

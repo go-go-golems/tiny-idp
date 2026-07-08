@@ -28,6 +28,19 @@ type UserStore interface {
 	PutUser(ctx context.Context, login string, u domain.User) error
 }
 
+type PasswordCredentialStore interface {
+	PutPasswordCredential(ctx context.Context, credential domain.PasswordCredential) error
+	GetPasswordCredentialByLogin(ctx context.Context, login string) (domain.PasswordCredential, error)
+	GetPasswordCredentialByUserID(ctx context.Context, userID string) (domain.PasswordCredential, error)
+	DeletePasswordCredential(ctx context.Context, userID string) error
+}
+
+type AccountSecurityStore interface {
+	GetAccountSecurityState(ctx context.Context, userID string) (domain.AccountSecurityState, error)
+	PutAccountSecurityState(ctx context.Context, state domain.AccountSecurityState) error
+	ResetAccountSecurityState(ctx context.Context, userID string, now time.Time) error
+}
+
 type GrantStore interface {
 	CreateGrant(ctx context.Context, grant domain.Grant) error
 	GetGrant(ctx context.Context, id string) (domain.Grant, error)
@@ -75,6 +88,8 @@ type KeyStore interface {
 type Store interface {
 	ClientStore
 	UserStore
+	PasswordCredentialStore
+	AccountSecurityStore
 	GrantStore
 	AuthorizationCodeStore
 	AccessTokenStore
