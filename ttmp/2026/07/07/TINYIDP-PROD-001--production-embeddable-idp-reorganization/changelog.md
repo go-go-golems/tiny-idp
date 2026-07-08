@@ -172,3 +172,12 @@ Step 16: add strict CLI extra clients and pass hosted refresh-token module on di
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/docs/conformance.md — Distinct-client hosted refresh-token runbook
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve.go — Extra strict client registry support
 
+
+## 2026-07-07
+
+Step 17: complete fresh distinct-client hosted Basic OP plan Geeb9MBn659ah with no hard failures
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/reference/03-hosted-oidf-basic-op-conformance-summary.md — Sanitized final hosted OIDF summary
+

@@ -1747,3 +1747,90 @@ internal/cmds/serve.go
 internal/cmds/serve_test.go
 docs/conformance.md
 ```
+
+## Step 17: Complete fresh distinct-client hosted Basic OP plan
+
+I ran the fresh distinct-client hosted Basic OP plan through every remaining module. All modules reached terminal hosted-suite outcomes: pass, warning, skip, or review with screenshots uploaded. No module is left running or interrupted on the final distinct-client plan.
+
+This is the first consolidated hosted plan where the refresh-token cross-client module and the rest of the Basic OP modules are all represented under the same alias and static-client configuration.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead"
+
+**Assistant interpretation:** Proceed with the final full hosted-suite run using the distinct-client setup.
+
+**Inferred user intent:** The user wants final consolidated hosted Basic OP evidence rather than only isolated module fixes.
+
+### What I did
+
+- Ran `scripts/oidf_hosted_runner.py --plan Geeb9MBn659ah --remaining` repeatedly until no modules remained.
+- Uploaded required review screenshots for the final plan:
+  - `oidcc-prompt-login`
+  - `oidcc-max-age-1`
+  - `oidcc-ensure-registered-redirect-uri`
+  - `oidcc-ensure-request-object-with-redirect-uri`
+- Wrote sanitized summary doc `reference/03-hosted-oidf-basic-op-conformance-summary.md` instead of committing raw hosted logs.
+
+### Why
+
+- A single consolidated plan is easier to review than a collection of one-off reruns across plans.
+- Raw hosted artifacts may include transient protocol data; a sanitized summary gives useful evidence without leaking secrets.
+
+### What worked
+
+Final plan `Geeb9MBn659ah` completed with:
+
+```text
+PASSED=21
+WARNING=6
+SKIPPED=4
+REVIEW=4
+FAILED=0
+INTERRUPTED=0
+```
+
+The final refresh-token module on the distinct-client plan was:
+
+```text
+oidcc-refresh-token: s6Wy9BgOnvhsEG5 FINISHED PASSED
+```
+
+### What didn't work
+
+- The final plan still has hosted-suite `WARNING`, `SKIPPED`, and `REVIEW` results. These are terminal outcomes, but they need reviewer interpretation:
+  - `REVIEW` means screenshot evidence was uploaded for UX/error-page checks.
+  - `SKIPPED` reflects capabilities not advertised by discovery, such as unsupported optional scopes or unsupported request objects.
+  - `WARNING` reflects suite warnings around optional/partial claim behavior.
+
+### What I learned
+
+- The hosted suite can be made mostly unattended, but Basic OP still includes manual visual evidence checkpoints.
+- A sanitized summary document is safer than committing raw `/api/log` artifacts.
+
+### What was tricky to build
+
+- The repeated manual review checkpoints had to be handled without invalidating the run. The workflow that worked was: let the Python runner stop at `REVIEW`, capture the current OP page with headless Chromium, upload it through `/api/log/<test-id>/images/<upload-id>`, wait for `FINISHED REVIEW`, then resume `--remaining`.
+
+### What warrants a second pair of eyes
+
+- Review whether the final `WARNING` outcomes are acceptable for the intended certification target, especially optional profile/email/acr/claims warnings.
+- Review whether the hosted suite's official export should be downloaded and stored outside git or in a sanitized ticket evidence bundle.
+
+### What should be done in the future
+
+- Export or share the hosted plan from the certification UI/API if a formal artifact is needed.
+- Consider adding runner support for automatic screenshot capture/upload for known review prompts.
+
+### Code review instructions
+
+- Start with `reference/03-hosted-oidf-basic-op-conformance-summary.md` for the final status table.
+- Cross-check plan `Geeb9MBn659ah` in the hosted suite if live evidence is needed.
+
+### Technical details
+
+Final summary doc:
+
+```text
+ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/reference/03-hosted-oidf-basic-op-conformance-summary.md
+```
