@@ -23,9 +23,27 @@ WhenToUse: ""
 
 ## Overview
 
-<!-- Provide a brief overview of the ticket, its goals, and current status -->
+Evaluates whether **tiny-idp** (our minimal fosite-shaped OIDC provider) can serve as the identity
+provider for **Jitsi Meet**, and specifies how.
+
+**Verdict:** feasible — but Jitsi has **no native OIDC login**, so a small **OIDC→Jitsi-JWT translation
+adapter** (recommended: `jitsi-contrib/jitsi-oidc-adapter`) sits between the IdP and Jitsi. tiny-idp
+already exposes exactly the OIDC surface the adapter needs (discovery + authorize + token + userinfo),
+verified live; **no new tiny-idp features are required.** Prosody validates the adapter-minted **HS256**
+Jitsi JWT via a shared `app_secret`, so tiny-idp's RS256/JWKS are never used by Jitsi (which cannot read
+JWKS anyway).
+
+**Deliverables:** the design/implementation guide (`design-doc/01-...md`), two verified experiments
+(`scripts/01`, `scripts/02`), 15 captured sources (`sources/web/`), and the investigation diary
+(`reference/01-...md`). Status: **research & design complete**; implementation phases are listed as
+follow-ups in `tasks.md`.
 
 ## Key Links
+
+- **Design/implementation guide:** [design-doc/01-...](./design-doc/01-tiny-idp-as-an-oidc-identity-provider-for-jitsi-meet-analysis-design-and-implementation-guide.md)
+- **Investigation diary:** [reference/01-investigation-diary.md](./reference/01-investigation-diary.md)
+- **Experiments:** [scripts/01-oidc-smoke.sh](./scripts/01-oidc-smoke.sh), [scripts/02-oidc-to-jitsi-jwt.py](./scripts/02-oidc-to-jitsi-jwt.py)
+- **Sources:** [sources/web/](./sources/web/) (Jitsi token spec, handbook, adapters)
 
 - **Related Files**: See frontmatter RelatedFiles field
 - **External Sources**: See frontmatter ExternalSources field

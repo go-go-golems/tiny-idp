@@ -86,11 +86,51 @@ docmgr doc add --ticket TINYIDP-JITSI-001 --doc-type design-doc --title "tiny-id
 docmgr doc add --ticket TINYIDP-JITSI-001 --doc-type reference --title "Investigation Diary"
 ```
 
-## Step 2 — Jitsi-side research (in progress)
+## Step 2 — Jitsi-side research (complete)
 
-Background research agent tasked with: Prosody auth modes, `mod_auth_token` JWT claims, ASAP/RS256 key server,
-native OIDC (`tokenAuthUrl`/`tokenAuthUrlAutoRedirect`), and the `nordeck/jitsi-keycloak-adapter` bridge. Sources are
-being captured into `sources/web/`. (Findings and citations recorded in the next diary update.)
+Background research agent captured **15 sources** into `sources/web/` (`01`–`15`, no `11`). Key findings:
+
+- **Jitsi has no native OIDC login.** (`sources/web/03-jitsi-native-oidc-issue-16576.md`, issue #16576, open.)
+  Jitsi authenticates with a **Jitsi-shaped JWT** validated by Prosody's `mod_auth_token`, delivered as a
+  `?jwt=` **query param** — not an OIDC fragment. A translation adapter is therefore mandatory.
+- **Jitsi JWT claim contract** (`sources/web/01-lib-jitsi-meet-tokens.md`): validated `iss`/`aud`/`sub`/`room`/
+  `exp`; display-only `context.user{id,name,email,avatar}` (all must be strings). `sub` = tenant/domain (or `*`),
+  `room` = room name (or `*`).
+- **No JWKS support** (issue #15182, open). RS256 only via `asap_key_server` PEM-by-kid:
+  `{server}/{sha256hex(kid)}.pem`. So tiny-idp's JWKS cannot be handed to Jitsi directly.
+- **All adapters converge** on: run OIDC auth-code flow → read userinfo → mint **HS256** Jitsi JWT with a secret
+  shared with Prosody → redirect `?jwt=`. Recommended: **`jitsi-contrib/jitsi-oidc-adapter`** (generic, Deno).
+  It uses only **discovery + authorize + token + userinfo** and does **not** check the IdP's ID-token signature
+  or JWKS (`sources/web/13-jitsi-oidc-adapter-adapter-ts.txt`, `14`, `15`).
+
+**Decision recorded (ADR-2 in the design doc):** use HS256 shared-secret to Prosody, not RS256/ASAP — sidesteps
+the JWKS gap. **Verdict: feasible via adapter; tiny-idp needs zero new features.**
+
+## Step 3 — Experiments (both pass)
+
+**Experiment A — `scripts/01-oidc-smoke.sh`.** Starts tiny-idp (mock engine) and drives the full OIDC auth-code
+flow with curl + a cookie jar. First run failed: `REPO_ROOT` path math was off by one (`.../cmd/tinyidp: directory
+not found`) — fixed from 7 `../` to 6. Second run (via a prebuilt `TINYIDP_BIN` to skip the slow `go run` of the
+whole `go.work`) succeeded end to end: discovery, JWKS (3 keys), `302 …?code=…`, `/token` → `id_token`+`access_token`,
+decoded claims (`sub=user-alice-fixed`, `name=Alice Inbox`, `email`, `groups`, `roles`, `tenant`), and `/userinfo`.
+Output saved to `scripts/01-oidc-smoke.output.txt`. **This proves tiny-idp already exposes everything the adapter
+consumes.**
+
+- Command: `TINYIDP_BIN=<built> USERS_FILE=examples/users/personal-inbox-users.yaml LOGIN=alice PASSWORD=alice-password bash scripts/01-oidc-smoke.sh`
+- Gotcha: default `serve` engine is `mock` (`internal/cmds/serve.go:99`), whose `/authorize` has **no CSRF**
+  (simple `login`+`password`+hidden fields) — so a curl flow needs no CSRF token. The `fosite` engine *does* add CSRF.
+
+**Experiment B — `scripts/02-oidc-to-jitsi-jwt.py`.** Reproduces the adapter's claim mapping (`context.ts`) in ~40
+dependency-free lines and mints a valid **HS256 Jitsi JWT** from tiny-idp claims. Run with `--room standup --sub
+personal --moderator --now <fixed>` for reproducible output (`scripts/02-oidc-to-jitsi-jwt.output.txt`). Confirms the
+two-`sub` subtlety: OIDC `sub` → `context.user.id`; Jitsi top-level `sub` = tenant from the room URL.
+
+## Step 4 — Design doc + bookkeeping
+
+Wrote `design-doc/01-...md` (15 sections: primer, current-state evidence for both sides with file/source refs,
+architecture + diagrams, claim-mapping table + pseudocode, API references, 4 ADRs, end-to-end sequence diagram,
+phased implementation plan, testing strategy, risks/alternatives, intern onboarding). Committed research + probes as
+`85b3fde` (ticket dir only; the 60 MB built binary is git-ignored, never committed).
 
 ## Open questions being tracked
 
