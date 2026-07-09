@@ -10,13 +10,38 @@ Topics:
 DocType: reference
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://docs/admin-cli.md
+      Note: Operator documentation for admin commands (commit 167b444)
+    - Path: repo://internal/admin/backup.go
+      Note: SQLite backup helpers (commit 6b974d8)
+    - Path: repo://internal/admin/clients.go
+      Note: Admin client lifecycle service operations (commit 6b974d8)
+    - Path: repo://internal/admin/doctor.go
+      Note: Admin preflight checks (commit 6b974d8)
+    - Path: repo://internal/admin/keys.go
+      Note: Admin signing-key generation/rotation/redaction operations (commit 6b974d8)
+    - Path: repo://internal/admin/users.go
+      Note: Existing admin user/password service integrated into this ticket (commit 3b3a155)
+    - Path: repo://internal/cmds/admin.go
+      Note: Admin command parent and user command helpers
+    - Path: repo://internal/cmds/admin_backup.go
+      Note: Backup subcommands (commit 6b974d8)
+    - Path: repo://internal/cmds/admin_client.go
+      Note: Client subcommands (commit 6b974d8)
+    - Path: repo://internal/cmds/admin_export.go
+      Note: Sanitized diagnostics export (commit 167b444)
+    - Path: repo://internal/cmds/admin_keys.go
+      Note: Key subcommands (commit 6b974d8)
+    - Path: repo://internal/cmds/admin_ops.go
+      Note: Init/migrate/doctor subcommands (commit 6b974d8)
 ExternalSources: []
-Summary: "Chronological notes for the admin CLI design ticket."
+Summary: Chronological notes for the admin CLI design ticket.
 LastUpdated: 2026-07-08T01:05:00-04:00
-WhatFor: "Use this to resume or review the admin CLI design work."
-WhenToUse: "Read before implementing TINYIDP-ADMIN-001 or updating its design guide."
+WhatFor: Use this to resume or review the admin CLI design work.
+WhenToUse: Read before implementing TINYIDP-ADMIN-001 or updating its design guide.
 ---
+
 
 # Diary
 
@@ -82,3 +107,93 @@ For each ticket, write a detailed intern-oriented analysis/design/implementation
 ### Technical details
 - No code changed in this step.
 - Proposed package boundary: `internal/admin` service plus `internal/cmds/admin*.go` CLI adapters.
+
+## Step 2: Build Admin Runtime, Client, Key, Migration, Doctor, Backup, and Diagnostics Commands
+
+I implemented the operational admin CLI surface around the existing SQLite store and the user/password work that had just landed. The command tree now has `init`, `migrate`, `doctor`, `client`, `keys`, `user`, `backup`, and `export diagnostics` branches, with the mutation logic kept in `internal/admin.Service` where it can be tested without Cobra.
+
+This step turns the admin ticket from a design document into a usable product-operations workflow. Operators can initialize a database, create clients, generate and rotate signing keys, create users and passwords, run preflight checks, create and verify backups, and export sanitized diagnostics without manually editing SQLite rows.
+
+### Prompt Context
+
+**User prompt (verbatim):** "do TINYIDP-ADMIN-001"
+
+**Assistant interpretation:** Implement the active admin CLI ticket, commit at sensible points, keep docmgr ticket state current, and validate the result.
+
+**Inferred user intent:** Complete the productization admin surface so tinyidp has operational commands for clients, keys, users, migrations, backups, and diagnostics.
+
+**Commit (code):** 6b974d8 — "Add admin client key migration and backup commands"
+
+**Commit (docs/code):** 167b444 — "Document admin CLI diagnostics workflow"
+
+**Related prior code commit:** 3b3a155 — "Add user password admin commands"
+
+### What I did
+- Extended the existing `tinyidp admin` command parent with:
+  - `init`
+  - `migrate`
+  - `doctor`
+  - `client create/list/get/disable/enable/rotate-secret`
+  - `keys generate/list/rotate/retire`
+  - `backup create/verify`
+  - `export diagnostics`
+- Added admin service methods for client lifecycle operations, including bcrypt client-secret hashing and one-time generated secret output.
+- Added admin service methods for signing key generation, rotation, listing, retirement, and PEM redaction.
+- Added `Doctor` checks for client production validation, active signing key presence, and verification key state.
+- Added SQLite migration listing so `admin migrate --dry-run` can show embedded migrations.
+- Added backup create/verify helpers for SQLite database files.
+- Added sanitized diagnostics export that redacts client secret hashes and private key PEM material.
+- Added `docs/admin-cli.md` with command examples and safety notes.
+- Added tests for client lifecycle, key generation/rotation, doctor behavior, and backup verification.
+- Ran validation:
+  - `go test ./internal/admin ./internal/cmds ./internal/store/sqlite ./cmd/tinyidp`
+  - `go test ./...`
+  - `scripts/run-conformance.sh`
+
+### Why
+- A production-like IdP needs repeatable operational commands around clients, keys, users, migrations, and backups.
+- Command handlers should remain adapters; the service layer should own domain validation and mutations.
+- Diagnostics and command output must avoid leaking client secrets or private signing-key material.
+
+### What worked
+- The `internal/admin.Service` introduced by the user/password implementation was a good place to add client/key/doctor operations.
+- Existing store interfaces already exposed enough client and key operations for a useful MVP.
+- Existing key rotation helper `keys.RotateRSA` could be reused directly.
+- Full conformance checks remained green after adding the admin CLI surface.
+
+### What didn't work
+- There was no full structured production config yet, so the admin CLI cannot load product config files. I kept the explicit `--db` runtime for now and documented that `TINYIDP-PROD-CONFIG-001` should later replace or supplement it.
+- SQLite migrations did not expose a migration list initially. I added `sqlite.MigrationNames()` so dry-run output can report embedded migration filenames.
+
+### What I learned
+- The existing `storage.Store` contract is enough for an MVP admin CLI, but list-style user management is limited because there is no `ListUsers` method yet.
+- Backup and diagnostics are useful even in simple form, as long as private key PEM and secret hashes are redacted from output.
+
+### What was tricky to build
+- Client secret handling needed two paths: confidential clients require a bcrypt hash in `domain.Client.SecretHash`, while generated secrets must be printed exactly once for operators. I made command output include a one-time generated secret but redacted stored hashes everywhere else.
+- Key management needed to avoid leaking `PrivateKeyPEM`. Service methods return normal domain keys for storage correctness, but command output and diagnostics pass through `RedactSigningKey` / `RedactSigningKeys`.
+- `doctor` intentionally uses production validation even though the admin runtime can be pointed at a local database. This makes preflight checks stricter and catches unsafe clients before a production server starts.
+
+### What warrants a second pair of eyes
+- Review whether the explicit `--db` runtime should remain after structured config exists.
+- Review whether backup creation should use SQLite online backup/VACUUM INTO instead of file copy for live high-write deployments.
+- Review command output schemas before scripts depend on them as stable APIs.
+- Review whether `ListUsers` should be added to the storage interface for a fuller `admin user list` command.
+
+### What should be done in the future
+- Replace/supplement `--db` with config-backed admin runtime from `TINYIDP-PROD-CONFIG-001`.
+- Add transaction support for multi-row operations such as user+credential creation.
+- Add session/grant revocation commands for disabled users and password resets.
+- Add richer migration metadata rather than only idempotent embedded SQL filenames.
+
+### Code review instructions
+- Start with `internal/admin/clients.go`, `internal/admin/keys.go`, `internal/admin/doctor.go`, and `internal/admin/backup.go`.
+- Then review CLI adapters in `internal/cmds/admin_*.go`.
+- Confirm output redaction in `redactClient`, `admin.RedactSigningKey`, and `admin export diagnostics`.
+- Validate with `go test ./...` and `scripts/run-conformance.sh`.
+
+### Technical details
+- Admin runtime: `tinyidp admin --db <sqlite-path> ...`.
+- Client secret hashing: bcrypt into `domain.Client.SecretHash`.
+- Key output redaction: private key PEM omitted from command/diagnostic output.
+- Backup verification: opens the backup through the SQLite store and performs basic store checks.

@@ -1,7 +1,7 @@
 ---
 Title: Admin CLI for tinyidp product operations
 Ticket: TINYIDP-ADMIN-001
-Status: active
+Status: complete
 Topics:
     - go
     - identity
@@ -13,10 +13,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-08T00:42:30.033075074-04:00
+LastUpdated: 2026-07-08T22:51:54.768280939-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Admin CLI for tinyidp product operations
 
