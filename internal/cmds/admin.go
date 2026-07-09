@@ -138,14 +138,16 @@ func newAdminUserGetCommand(dbPath *string) *cobra.Command {
 func newAdminUserDisableCommand(dbPath *string, disabled bool) *cobra.Command {
 	name := "enable"
 	status := "enabled"
+	shortVerb := "Enable"
 	if disabled {
 		name = "disable"
 		status = "disabled"
+		shortVerb = "Disable"
 	}
 	var login string
 	cmd := &cobra.Command{
 		Use:   name,
-		Short: fmt.Sprintf("%s a user", strings.Title(name)),
+		Short: fmt.Sprintf("%s a user", shortVerb),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			svc, closeFn, err := openAdminService(*dbPath)
 			if err != nil {

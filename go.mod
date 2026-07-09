@@ -1,12 +1,16 @@
 module github.com/manuel/tinyidp
 
-go 1.25.5
+go 1.25.11
 
 require (
 	github.com/go-go-golems/glazed v1.3.6
-	github.com/rs/zerolog v1.35.1
+	github.com/go-go-golems/logcopter v0.1.1
+	github.com/mattn/go-sqlite3 v1.14.32
+	github.com/ory/fosite v0.49.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/crypto v0.51.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -23,7 +27,7 @@ require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/buger/jsonparser v1.2.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/bubbles v1.0.0 // indirect
@@ -38,6 +42,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.9.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
+	github.com/cristalhq/jwt/v4 v4.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgraph-io/ristretto v1.0.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
@@ -45,7 +50,6 @@ require (
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/go-go-golems/logcopter v0.1.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -84,7 +88,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
-	github.com/mattn/go-sqlite3 v1.14.32 // indirect
 	github.com/mattn/goveralls v0.0.12 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
@@ -98,7 +101,6 @@ require (
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/openzipkin/zipkin-go v0.4.2 // indirect
-	github.com/ory/fosite v0.49.0 // indirect
 	github.com/ory/go-acc v0.2.9-0.20230103102148-6b1c9a70dbbe // indirect
 	github.com/ory/go-convenience v0.1.0 // indirect
 	github.com/ory/x v0.0.665 // indirect
@@ -108,6 +110,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/seatgeek/logrus-gelf-formatter v0.0.0-20210414080842-5b05eb8ff761 // indirect
@@ -141,12 +144,12 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/zipkin v1.21.0 // indirect
 	go.opentelemetry.io/otel/metric v1.41.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.21.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.41.0 // indirect
 	go.opentelemetry.io/otel/trace v1.41.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.0.0 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
@@ -161,5 +164,6 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+tool github.com/go-go-golems/logcopter/cmd/logcopter-gen

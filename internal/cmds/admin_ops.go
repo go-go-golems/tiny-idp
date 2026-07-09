@@ -1,7 +1,6 @@
 package cmds
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -98,9 +97,4 @@ func openAdminStore(dbPath string) (*sqlite.Store, func(), error) {
 		return nil, nil, err
 	}
 	return st, func() { _ = st.Close() }, nil
-}
-
-func adminServiceForPath(ctx context.Context, dbPath string) (*admin.Service, func(), error) {
-	_ = ctx
-	return openAdminService(dbPath)
 }

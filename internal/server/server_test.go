@@ -178,8 +178,11 @@ func TestIssuerPathPrefixRoutes(t *testing.T) {
 // the given login and extra authorize params (code_challenge / code_verifier /
 // etc.) and returns the parsed token response, the verified ID token claims,
 // and the userinfo body. It verifies the ID token signature against JWKS.
-func fullFlow(t *testing.T, ts *httptest.Server, login string, extra url.Values) (tokenResp map[string]any, idClaims map[string]any, userinfo map[string]any) {
+func fullFlow(t *testing.T, ts *httptest.Server, login string, extra url.Values) (map[string]any, map[string]any, map[string]any) {
 	t.Helper()
+	var tokenResp map[string]any
+	var idClaims map[string]any
+	var userinfo map[string]any
 
 	// 1. authorize: GET renders the form; POST submits login + hidden params.
 	auth := url.Values{}

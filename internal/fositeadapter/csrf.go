@@ -2,7 +2,6 @@ package fositeadapter
 
 import (
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"net/http"
@@ -52,5 +51,3 @@ func (p *Provider) cookiePath() string {
 	}
 	return path
 }
-
-func randomBytes(n int) []byte { b := make([]byte, n); _, _ = rand.Read(b); return b }

@@ -15,7 +15,6 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cli"
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
-	"github.com/rs/zerolog/log"
 
 	"github.com/manuel/tinyidp/internal/client"
 	"github.com/manuel/tinyidp/internal/domain"

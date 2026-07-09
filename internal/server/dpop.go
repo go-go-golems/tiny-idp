@@ -193,6 +193,7 @@ func ecJWK(jwk map[string]any) (*ecdsa.PublicKey, string, string, error) {
 	}
 	x, y := new(big.Int).SetBytes(xb), new(big.Int).SetBytes(yb)
 	curve := elliptic.P256()
+	//nolint:staticcheck // DPoP JWK parsing intentionally uses elliptic coordinates to validate legacy P-256 JWT keys.
 	if !curve.IsOnCurve(x, y) {
 		return nil, "", "", errors.New("DPoP EC jwk point is not on P-256")
 	}

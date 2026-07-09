@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -199,8 +198,8 @@ func makeDPoPProof(t *testing.T, key *ecdsa.PrivateKey, method, htu, ath, jti st
 		"jwk": map[string]any{
 			"kty": "EC",
 			"crv": "P-256",
-			"x":   b64(padBigInt(key.PublicKey.X, 32)),
-			"y":   b64(padBigInt(key.PublicKey.Y, 32)),
+			"x":   b64(padBigInt(key.X, 32)),
+			"y":   b64(padBigInt(key.Y, 32)),
 		},
 	}
 	return signDPoPProof(t, header, method, htu, ath, jti, iat, func(input []byte) []byte {
@@ -220,8 +219,8 @@ func makeDPoPRSProof(t *testing.T, key *rsa.PrivateKey, method, htu, ath, jti st
 		"alg": "RS256",
 		"jwk": map[string]any{
 			"kty": "RSA",
-			"n":   b64(key.PublicKey.N.Bytes()),
-			"e":   b64(big.NewInt(int64(key.PublicKey.E)).Bytes()),
+			"n":   b64(key.N.Bytes()),
+			"e":   b64(big.NewInt(int64(key.E)).Bytes()),
 		},
 	}
 	return signDPoPProof(t, header, method, htu, ath, jti, iat, func(input []byte) []byte {
@@ -314,8 +313,4 @@ func userinfoStatus(t *testing.T, ts *httptest.Server, auth, proof string, wantS
 	if resp.StatusCode != wantStatus {
 		t.Fatalf("userinfo status = %d, want %d (%s proof=%t)", resp.StatusCode, wantStatus, auth, proof != "")
 	}
-}
-
-func uniqueDPoPJTI(prefix string) string {
-	return prefix + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 }

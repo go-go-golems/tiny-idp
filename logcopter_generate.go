@@ -1,0 +1,3 @@
+package tinyidp
+
+//go:generate go tool logcopter-gen -area-prefix tinyidp -strip-prefix github.com/manuel/tinyidp ./cmd/... ./internal/... ./pkg/...

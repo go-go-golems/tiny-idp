@@ -1,0 +1,29 @@
+---
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - exhaustive
+    - nonamedreturns
+    - predeclared
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+        text: "Error return value of `.*\\.Close` is not checked"
+
+formatters:
+  enable:
+    - gofmt
