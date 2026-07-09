@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/storage"
 	"github.com/manuel/tinyidp/internal/store/sqlite"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestStoreSuite(t *testing.T) {
-	storage.RunStoreSuite(t, func(t *testing.T) storage.Store {
+	idpstore.RunStoreSuite(t, func(t *testing.T) idpstore.Store {
 		st, err := sqlite.Open(filepath.Join(t.TempDir(), "idp.db"))
 		if err != nil {
 			t.Fatal(err)

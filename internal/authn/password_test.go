@@ -8,16 +8,16 @@ import (
 
 	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/authn"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
 	now := time.Date(2026, 7, 8, 1, 0, 0, 0, time.UTC)
-	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice"}); err != nil {
+	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
 		t.Fatal(err)
 	}
 	sink := audit.NewMemorySink()
@@ -33,7 +33,7 @@ func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	lockedUntil := now.Add(time.Minute)
-	if err := st.PutAccountSecurityState(ctx, domain.AccountSecurityState{UserID: "u1", FailedLoginCount: 2, LockedUntil: &lockedUntil}); err != nil {
+	if err := st.PutAccountSecurityState(ctx, idpstore.AccountSecurityState{UserID: "u1", FailedLoginCount: 2, LockedUntil: &lockedUntil}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.AuthenticatePassword(ctx, "alice", "alice-password", authn.LoginMetadata{ClientID: "spa"}); !errors.Is(err, authn.ErrAccountLocked) {
@@ -64,7 +64,7 @@ func TestPasswordServiceRejectsWrongPasswordAndLocks(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
 	now := time.Date(2026, 7, 8, 1, 0, 0, 0, time.UTC)
-	_ = st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice"})
+	_ = st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"})
 	policy := authn.DefaultPasswordPolicy()
 	policy.LockoutThreshold = 2
 	policy.LockoutDuration = time.Minute
@@ -97,7 +97,7 @@ func TestPasswordServiceRejectsWrongPasswordAndLocks(t *testing.T) {
 func TestPasswordServiceAllowsPasswordlessOnlyWhenPolicyAllows(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	_ = st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice"})
+	_ = st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"})
 	svc, err := authn.NewPasswordService(st, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
 	if err != nil {
 		t.Fatal(err)

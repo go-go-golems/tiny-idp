@@ -13,19 +13,19 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/domain"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
-func GenerateRSA(kid string, now time.Time) (domain.SigningKey, error) {
+func GenerateRSA(kid string, now time.Time) (idpstore.SigningKey, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return domain.SigningKey{}, err
+		return idpstore.SigningKey{}, err
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
-	return domain.SigningKey{ID: kid, Algorithm: "RS256", PrivateKeyPEM: pemBytes, CreatedAt: now, NotBefore: now, Active: true}, nil
+	return idpstore.SigningKey{ID: kid, Algorithm: "RS256", PrivateKeyPEM: pemBytes, CreatedAt: now, NotBefore: now, Active: true}, nil
 }
 
-func ParseRSAPrivateKey(key domain.SigningKey) (*rsa.PrivateKey, error) {
+func ParseRSAPrivateKey(key idpstore.SigningKey) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(key.PrivateKeyPEM)
 	if block == nil {
 		return nil, fmt.Errorf("missing PEM block")
@@ -46,7 +46,7 @@ type JWKS struct {
 	Keys []JWK `json:"keys"`
 }
 
-func PublicJWK(key domain.SigningKey) (JWK, error) {
+func PublicJWK(key idpstore.SigningKey) (JWK, error) {
 	priv, err := ParseRSAPrivateKey(key)
 	if err != nil {
 		return JWK{}, err
@@ -55,7 +55,7 @@ func PublicJWK(key domain.SigningKey) (JWK, error) {
 	return JWK{Kty: "RSA", Use: "sig", Kid: key.ID, Alg: key.Algorithm, N: b64(pub.N.Bytes()), E: b64(big.NewInt(int64(pub.E)).Bytes())}, nil
 }
 
-func PublicJWKS(signingKeys []domain.SigningKey) (JWKS, error) {
+func PublicJWKS(signingKeys []idpstore.SigningKey) (JWKS, error) {
 	out := JWKS{Keys: make([]JWK, 0, len(signingKeys))}
 	for _, k := range signingKeys {
 		jwk, err := PublicJWK(k)
@@ -75,7 +75,7 @@ func ThumbprintJWK(j JWK) string {
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
 // SignJWT signs a compact JWT with RS256 using the given signing key.
-func SignJWT(key domain.SigningKey, claims map[string]any) (string, error) {
+func SignJWT(key idpstore.SigningKey, claims map[string]any) (string, error) {
 	priv, err := ParseRSAPrivateKey(key)
 	if err != nil {
 		return "", err

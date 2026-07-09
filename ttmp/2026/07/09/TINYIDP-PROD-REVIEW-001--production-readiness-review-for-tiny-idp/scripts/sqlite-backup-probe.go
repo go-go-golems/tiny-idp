@@ -12,9 +12,8 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/domain"
-	"github.com/manuel/tinyidp/internal/storage"
 	"github.com/manuel/tinyidp/internal/store/sqlite"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func main() {
@@ -58,7 +57,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("disable auto-checkpoint: %w", err)
 	}
 
-	client := domain.Client{
+	client := idpstore.Client{
 		ID:            "committed-after-checkpoint",
 		Public:        true,
 		RequirePKCE:   true,
@@ -91,7 +90,7 @@ func run(ctx context.Context) error {
 	switch lookupErr {
 	case nil:
 		return fmt.Errorf("probe assumption failed: copied file unexpectedly contains WAL-only client")
-	case storage.ErrNotFound:
+	case idpstore.ErrNotFound:
 		fmt.Println("CONFIRMED: backup opens successfully but omits a committed client stored in the source WAL")
 		return nil
 	default:

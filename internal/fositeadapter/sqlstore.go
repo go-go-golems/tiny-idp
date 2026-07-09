@@ -13,13 +13,12 @@ import (
 	"github.com/ory/fosite/handler/openid"
 	fositejwt "github.com/ory/fosite/token/jwt"
 
-	"github.com/manuel/tinyidp/internal/domain"
-	"github.com/manuel/tinyidp/internal/storage"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 type sqlFositeStore struct {
 	db      *sql.DB
-	project storage.Store
+	project idpstore.Store
 	config  *fosite.Config
 	secrets map[string]string
 }
@@ -28,7 +27,7 @@ type sqlDBProvider interface {
 	SQLDB() *sql.DB
 }
 
-func newSQLFositeStore(db *sql.DB, project storage.Store, config *fosite.Config, secrets map[string]string) (*sqlFositeStore, error) {
+func newSQLFositeStore(db *sql.DB, project idpstore.Store, config *fosite.Config, secrets map[string]string) (*sqlFositeStore, error) {
 	return &sqlFositeStore{db: db, project: project, config: config, secrets: secrets}, nil
 }
 
@@ -40,7 +39,7 @@ func (s *sqlFositeStore) GetClient(ctx context.Context, id string) (fosite.Clien
 	return s.toFositeClient(ctx, c)
 }
 
-func (s *sqlFositeStore) toFositeClient(ctx context.Context, c domain.Client) (fosite.Client, error) {
+func (s *sqlFositeStore) toFositeClient(ctx context.Context, c idpstore.Client) (fosite.Client, error) {
 	fc := &fosite.DefaultClient{
 		ID:            c.ID,
 		Public:        c.Public,

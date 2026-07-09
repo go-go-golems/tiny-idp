@@ -6,36 +6,35 @@ import (
 	"sync"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/domain"
-	"github.com/manuel/tinyidp/internal/storage"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 type ConsentPolicy interface {
-	RequireConsent(ctx context.Context, user domain.User, client domain.Client, scopes []string) (bool, error)
-	RecordConsent(ctx context.Context, user domain.User, client domain.Client, scopes []string) error
+	RequireConsent(ctx context.Context, user idpstore.User, client idpstore.Client, scopes []string) (bool, error)
+	RecordConsent(ctx context.Context, user idpstore.User, client idpstore.Client, scopes []string) error
 }
 
 type AlwaysSkipConsent struct{}
 
-func (AlwaysSkipConsent) RequireConsent(context.Context, domain.User, domain.Client, []string) (bool, error) {
+func (AlwaysSkipConsent) RequireConsent(context.Context, idpstore.User, idpstore.Client, []string) (bool, error) {
 	return false, nil
 }
-func (AlwaysSkipConsent) RecordConsent(context.Context, domain.User, domain.Client, []string) error {
+func (AlwaysSkipConsent) RecordConsent(context.Context, idpstore.User, idpstore.Client, []string) error {
 	return nil
 }
 
 type StoredConsent struct {
-	store storage.ConsentStore
+	store idpstore.ConsentStore
 	ttl   time.Duration
 }
 
-func NewStoredConsent(store storage.ConsentStore, ttl time.Duration) *StoredConsent {
+func NewStoredConsent(store idpstore.ConsentStore, ttl time.Duration) *StoredConsent {
 	return &StoredConsent{store: store, ttl: ttl}
 }
 
-func (p *StoredConsent) RequireConsent(ctx context.Context, user domain.User, client domain.Client, scopes []string) (bool, error) {
+func (p *StoredConsent) RequireConsent(ctx context.Context, user idpstore.User, client idpstore.Client, scopes []string) (bool, error) {
 	consent, err := p.store.GetConsent(ctx, user.ID, client.ID, scopes)
-	if errors.Is(err, storage.ErrNotFound) {
+	if errors.Is(err, idpstore.ErrNotFound) {
 		return true, nil
 	}
 	if err != nil {
@@ -51,9 +50,9 @@ func (p *StoredConsent) RequireConsent(ctx context.Context, user domain.User, cl
 	return false, nil
 }
 
-func (p *StoredConsent) RecordConsent(ctx context.Context, user domain.User, client domain.Client, scopes []string) error {
+func (p *StoredConsent) RecordConsent(ctx context.Context, user idpstore.User, client idpstore.Client, scopes []string) error {
 	now := time.Now().UTC()
-	consent := domain.Consent{UserID: user.ID, ClientID: client.ID, Scope: domain.NormalizeScopes(scopes), GrantedAt: now}
+	consent := idpstore.Consent{UserID: user.ID, ClientID: client.ID, Scope: idpstore.NormalizeScopes(scopes), GrantedAt: now}
 	if p.ttl > 0 {
 		consent.ExpiresAt = now.Add(p.ttl)
 	}
@@ -66,21 +65,21 @@ type RememberConsent struct {
 }
 
 func NewRememberConsent() *RememberConsent { return &RememberConsent{seen: map[string]struct{}{}} }
-func (p *RememberConsent) RequireConsent(_ context.Context, user domain.User, client domain.Client, scopes []string) (bool, error) {
+func (p *RememberConsent) RequireConsent(_ context.Context, user idpstore.User, client idpstore.Client, scopes []string) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	_, ok := p.seen[consentKey(user, client, scopes)]
 	return !ok, nil
 }
-func (p *RememberConsent) RecordConsent(_ context.Context, user domain.User, client domain.Client, scopes []string) error {
+func (p *RememberConsent) RecordConsent(_ context.Context, user idpstore.User, client idpstore.Client, scopes []string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.seen[consentKey(user, client, scopes)] = struct{}{}
 	return nil
 }
-func consentKey(user domain.User, client domain.Client, scopes []string) string {
+func consentKey(user idpstore.User, client idpstore.Client, scopes []string) string {
 	key := user.ID + "\x00" + client.ID
-	for _, s := range domain.NormalizeScopes(scopes) {
+	for _, s := range idpstore.NormalizeScopes(scopes) {
 		key += "\x00" + s
 	}
 	return key

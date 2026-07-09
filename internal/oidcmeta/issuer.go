@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/manuel/tinyidp/internal/domain"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 type Issuer struct{ URL *url.URL }
@@ -22,15 +22,15 @@ func ParseIssuer(raw string) (Issuer, error) {
 	return Issuer{URL: u}, nil
 }
 
-func ValidateIssuer(raw string, mode domain.Mode) error {
+func ValidateIssuer(raw string, mode idpstore.Mode) error {
 	iss, err := ParseIssuer(raw)
 	if err != nil {
 		return err
 	}
-	if mode == domain.ProductionMode && iss.URL.Scheme != "https" {
+	if mode == idpstore.ProductionMode && iss.URL.Scheme != "https" {
 		return fmt.Errorf("production issuer must use https")
 	}
-	if iss.URL.Scheme == "http" && mode == domain.DevMode && !isLoopbackHost(iss.URL.Hostname()) {
+	if iss.URL.Scheme == "http" && mode == idpstore.DevMode && !isLoopbackHost(iss.URL.Hostname()) {
 		return fmt.Errorf("dev http issuer must be loopback")
 	}
 	return nil

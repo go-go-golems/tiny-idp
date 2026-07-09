@@ -1,4 +1,4 @@
-package domain
+package idpstore
 
 // ClaimsForScopes returns user claims permitted by granted scopes. Protocol
 // claims such as iss/aud/exp/iat are built by the token layer; this function

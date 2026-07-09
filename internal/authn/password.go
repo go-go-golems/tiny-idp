@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/manuel/tinyidp/internal/audit"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/passwordhash"
-	"github.com/manuel/tinyidp/internal/storage"
 	"github.com/manuel/tinyidp/internal/user"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 var (
@@ -25,7 +24,7 @@ type LoginMetadata struct {
 }
 
 type AuthResult struct {
-	User               domain.User
+	User               idpstore.User
 	MustChangePassword bool
 	AMR                []string
 }
@@ -52,14 +51,14 @@ type Options struct {
 }
 
 type PasswordService struct {
-	store  storage.Store
+	store  idpstore.Store
 	hasher passwordhash.Hasher
 	policy PasswordPolicy
 	clock  func() time.Time
 	audit  audit.Sink
 }
 
-func NewPasswordService(store storage.Store, opts Options) (*PasswordService, error) {
+func NewPasswordService(store idpstore.Store, opts Options) (*PasswordService, error) {
 	if store == nil {
 		return nil, errors.New("store is required")
 	}
@@ -114,8 +113,8 @@ func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, passw
 	}
 	credential, credErr := s.store.GetPasswordCredentialByLogin(ctx, normalized)
 	if credErr != nil {
-		if errors.Is(credErr, storage.ErrNotFound) && s.policy.AllowPasswordless {
-			if err := s.checkAccountState(ctx, u, domain.PasswordCredential{}, now, meta); err != nil {
+		if errors.Is(credErr, idpstore.ErrNotFound) && s.policy.AllowPasswordless {
+			if err := s.checkAccountState(ctx, u, idpstore.PasswordCredential{}, now, meta); err != nil {
 				return AuthResult{}, err
 			}
 			_ = s.store.ResetAccountSecurityState(ctx, u.ID, now)
@@ -146,19 +145,19 @@ func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, passw
 	return AuthResult{User: u, MustChangePassword: credential.MustChangeAtLogin, AMR: []string{"pwd"}}, nil
 }
 
-func (s *PasswordService) HashCredential(userID, login string, password []byte, now time.Time) (domain.PasswordCredential, error) {
+func (s *PasswordService) HashCredential(userID, login string, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
 	encoded, err := s.hasher.HashPassword(password)
 	if err != nil {
-		return domain.PasswordCredential{}, err
+		return idpstore.PasswordCredential{}, err
 	}
-	params := domain.PasswordHashParams{}
+	params := idpstore.PasswordHashParams{}
 	if parsed, err := passwordhash.Parse(encoded); err == nil {
-		params = domain.PasswordHashParams(parsed.Params)
+		params = idpstore.PasswordHashParams(parsed.Params)
 	}
-	return domain.PasswordCredential{UserID: userID, Login: user.Normalize(login), PasswordHash: encoded, HashAlgorithm: passwordhash.AlgorithmArgon2id, HashParams: params, CreatedAt: now, UpdatedAt: now, PasswordChangedAt: now}, nil
+	return idpstore.PasswordCredential{UserID: userID, Login: user.Normalize(login), PasswordHash: encoded, HashAlgorithm: passwordhash.AlgorithmArgon2id, HashParams: params, CreatedAt: now, UpdatedAt: now, PasswordChangedAt: now}, nil
 }
 
-func (s *PasswordService) checkAccountState(ctx context.Context, u domain.User, credential domain.PasswordCredential, now time.Time, meta LoginMetadata) error {
+func (s *PasswordService) checkAccountState(ctx context.Context, u idpstore.User, credential idpstore.PasswordCredential, now time.Time, meta LoginMetadata) error {
 	if u.Disabled || credential.Disabled {
 		s.emit(ctx, "password.login.failure", meta, u.Sub, "account_disabled")
 		return ErrAccountDisabled
@@ -168,7 +167,7 @@ func (s *PasswordService) checkAccountState(ctx context.Context, u domain.User, 
 		return ErrAccountLocked
 	}
 	state, err := s.store.GetAccountSecurityState(ctx, u.ID)
-	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+	if err != nil && !errors.Is(err, idpstore.ErrNotFound) {
 		return err
 	}
 	if state.LockedUntil != nil && now.Before(*state.LockedUntil) {
@@ -180,7 +179,7 @@ func (s *PasswordService) checkAccountState(ctx context.Context, u domain.User, 
 
 func (s *PasswordService) recordFailure(ctx context.Context, userID string, now time.Time) error {
 	state, err := s.store.GetAccountSecurityState(ctx, userID)
-	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+	if err != nil && !errors.Is(err, idpstore.ErrNotFound) {
 		return err
 	}
 	state.UserID = userID
@@ -199,15 +198,15 @@ func (s *PasswordService) recordFailure(ctx context.Context, userID string, now 
 	return s.store.PutAccountSecurityState(ctx, state)
 }
 
-func (s *PasswordService) rehashCredential(credential domain.PasswordCredential, password []byte, now time.Time) (domain.PasswordCredential, error) {
+func (s *PasswordService) rehashCredential(credential idpstore.PasswordCredential, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
 	encoded, err := s.hasher.HashPassword(password)
 	if err != nil {
-		return domain.PasswordCredential{}, err
+		return idpstore.PasswordCredential{}, err
 	}
 	credential.PasswordHash = encoded
 	credential.HashAlgorithm = passwordhash.AlgorithmArgon2id
 	if parsed, err := passwordhash.Parse(encoded); err == nil {
-		credential.HashParams = domain.PasswordHashParams(parsed.Params)
+		credential.HashParams = idpstore.PasswordHashParams(parsed.Params)
 	}
 	credential.UpdatedAt = now
 	return credential, nil

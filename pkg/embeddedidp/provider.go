@@ -3,15 +3,15 @@ package embeddedidp
 import (
 	"net/http"
 
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 type Provider struct{ handler http.Handler }
 
 func New(opts Options) (*Provider, error) {
 	if opts.Mode == "" {
-		opts.Mode = domain.DevMode
+		opts.Mode = idpstore.DevMode
 	}
 	if err := opts.Validate(); err != nil {
 		return nil, err

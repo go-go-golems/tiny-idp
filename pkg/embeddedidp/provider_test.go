@@ -7,15 +7,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestProductionValidationRejectsMissingTokenSecret(t *testing.T) {
 	st := memory.New()
-	_ = st.PutClient(context.Background(), domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}})
+	_ = st.PutClient(context.Background(), idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(context.Background(), key)
 	_, err := embeddedidp.New(embeddedidp.Options{Issuer: "https://example.com/idp", Mode: embeddedidp.ProductionMode, Store: st, Cookie: embeddedidp.CookieConfig{Secure: true}, AllowInMemoryStoresInProduction: true})
@@ -41,7 +41,7 @@ func TestProductionValidationRejectsHTTPAndMemory(t *testing.T) {
 func TestDevProviderBuildsAndHasNoDebug(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	_ = st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost:3000/callback"}, AllowedScopes: []string{"openid"}})
+	_ = st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost:3000/callback"}, AllowedScopes: []string{"openid"}})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(ctx, key)
 	p, err := embeddedidp.New(embeddedidp.Options{Issuer: "http://127.0.0.1:5556", Mode: embeddedidp.DevMode, Store: st})

@@ -10,17 +10,17 @@ import (
 	"time"
 
 	"github.com/manuel/tinyidp/internal/audit"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestAuthorizeRequiresCSRFAndEmitsAudit(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	_ = st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}})
-	_ = st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice"})
+	_ = st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}})
+	_ = st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(ctx, key)
 	sink := audit.NewMemorySink()

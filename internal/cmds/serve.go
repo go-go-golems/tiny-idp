@@ -18,13 +18,13 @@ import (
 
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/client"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/scenario"
 	"github.com/manuel/tinyidp/internal/sections/oidc"
 	"github.com/manuel/tinyidp/internal/server"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 // ServeCommand runs the mock OIDC IdP HTTP server. It implements
@@ -216,7 +216,7 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 	st := memory.New()
 	plainClientSecrets := map[string]string{}
 	for _, c := range clients.All() {
-		dc := domain.Client{
+		dc := idpstore.Client{
 			ID:                     c.ID,
 			Public:                 c.Secret == "",
 			RedirectURIs:           c.RedirectURIs,
@@ -243,7 +243,7 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 		return nil, err
 	}
 	for _, sc := range scenarios.All() {
-		u := domain.User{ID: sc.User.Sub, Sub: sc.User.Sub, Email: sc.User.Email, Name: sc.User.Name, EmailVerified: true}
+		u := idpstore.User{ID: sc.User.Sub, Sub: sc.User.Sub, Email: sc.User.Email, Name: sc.User.Name, EmailVerified: true}
 		applyScenarioClaims(&u, sc.ExtraClaims)
 		if err := st.PutUser(context.Background(), sc.Name, u); err != nil {
 			return nil, err
@@ -265,10 +265,10 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 	if err := st.CreateSigningKey(context.Background(), key); err != nil {
 		return nil, err
 	}
-	return fositeadapter.NewProvider(fositeadapter.Options{Issuer: cfg.Issuer, Store: st, SecretKey: strictDevSecretKey, Mode: domain.DevMode, ClientSecrets: plainClientSecrets})
+	return fositeadapter.NewProvider(fositeadapter.Options{Issuer: cfg.Issuer, Store: st, SecretKey: strictDevSecretKey, Mode: idpstore.DevMode, ClientSecrets: plainClientSecrets})
 }
 
-func applyScenarioClaims(u *domain.User, claims map[string]any) {
+func applyScenarioClaims(u *idpstore.User, claims map[string]any) {
 	for k, v := range claims {
 		switch k {
 		case "email_verified":

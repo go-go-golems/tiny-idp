@@ -25,10 +25,9 @@ import (
 
 	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/authn"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
-	"github.com/manuel/tinyidp/internal/storage"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 var ProductionHandlerFactories = []string{
@@ -46,9 +45,9 @@ type PasswordAuthenticator interface {
 
 type Options struct {
 	Issuer          string
-	Store           storage.Store
+	Store           idpstore.Store
 	SecretKey       []byte
-	Mode            domain.Mode
+	Mode            idpstore.Mode
 	CodeTTL         time.Duration
 	AccessTokenTTL  time.Duration
 	IDTokenTTL      time.Duration
@@ -56,7 +55,7 @@ type Options struct {
 	SessionTTL      time.Duration
 	// ClientSecrets optionally supplies plaintext client secrets for callers that
 	// are converting legacy/dev config into Fosite's BCrypt client store. The
-	// production embedded API should prefer BCrypt hashes in domain.Client.SecretHash.
+	// production embedded API should prefer BCrypt hashes in idpstore.Client.SecretHash.
 	ClientSecrets map[string]string
 	CookieSecure  bool
 	Audit         audit.Sink
@@ -67,11 +66,11 @@ type Options struct {
 
 type Provider struct {
 	issuer        oidcmeta.Issuer
-	store         storage.Store
+	store         idpstore.Store
 	fositeStore   *fositememory.MemoryStore
 	oauth2        fosite.OAuth2Provider
 	config        *fosite.Config
-	mode          domain.Mode
+	mode          idpstore.Mode
 	csrfKey       []byte
 	cookieSecure  bool
 	audit         audit.Sink
@@ -90,9 +89,9 @@ func NewProvider(opts Options) (*Provider, error) {
 		return nil, fmt.Errorf("store is required")
 	}
 	if opts.Mode == "" {
-		opts.Mode = domain.DevMode
+		opts.Mode = idpstore.DevMode
 	}
-	if opts.Mode == domain.ProductionMode && len(opts.SecretKey) < 32 {
+	if opts.Mode == idpstore.ProductionMode && len(opts.SecretKey) < 32 {
 		return nil, fmt.Errorf("production mode requires a token secret key of at least 32 bytes")
 	}
 	if len(opts.SecretKey) == 0 {
@@ -102,7 +101,7 @@ func NewProvider(opts Options) (*Provider, error) {
 		opts.Audit = audit.NoopSink{}
 	}
 	if opts.Consent == nil {
-		if opts.Mode == domain.ProductionMode {
+		if opts.Mode == idpstore.ProductionMode {
 			opts.Consent = NewStoredConsent(opts.Store, 0)
 		} else {
 			opts.Consent = AlwaysSkipConsent{}
@@ -113,7 +112,7 @@ func NewProvider(opts Options) (*Provider, error) {
 	}
 	if opts.Authenticator == nil {
 		policy := authn.DefaultPasswordPolicy()
-		if opts.Mode != domain.ProductionMode {
+		if opts.Mode != idpstore.ProductionMode {
 			policy.AllowPasswordless = true
 			policy.LockoutThreshold = 0
 		}
@@ -139,7 +138,7 @@ func NewProvider(opts Options) (*Provider, error) {
 		opts.SessionTTL = 24 * time.Hour
 	}
 
-	sendDebug := opts.Mode != domain.ProductionMode
+	sendDebug := opts.Mode != idpstore.ProductionMode
 	cfg := &fosite.Config{
 		GlobalSecret:                   opts.SecretKey,
 		SendDebugMessagesToClients:     sendDebug,
@@ -148,7 +147,7 @@ func NewProvider(opts Options) (*Provider, error) {
 		AuthorizeCodeLifespan:          opts.CodeTTL,
 		IDTokenLifespan:                opts.IDTokenTTL,
 		IDTokenIssuer:                  iss.String(),
-		EnforcePKCE:                    opts.Mode == domain.ProductionMode,
+		EnforcePKCE:                    opts.Mode == idpstore.ProductionMode,
 		EnforcePKCEForPublicClients:    true,
 		EnablePKCEPlainChallengeMethod: false,
 		ScopeStrategy:                  fosite.ExactScopeStrategy,
@@ -187,7 +186,7 @@ type composedFositeStore struct {
 	memoryStore *fositememory.MemoryStore
 }
 
-func buildFositeStore(st storage.Store, cfg *fosite.Config, plainSecrets map[string]string) (*composedFositeStore, error) {
+func buildFositeStore(st idpstore.Store, cfg *fosite.Config, plainSecrets map[string]string) (*composedFositeStore, error) {
 	if sqlProvider, ok := st.(sqlDBProvider); ok {
 		s, err := newSQLFositeStore(sqlProvider.SQLDB(), st, cfg, plainSecrets)
 		if err != nil {
@@ -472,7 +471,7 @@ func (p *Provider) grantRequestedAccessScopes(ar fosite.AccessRequester) {
 	}
 }
 
-func (p *Provider) newOIDCSession(ctx context.Context, u domain.User, ar fosite.AuthorizeRequester, authTime time.Time) *openid.DefaultSession {
+func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosite.AuthorizeRequester, authTime time.Time) *openid.DefaultSession {
 	now := time.Now().UTC()
 	claims := &fositejwt.IDTokenClaims{
 		Issuer:   p.issuer.String(),
@@ -487,7 +486,7 @@ func (p *Provider) newOIDCSession(ctx context.Context, u domain.User, ar fosite.
 	if promptHas(prompt, "none") || promptHas(prompt, "login") || ar.GetRequestForm().Get("max_age") != "" {
 		claims.RequestedAt = now
 	}
-	for k, v := range domain.ClaimsForScopes(u, []string(ar.GetGrantedScopes())) {
+	for k, v := range idpstore.ClaimsForScopes(u, []string(ar.GetGrantedScopes())) {
 		if k != "sub" {
 			claims.Extra[k] = v
 		}
@@ -650,7 +649,7 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, ar fosite.AuthorizeR
 	_, _ = fmt.Fprintf(w, `<html><body><form method="post" action="%s">%s<input type="hidden" name="csrf_token" value="%s">%s%s<button type="submit">%s</button></form></body></html>`, htmlEscape(p.issuer.Endpoint("/authorize")), loginFields, htmlEscape(csrf), consent, hidden(ar), button)
 }
 
-func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, u domain.User, authTime time.Time, consentApproved bool) {
+func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, u idpstore.User, authTime time.Time, consentApproved bool) {
 	client, err := p.store.GetClient(r.Context(), ar.GetClient().GetID())
 	if err != nil {
 		http.Error(w, "unknown client", http.StatusBadRequest)

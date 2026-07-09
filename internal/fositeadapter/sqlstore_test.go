@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/sqlite"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
@@ -27,10 +27,10 @@ func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice"}); err != nil {
+	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := keys.GenerateRSA("kid-reuse", time.Now())
@@ -66,7 +66,7 @@ func TestFositeSQLiteClientWithEmptyScopesRejectsRequestedScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := keys.GenerateRSA("kid-empty-scopes", time.Now())
@@ -122,11 +122,11 @@ func TestFositeSQLiteDisabledClientRejectsPersistedAuthorizationCode(t *testing.
 		t.Fatal(err)
 	}
 	defer st.Close()
-	client := domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}
+	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}
 	if err := st.PutClient(ctx, client); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice"}); err != nil {
+	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := keys.GenerateRSA("kid-disabled", time.Now())
@@ -161,10 +161,10 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"}); err != nil {
+	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := keys.GenerateRSA("kid-sqlite", time.Now())

@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/domain"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func newAdminClientCommand(dbPath *string) *cobra.Command {
@@ -138,7 +138,7 @@ func newAdminClientRotateSecretCommand(dbPath *string) *cobra.Command {
 	return cmd
 }
 
-func redactClient(client domain.Client) map[string]any {
+func redactClient(client idpstore.Client) map[string]any {
 	return map[string]any{
 		"id":                        client.ID,
 		"public":                    client.Public,

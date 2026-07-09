@@ -8,78 +8,79 @@ import (
 	"sync"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/domain"
-	"github.com/manuel/tinyidp/internal/storage"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
-// Store is a concurrency-safe in-memory implementation of storage.Store. It is
+// Store is a concurrency-safe in-memory implementation of idpstore.Store. It is
 // intended for tests, examples, and dev-mode strict engine runs.
 type Store struct {
 	mu sync.Mutex
 
-	clients            map[string]domain.Client
-	usersByID          map[string]domain.User
+	clients            map[string]idpstore.Client
+	usersByID          map[string]idpstore.User
 	usersByLogin       map[string]string
-	credentialsByUser  map[string]domain.PasswordCredential
+	credentialsByUser  map[string]idpstore.PasswordCredential
 	credentialsByLogin map[string]string
-	accountSecurity    map[string]domain.AccountSecurityState
-	grants             map[string]domain.Grant
-	codes              map[string]domain.AuthorizationCode
-	access             map[string]domain.AccessToken
-	refresh            map[string]domain.RefreshToken
-	consents           map[string]domain.Consent
-	sessions           map[string]domain.Session
-	keys               map[string]domain.SigningKey
+	accountSecurity    map[string]idpstore.AccountSecurityState
+	grants             map[string]idpstore.Grant
+	codes              map[string]idpstore.AuthorizationCode
+	access             map[string]idpstore.AccessToken
+	refresh            map[string]idpstore.RefreshToken
+	consents           map[string]idpstore.Consent
+	sessions           map[string]idpstore.Session
+	keys               map[string]idpstore.SigningKey
 }
+
+var _ idpstore.Store = (*Store)(nil)
 
 func New() *Store {
 	return &Store{
-		clients:            map[string]domain.Client{},
-		usersByID:          map[string]domain.User{},
+		clients:            map[string]idpstore.Client{},
+		usersByID:          map[string]idpstore.User{},
 		usersByLogin:       map[string]string{},
-		credentialsByUser:  map[string]domain.PasswordCredential{},
+		credentialsByUser:  map[string]idpstore.PasswordCredential{},
 		credentialsByLogin: map[string]string{},
-		accountSecurity:    map[string]domain.AccountSecurityState{},
-		grants:             map[string]domain.Grant{},
-		codes:              map[string]domain.AuthorizationCode{},
-		access:             map[string]domain.AccessToken{},
-		refresh:            map[string]domain.RefreshToken{},
-		consents:           map[string]domain.Consent{},
-		sessions:           map[string]domain.Session{},
-		keys:               map[string]domain.SigningKey{},
+		accountSecurity:    map[string]idpstore.AccountSecurityState{},
+		grants:             map[string]idpstore.Grant{},
+		codes:              map[string]idpstore.AuthorizationCode{},
+		access:             map[string]idpstore.AccessToken{},
+		refresh:            map[string]idpstore.RefreshToken{},
+		consents:           map[string]idpstore.Consent{},
+		sessions:           map[string]idpstore.Session{},
+		keys:               map[string]idpstore.SigningKey{},
 	}
 }
 
 func hashKey(b []byte) string { return hex.EncodeToString(b) }
 
-func (s *Store) PutClient(_ context.Context, c domain.Client) error {
+func (s *Store) PutClient(_ context.Context, c idpstore.Client) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients[c.ID] = c
 	return nil
 }
 
-func (s *Store) GetClient(_ context.Context, id string) (domain.Client, error) {
+func (s *Store) GetClient(_ context.Context, id string) (idpstore.Client, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.clients[id]
 	if !ok {
-		return domain.Client{}, storage.ErrNotFound
+		return idpstore.Client{}, idpstore.ErrNotFound
 	}
 	return c, nil
 }
 
-func (s *Store) ListClients(_ context.Context) ([]domain.Client, error) {
+func (s *Store) ListClients(_ context.Context) ([]idpstore.Client, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]domain.Client, 0, len(s.clients))
+	out := make([]idpstore.Client, 0, len(s.clients))
 	for _, c := range s.clients {
 		out = append(out, c)
 	}
 	return out, nil
 }
 
-func (s *Store) PutUser(_ context.Context, login string, u domain.User) error {
+func (s *Store) PutUser(_ context.Context, login string, u idpstore.User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.usersByID[u.ID] = u
@@ -89,35 +90,35 @@ func (s *Store) PutUser(_ context.Context, login string, u domain.User) error {
 	return nil
 }
 
-func (s *Store) GetUser(_ context.Context, id string) (domain.User, error) {
+func (s *Store) GetUser(_ context.Context, id string) (idpstore.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u, ok := s.usersByID[id]
 	if !ok {
-		return domain.User{}, storage.ErrNotFound
+		return idpstore.User{}, idpstore.ErrNotFound
 	}
 	return u, nil
 }
 
-func (s *Store) GetUserByLogin(_ context.Context, login string) (domain.User, error) {
+func (s *Store) GetUserByLogin(_ context.Context, login string) (idpstore.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id, ok := s.usersByLogin[login]
 	if !ok {
-		return domain.User{}, storage.ErrNotFound
+		return idpstore.User{}, idpstore.ErrNotFound
 	}
 	u, ok := s.usersByID[id]
 	if !ok {
-		return domain.User{}, storage.ErrNotFound
+		return idpstore.User{}, idpstore.ErrNotFound
 	}
 	return u, nil
 }
 
-func (s *Store) PutPasswordCredential(_ context.Context, credential domain.PasswordCredential) error {
+func (s *Store) PutPasswordCredential(_ context.Context, credential idpstore.PasswordCredential) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if existingUserID, ok := s.credentialsByLogin[credential.Login]; ok && existingUserID != credential.UserID {
-		return storage.ErrDuplicate
+		return idpstore.ErrDuplicate
 	}
 	if old, ok := s.credentialsByUser[credential.UserID]; ok && old.Login != credential.Login {
 		delete(s.credentialsByLogin, old.Login)
@@ -127,26 +128,26 @@ func (s *Store) PutPasswordCredential(_ context.Context, credential domain.Passw
 	return nil
 }
 
-func (s *Store) GetPasswordCredentialByLogin(_ context.Context, login string) (domain.PasswordCredential, error) {
+func (s *Store) GetPasswordCredentialByLogin(_ context.Context, login string) (idpstore.PasswordCredential, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	userID, ok := s.credentialsByLogin[login]
 	if !ok {
-		return domain.PasswordCredential{}, storage.ErrNotFound
+		return idpstore.PasswordCredential{}, idpstore.ErrNotFound
 	}
 	credential, ok := s.credentialsByUser[userID]
 	if !ok {
-		return domain.PasswordCredential{}, storage.ErrNotFound
+		return idpstore.PasswordCredential{}, idpstore.ErrNotFound
 	}
 	return credential, nil
 }
 
-func (s *Store) GetPasswordCredentialByUserID(_ context.Context, userID string) (domain.PasswordCredential, error) {
+func (s *Store) GetPasswordCredentialByUserID(_ context.Context, userID string) (idpstore.PasswordCredential, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	credential, ok := s.credentialsByUser[userID]
 	if !ok {
-		return domain.PasswordCredential{}, storage.ErrNotFound
+		return idpstore.PasswordCredential{}, idpstore.ErrNotFound
 	}
 	return credential, nil
 }
@@ -156,24 +157,24 @@ func (s *Store) DeletePasswordCredential(_ context.Context, userID string) error
 	defer s.mu.Unlock()
 	credential, ok := s.credentialsByUser[userID]
 	if !ok {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	delete(s.credentialsByUser, userID)
 	delete(s.credentialsByLogin, credential.Login)
 	return nil
 }
 
-func (s *Store) GetAccountSecurityState(_ context.Context, userID string) (domain.AccountSecurityState, error) {
+func (s *Store) GetAccountSecurityState(_ context.Context, userID string) (idpstore.AccountSecurityState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	state, ok := s.accountSecurity[userID]
 	if !ok {
-		return domain.AccountSecurityState{}, storage.ErrNotFound
+		return idpstore.AccountSecurityState{}, idpstore.ErrNotFound
 	}
 	return state, nil
 }
 
-func (s *Store) PutAccountSecurityState(_ context.Context, state domain.AccountSecurityState) error {
+func (s *Store) PutAccountSecurityState(_ context.Context, state idpstore.AccountSecurityState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.accountSecurity[state.UserID] = state
@@ -194,22 +195,22 @@ func (s *Store) ResetAccountSecurityState(_ context.Context, userID string, now 
 	return nil
 }
 
-func (s *Store) CreateGrant(_ context.Context, grant domain.Grant) error {
+func (s *Store) CreateGrant(_ context.Context, grant idpstore.Grant) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.grants[grant.ID]; ok {
-		return storage.ErrDuplicate
+		return idpstore.ErrDuplicate
 	}
 	s.grants[grant.ID] = grant
 	return nil
 }
 
-func (s *Store) GetGrant(_ context.Context, id string) (domain.Grant, error) {
+func (s *Store) GetGrant(_ context.Context, id string) (idpstore.Grant, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g, ok := s.grants[id]
 	if !ok {
-		return domain.Grant{}, storage.ErrNotFound
+		return idpstore.Grant{}, idpstore.ErrNotFound
 	}
 	return g, nil
 }
@@ -219,37 +220,37 @@ func (s *Store) RevokeGrant(_ context.Context, id string, at time.Time) error {
 	defer s.mu.Unlock()
 	g, ok := s.grants[id]
 	if !ok {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	g.RevokedAt = &at
 	s.grants[id] = g
 	return nil
 }
 
-func (s *Store) CreateAuthorizationCode(_ context.Context, code domain.AuthorizationCode) error {
+func (s *Store) CreateAuthorizationCode(_ context.Context, code idpstore.AuthorizationCode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := hashKey(code.CodeHash)
 	if _, ok := s.codes[k]; ok {
-		return storage.ErrDuplicate
+		return idpstore.ErrDuplicate
 	}
 	s.codes[k] = code
 	return nil
 }
 
-func (s *Store) ConsumeAuthorizationCode(_ context.Context, codeHash []byte, now time.Time) (domain.AuthorizationCode, error) {
+func (s *Store) ConsumeAuthorizationCode(_ context.Context, codeHash []byte, now time.Time) (idpstore.AuthorizationCode, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := hashKey(codeHash)
 	code, ok := s.codes[k]
 	if !ok {
-		return domain.AuthorizationCode{}, storage.ErrNotFound
+		return idpstore.AuthorizationCode{}, idpstore.ErrNotFound
 	}
 	if code.ConsumedAt != nil {
-		return domain.AuthorizationCode{}, storage.ErrAlreadyConsumed
+		return idpstore.AuthorizationCode{}, idpstore.ErrAlreadyConsumed
 	}
 	if !code.ExpiresAt.IsZero() && now.After(code.ExpiresAt) {
-		return domain.AuthorizationCode{}, storage.ErrExpired
+		return idpstore.AuthorizationCode{}, idpstore.ErrExpired
 	}
 	consumed := now
 	code.ConsumedAt = &consumed
@@ -257,23 +258,23 @@ func (s *Store) ConsumeAuthorizationCode(_ context.Context, codeHash []byte, now
 	return code, nil
 }
 
-func (s *Store) CreateAccessToken(_ context.Context, token domain.AccessToken) error {
+func (s *Store) CreateAccessToken(_ context.Context, token idpstore.AccessToken) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := hashKey(token.TokenHash)
 	if _, ok := s.access[k]; ok {
-		return storage.ErrDuplicate
+		return idpstore.ErrDuplicate
 	}
 	s.access[k] = token
 	return nil
 }
 
-func (s *Store) GetAccessToken(_ context.Context, tokenHash []byte) (domain.AccessToken, error) {
+func (s *Store) GetAccessToken(_ context.Context, tokenHash []byte) (idpstore.AccessToken, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.access[hashKey(tokenHash)]
 	if !ok {
-		return domain.AccessToken{}, storage.ErrNotFound
+		return idpstore.AccessToken{}, idpstore.ErrNotFound
 	}
 	return t, nil
 }
@@ -284,51 +285,51 @@ func (s *Store) RevokeAccessToken(_ context.Context, tokenHash []byte, at time.T
 	k := hashKey(tokenHash)
 	t, ok := s.access[k]
 	if !ok {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	t.RevokedAt = &at
 	s.access[k] = t
 	return nil
 }
 
-func (s *Store) CreateRefreshToken(_ context.Context, token domain.RefreshToken) error {
+func (s *Store) CreateRefreshToken(_ context.Context, token idpstore.RefreshToken) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := hashKey(token.TokenHash)
 	if _, ok := s.refresh[k]; ok {
-		return storage.ErrDuplicate
+		return idpstore.ErrDuplicate
 	}
 	s.refresh[k] = token
 	return nil
 }
 
-func (s *Store) GetRefreshToken(_ context.Context, tokenHash []byte) (domain.RefreshToken, error) {
+func (s *Store) GetRefreshToken(_ context.Context, tokenHash []byte) (idpstore.RefreshToken, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.refresh[hashKey(tokenHash)]
 	if !ok {
-		return domain.RefreshToken{}, storage.ErrNotFound
+		return idpstore.RefreshToken{}, idpstore.ErrNotFound
 	}
 	return t, nil
 }
 
-func (s *Store) RotateRefreshToken(_ context.Context, oldHash []byte, next domain.RefreshToken, now time.Time) (domain.RefreshToken, error) {
+func (s *Store) RotateRefreshToken(_ context.Context, oldHash []byte, next idpstore.RefreshToken, now time.Time) (idpstore.RefreshToken, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	oldKey := hashKey(oldHash)
 	old, ok := s.refresh[oldKey]
 	if !ok {
-		return domain.RefreshToken{}, storage.ErrNotFound
+		return idpstore.RefreshToken{}, idpstore.ErrNotFound
 	}
 	if old.RevokedAt != nil || len(old.ReplacedByHash) > 0 || old.ReuseDetectedAt != nil {
 		detected := now
 		old.ReuseDetectedAt = &detected
 		s.refresh[oldKey] = old
 		s.revokeRefreshFamilyLocked(old.GrantID, now)
-		return domain.RefreshToken{}, storage.ErrRefreshReuseDetected
+		return idpstore.RefreshToken{}, idpstore.ErrRefreshReuseDetected
 	}
 	if !old.ExpiresAt.IsZero() && now.After(old.ExpiresAt) {
-		return domain.RefreshToken{}, storage.ErrExpired
+		return idpstore.RefreshToken{}, idpstore.ErrExpired
 	}
 	next.ParentTokenHash = append([]byte(nil), oldHash...)
 	old.ReplacedByHash = append([]byte(nil), next.TokenHash...)
@@ -342,7 +343,7 @@ func (s *Store) RevokeRefreshTokenFamily(_ context.Context, tokenHash []byte, at
 	defer s.mu.Unlock()
 	t, ok := s.refresh[hashKey(tokenHash)]
 	if !ok {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	s.revokeRefreshFamilyLocked(t.GrantID, at)
 	return nil
@@ -358,23 +359,23 @@ func (s *Store) revokeRefreshFamilyLocked(grantID string, at time.Time) {
 }
 
 func consentKey(userID, clientID string, scopes []string) string {
-	return userID + "\x00" + clientID + "\x00" + strings.Join(domain.NormalizeScopes(scopes), " ")
+	return userID + "\x00" + clientID + "\x00" + strings.Join(idpstore.NormalizeScopes(scopes), " ")
 }
 
-func (s *Store) PutConsent(_ context.Context, consent domain.Consent) error {
+func (s *Store) PutConsent(_ context.Context, consent idpstore.Consent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	consent.Scope = domain.NormalizeScopes(consent.Scope)
+	consent.Scope = idpstore.NormalizeScopes(consent.Scope)
 	s.consents[consentKey(consent.UserID, consent.ClientID, consent.Scope)] = consent
 	return nil
 }
 
-func (s *Store) GetConsent(_ context.Context, userID, clientID string, scopes []string) (domain.Consent, error) {
+func (s *Store) GetConsent(_ context.Context, userID, clientID string, scopes []string) (idpstore.Consent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.consents[consentKey(userID, clientID, scopes)]
 	if !ok {
-		return domain.Consent{}, storage.ErrNotFound
+		return idpstore.Consent{}, idpstore.ErrNotFound
 	}
 	return c, nil
 }
@@ -385,30 +386,30 @@ func (s *Store) RevokeConsent(_ context.Context, userID, clientID string, scopes
 	k := consentKey(userID, clientID, scopes)
 	c, ok := s.consents[k]
 	if !ok {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	c.RevokedAt = &at
 	s.consents[k] = c
 	return nil
 }
 
-func (s *Store) CreateSession(_ context.Context, session domain.Session) error {
+func (s *Store) CreateSession(_ context.Context, session idpstore.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := hashKey(session.IDHash)
 	if _, ok := s.sessions[k]; ok {
-		return storage.ErrDuplicate
+		return idpstore.ErrDuplicate
 	}
 	s.sessions[k] = session
 	return nil
 }
 
-func (s *Store) GetSession(_ context.Context, idHash []byte) (domain.Session, error) {
+func (s *Store) GetSession(_ context.Context, idHash []byte) (idpstore.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess, ok := s.sessions[hashKey(idHash)]
 	if !ok {
-		return domain.Session{}, storage.ErrNotFound
+		return idpstore.Session{}, idpstore.ErrNotFound
 	}
 	return sess, nil
 }
@@ -419,24 +420,24 @@ func (s *Store) RevokeSession(_ context.Context, idHash []byte, at time.Time) er
 	k := hashKey(idHash)
 	sess, ok := s.sessions[k]
 	if !ok {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	sess.RevokedAt = &at
 	s.sessions[k] = sess
 	return nil
 }
 
-func (s *Store) CreateSigningKey(_ context.Context, key domain.SigningKey) error {
+func (s *Store) CreateSigningKey(_ context.Context, key idpstore.SigningKey) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.keys[key.ID]; ok {
-		return storage.ErrDuplicate
+		return idpstore.ErrDuplicate
 	}
 	s.keys[key.ID] = key
 	return nil
 }
 
-func (s *Store) ActiveSigningKey(_ context.Context) (domain.SigningKey, error) {
+func (s *Store) ActiveSigningKey(_ context.Context) (idpstore.SigningKey, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, k := range s.keys {
@@ -444,13 +445,13 @@ func (s *Store) ActiveSigningKey(_ context.Context) (domain.SigningKey, error) {
 			return k, nil
 		}
 	}
-	return domain.SigningKey{}, storage.ErrNotFound
+	return idpstore.SigningKey{}, idpstore.ErrNotFound
 }
 
-func (s *Store) VerificationKeys(_ context.Context) ([]domain.SigningKey, error) {
+func (s *Store) VerificationKeys(_ context.Context) ([]idpstore.SigningKey, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]domain.SigningKey, 0, len(s.keys))
+	out := make([]idpstore.SigningKey, 0, len(s.keys))
 	for _, k := range s.keys {
 		if k.Active || !k.NotAfter.IsZero() {
 			out = append(out, k)
@@ -463,7 +464,7 @@ func (s *Store) ActivateSigningKey(_ context.Context, kid string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.keys[kid]; !ok {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	for id, k := range s.keys {
 		k.Active = id == kid
@@ -477,7 +478,7 @@ func (s *Store) RetireSigningKey(_ context.Context, kid string) error {
 	defer s.mu.Unlock()
 	k, ok := s.keys[kid]
 	if !ok {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	k.Active = false
 	if k.NotAfter.IsZero() {

@@ -11,14 +11,13 @@ import (
 
 	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/authn"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/passwordhash"
-	"github.com/manuel/tinyidp/internal/storage"
 	"github.com/manuel/tinyidp/internal/user"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 type Service struct {
-	Store     storage.Store
+	Store     idpstore.Store
 	Passwords *authn.PasswordService
 	Clock     func() time.Time
 	Audit     audit.Sink
@@ -30,7 +29,7 @@ type Options struct {
 	Audit  audit.Sink
 }
 
-func NewService(store storage.Store, opts Options) (*Service, error) {
+func NewService(store idpstore.Store, opts Options) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("store is required")
 	}
@@ -65,18 +64,18 @@ type CreateUserRequest struct {
 	MustChangeAtLogin bool
 }
 
-func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (domain.User, error) {
+func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (idpstore.User, error) {
 	login := user.Normalize(req.Login)
 	if login == "" {
-		return domain.User{}, fmt.Errorf("login is required")
+		return idpstore.User{}, fmt.Errorf("login is required")
 	}
 	if len(req.Password) == 0 {
-		return domain.User{}, fmt.Errorf("password is required")
+		return idpstore.User{}, fmt.Errorf("password is required")
 	}
 	if _, err := s.Store.GetUserByLogin(ctx, login); err == nil {
-		return domain.User{}, storage.ErrDuplicate
-	} else if !errors.Is(err, storage.ErrNotFound) {
-		return domain.User{}, err
+		return idpstore.User{}, idpstore.ErrDuplicate
+	} else if !errors.Is(err, idpstore.ErrNotFound) {
+		return idpstore.User{}, err
 	}
 	now := s.Clock().UTC()
 	id := strings.TrimSpace(req.ID)
@@ -84,28 +83,28 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (domain
 		id = newID("user")
 	}
 	if _, err := s.Store.GetUser(ctx, id); err == nil {
-		return domain.User{}, storage.ErrDuplicate
-	} else if !errors.Is(err, storage.ErrNotFound) {
-		return domain.User{}, err
+		return idpstore.User{}, idpstore.ErrDuplicate
+	} else if !errors.Is(err, idpstore.ErrNotFound) {
+		return idpstore.User{}, err
 	}
 	sub := strings.TrimSpace(req.Sub)
 	if sub == "" {
 		sub = id
 	}
-	u := domain.User{ID: id, Sub: sub, Email: strings.TrimSpace(req.Email), EmailVerified: req.EmailVerified, Name: strings.TrimSpace(req.Name), PreferredUsername: firstNonEmpty(strings.TrimSpace(req.PreferredUsername), login), Groups: cleanList(req.Groups), Roles: cleanList(req.Roles), Tenant: strings.TrimSpace(req.Tenant), Locale: strings.TrimSpace(req.Locale), CreatedAt: now, UpdatedAt: now}
+	u := idpstore.User{ID: id, Sub: sub, Email: strings.TrimSpace(req.Email), EmailVerified: req.EmailVerified, Name: strings.TrimSpace(req.Name), PreferredUsername: firstNonEmpty(strings.TrimSpace(req.PreferredUsername), login), Groups: cleanList(req.Groups), Roles: cleanList(req.Roles), Tenant: strings.TrimSpace(req.Tenant), Locale: strings.TrimSpace(req.Locale), CreatedAt: now, UpdatedAt: now}
 	if err := u.Validate(); err != nil {
-		return domain.User{}, err
+		return idpstore.User{}, err
 	}
 	cred, err := s.Passwords.HashCredential(u.ID, login, req.Password, now)
 	if err != nil {
-		return domain.User{}, err
+		return idpstore.User{}, err
 	}
 	cred.MustChangeAtLogin = req.MustChangeAtLogin
 	if err := s.Store.PutUser(ctx, login, u); err != nil {
-		return domain.User{}, err
+		return idpstore.User{}, err
 	}
 	if err := s.Store.PutPasswordCredential(ctx, cred); err != nil {
-		return domain.User{}, err
+		return idpstore.User{}, err
 	}
 	_ = s.Audit.Emit(ctx, audit.Event{Time: now, Name: "admin.user.created", Subject: u.Sub, Result: "accepted"})
 	return u, nil
@@ -143,19 +142,19 @@ func (s *Service) SetPassword(ctx context.Context, req SetPasswordRequest) error
 	return nil
 }
 
-func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bool) (domain.User, error) {
+func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bool) (idpstore.User, error) {
 	login = user.Normalize(login)
 	if login == "" {
-		return domain.User{}, fmt.Errorf("login is required")
+		return idpstore.User{}, fmt.Errorf("login is required")
 	}
 	u, err := s.Store.GetUserByLogin(ctx, login)
 	if err != nil {
-		return domain.User{}, err
+		return idpstore.User{}, err
 	}
 	u.Disabled = disabled
 	u.UpdatedAt = s.Clock().UTC()
 	if err := s.Store.PutUser(ctx, login, u); err != nil {
-		return domain.User{}, err
+		return idpstore.User{}, err
 	}
 	name := "admin.user.enabled"
 	if disabled {
@@ -165,7 +164,7 @@ func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bo
 	return u, nil
 }
 
-func (s *Service) GetUserByLogin(ctx context.Context, login string) (domain.User, error) {
+func (s *Service) GetUserByLogin(ctx context.Context, login string) (idpstore.User, error) {
 	return s.Store.GetUserByLogin(ctx, user.Normalize(login))
 }
 

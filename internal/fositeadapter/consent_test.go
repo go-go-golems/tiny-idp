@@ -10,19 +10,19 @@ import (
 	"time"
 
 	"github.com/manuel/tinyidp/internal/authn"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestStoredConsentPersistsScopeApproval(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
 	policy := fositeadapter.NewStoredConsent(st, time.Hour)
-	user := domain.User{ID: "u1", Sub: "sub-1"}
-	client := domain.Client{ID: "client-1"}
+	user := idpstore.User{ID: "u1", Sub: "sub-1"}
+	client := idpstore.Client{ID: "client-1"}
 
 	require, err := policy.RequireConsent(ctx, user, client, []string{"openid", "email"})
 	if err != nil {
@@ -57,8 +57,8 @@ func TestStoredConsentPersistsScopeApproval(t *testing.T) {
 func TestPromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	user := domain.User{ID: "u1", Sub: "sub-1"}
-	client := domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}}
+	user := idpstore.User{ID: "u1", Sub: "sub-1"}
+	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}}
 	_ = st.PutClient(ctx, client)
 	_ = st.PutUser(ctx, "alice", user)
 	key, err := keys.GenerateRSA("kid-1", time.Now())
@@ -128,8 +128,8 @@ func TestPromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent(t *testing.T) 
 func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	user := domain.User{ID: "u1", Sub: "sub-1"}
-	client := domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}}
+	user := idpstore.User{ID: "u1", Sub: "sub-1"}
+	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}}
 	_ = st.PutClient(ctx, client)
 	_ = st.PutUser(ctx, "alice", user)
 	svc, err := authn.NewPasswordService(st, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
@@ -146,7 +146,7 @@ func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = st.CreateSigningKey(ctx, key)
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: domain.ProductionMode, SecretKey: []byte("stored-consent-secret-32-bytes!!!"), Authenticator: svc})
+	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: idpstore.ProductionMode, SecretKey: []byte("stored-consent-secret-32-bytes!!!"), Authenticator: svc})
 	if err != nil {
 		t.Fatal(err)
 	}

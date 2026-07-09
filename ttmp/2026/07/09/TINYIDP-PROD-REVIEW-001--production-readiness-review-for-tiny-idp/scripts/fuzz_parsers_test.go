@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
 	"github.com/manuel/tinyidp/internal/passwordhash"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func FuzzIssuerParsing(f *testing.F) {
@@ -43,7 +43,7 @@ func FuzzProductionRedirectURI(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
-		_ = domain.ValidateRedirectURI(raw, domain.ProductionMode)
+		_ = idpstore.ValidateRedirectURI(raw, idpstore.ProductionMode)
 	})
 }
 

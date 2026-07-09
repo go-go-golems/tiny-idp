@@ -10,9 +10,9 @@ import (
 
 	"github.com/manuel/tinyidp/internal/admin"
 	"github.com/manuel/tinyidp/internal/passwordhash"
-	"github.com/manuel/tinyidp/internal/storage"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/internal/store/sqlite"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestServiceClientLifecycle(t *testing.T) {
@@ -29,7 +29,7 @@ func TestServiceClientLifecycle(t *testing.T) {
 	if client.Public || len(client.SecretHash) == 0 || secret.Secret == "" {
 		t.Fatalf("bad client/secret: %#v %#v", client, secret)
 	}
-	if _, _, err := svc.CreateClient(ctx, admin.CreateClientRequest{ID: "web-app", Secret: "secret", RedirectURIs: []string{"https://app.example.test/callback"}, RequirePKCE: true}); !errors.Is(err, storage.ErrDuplicate) {
+	if _, _, err := svc.CreateClient(ctx, admin.CreateClientRequest{ID: "web-app", Secret: "secret", RedirectURIs: []string{"https://app.example.test/callback"}, RequirePKCE: true}); !errors.Is(err, idpstore.ErrDuplicate) {
 		t.Fatalf("duplicate err=%v", err)
 	}
 	disabled, err := svc.SetClientDisabled(ctx, "web-app", true)

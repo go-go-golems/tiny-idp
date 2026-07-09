@@ -15,8 +15,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/manuel/tinyidp/internal/domain"
-	"github.com/manuel/tinyidp/internal/storage"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 //go:embed migrations/*.sql
@@ -26,6 +25,8 @@ type Store struct {
 	db *sql.DB
 	mu sync.Mutex
 }
+
+var _ idpstore.Store = (*Store)(nil)
 
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite3", path)
@@ -85,35 +86,35 @@ func hashKey(b []byte) string        { return hex.EncodeToString(b) }
 func enc(v any) ([]byte, error)      { return json.Marshal(v) }
 func dec[T any](b []byte) (T, error) { var v T; err := json.Unmarshal(b, &v); return v, err }
 
-func (s *Store) PutClient(ctx context.Context, c domain.Client) error {
+func (s *Store) PutClient(ctx context.Context, c idpstore.Client) error {
 	b, _ := enc(c)
 	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO clients(id,data) VALUES(?,?)`, c.ID, b)
 	return err
 }
-func (s *Store) GetClient(ctx context.Context, id string) (domain.Client, error) {
+func (s *Store) GetClient(ctx context.Context, id string) (idpstore.Client, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM clients WHERE id=?`, id).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.Client{}, storage.ErrNotFound
+		return idpstore.Client{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.Client{}, err
+		return idpstore.Client{}, err
 	}
-	return dec[domain.Client](b)
+	return dec[idpstore.Client](b)
 }
-func (s *Store) ListClients(ctx context.Context) ([]domain.Client, error) {
+func (s *Store) ListClients(ctx context.Context) ([]idpstore.Client, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT data FROM clients ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []domain.Client
+	var out []idpstore.Client
 	for rows.Next() {
 		var b []byte
 		if err := rows.Scan(&b); err != nil {
 			return nil, err
 		}
-		c, err := dec[domain.Client](b)
+		c, err := dec[idpstore.Client](b)
 		if err != nil {
 			return nil, err
 		}
@@ -122,65 +123,65 @@ func (s *Store) ListClients(ctx context.Context) ([]domain.Client, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) PutUser(ctx context.Context, login string, u domain.User) error {
+func (s *Store) PutUser(ctx context.Context, login string, u idpstore.User) error {
 	b, _ := enc(u)
 	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO users(id,login,data) VALUES(?,?,?)`, u.ID, login, b)
 	return err
 }
-func (s *Store) GetUser(ctx context.Context, id string) (domain.User, error) {
+func (s *Store) GetUser(ctx context.Context, id string) (idpstore.User, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM users WHERE id=?`, id).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.User{}, storage.ErrNotFound
+		return idpstore.User{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.User{}, err
+		return idpstore.User{}, err
 	}
-	return dec[domain.User](b)
+	return dec[idpstore.User](b)
 }
-func (s *Store) GetUserByLogin(ctx context.Context, login string) (domain.User, error) {
+func (s *Store) GetUserByLogin(ctx context.Context, login string) (idpstore.User, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM users WHERE login=?`, login).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.User{}, storage.ErrNotFound
+		return idpstore.User{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.User{}, err
+		return idpstore.User{}, err
 	}
-	return dec[domain.User](b)
+	return dec[idpstore.User](b)
 }
 
-func (s *Store) PutPasswordCredential(ctx context.Context, credential domain.PasswordCredential) error {
+func (s *Store) PutPasswordCredential(ctx context.Context, credential idpstore.PasswordCredential) error {
 	if existing, err := s.GetPasswordCredentialByLogin(ctx, credential.Login); err == nil && existing.UserID != credential.UserID {
-		return storage.ErrDuplicate
-	} else if err != nil && err != storage.ErrNotFound {
+		return idpstore.ErrDuplicate
+	} else if err != nil && err != idpstore.ErrNotFound {
 		return err
 	}
 	b, _ := enc(credential)
 	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO password_credentials(user_id,login,data) VALUES(?,?,?)`, credential.UserID, credential.Login, b)
 	return mapDup(err)
 }
-func (s *Store) GetPasswordCredentialByLogin(ctx context.Context, login string) (domain.PasswordCredential, error) {
+func (s *Store) GetPasswordCredentialByLogin(ctx context.Context, login string) (idpstore.PasswordCredential, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM password_credentials WHERE login=?`, login).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.PasswordCredential{}, storage.ErrNotFound
+		return idpstore.PasswordCredential{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.PasswordCredential{}, err
+		return idpstore.PasswordCredential{}, err
 	}
-	return dec[domain.PasswordCredential](b)
+	return dec[idpstore.PasswordCredential](b)
 }
-func (s *Store) GetPasswordCredentialByUserID(ctx context.Context, userID string) (domain.PasswordCredential, error) {
+func (s *Store) GetPasswordCredentialByUserID(ctx context.Context, userID string) (idpstore.PasswordCredential, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM password_credentials WHERE user_id=?`, userID).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.PasswordCredential{}, storage.ErrNotFound
+		return idpstore.PasswordCredential{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.PasswordCredential{}, err
+		return idpstore.PasswordCredential{}, err
 	}
-	return dec[domain.PasswordCredential](b)
+	return dec[idpstore.PasswordCredential](b)
 }
 func (s *Store) DeletePasswordCredential(ctx context.Context, userID string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM password_credentials WHERE user_id=?`, userID)
@@ -188,46 +189,46 @@ func (s *Store) DeletePasswordCredential(ctx context.Context, userID string) err
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	return nil
 }
-func (s *Store) GetAccountSecurityState(ctx context.Context, userID string) (domain.AccountSecurityState, error) {
+func (s *Store) GetAccountSecurityState(ctx context.Context, userID string) (idpstore.AccountSecurityState, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM account_security_states WHERE user_id=?`, userID).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.AccountSecurityState{}, storage.ErrNotFound
+		return idpstore.AccountSecurityState{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.AccountSecurityState{}, err
+		return idpstore.AccountSecurityState{}, err
 	}
-	return dec[domain.AccountSecurityState](b)
+	return dec[idpstore.AccountSecurityState](b)
 }
-func (s *Store) PutAccountSecurityState(ctx context.Context, state domain.AccountSecurityState) error {
+func (s *Store) PutAccountSecurityState(ctx context.Context, state idpstore.AccountSecurityState) error {
 	b, _ := enc(state)
 	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO account_security_states(user_id,data) VALUES(?,?)`, state.UserID, b)
 	return err
 }
 func (s *Store) ResetAccountSecurityState(ctx context.Context, userID string, now time.Time) error {
-	state := domain.AccountSecurityState{UserID: userID, LastSuccessfulLoginAt: &now}
+	state := idpstore.AccountSecurityState{UserID: userID, LastSuccessfulLoginAt: &now}
 	return s.PutAccountSecurityState(ctx, state)
 }
 
-func (s *Store) CreateGrant(ctx context.Context, g domain.Grant) error {
+func (s *Store) CreateGrant(ctx context.Context, g idpstore.Grant) error {
 	b, _ := enc(g)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO grants(id,data) VALUES(?,?)`, g.ID, b)
 	return mapDup(err)
 }
-func (s *Store) GetGrant(ctx context.Context, id string) (domain.Grant, error) {
+func (s *Store) GetGrant(ctx context.Context, id string) (idpstore.Grant, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM grants WHERE id=?`, id).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.Grant{}, storage.ErrNotFound
+		return idpstore.Grant{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.Grant{}, err
+		return idpstore.Grant{}, err
 	}
-	return dec[domain.Grant](b)
+	return dec[idpstore.Grant](b)
 }
 func (s *Store) RevokeGrant(ctx context.Context, id string, at time.Time) error {
 	g, err := s.GetGrant(ctx, id)
@@ -240,32 +241,32 @@ func (s *Store) RevokeGrant(ctx context.Context, id string, at time.Time) error 
 	return err
 }
 
-func (s *Store) CreateAuthorizationCode(ctx context.Context, c domain.AuthorizationCode) error {
+func (s *Store) CreateAuthorizationCode(ctx context.Context, c idpstore.AuthorizationCode) error {
 	b, _ := enc(c)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO authorization_codes(hash,data) VALUES(?,?)`, hashKey(c.CodeHash), b)
 	return mapDup(err)
 }
-func (s *Store) ConsumeAuthorizationCode(ctx context.Context, codeHash []byte, now time.Time) (domain.AuthorizationCode, error) {
+func (s *Store) ConsumeAuthorizationCode(ctx context.Context, codeHash []byte, now time.Time) (idpstore.AuthorizationCode, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := hashKey(codeHash)
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM authorization_codes WHERE hash=?`, k).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.AuthorizationCode{}, storage.ErrNotFound
+		return idpstore.AuthorizationCode{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.AuthorizationCode{}, err
+		return idpstore.AuthorizationCode{}, err
 	}
-	c, err := dec[domain.AuthorizationCode](b)
+	c, err := dec[idpstore.AuthorizationCode](b)
 	if err != nil {
-		return domain.AuthorizationCode{}, err
+		return idpstore.AuthorizationCode{}, err
 	}
 	if c.ConsumedAt != nil {
-		return domain.AuthorizationCode{}, storage.ErrAlreadyConsumed
+		return idpstore.AuthorizationCode{}, idpstore.ErrAlreadyConsumed
 	}
 	if !c.ExpiresAt.IsZero() && now.After(c.ExpiresAt) {
-		return domain.AuthorizationCode{}, storage.ErrExpired
+		return idpstore.AuthorizationCode{}, idpstore.ErrExpired
 	}
 	c.ConsumedAt = &now
 	nb, _ := enc(c)
@@ -273,21 +274,21 @@ func (s *Store) ConsumeAuthorizationCode(ctx context.Context, codeHash []byte, n
 	return c, err
 }
 
-func (s *Store) CreateAccessToken(ctx context.Context, t domain.AccessToken) error {
+func (s *Store) CreateAccessToken(ctx context.Context, t idpstore.AccessToken) error {
 	b, _ := enc(t)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO access_tokens(hash,data) VALUES(?,?)`, hashKey(t.TokenHash), b)
 	return mapDup(err)
 }
-func (s *Store) GetAccessToken(ctx context.Context, tokenHash []byte) (domain.AccessToken, error) {
+func (s *Store) GetAccessToken(ctx context.Context, tokenHash []byte) (idpstore.AccessToken, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM access_tokens WHERE hash=?`, hashKey(tokenHash)).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.AccessToken{}, storage.ErrNotFound
+		return idpstore.AccessToken{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.AccessToken{}, err
+		return idpstore.AccessToken{}, err
 	}
-	return dec[domain.AccessToken](b)
+	return dec[idpstore.AccessToken](b)
 }
 func (s *Store) RevokeAccessToken(ctx context.Context, tokenHash []byte, at time.Time) error {
 	t, err := s.GetAccessToken(ctx, tokenHash)
@@ -300,50 +301,50 @@ func (s *Store) RevokeAccessToken(ctx context.Context, tokenHash []byte, at time
 	return err
 }
 
-func (s *Store) CreateRefreshToken(ctx context.Context, t domain.RefreshToken) error {
+func (s *Store) CreateRefreshToken(ctx context.Context, t idpstore.RefreshToken) error {
 	b, _ := enc(t)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO refresh_tokens(hash,grant_id,data) VALUES(?,?,?)`, hashKey(t.TokenHash), t.GrantID, b)
 	return mapDup(err)
 }
-func (s *Store) GetRefreshToken(ctx context.Context, tokenHash []byte) (domain.RefreshToken, error) {
+func (s *Store) GetRefreshToken(ctx context.Context, tokenHash []byte) (idpstore.RefreshToken, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM refresh_tokens WHERE hash=?`, hashKey(tokenHash)).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.RefreshToken{}, storage.ErrNotFound
+		return idpstore.RefreshToken{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.RefreshToken{}, err
+		return idpstore.RefreshToken{}, err
 	}
-	return dec[domain.RefreshToken](b)
+	return dec[idpstore.RefreshToken](b)
 }
-func (s *Store) RotateRefreshToken(ctx context.Context, oldHash []byte, next domain.RefreshToken, now time.Time) (domain.RefreshToken, error) {
+func (s *Store) RotateRefreshToken(ctx context.Context, oldHash []byte, next idpstore.RefreshToken, now time.Time) (idpstore.RefreshToken, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old, err := s.GetRefreshToken(ctx, oldHash)
 	if err != nil {
-		return domain.RefreshToken{}, err
+		return idpstore.RefreshToken{}, err
 	}
 	if old.RevokedAt != nil || len(old.ReplacedByHash) > 0 || old.ReuseDetectedAt != nil {
 		detected := now
 		old.ReuseDetectedAt = &detected
 		_ = s.putRefresh(ctx, old)
 		_ = s.revokeFamily(ctx, old.GrantID, now)
-		return domain.RefreshToken{}, storage.ErrRefreshReuseDetected
+		return idpstore.RefreshToken{}, idpstore.ErrRefreshReuseDetected
 	}
 	if !old.ExpiresAt.IsZero() && now.After(old.ExpiresAt) {
-		return domain.RefreshToken{}, storage.ErrExpired
+		return idpstore.RefreshToken{}, idpstore.ErrExpired
 	}
 	next.ParentTokenHash = append([]byte(nil), oldHash...)
 	old.ReplacedByHash = append([]byte(nil), next.TokenHash...)
 	if err := s.putRefresh(ctx, old); err != nil {
-		return domain.RefreshToken{}, err
+		return idpstore.RefreshToken{}, err
 	}
 	if err := s.CreateRefreshToken(ctx, next); err != nil {
-		return domain.RefreshToken{}, err
+		return idpstore.RefreshToken{}, err
 	}
 	return next, nil
 }
-func (s *Store) putRefresh(ctx context.Context, t domain.RefreshToken) error {
+func (s *Store) putRefresh(ctx context.Context, t idpstore.RefreshToken) error {
 	b, _ := enc(t)
 	_, err := s.db.ExecContext(ctx, `UPDATE refresh_tokens SET grant_id=?, data=? WHERE hash=?`, t.GrantID, b, hashKey(t.TokenHash))
 	return err
@@ -361,13 +362,13 @@ func (s *Store) revokeFamily(ctx context.Context, grantID string, at time.Time) 
 		return err
 	}
 	defer rows.Close()
-	var toks []domain.RefreshToken
+	var toks []idpstore.RefreshToken
 	for rows.Next() {
 		var b []byte
 		if err := rows.Scan(&b); err != nil {
 			return err
 		}
-		t, _ := dec[domain.RefreshToken](b)
+		t, _ := dec[idpstore.RefreshToken](b)
 		toks = append(toks, t)
 	}
 	for _, t := range toks {
@@ -382,27 +383,27 @@ func (s *Store) revokeFamily(ctx context.Context, grantID string, at time.Time) 
 }
 
 func consentKey(userID, clientID string, scopes []string) string {
-	parts := append([]string{userID, clientID}, domain.NormalizeScopes(scopes)...)
+	parts := append([]string{userID, clientID}, idpstore.NormalizeScopes(scopes)...)
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Store) PutConsent(ctx context.Context, consent domain.Consent) error {
-	consent.Scope = domain.NormalizeScopes(consent.Scope)
+func (s *Store) PutConsent(ctx context.Context, consent idpstore.Consent) error {
+	consent.Scope = idpstore.NormalizeScopes(consent.Scope)
 	b, _ := enc(consent)
 	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO consents(key,user_id,client_id,data) VALUES(?,?,?,?)`, consentKey(consent.UserID, consent.ClientID, consent.Scope), consent.UserID, consent.ClientID, b)
 	return err
 }
-func (s *Store) GetConsent(ctx context.Context, userID, clientID string, scopes []string) (domain.Consent, error) {
+func (s *Store) GetConsent(ctx context.Context, userID, clientID string, scopes []string) (idpstore.Consent, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM consents WHERE key=?`, consentKey(userID, clientID, scopes)).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.Consent{}, storage.ErrNotFound
+		return idpstore.Consent{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.Consent{}, err
+		return idpstore.Consent{}, err
 	}
-	return dec[domain.Consent](b)
+	return dec[idpstore.Consent](b)
 }
 func (s *Store) RevokeConsent(ctx context.Context, userID, clientID string, scopes []string, at time.Time) error {
 	c, err := s.GetConsent(ctx, userID, clientID, scopes)
@@ -415,21 +416,21 @@ func (s *Store) RevokeConsent(ctx context.Context, userID, clientID string, scop
 	return err
 }
 
-func (s *Store) CreateSession(ctx context.Context, sess domain.Session) error {
+func (s *Store) CreateSession(ctx context.Context, sess idpstore.Session) error {
 	b, _ := enc(sess)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(hash,data) VALUES(?,?)`, hashKey(sess.IDHash), b)
 	return mapDup(err)
 }
-func (s *Store) GetSession(ctx context.Context, idHash []byte) (domain.Session, error) {
+func (s *Store) GetSession(ctx context.Context, idHash []byte) (idpstore.Session, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM sessions WHERE hash=?`, hashKey(idHash)).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.Session{}, storage.ErrNotFound
+		return idpstore.Session{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.Session{}, err
+		return idpstore.Session{}, err
 	}
-	return dec[domain.Session](b)
+	return dec[idpstore.Session](b)
 }
 func (s *Store) RevokeSession(ctx context.Context, idHash []byte, at time.Time) error {
 	sess, err := s.GetSession(ctx, idHash)
@@ -442,7 +443,7 @@ func (s *Store) RevokeSession(ctx context.Context, idHash []byte, at time.Time) 
 	return err
 }
 
-func (s *Store) CreateSigningKey(ctx context.Context, k domain.SigningKey) error {
+func (s *Store) CreateSigningKey(ctx context.Context, k idpstore.SigningKey) error {
 	b, _ := enc(k)
 	active := 0
 	if k.Active {
@@ -451,30 +452,30 @@ func (s *Store) CreateSigningKey(ctx context.Context, k domain.SigningKey) error
 	_, err := s.db.ExecContext(ctx, `INSERT INTO signing_keys(id,active,data) VALUES(?,?,?)`, k.ID, active, b)
 	return mapDup(err)
 }
-func (s *Store) ActiveSigningKey(ctx context.Context) (domain.SigningKey, error) {
+func (s *Store) ActiveSigningKey(ctx context.Context) (idpstore.SigningKey, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM signing_keys WHERE active=1 LIMIT 1`).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.SigningKey{}, storage.ErrNotFound
+		return idpstore.SigningKey{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.SigningKey{}, err
+		return idpstore.SigningKey{}, err
 	}
-	return dec[domain.SigningKey](b)
+	return dec[idpstore.SigningKey](b)
 }
-func (s *Store) VerificationKeys(ctx context.Context) ([]domain.SigningKey, error) {
+func (s *Store) VerificationKeys(ctx context.Context) ([]idpstore.SigningKey, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT data FROM signing_keys ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []domain.SigningKey
+	var out []idpstore.SigningKey
 	for rows.Next() {
 		var b []byte
 		if err := rows.Scan(&b); err != nil {
 			return nil, err
 		}
-		k, err := dec[domain.SigningKey](b)
+		k, err := dec[idpstore.SigningKey](b)
 		if err != nil {
 			return nil, err
 		}
@@ -495,7 +496,7 @@ func (s *Store) ActivateSigningKey(ctx context.Context, kid string) error {
 	found := false
 	type row struct {
 		id  string
-		key domain.SigningKey
+		key idpstore.SigningKey
 	}
 	var all []row
 	for rows.Next() {
@@ -504,7 +505,7 @@ func (s *Store) ActivateSigningKey(ctx context.Context, kid string) error {
 		if err := rows.Scan(&id, &b); err != nil {
 			return err
 		}
-		k, _ := dec[domain.SigningKey](b)
+		k, _ := dec[idpstore.SigningKey](b)
 		k.Active = id == kid
 		if id == kid {
 			found = true
@@ -512,7 +513,7 @@ func (s *Store) ActivateSigningKey(ctx context.Context, kid string) error {
 		all = append(all, row{id, k})
 	}
 	if !found {
-		return storage.ErrNotFound
+		return idpstore.ErrNotFound
 	}
 	for _, r := range all {
 		b, _ := enc(r.key)
@@ -539,16 +540,16 @@ func (s *Store) RetireSigningKey(ctx context.Context, kid string) error {
 	_, err = s.db.ExecContext(ctx, `UPDATE signing_keys SET active=0,data=? WHERE id=?`, b, kid)
 	return err
 }
-func (s *Store) getSigningKey(ctx context.Context, kid string) (domain.SigningKey, error) {
+func (s *Store) getSigningKey(ctx context.Context, kid string) (idpstore.SigningKey, error) {
 	var b []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM signing_keys WHERE id=?`, kid).Scan(&b)
 	if err == sql.ErrNoRows {
-		return domain.SigningKey{}, storage.ErrNotFound
+		return idpstore.SigningKey{}, idpstore.ErrNotFound
 	}
 	if err != nil {
-		return domain.SigningKey{}, err
+		return idpstore.SigningKey{}, err
 	}
-	return dec[domain.SigningKey](b)
+	return dec[idpstore.SigningKey](b)
 }
 
 func mapDup(err error) error {
@@ -556,7 +557,7 @@ func mapDup(err error) error {
 		return nil
 	}
 	if strings.Contains(fmt.Sprint(err), "UNIQUE") {
-		return storage.ErrDuplicate
+		return idpstore.ErrDuplicate
 	}
 	return err
 }

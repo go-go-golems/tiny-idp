@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/domain"
-	"github.com/manuel/tinyidp/internal/storage"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 type Check struct {
@@ -35,14 +34,14 @@ func (s *Service) Doctor(ctx context.Context) DoctorReport {
 	} else {
 		add("clients.load", "ok", fmt.Sprintf("%d clients", len(clients)))
 		for _, c := range clients {
-			if err := c.Validate(domain.ProductionMode); err != nil {
+			if err := c.Validate(idpstore.ProductionMode); err != nil {
 				add("client."+c.ID, "error", err.Error())
 			}
 		}
 	}
 	active, err := s.Store.ActiveSigningKey(ctx)
 	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
+		if errors.Is(err, idpstore.ErrNotFound) {
 			add("keys.active", "error", "no active signing key")
 		} else {
 			add("keys.active", "error", err.Error())

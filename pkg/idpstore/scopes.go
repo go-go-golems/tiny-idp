@@ -1,4 +1,4 @@
-package domain
+package idpstore
 
 import (
 	"sort"

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/domain"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestPublicJWKSContainsPublicFields(t *testing.T) {
@@ -13,7 +13,7 @@ func TestPublicJWKSContainsPublicFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jwks, err := PublicJWKS([]domain.SigningKey{key})
+	jwks, err := PublicJWKS([]idpstore.SigningKey{key})
 	if err != nil {
 		t.Fatal(err)
 	}

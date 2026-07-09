@@ -5,17 +5,16 @@ import (
 	"fmt"
 
 	"github.com/manuel/tinyidp/internal/audit"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
-	"github.com/manuel/tinyidp/internal/storage"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
-type Mode = domain.Mode
+type Mode = idpstore.Mode
 
 const (
-	DevMode        = domain.DevMode
-	ProductionMode = domain.ProductionMode
+	DevMode        = idpstore.DevMode
+	ProductionMode = idpstore.ProductionMode
 )
 
 type CookieConfig struct {
@@ -30,7 +29,7 @@ type TokenConfig struct {
 type Options struct {
 	Issuer                          string
 	Mode                            Mode
-	Store                           storage.Store
+	Store                           idpstore.Store
 	Cookie                          CookieConfig
 	Token                           TokenConfig
 	Audit                           audit.Sink
@@ -67,7 +66,7 @@ func (o Options) Validate() error {
 		if !o.Cookie.Secure {
 			return fmt.Errorf("production cookies must be secure")
 		}
-		if reporter, ok := o.Store.(storage.PersistentReporter); ok && !reporter.Persistent() && !o.AllowInMemoryStoresInProduction {
+		if reporter, ok := o.Store.(idpstore.PersistentReporter); ok && !reporter.Persistent() && !o.AllowInMemoryStoresInProduction {
 			return fmt.Errorf("production mode requires persistent stores")
 		}
 		if _, err := o.Store.ActiveSigningKey(context.Background()); err != nil {

@@ -10,9 +10,9 @@ import (
 	"github.com/manuel/tinyidp/internal/admin"
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/passwordhash"
-	"github.com/manuel/tinyidp/internal/storage"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/internal/store/sqlite"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestServiceCreateUserAndAuthenticate(t *testing.T) {
@@ -30,7 +30,7 @@ func TestServiceCreateUserAndAuthenticate(t *testing.T) {
 	if u.Sub == "" || u.ID == "" || u.PreferredUsername != "alice" {
 		t.Fatalf("bad user: %#v", u)
 	}
-	if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", Password: []byte("other-password")}); !errors.Is(err, storage.ErrDuplicate) {
+	if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", Password: []byte("other-password")}); !errors.Is(err, idpstore.ErrDuplicate) {
 		t.Fatalf("duplicate err=%v", err)
 	}
 	authSvc, err := authn.NewPasswordService(st, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
@@ -48,9 +48,9 @@ func TestServiceCreateUserAndAuthenticate(t *testing.T) {
 
 func TestServiceCreateUserRejectsDuplicateExplicitID(t *testing.T) {
 	ctx := context.Background()
-	stores := map[string]func(t *testing.T) storage.Store{
-		"memory": func(t *testing.T) storage.Store { return memory.New() },
-		"sqlite": func(t *testing.T) storage.Store {
+	stores := map[string]func(t *testing.T) idpstore.Store{
+		"memory": func(t *testing.T) idpstore.Store { return memory.New() },
+		"sqlite": func(t *testing.T) idpstore.Store {
 			t.Helper()
 			st, err := sqlite.Open(filepath.Join(t.TempDir(), "idp.db"))
 			if err != nil {
@@ -70,10 +70,10 @@ func TestServiceCreateUserRejectsDuplicateExplicitID(t *testing.T) {
 			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", ID: "fixed-user-id", Password: []byte("alice-password")}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice-alias", ID: "fixed-user-id", Password: []byte("alias-password")}); !errors.Is(err, storage.ErrDuplicate) {
+			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice-alias", ID: "fixed-user-id", Password: []byte("alias-password")}); !errors.Is(err, idpstore.ErrDuplicate) {
 				t.Fatalf("duplicate id err=%v", err)
 			}
-			if _, err := st.GetUserByLogin(ctx, "alice-alias"); !errors.Is(err, storage.ErrNotFound) {
+			if _, err := st.GetUserByLogin(ctx, "alice-alias"); !errors.Is(err, idpstore.ErrNotFound) {
 				t.Fatalf("duplicate id left alias behind: %v", err)
 			}
 		})

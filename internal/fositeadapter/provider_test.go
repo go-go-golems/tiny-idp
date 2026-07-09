@@ -18,17 +18,17 @@ import (
 	"time"
 
 	"github.com/manuel/tinyidp/internal/authn"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func TestUnsupportedRequestObjectRedirectsWithStableError(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
 		t.Fatal(err)
 	}
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
@@ -65,10 +65,10 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	ctx := context.Background()
 	secretKey := []byte("test-secret-key-32-bytes-minimum!!")
 	st := memory.New()
-	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"}); err != nil {
+	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := keys.GenerateRSA("kid-1", time.Now())
@@ -190,10 +190,10 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 func TestProductionProviderRejectsMissingSecretKey(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	_ = st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}})
+	_ = st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(ctx, key)
-	if _, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: domain.ProductionMode}); err == nil {
+	if _, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: idpstore.ProductionMode}); err == nil {
 		t.Fatal("expected production provider to reject missing secret key")
 	}
 }
@@ -346,10 +346,10 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 	ctx := context.Background()
 	secretKey := []byte("password-auth-secret-32-bytes!!!!")
 	st := memory.New()
-	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test"}); err != nil {
+	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test"}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := keys.GenerateRSA("kid-1", time.Now())
@@ -370,7 +370,7 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 	if err := st.PutPasswordCredential(ctx, credential); err != nil {
 		t.Fatal(err)
 	}
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: secretKey, Mode: domain.ProductionMode, Authenticator: svc, Consent: fositeadapter.AlwaysSkipConsent{}})
+	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: secretKey, Mode: idpstore.ProductionMode, Authenticator: svc, Consent: fositeadapter.AlwaysSkipConsent{}})
 	if err != nil {
 		t.Fatal(err)
 	}

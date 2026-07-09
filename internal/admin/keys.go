@@ -6,31 +6,31 @@ import (
 	"strings"
 
 	"github.com/manuel/tinyidp/internal/audit"
-	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/keys"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 type KeyRotationResult struct {
-	Active  domain.SigningKey  `json:"active"`
-	Retired *domain.SigningKey `json:"retired,omitempty"`
+	Active  idpstore.SigningKey  `json:"active"`
+	Retired *idpstore.SigningKey `json:"retired,omitempty"`
 }
 
-func (s *Service) GenerateSigningKey(ctx context.Context, kid string, active bool) (domain.SigningKey, error) {
+func (s *Service) GenerateSigningKey(ctx context.Context, kid string, active bool) (idpstore.SigningKey, error) {
 	kid = strings.TrimSpace(kid)
 	if kid == "" {
 		kid = "rsa-" + s.Clock().UTC().Format("20060102-150405")
 	}
 	key, err := keys.GenerateRSA(kid, s.Clock().UTC())
 	if err != nil {
-		return domain.SigningKey{}, err
+		return idpstore.SigningKey{}, err
 	}
 	key.Active = active
 	if err := s.Store.CreateSigningKey(ctx, key); err != nil {
-		return domain.SigningKey{}, err
+		return idpstore.SigningKey{}, err
 	}
 	if active {
 		if err := s.Store.ActivateSigningKey(ctx, key.ID); err != nil {
-			return domain.SigningKey{}, err
+			return idpstore.SigningKey{}, err
 		}
 		key.Active = true
 	}
@@ -47,7 +47,7 @@ func (s *Service) RotateSigningKey(ctx context.Context, kid string) (KeyRotation
 	return KeyRotationResult{Active: key, Retired: retired}, nil
 }
 
-func (s *Service) ListSigningKeys(ctx context.Context) ([]domain.SigningKey, error) {
+func (s *Service) ListSigningKeys(ctx context.Context) ([]idpstore.SigningKey, error) {
 	return s.Store.VerificationKeys(ctx)
 }
 
@@ -63,13 +63,13 @@ func (s *Service) RetireSigningKey(ctx context.Context, kid string) error {
 	return nil
 }
 
-func RedactSigningKey(key domain.SigningKey) domain.SigningKey {
+func RedactSigningKey(key idpstore.SigningKey) idpstore.SigningKey {
 	key.PrivateKeyPEM = nil
 	return key
 }
 
-func RedactSigningKeys(keys []domain.SigningKey) []domain.SigningKey {
-	out := make([]domain.SigningKey, len(keys))
+func RedactSigningKeys(keys []idpstore.SigningKey) []idpstore.SigningKey {
+	out := make([]idpstore.SigningKey, len(keys))
 	for i, key := range keys {
 		out[i] = RedactSigningKey(key)
 	}

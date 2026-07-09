@@ -1,4 +1,4 @@
-package storage
+package idpstore
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/manuel/tinyidp/internal/domain"
 )
 
 // RunStoreSuite verifies invariants every store implementation must satisfy.
@@ -18,7 +16,7 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		st := newStore(t)
 		now := time.Now()
 		codeHash := []byte("code-1")
-		if err := st.CreateAuthorizationCode(ctx, domain.AuthorizationCode{CodeHash: codeHash, ClientID: "c", ExpiresAt: now.Add(time.Minute)}); err != nil {
+		if err := st.CreateAuthorizationCode(ctx, AuthorizationCode{CodeHash: codeHash, ClientID: "c", ExpiresAt: now.Add(time.Minute)}); err != nil {
 			t.Fatalf("create code: %v", err)
 		}
 		if _, err := st.ConsumeAuthorizationCode(ctx, codeHash, now); err != nil {
@@ -34,7 +32,7 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		st := newStore(t)
 		now := time.Now()
 		codeHash := []byte("code-race")
-		if err := st.CreateAuthorizationCode(ctx, domain.AuthorizationCode{CodeHash: codeHash, ClientID: "c", ExpiresAt: now.Add(time.Minute)}); err != nil {
+		if err := st.CreateAuthorizationCode(ctx, AuthorizationCode{CodeHash: codeHash, ClientID: "c", ExpiresAt: now.Add(time.Minute)}); err != nil {
 			t.Fatalf("create code: %v", err)
 		}
 		var wg sync.WaitGroup
@@ -62,7 +60,7 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		st := newStore(t)
 		now := time.Now()
 		codeHash := []byte("code-expired")
-		if err := st.CreateAuthorizationCode(ctx, domain.AuthorizationCode{CodeHash: codeHash, ExpiresAt: now.Add(-time.Minute)}); err != nil {
+		if err := st.CreateAuthorizationCode(ctx, AuthorizationCode{CodeHash: codeHash, ExpiresAt: now.Add(-time.Minute)}); err != nil {
 			t.Fatalf("create code: %v", err)
 		}
 		if _, err := st.ConsumeAuthorizationCode(ctx, codeHash, now); !errors.Is(err, ErrExpired) {
@@ -76,10 +74,10 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		now := time.Now()
 		oldHash := []byte("refresh-old")
 		newHash := []byte("refresh-new")
-		if err := st.CreateRefreshToken(ctx, domain.RefreshToken{TokenHash: oldHash, GrantID: "g", ClientID: "c", UserID: "u", ExpiresAt: now.Add(time.Hour)}); err != nil {
+		if err := st.CreateRefreshToken(ctx, RefreshToken{TokenHash: oldHash, GrantID: "g", ClientID: "c", UserID: "u", ExpiresAt: now.Add(time.Hour)}); err != nil {
 			t.Fatalf("create refresh: %v", err)
 		}
-		if _, err := st.RotateRefreshToken(ctx, oldHash, domain.RefreshToken{TokenHash: newHash, GrantID: "g", ClientID: "c", UserID: "u", ExpiresAt: now.Add(time.Hour)}, now); err != nil {
+		if _, err := st.RotateRefreshToken(ctx, oldHash, RefreshToken{TokenHash: newHash, GrantID: "g", ClientID: "c", UserID: "u", ExpiresAt: now.Add(time.Hour)}, now); err != nil {
 			t.Fatalf("rotate refresh: %v", err)
 		}
 		old, err := st.GetRefreshToken(ctx, oldHash)
@@ -89,7 +87,7 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		if string(old.ReplacedByHash) != string(newHash) {
 			t.Fatalf("old token not linked to replacement")
 		}
-		if _, err := st.RotateRefreshToken(ctx, oldHash, domain.RefreshToken{TokenHash: []byte("other"), GrantID: "g"}, now); !errors.Is(err, ErrRefreshReuseDetected) {
+		if _, err := st.RotateRefreshToken(ctx, oldHash, RefreshToken{TokenHash: []byte("other"), GrantID: "g"}, now); !errors.Is(err, ErrRefreshReuseDetected) {
 			t.Fatalf("reuse got %v, want reuse detected", err)
 		}
 		newToken, err := st.GetRefreshToken(ctx, newHash)
@@ -105,7 +103,7 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		ctx := context.Background()
 		st := newStore(t)
 		now := time.Now()
-		consent := domain.Consent{UserID: "u", ClientID: "c", Scope: []string{"email", "openid", "email"}, GrantedAt: now}
+		consent := Consent{UserID: "u", ClientID: "c", Scope: []string{"email", "openid", "email"}, GrantedAt: now}
 		if err := st.PutConsent(ctx, consent); err != nil {
 			t.Fatalf("put consent: %v", err)
 		}
@@ -132,7 +130,7 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		ctx := context.Background()
 		st := newStore(t)
 		now := time.Now().UTC()
-		credential := domain.PasswordCredential{UserID: "u1", Login: "alice", PasswordHash: []byte("encoded-hash"), HashAlgorithm: "argon2id-v1", CreatedAt: now, UpdatedAt: now, PasswordChangedAt: now}
+		credential := PasswordCredential{UserID: "u1", Login: "alice", PasswordHash: []byte("encoded-hash"), HashAlgorithm: "argon2id-v1", CreatedAt: now, UpdatedAt: now, PasswordChangedAt: now}
 		if err := st.PutPasswordCredential(ctx, credential); err != nil {
 			t.Fatalf("put credential: %v", err)
 		}
@@ -150,11 +148,11 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		if byUser.Login != "alice" {
 			t.Fatalf("bad credential by user: %#v", byUser)
 		}
-		if err := st.PutPasswordCredential(ctx, domain.PasswordCredential{UserID: "u2", Login: "alice", PasswordHash: []byte("other")}); !errors.Is(err, ErrDuplicate) {
+		if err := st.PutPasswordCredential(ctx, PasswordCredential{UserID: "u2", Login: "alice", PasswordHash: []byte("other")}); !errors.Is(err, ErrDuplicate) {
 			t.Fatalf("duplicate login got %v, want %v", err, ErrDuplicate)
 		}
 		lockedUntil := now.Add(time.Minute)
-		state := domain.AccountSecurityState{UserID: "u1", FailedLoginCount: 2, LockedUntil: &lockedUntil}
+		state := AccountSecurityState{UserID: "u1", FailedLoginCount: 2, LockedUntil: &lockedUntil}
 		if err := st.PutAccountSecurityState(ctx, state); err != nil {
 			t.Fatalf("put security state: %v", err)
 		}
@@ -186,10 +184,10 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Run("active signing key and verification keys", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)
-		if err := st.CreateSigningKey(ctx, domain.SigningKey{ID: "k1", Algorithm: "RS256"}); err != nil {
+		if err := st.CreateSigningKey(ctx, SigningKey{ID: "k1", Algorithm: "RS256"}); err != nil {
 			t.Fatal(err)
 		}
-		if err := st.CreateSigningKey(ctx, domain.SigningKey{ID: "k2", Algorithm: "RS256"}); err != nil {
+		if err := st.CreateSigningKey(ctx, SigningKey{ID: "k2", Algorithm: "RS256"}); err != nil {
 			t.Fatal(err)
 		}
 		if err := st.ActivateSigningKey(ctx, "k2"); err != nil {
