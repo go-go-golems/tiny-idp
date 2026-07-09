@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+  GOWORK: "off"
+
+jobs:
+  test:
+    name: Build, test, vet, race, and smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up exact release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+          cache: true
+
+      - name: Record toolchain and CGO environment
+        run: |
+          go version
+          go env GOVERSION GOTOOLCHAIN GOWORK CGO_ENABLED GOOS GOARCH
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit and integration tests
+        run: go test ./... -count=1
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Race detector
+        run: go test -race ./... -count=1
+
+      - name: CLI smoke test
+        run: go run ./cmd/tinyidp --help
+
+  lint:
+    name: Pinned lint suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up exact release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+          cache: true
+
+      - name: Run repository linters
+        run: make lint
+
+  vulnerability:
+    name: Reachable vulnerability gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up exact release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+          cache: true
+
+      - name: Install pinned govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
+
+      - name: Reject reachable known vulnerabilities
+        run: govulncheck ./...

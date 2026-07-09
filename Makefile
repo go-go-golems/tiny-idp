@@ -1,4 +1,4 @@
-.PHONY: test build lint lintmax fmt-check logcopter-generate logcopter-check glazed-lint-build glazed-lint bump-go-go-golems
+.PHONY: test build lint lintmax fmt-check vuln verify logcopter-generate logcopter-check glazed-lint-build glazed-lint bump-go-go-golems
 
 GO_PACKAGES ?= ./...
 LOGCOPTER_PACKAGES ?= ./cmd/... ./internal/... ./pkg/...
@@ -6,9 +6,13 @@ LOGCOPTER_AREA_PREFIX ?= tinyidp
 LOGCOPTER_STRIP_PREFIX ?= github.com/manuel/tinyidp
 
 GOLANGCI_LINT_VERSION ?= $(shell cat .golangci-lint-version 2>/dev/null || echo v2.12.2)
-GOLANGCI_LINT_BIN ?= /tmp/golangci-lint-$(GOLANGCI_LINT_VERSION)
+GO_TOOLCHAIN_VERSION ?= $(shell GOWORK=off go env GOVERSION)
+GOLANGCI_LINT_BIN ?= /tmp/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GO_TOOLCHAIN_VERSION)
 
-GLAZED_LINT_BIN ?= /tmp/glazed-lint
+GOVULNCHECK_VERSION ?= v1.5.0
+GOVULNCHECK_BIN ?= /tmp/govulncheck-$(GOVULNCHECK_VERSION)
+
+GLAZED_LINT_BIN ?= /tmp/glazed-lint-$(GLAZED_VERSION)-$(GO_TOOLCHAIN_VERSION)
 GLAZED_LINT_PKG ?= github.com/go-go-golems/glazed/cmd/tools/glazed-lint
 GLAZED_VERSION ?= $(shell GOWORK=off go list -m -f '{{.Version}}' github.com/go-go-golems/glazed 2>/dev/null)
 GLAZED_LINT_TOOL_VERSION ?= $(if $(GLAZED_VERSION),$(GLAZED_VERSION),latest)
@@ -20,6 +24,16 @@ test:
 
 build:
 	GOWORK=off go build $(GO_PACKAGES)
+
+$(GOVULNCHECK_BIN):
+	@echo "Installing govulncheck $(GOVULNCHECK_VERSION)"
+	GOBIN=/tmp GOWORK=off go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	@mv /tmp/govulncheck $(GOVULNCHECK_BIN)
+
+vuln: $(GOVULNCHECK_BIN)
+	GOWORK=off $(GOVULNCHECK_BIN) $(GO_PACKAGES)
+
+verify: build test lint vuln
 
 $(GOLANGCI_LINT_BIN):
 	@echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)"
@@ -56,6 +70,7 @@ glazed-lint-build:
 		echo "Installing $(GLAZED_LINT_PKG)@$(GLAZED_LINT_TOOL_VERSION)"; \
 		GOBIN=$(dir $(GLAZED_LINT_BIN)) GOWORK=off go install $(GLAZED_LINT_PKG)@$(GLAZED_LINT_TOOL_VERSION); \
 	fi
+	@mv $(dir $(GLAZED_LINT_BIN))glazed-lint $(GLAZED_LINT_BIN)
 
 glazed-lint: glazed-lint-build
 	GOWORK=off go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)

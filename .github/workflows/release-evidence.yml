@@ -1,0 +1,57 @@
+name: Release evidence
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+env:
+  GOTOOLCHAIN: local
+  GOWORK: "off"
+
+jobs:
+  evidence:
+    name: Build, SBOM, and provenance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up exact release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+          cache: true
+
+      - name: Build Linux amd64 evidence artifact
+        run: |
+          mkdir -p dist
+          go build -trimpath -o dist/tinyidp-linux-amd64 ./cmd/tinyidp
+          sha256sum dist/tinyidp-linux-amd64 > dist/checksums.txt
+          go version -m dist/tinyidp-linux-amd64 > dist/build-info.txt
+          go env GOVERSION GOTOOLCHAIN GOWORK CGO_ENABLED GOOS GOARCH > dist/go-environment.txt
+
+      - name: Generate SPDX JSON SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: dist/tinyidp-linux-amd64
+          format: spdx-json
+          output-file: dist/tinyidp-linux-amd64.spdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/tinyidp-linux-amd64
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: tinyidp-release-evidence-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
