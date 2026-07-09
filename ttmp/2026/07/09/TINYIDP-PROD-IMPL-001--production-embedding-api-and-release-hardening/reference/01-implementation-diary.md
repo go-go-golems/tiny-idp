@@ -859,3 +859,125 @@ git diff --cached --exit-code: PASS
 - [Phase ledger](../tasks.md)
 - `go.mod`
 - `.github/workflows/ci.yml`
+
+## Step 7: Inventory the Phase 1 public boundary
+
+This step mapped every type an external embedding consumer must currently name
+or implement. The result confirms that moving only the SQLite constructor would
+not fix the API: store methods, policy methods, authentication results, audit
+events, and mode values all transitively expose internal packages.
+
+No source packages moved in this step. The inventory is a deliberate checkpoint
+before a direct package reorganization that will touch many imports at once.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Start Phase 1 by proving the complete public API
+surface before replacing it, with no compatibility adapters.
+
+**Inferred user intent:** Avoid shipping a superficially public constructor that
+still forces consumers through unimportable or implementation-specific types.
+
+**Commit (code):** N/A; read-only boundary inventory.
+
+### What I did
+
+- Inspected exported documentation for `pkg/embeddedidp` and
+  `internal/storage.Store`.
+- Read audit, consent, rate-limiter, authenticator, domain, and store signatures.
+- Enumerated every Go file importing the internal domain, storage, audit,
+  authentication, or SQLite packages.
+- Identified files importing both domain and storage, which require a coordinated
+  package move rather than independent path replacement.
+
+### Why
+
+- Go's internal-package rule applies transitively to interface method types, not
+  merely to constructors.
+- A direct reorganization needs an accurate blast-radius list to avoid leaving
+  duplicate record types or accidental adapters.
+
+### What worked
+
+- `go doc` confirms the exported package currently presents `Mode` as an alias
+  and `Options` as a public type while hiding the internal field types.
+- The import inventory found 11 files depending on both domain and storage,
+  including the provider, password service, admin services, memory/SQLite stores,
+  key rotation, and review probes.
+
+### What didn't work
+
+- The inventory commands completed successfully. The changelog helper then
+  repeated its known EOF formatting issue:
+
+  ```text
+  ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/changelog.md:49: new blank line at EOF.
+  ```
+
+  Removing that final blank line restored `git diff --check`.
+
+### What I learned
+
+- The public boundary consists of these type families:
+  - mode and cookie/token construction policy;
+  - all durable records used by the composed store interfaces;
+  - store sentinel errors and persistence capabilities;
+  - `AuditEvent`/`AuditSink`;
+  - consent policy using public user/client records;
+  - rate limiter;
+  - login metadata, authentication result, and password authenticator.
+- Keeping Fosite internal is straightforward; none of these product contracts
+  needs a Fosite request or session type.
+
+### What was tricky to build
+
+- Domain records and storage interfaces currently live in separate internal
+  packages and are often imported together. Moving both to one public package
+  requires symbol/import consolidation in those files; naive global path
+  replacement would create duplicate imports.
+
+### What warrants a second pair of eyes
+
+- Confirm whether public durable records and store interfaces should share
+  `pkg/idpstore` as designed, or whether records warrant a separate public model
+  package. The current accepted guide chooses one `idpstore` package.
+
+### What should be done in the future
+
+- Move records and store contracts directly, update all callers in one coherent
+  commit series, and delete the internal packages rather than aliasing them.
+- Add compile-time interface assertions for every public implementation.
+
+### Code review instructions
+
+- Start at `pkg/embeddedidp/options.go:30-40`.
+- Follow `storage.Store` through every embedded capability in
+  `internal/storage/interfaces.go`.
+- Inspect consent and authenticator signatures for their transitive domain and
+  authn types.
+
+### Technical details
+
+```text
+direct leaks:
+  internal/domain.Mode
+  internal/storage.Store
+  internal/audit.Sink
+  internal/fositeadapter.ConsentPolicy
+  internal/fositeadapter.RateLimiter
+  internal/fositeadapter.PasswordAuthenticator
+
+transitive leaks:
+  domain.Client, User, PasswordCredential, AccountSecurityState
+  Grant, AuthorizationCode, AccessToken, RefreshToken, Consent, Session,
+  SigningKey, audit.Event, authn.LoginMetadata, authn.AuthResult
+```
+
+## Related
+
+- [Implementation guide](../design-doc/01-production-embedding-api-and-release-implementation-guide.md)
+- [Phase ledger](../tasks.md)
+- `pkg/embeddedidp/options.go`
+- `internal/storage/interfaces.go`

@@ -37,3 +37,12 @@ Step 6: closed Phase 0 from committed state and advanced to Phase 1 (code commit
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/go.mod — Verified Phase 0 release graph
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md — Phase 0 gate and Phase 1 progress state
+
+## 2026-07-09
+
+Step 7: inventoried the full transitive internal-type leak at the Phase 1 embedding boundary
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/storage/interfaces.go — Transitive public store type surface
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Current public options leaking internal contracts

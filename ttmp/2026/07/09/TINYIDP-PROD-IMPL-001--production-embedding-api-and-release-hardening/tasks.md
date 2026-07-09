@@ -27,7 +27,7 @@ tasks so partial implementation never looks like phase completion.
 
 ## Phase 1 — consumable public embedding API
 
-- [ ] Inventory every type currently crossing `pkg/embeddedidp` into `internal/` packages.
+- [x] Inventory every type currently crossing `pkg/embeddedidp` into `internal/` packages.
 - [ ] Define public identity, policy, audit, limiter, authenticator, and store contracts without Fosite types.
 - [ ] Create `pkg/idp` for stable public policy and runtime contracts.
 - [ ] Create `pkg/idpstore` for public records, read contracts, transactions, and invariant operations.
