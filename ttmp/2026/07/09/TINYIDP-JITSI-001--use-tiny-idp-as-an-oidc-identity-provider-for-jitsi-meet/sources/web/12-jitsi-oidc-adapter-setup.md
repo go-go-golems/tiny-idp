@@ -1,0 +1,318 @@
+# Standalone setup
+
+- [1. Token authentication](#1-token-authentication)
+  - [1.1 jitsi-meet-tokens package](#11-jitsi-meet-tokens-package)
+  - [1.2 Testing](#12-testing)
+- [2. Deno](#2-deno)
+- [3. OIDC adapter](#3-oidc-adapter)
+  - [3.1 Cloning the repository](#31-cloning-the-repository)
+  - [3.2 Adapter service](#32-adapter-service)
+    - [3.2.1 Adapter user](#321-adapter-user)
+    - [3.2.2 Adapter application](#322-adapter-application)
+    - [3.2.3 Adapter settings](#323-adapter-settings)
+    - [3.2.4 Production notes](#324-production-notes)
+    - [3.2.5 Systemd unit](#325-systemd-unit)
+- [4. Nginx](#4-nginx)
+- [5. Jitsi-meet](#5-jitsi-meet)
+- [6. Guest users](#6-guest-users)
+  - [6.1 Wait for host](#61-wait-for-host)
+  - [6.2 Allow empty token](#62-allow-empty-token)
+  - [6.3 VirtualHost for Guest](#63-virtualhost-for-guest)
+  - [6.4 Restart Prosody](#64-restart-prosody)
+  - [6.5 Jitsi-meet](#65-jitsi-meet)
+
+The setup guide to install `Jitsi OIDC Adapter` on a standalone Jitsi server.
+
+Tested on `Debian 12 Bookworm` with `Jitsi v2.0.10741`. Use `root` account while
+running the commands.
+
+## 1. Token authentication
+
+Enable the token authentication for `prosody`.
+
+### 1.1 jitsi-meet-tokens package
+
+```bash
+apt-get install jitsi-meet-tokens
+```
+
+Check related parameters in your `/etc/prosody/conf.d/YOUR-HOSTNAME.cfg.lua`.
+They should be already set by `apt-get` command.
+
+```lua
+VirtualHost "<YOUR-HOSTNAME>"
+    authentication = "token";
+    app_id="<YOUR_APP_ID>"
+    app_secret="<YOUR_APP_SECRET>"
+```
+
+### 1.2 Testing
+
+Test the JWT authentication with a valid token. You may generate the token on
+[Jitok](https://jitok.emrah.com/). The meeting link should be like the
+following:
+
+```bash
+https://jitsi.mydomain.tld/myroom?jwt=<PASTE_TOKEN_HERE>
+```
+
+## 2. Deno
+
+Install `deno`:
+
+```bash
+apt-get install unzip
+
+cd /tmp
+wget -T 30 -O deno.zip https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip
+unzip -o deno.zip
+cp /tmp/deno /usr/local/bin/
+
+deno --version
+```
+
+## 3. OIDC adapter
+
+### 3.1 Cloning the repository
+
+Clone the repository:
+
+```bash
+apt-get install git
+
+git clone https://github.com/jitsi-contrib/jitsi-oidc-adapter.git
+cd jitsi-oidc-adapter
+```
+
+_As an alternative way, you may download the released package from
+[Releases](https://github.com/jitsi-contrib/jitsi-oidc-adapter/releases)._
+
+### 3.2 Adapter service
+
+Setup the adapter service.
+
+#### 3.2.1 Adapter user
+
+```bash
+adduser adapter --system --group --disabled-password --shell /bin/bash --home /home/adapter
+```
+
+#### 3.2.2 Adapter application
+
+```bash
+mkdir -p /home/adapter/app
+cp src/config.ts /home/adapter/app/
+cp src/adapter.ts /home/adapter/app/
+cp src/context.ts /home/adapter/app/
+cp templates/home/adapter/app/adapter.sh /home/adapter/app/
+chown adapter: /home/adapter/app -R
+```
+
+#### 3.2.3 Adapter settings
+
+Update the adapter settings according to your environment. Edit
+[/home/adapter/app/config.ts](../src/config.ts).
+
+You may also use environment variables instead of updating this config file.
+
+- `OIDC_ISSUER_URL`
+
+  The base URL of the issuer such as `https://my.provider.tld/realms/myrealm`
+
+- `OIDC_CLIENT_ID`
+
+  OIDC client ID
+
+- `OIDC_CLIENT_SECRET`
+
+  OIDC client secret\
+  Required if client authentication is enabled in the OIDC provider, must be
+  empty otherwise.
+
+- `JWT_APP_ID`
+
+  The token `app_id`\
+  It must be the same with Prosody `app_id`.
+
+- `JWT_APP_SECRET`
+
+  The token `app_secret`\
+  It must be the same with Prosody `app_secret`.
+
+- `JWT_EXP_SECOND`
+
+  The token expire time
+
+- `HOSTNAME`
+
+  The IP address for the adapter service. Don't update its default value since
+  it is on the same server with `Nginx`.
+
+- `AUTO_RETURN_TO_APP`
+
+  Set to `true` to automatically redirect users back to the initiating Jitsi app
+  (Android, iOS or Electron) after authentication. If `false`, users must
+  manually click a link in the final step to return. This setting does not
+  affect the web client.
+
+  **Important:** When `true`, certain OIDC providers may cause a "broken tab"
+  issue (see [#1](https://github.com/jitsi-contrib/jitsi-oidc-adapter/pull/1))
+  on Chromium-based Android browsers (Chrome, Brave, etc.) when returning to the
+  app. Firefox (Android) and Safari (iOS) are unaffected.
+
+  To test this behavior:
+
+  - Set a Chromium-based browser as the default on Android.
+  - Ensure the browser is signed out of your OIDC provider.
+  - Start a meeting in the Jitsi Meet mobile app and log in.
+  - Observe if the browser tab fails to close or displays an error after
+    returning to the app.
+
+#### 3.2.4 Production notes
+
+Disable the `testing` line and enable the `prod` line in
+[/home/adapter/app/adapter.sh](../templates/home/adapter/app/adapter.sh) if the
+OIDC provider has a trusted certificate. It should be for the production
+environment.
+
+```bash
+# testing: allow self-signed certificate for the OIDC provider
+#deno run --allow-net --allow-env --unsafely-ignore-certificate-errors $BASEDIR/adapter.ts
+
+# prod
+deno run --allow-net --allow-env $BASEDIR/adapter.ts
+```
+
+#### 3.2.5 Systemd unit
+
+```bash
+cp templates/etc/systemd/system/oidc-adapter.service /etc/systemd/system/
+
+systemctl daemon-reload
+systemctl enable oidc-adapter.service
+systemctl start oidc-adapter.service
+systemctl status oidc-adapter.service
+```
+
+## 4. Nginx
+
+Add OIDC config:
+
+```bash
+mkdir -p /etc/jitsi/meet/jaas
+cp templates/etc/jitsi/meet/jaas/oidc.conf /etc/jitsi/meet/jaas/
+```
+
+And restart the `nginx` service:
+
+```bash
+systemctl restart nginx
+```
+
+## 5. Jitsi-meet
+
+Set `tokenAuthUrl` and `tokenAuthUrlAutoRedirect` in `config.js`:
+
+```bash
+DOMAIN=$(hocon -f /etc/jitsi/jicofo/jicofo.conf get jicofo.xmpp.client.xmpp-domain | xargs)
+
+echo "config.tokenAuthUrl = 'https://${DOMAIN}/oidc/auth?state={state}';" >> /etc/jitsi/meet/*-config.js
+echo "config.tokenAuthUrlAutoRedirect = true;" >> /etc/jitsi/meet/*-config.js
+```
+
+## 6. Guest users
+
+If you want to allow guest users to join the meeting after it's created by a
+moderator then apply the followings.
+
+### 6.1 Wait for host
+
+Enable `persistent_lobby` and `muc_wait_for_host` in your
+`/etc/prosody/conf.d/<YOUR-HOSTNAME>.cfg.lua`.
+
+Put `persistent_lobby` into `VirtualHost`'s `modules_enabled`:
+
+```lua
+VirtualHost "<YOUR-HOSTNAME>"
+    ...
+    ...
+    modules_enabled = {
+        ...
+        ...
+        "muc_lobby_rooms";
+        "persistent_lobby";
+        ...
+```
+
+Put `muc_wait_for_host` into `Component`'s `modules_enabled`:
+
+```lua
+Component "conference.<YOUR-HOSTNAME>" "muc"
+    ...
+    ...
+    modules_enabled = {
+        ...
+        ...
+        "token_verification";
+        "muc_wait_for_host";
+        ...
+```
+
+If you want to control user levels using a third-party module then add the
+following line into the `muc` block:
+
+```
+Component "conference.<YOUR-HOSTNAME>" "muc"
+    ...
+    ...
+    wait_for_host_disable_auto_owners = true
+    ...
+```
+
+### 6.2 Allow empty token
+
+Set `allow_empty_token` in your `/etc/prosody/conf.d/<YOUR-HOSTNAME>.cfg.lua`:
+
+```lua
+VirtualHost "<YOUR-HOSTNAME>"
+    authentication = "token";
+    app_id="<YOUR_APP_ID>"
+    app_secret="<YOUR_APP_SECRET>"
+    allow_empty_token=true
+```
+
+### 6.3 VirtualHost for Guest
+
+Add the guest config for `prosody`. Create
+_/etc/prosody/conf.avail/guest.cfg.lua_ file with the following contents. Update
+<YOUR-HOSTNAME> according to your hostname.
+
+```lua
+VirtualHost "guest.<YOUR-HOSTNAME>"
+    authentication = "jitsi-anonymous"
+    c2s_require_encryption = false
+```
+
+Create a symbolic link for this config file:
+
+```bash
+ln -s ../conf.avail/guest.cfg.lua /etc/prosody/conf.d/
+```
+
+### 6.4 Restart Prosody
+
+Restart the `prosody` service:
+
+```bash
+systemctl restart prosody.service
+```
+
+### 6.5 Jitsi-meet
+
+Set `anonymousdomain` in `config.js`:
+
+```bash
+DOMAIN=$(hocon -f /etc/jitsi/jicofo/jicofo.conf get jicofo.xmpp.client.xmpp-domain | xargs)
+
+echo "config.hosts.anonymousdomain = 'guest.$DOMAIN';" >> /etc/jitsi/meet/*-config.js
+```
