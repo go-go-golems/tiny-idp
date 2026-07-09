@@ -25,6 +25,14 @@ RelatedFiles:
         Phase 0 Go toolchain and go-jose dependency baseline (commit a2c86a9)
     - Path: repo://pkg/embeddedidp/options.go
       Note: First production API implementation target
+    - Path: repo://pkg/embeddedidp/provider.go
+      Note: Context lifecycle and readiness API (commit e65ff53)
+    - Path: repo://pkg/idp/contracts.go
+      Note: Public policy authentication and readiness contracts (commit 0bcbf24)
+    - Path: repo://pkg/idpstore/interfaces.go
+      Note: Public durable store contracts (commit e042a15)
+    - Path: repo://pkg/sqlitestore/store.go
+      Note: Public SQLite implementation (commit 24c9a92)
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/01-production-embedding-api-and-release-implementation-guide.md
       Note: Implementation design this diary tracks
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md
@@ -35,6 +43,7 @@ LastUpdated: 2026-07-09T17:37:01.160328301-04:00
 WhatFor: Preserving decisions, exact commands, failures, commits, verification, and continuation instructions across the multi-phase hardening effort.
 WhenToUse: Read before resuming work, reviewing a phase, investigating a regression, or assembling release evidence.
 ---
+
 
 
 
@@ -981,3 +990,260 @@ transitive leaks:
 - [Phase ledger](../tasks.md)
 - `pkg/embeddedidp/options.go`
 - `internal/storage/interfaces.go`
+
+## Step 8: Move identity, policy, and SQLite contracts into public packages
+
+This step removed the internal-package barrier rather than wrapping it. Durable
+records and store interfaces moved to `pkg/idpstore`; audit and runtime policy
+contracts moved to `pkg/idp`; and the complete SQLite implementation, migrations,
+and tests moved to `pkg/sqlitestore`.
+
+All callers were migrated directly. The old internal packages were deleted, and
+compile-time interface assertions now protect the public store, audit, consent,
+limiter, and password-authenticator contracts.
+
+### Prompt Context
+
+**User prompt (verbatim):** “continue”
+
+**Assistant interpretation:** Resume the active Phase 1 implementation from the
+latest diary checkpoint and continue committing verified slices.
+
+**Inferred user intent:** Complete the production API work without re-planning
+or losing the detailed implementation record.
+
+**Commit (code):** `e042a15` — "refactor: publish identity store contracts";
+`0bcbf24` — "refactor: publish identity policy contracts"; `24c9a92` —
+"refactor: publish sqlite store"
+
+### What I did
+
+- Moved domain records, validation/helpers, sentinel errors, store capabilities,
+  and the shared store suite into `pkg/idpstore`.
+- Updated every production, test, example, and review-tool import directly and
+  removed `internal/domain` and `internal/storage`.
+- Added `var _ idpstore.Store = (*Store)(nil)` for memory and SQLite stores.
+- Moved audit event/sink plus development implementations into `pkg/idp`.
+- Added public consent, limiter, login metadata/result, password authenticator,
+  and readiness contracts without Fosite types.
+- Updated services and Fosite adapter implementations to consume those public
+  interfaces and added compile-time assertions.
+- Updated auditlint so public `idp.NoopSink` remains detectable.
+- Moved the SQLite store, embedded migrations, logger, and tests to
+  `pkg/sqlitestore` and updated all callers.
+
+### Why
+
+- Aliases or facades would preserve the unusable structure and violate the
+  explicit no-compatibility requirement.
+- Moving tests and migrations with the implementation makes the public package
+  the actual supported store, not a wrapper over an internal implementation.
+
+### What worked
+
+- The record/store move compiled on its first attempt; no Go source imports
+  `internal/domain` or `internal/storage` remain.
+- Full build, tests, vet, lint, and race passed after the store and policy moves.
+- Auditlint stopped reporting the domain/store portion of the exported leak,
+  then stopped reporting the leak entirely after policy contracts moved.
+- Public SQLite full tests, lint, and targeted race tests pass.
+
+### What didn't work
+
+- The audit-package mechanical rewrite changed receiver expressions such as
+  `s.audit.Emit` into `s.idp.Emit`. Compilation reported:
+
+  ```text
+  internal/authn/password.go:212:8: s.idp undefined (type *PasswordService has no field or method idp)
+  ```
+
+  Searching for `.idp` found the same mistake on provider receiver fields.
+  Restoring only those selectors to `.audit.Emit` fixed the build.
+- The SQLite package rewrite matched `package sqlite` but not the external test
+  declaration `package sqlite_test`. Go reported:
+
+  ```text
+  found packages sqlitestore (logcopter.go) and sqlite (store_test.go)
+  ```
+
+  Renaming it to `sqlitestore_test` resolved the package split; the retry passed.
+
+### What I learned
+
+- Public exposure is now structural: consumers name only `pkg/idp`,
+  `pkg/idpstore`, `pkg/sqlitestore`, and standard-library types.
+- AST/type analyzers are useful migration witnesses: the exported-internal-type
+  diagnostic disappeared only after the complete transitive boundary moved.
+
+### What was tricky to build
+
+- Eleven files imported both former domain and storage packages. Mechanical
+  migration had to consolidate duplicate imports while preserving a single
+  `idpstore` type identity.
+- Generated logger files and external-test package names needed explicit
+  treatment during directory moves.
+
+### What warrants a second pair of eyes
+
+- Review whether all helpers now in `pkg/idpstore` deserve long-term public API
+  stability or whether some should move back behind unexported implementation
+  before the first release.
+- Review the public contract names before external users depend on them.
+
+### What should be done in the future
+
+- Add Phase 2 transaction and named invariant operations to `pkg/idpstore`
+  before checking its final contract task.
+- Keep compile-time assertions for every implementation added later.
+
+### Code review instructions
+
+- Review commits in order: `e042a15`, `0bcbf24`, then `24c9a92`.
+- Run `rg 'internal/(domain|storage|store/sqlite|audit)' --glob '*.go'` and
+  require no production import matches.
+- Run `go test -race ./pkg/idpstore ./pkg/idp ./pkg/sqlitestore`.
+
+### Technical details
+
+```text
+pkg/idp        audit and runtime policy contracts
+pkg/idpstore   durable records, validation, errors, store capabilities/suite
+pkg/sqlitestore SQLite implementation, migrations, and tests
+
+full tests: PASS
+race: PASS
+golangci-lint: 0 issues
+Glazed lint: PASS
+```
+
+## Step 9: Replace construction with a context-aware lifecycle API
+
+This step replaced the pre-release constructor directly with
+`embeddedidp.New(ctx, Options)`, propagated context through startup store/client
+work, added structured readiness and idempotent close, and made a closed handler
+return 503. Repository documentation and the example now use only public paths.
+
+The old negative external probe was converted into a positive temporary-module
+compile test. It proves an outside module can open public SQLite, construct
+production options, access the handler/readiness API, and close the provider
+without importing any internal package.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8)
+
+**Assistant interpretation:** Continue Phase 1 through the actual embedding
+constructor, lifecycle, documentation, and external consumer acceptance test.
+
+**Inferred user intent:** Deliver a usable host-facing API rather than only
+publicly relocated types.
+
+**Commit (code):** `e65ff53` — "refactor: replace embedding constructor API"
+
+### What I did
+
+- Changed `Options.Validate` and `embeddedidp.New` to require context.
+- Threaded context through Fosite construction, client listing, and bcrypt work.
+- Added `Provider.Readiness(ctx)` with stable lifecycle/store/key reason codes.
+- Added idempotent `Provider.Close(ctx)` and 503 behavior after close.
+- Added lifecycle, canceled-context, readiness, and close regression tests.
+- Removed the unused `CookieConfig.SameSite` field rather than retaining a false
+  contract.
+- Updated README, storage/key/password docs, and the embedded example to public
+  package paths and lifecycle calls.
+- Converted `external-api-smoke.sh` from expected compiler failure to positive
+  external-module compilation using only public packages.
+
+### Why
+
+- Startup I/O must be cancelable and lifecycle ownership must be explicit for a
+  production host.
+- Readiness reasons are stable non-secret codes, not raw database/key errors.
+- The current SameSite behavior is fixed Lax internally; a settable but ignored
+  field is worse than an honest API.
+
+### What worked
+
+- Constructor/provider/Fosite/cmd tests and vet pass.
+- Lifecycle tests prove ready state, two successful close calls, closed
+  readiness, and a 503 closed handler.
+- The external consumer prints:
+
+  ```text
+  OK: external production embedding imports only public tiny-idp packages and compiles
+  ```
+
+- Targeted race, full build/tests/vet, and lint pass after the final correction.
+
+### What didn't work
+
+- Removing `SameSite` exposed one stale runtime-probe initializer. Build and
+  lint reported:
+
+  ```text
+  unknown field SameSite in struct literal of type embeddedidp.CookieConfig
+  ```
+
+  `rg 'SameSite:' --glob '*.go'` showed only the intended internal cookie
+  settings plus this stale configuration use. Removing the stale field fixed
+  both gates on the first retry.
+- The changelog helper again added a final blank line after recording Steps
+  8–9. `git diff --check` reported `changelog.md:58: new blank line at EOF.`;
+  removing only that line restored the documentation gate.
+
+### What I learned
+
+- The external compile boundary is fixed, but the Phase 1 runtime gate still
+  needs a complete outside-module Authorization Code + PKCE flow.
+- Readiness currently covers lifecycle, basic store access, and active-key
+  presence; richer production dependency health remains a Phase 4 task.
+
+### What was tricky to build
+
+- The host owns the injected store, so `Provider.Close` must not close it.
+  Current close has no background resources; it records lifecycle state and is
+  deliberately idempotent.
+- Constructor signature replacement touched tests, probes, internal dev wiring,
+  examples, and docs simultaneously because no compatibility overload was added.
+
+### What warrants a second pair of eyes
+
+- Review whether handler-after-close should return 503 or whether the host alone
+  should guarantee it is no longer reachable.
+- Review readiness check names/reason codes before operators consume them.
+
+### What should be done in the future
+
+- Require production audit, limiter, trusted address, secret, schema, and valid
+  key controls before closing Phase 1.
+- Extend the external fixture from compile-only to a complete strict flow.
+
+### Code review instructions
+
+- Start at `pkg/embeddedidp/options.go` and `provider.go`.
+- Run the positive external API smoke script.
+- Run `go test -race ./pkg/embeddedidp ./internal/fositeadapter ./pkg/sqlitestore`.
+
+### Technical details
+
+```text
+New(ctx, Options) (*Provider, error)
+Provider.Handler() http.Handler
+Provider.Readiness(ctx) idp.ReadinessReport
+Provider.Close(ctx) error
+
+full build/tests/vet: PASS
+targeted race: PASS
+lint: PASS, 0 issues
+external module compile: PASS
+```
+
+## Related
+
+- [Implementation guide](../design-doc/01-production-embedding-api-and-release-implementation-guide.md)
+- [Phase ledger](../tasks.md)
+- `pkg/embeddedidp/options.go`
+- `pkg/embeddedidp/provider.go`
+- `pkg/idp/contracts.go`
+- `pkg/idpstore/interfaces.go`
+- `pkg/sqlitestore/store.go`

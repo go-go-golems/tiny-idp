@@ -19,12 +19,12 @@ RelatedFiles:
       Note: Password verification and lockout transition behavior
     - Path: repo://internal/fositeadapter/provider.go
       Note: Strict OAuth and OIDC composition and route ownership
-    - Path: repo://internal/storage/interfaces.go
-      Note: Current entity-oriented persistence contracts
-    - Path: repo://internal/store/sqlite/store.go
-      Note: Durable SQLite implementation and migrations
+    - Path: repo://pkg/idpstore/interfaces.go
+      Note: Public durable record and persistence contracts introduced in Phase 1
+    - Path: repo://pkg/sqlitestore/store.go
+      Note: Public durable SQLite implementation and migrations introduced in Phase 1
     - Path: repo://pkg/embeddedidp/options.go
-      Note: Current unusable exported construction boundary
+      Note: Public context-aware construction and validation boundary
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/design-doc/01-tiny-idp-production-readiness-architecture-and-code-review.md
       Note: Source findings and release gate
 ExternalSources: []

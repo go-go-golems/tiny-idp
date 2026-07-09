@@ -28,18 +28,18 @@ tasks so partial implementation never looks like phase completion.
 ## Phase 1 — consumable public embedding API
 
 - [x] Inventory every type currently crossing `pkg/embeddedidp` into `internal/` packages.
-- [ ] Define public identity, policy, audit, limiter, authenticator, and store contracts without Fosite types.
-- [ ] Create `pkg/idp` for stable public policy and runtime contracts.
+- [x] Define public identity, policy, audit, limiter, authenticator, and store contracts without Fosite types.
+- [x] Create `pkg/idp` for stable public policy and runtime contracts.
 - [ ] Create `pkg/idpstore` for public records, read contracts, transactions, and invariant operations.
-- [ ] Create `pkg/sqlitestore` as the supported durable implementation.
-- [ ] Replace `embeddedidp.Options` with public or standard-library types only.
-- [ ] Change construction to `New(ctx, Options)` and propagate startup cancellation.
-- [ ] Add `Readiness(ctx)` with structured component results.
-- [ ] Add idempotent `Close(ctx)` and document host/provider lifecycle ownership.
+- [x] Create `pkg/sqlitestore` as the supported durable implementation.
+- [x] Replace `embeddedidp.Options` with public or standard-library types only.
+- [x] Change construction to `New(ctx, Options)` and propagate startup cancellation.
+- [x] Add `Readiness(ctx)` with structured component results.
+- [x] Add idempotent `Close(ctx)` and document host/provider lifecycle ownership.
 - [ ] Fail production construction on missing audit, limiter, client-address, secret, schema, key, or persistent-store requirements.
-- [ ] Delete the unusable pre-release surface directly; add no compatibility shim.
-- [ ] Update repository examples and README to use only public packages.
-- [ ] Convert the external-consumer failure probe into a separate-module positive integration test.
+- [x] Delete the unusable pre-release surface directly; add no compatibility shim.
+- [x] Update repository examples and README to use only public packages.
+- [x] Convert the external-consumer failure probe into a separate-module positive integration test.
 - [ ] Complete Authorization Code + PKCE through the external-module fixture backed by public SQLite.
 - [ ] Phase 1 gate: an external application compiles, starts, checks readiness, completes strict OIDC, and shuts down cleanly.
 

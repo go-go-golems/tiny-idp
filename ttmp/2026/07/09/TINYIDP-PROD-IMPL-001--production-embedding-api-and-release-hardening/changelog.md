@@ -46,3 +46,12 @@ Step 7: inventoried the full transitive internal-type leak at the Phase 1 embedd
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/storage/interfaces.go — Transitive public store type surface
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Current public options leaking internal contracts
+
+## 2026-07-09
+
+Steps 8-9: published store, policy, and SQLite packages and replaced embedding construction with context, readiness, close, and positive external compilation (commits e042a15, 0bcbf24, 24c9a92, e65ff53)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Replacement embedding lifecycle
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/store.go — Public durable store
