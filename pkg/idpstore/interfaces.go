@@ -12,6 +12,7 @@ var (
 	ErrExpired              = errors.New("expired")
 	ErrRefreshReuseDetected = errors.New("refresh token reuse detected")
 	ErrDuplicate            = errors.New("duplicate")
+	ErrLastSigningKey       = errors.New("cannot retire the final active signing key")
 )
 
 type ClientStore interface {
@@ -83,7 +84,7 @@ type KeyStore interface {
 	RetireSigningKey(ctx context.Context, kid string) error
 }
 
-type Store interface {
+type StoreOperations interface {
 	ClientStore
 	UserStore
 	PasswordCredentialStore
@@ -95,6 +96,57 @@ type Store interface {
 	ConsentStore
 	SessionStore
 	KeyStore
+}
+
+// ReadStore is the store view supplied to a read-only transaction callback.
+// Implementations may also expose mutation methods internally, but callers
+// receive only this read contract.
+type ReadStore interface {
+	GetClient(ctx context.Context, id string) (Client, error)
+	ListClients(ctx context.Context) ([]Client, error)
+	GetUser(ctx context.Context, id string) (User, error)
+	GetUserByLogin(ctx context.Context, login string) (User, error)
+	GetPasswordCredentialByLogin(ctx context.Context, login string) (PasswordCredential, error)
+	GetPasswordCredentialByUserID(ctx context.Context, userID string) (PasswordCredential, error)
+	GetAccountSecurityState(ctx context.Context, userID string) (AccountSecurityState, error)
+	GetGrant(ctx context.Context, id string) (Grant, error)
+	GetAccessToken(ctx context.Context, tokenHash []byte) (AccessToken, error)
+	GetRefreshToken(ctx context.Context, tokenHash []byte) (RefreshToken, error)
+	GetConsent(ctx context.Context, userID, clientID string, scopes []string) (Consent, error)
+	GetSession(ctx context.Context, idHash []byte) (Session, error)
+	ActiveSigningKey(ctx context.Context) (SigningKey, error)
+	VerificationKeys(ctx context.Context) ([]SigningKey, error)
+}
+
+// TxStore is the mutation surface scoped to one implementation transaction.
+type TxStore interface {
+	StoreOperations
+}
+
+type LockoutPolicy struct {
+	Threshold int
+	Window    time.Duration
+	Duration  time.Duration
+}
+
+type RotationResult struct {
+	Active  SigningKey
+	Retired *SigningKey
+}
+
+type AtomicStore interface {
+	View(ctx context.Context, fn func(ReadStore) error) error
+	Update(ctx context.Context, fn func(TxStore) error) error
+	CreateUserWithCredential(ctx context.Context, login string, user User, credential PasswordCredential) error
+	ReplacePasswordAndSecurityState(ctx context.Context, credential PasswordCredential, state AccountSecurityState) error
+	RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy LockoutPolicy) (AccountSecurityState, error)
+	RecordSuccessfulLogin(ctx context.Context, userID string, now time.Time, session *Session) error
+	RotateSigningKey(ctx context.Context, next SigningKey, now time.Time) (RotationResult, error)
+}
+
+type Store interface {
+	StoreOperations
+	AtomicStore
 }
 
 // PersistentReporter lets startup validation distinguish production-capable

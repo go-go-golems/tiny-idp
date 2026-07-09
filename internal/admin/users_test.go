@@ -53,7 +53,7 @@ func TestServiceCreateUserRejectsDuplicateExplicitID(t *testing.T) {
 		"memory": func(t *testing.T) idpstore.Store { return memory.New() },
 		"sqlite": func(t *testing.T) idpstore.Store {
 			t.Helper()
-			st, err := sqlitestore.Open(filepath.Join(t.TempDir(), "idp.db"))
+			st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -51,7 +51,7 @@ func TestServiceClientLifecycle(t *testing.T) {
 func TestServiceKeysDoctorAndBackup(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "idp.db")
-	st, err := sqlitestore.Open(path)
+	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(path))
 	if err != nil {
 		t.Fatal(err)
 	}

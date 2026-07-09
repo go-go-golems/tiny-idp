@@ -45,7 +45,7 @@ func run(ctx context.Context) error {
 
 	source := filepath.Join(dir, "source.db")
 	backup := filepath.Join(dir, "backup.db")
-	store, err := sqlitestore.Open(source)
+	store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(source))
 	if err != nil {
 		return fmt.Errorf("open source: %w", err)
 	}
@@ -81,7 +81,7 @@ func run(ctx context.Context) error {
 	}
 	log.Info().Int64("backup_bytes", result.Bytes).Msg("product backup copied only the main database file")
 
-	copyStore, err := sqlitestore.Open(backup)
+	copyStore, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(backup))
 	if err != nil {
 		return fmt.Errorf("backup did not open: %w", err)
 	}

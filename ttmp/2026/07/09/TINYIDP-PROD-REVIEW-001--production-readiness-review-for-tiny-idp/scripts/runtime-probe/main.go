@@ -137,7 +137,7 @@ func run(ctx context.Context, cfg config) error {
 			log.Warn().Err(err).Str("path", dir).Msg("remove runtime probe directory")
 		}
 	}()
-	store, err := sqlitestore.Open(filepath.Join(dir, "runtime.db"))
+	store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(dir, "runtime.db")))
 	if err != nil {
 		return fmt.Errorf("open SQLite: %w", err)
 	}

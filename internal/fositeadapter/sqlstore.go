@@ -276,10 +276,18 @@ func (s *sqlFositeStore) RevokeAccessToken(ctx context.Context, requestID string
 	return err
 }
 func (s *sqlFositeStore) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) error {
-	if err := s.RevokeRefreshToken(ctx, requestID); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	return s.RevokeAccessToken(ctx, requestID)
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `UPDATE fosite_refresh_tokens SET active=0 WHERE request_id=?`, requestID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM fosite_access_tokens WHERE request_id=?`, requestID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *sqlFositeStore) getRequester(ctx context.Context, query, signature string) (fosite.Requester, error) {

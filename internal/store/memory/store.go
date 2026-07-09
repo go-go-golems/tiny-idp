@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -480,12 +481,171 @@ func (s *Store) RetireSigningKey(_ context.Context, kid string) error {
 	if !ok {
 		return idpstore.ErrNotFound
 	}
+	if k.Active {
+		return idpstore.ErrLastSigningKey
+	}
 	k.Active = false
 	if k.NotAfter.IsZero() {
 		k.NotAfter = time.Now()
 	}
 	s.keys[kid] = k
 	return nil
+}
+
+func (s *Store) View(ctx context.Context, fn func(idpstore.ReadStore) error) error {
+	if fn == nil {
+		return errors.New("view callback is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	snapshot := s.cloneLocked()
+	s.mu.Unlock()
+	return fn(snapshot)
+}
+
+func (s *Store) Update(ctx context.Context, fn func(idpstore.TxStore) error) error {
+	if fn == nil {
+		return errors.New("update callback is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot := s.cloneLocked()
+	if err := fn(snapshot); err != nil {
+		return err
+	}
+	s.replaceLocked(snapshot)
+	return nil
+}
+
+func (s *Store) CreateUserWithCredential(ctx context.Context, login string, user idpstore.User, credential idpstore.PasswordCredential) error {
+	return s.Update(ctx, func(tx idpstore.TxStore) error {
+		if err := tx.PutUser(ctx, login, user); err != nil {
+			return err
+		}
+		return tx.PutPasswordCredential(ctx, credential)
+	})
+}
+
+func (s *Store) ReplacePasswordAndSecurityState(ctx context.Context, credential idpstore.PasswordCredential, state idpstore.AccountSecurityState) error {
+	return s.Update(ctx, func(tx idpstore.TxStore) error {
+		if err := tx.PutPasswordCredential(ctx, credential); err != nil {
+			return err
+		}
+		return tx.PutAccountSecurityState(ctx, state)
+	})
+}
+
+func (s *Store) RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy idpstore.LockoutPolicy) (state idpstore.AccountSecurityState, err error) {
+	err = s.Update(ctx, func(tx idpstore.TxStore) error {
+		state, err = tx.GetAccountSecurityState(ctx, userID)
+		if err != nil && !errors.Is(err, idpstore.ErrNotFound) {
+			return err
+		}
+		state.UserID = userID
+		if state.FirstFailedLoginAt == nil || (policy.Window > 0 && now.Sub(*state.FirstFailedLoginAt) > policy.Window) {
+			state.FailedLoginCount = 0
+			first := now
+			state.FirstFailedLoginAt = &first
+		}
+		state.FailedLoginCount++
+		last := now
+		state.LastFailedLoginAt = &last
+		if policy.Threshold > 0 && state.FailedLoginCount >= policy.Threshold {
+			lockedUntil := now.Add(policy.Duration)
+			state.LockedUntil = &lockedUntil
+		}
+		return tx.PutAccountSecurityState(ctx, state)
+	})
+	return state, err
+}
+
+func (s *Store) RecordSuccessfulLogin(ctx context.Context, userID string, now time.Time, session *idpstore.Session) error {
+	return s.Update(ctx, func(tx idpstore.TxStore) error {
+		if err := tx.ResetAccountSecurityState(ctx, userID, now); err != nil {
+			return err
+		}
+		if session != nil {
+			return tx.CreateSession(ctx, *session)
+		}
+		return nil
+	})
+}
+
+func (s *Store) RotateSigningKey(ctx context.Context, next idpstore.SigningKey, now time.Time) (result idpstore.RotationResult, err error) {
+	err = s.Update(ctx, func(tx idpstore.TxStore) error {
+		old, oldErr := tx.ActiveSigningKey(ctx)
+		if oldErr != nil && !errors.Is(oldErr, idpstore.ErrNotFound) {
+			return oldErr
+		}
+		next.Active = true
+		if err := tx.CreateSigningKey(ctx, next); err != nil {
+			return err
+		}
+		if err := tx.ActivateSigningKey(ctx, next.ID); err != nil {
+			return err
+		}
+		if oldErr == nil {
+			retired := old
+			retired.Active = false
+			if retired.NotAfter.IsZero() {
+				retired.NotAfter = now
+			}
+			if err := tx.RetireSigningKey(ctx, old.ID); err != nil {
+				return err
+			}
+			result.Retired = &retired
+		}
+		result.Active = next
+		return nil
+	})
+	return result, err
+}
+
+func (s *Store) cloneLocked() *Store {
+	return &Store{
+		clients:            cloneMap(s.clients),
+		usersByID:          cloneMap(s.usersByID),
+		usersByLogin:       cloneMap(s.usersByLogin),
+		credentialsByUser:  cloneMap(s.credentialsByUser),
+		credentialsByLogin: cloneMap(s.credentialsByLogin),
+		accountSecurity:    cloneMap(s.accountSecurity),
+		grants:             cloneMap(s.grants),
+		codes:              cloneMap(s.codes),
+		access:             cloneMap(s.access),
+		refresh:            cloneMap(s.refresh),
+		consents:           cloneMap(s.consents),
+		sessions:           cloneMap(s.sessions),
+		keys:               cloneMap(s.keys),
+	}
+}
+
+func (s *Store) replaceLocked(next *Store) {
+	s.clients = next.clients
+	s.usersByID = next.usersByID
+	s.usersByLogin = next.usersByLogin
+	s.credentialsByUser = next.credentialsByUser
+	s.credentialsByLogin = next.credentialsByLogin
+	s.accountSecurity = next.accountSecurity
+	s.grants = next.grants
+	s.codes = next.codes
+	s.access = next.access
+	s.refresh = next.refresh
+	s.consents = next.consents
+	s.sessions = next.sessions
+	s.keys = next.keys
+}
+
+func cloneMap[K comparable, V any](source map[K]V) map[K]V {
+	clone := make(map[K]V, len(source))
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
 }
 
 func EqualHash(a, b []byte) bool { return bytes.Equal(a, b) }

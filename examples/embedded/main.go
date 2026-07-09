@@ -13,7 +13,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	st, err := sqlitestore.Open("tinyidp.db")
+	st, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig("tinyidp.db"))
 	if err != nil {
 		log.Fatal(err)
 	}

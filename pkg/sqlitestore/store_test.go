@@ -13,7 +13,7 @@ import (
 
 func TestStoreSuite(t *testing.T) {
 	idpstore.RunStoreSuite(t, func(t *testing.T) idpstore.Store {
-		st, err := sqlitestore.Open(filepath.Join(t.TempDir(), "idp.db"))
+		st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -25,7 +25,7 @@ func TestStoreSuite(t *testing.T) {
 func TestSigningKeyRotationPersistsRetiredVerificationKey(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "idp.db")
-	st, err := sqlitestore.Open(path)
+	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestSigningKeyRotationPersistsRetiredVerificationKey(t *testing.T) {
 	}
 	_ = st.Close()
 
-	st2, err := sqlitestore.Open(path)
+	st2, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestSigningKeyRotationPersistsRetiredVerificationKey(t *testing.T) {
 
 func TestSigningKeyPersistsAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "idp.db")
-	st, err := sqlitestore.Open(path)
+	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestSigningKeyPersistsAcrossRestart(t *testing.T) {
 	}
 	_ = st.Close()
 
-	st2, err := sqlitestore.Open(path)
+	st2, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(path))
 	if err != nil {
 		t.Fatal(err)
 	}

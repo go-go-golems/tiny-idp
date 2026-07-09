@@ -1,6 +1,7 @@
 package cmds
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -170,7 +171,7 @@ func openAdminService(dbPath string) (*admin.Service, func(), error) {
 	if strings.TrimSpace(dbPath) == "" {
 		return nil, nil, fmt.Errorf("--db is required")
 	}
-	st, err := sqlitestore.Open(dbPath)
+	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(dbPath))
 	if err != nil {
 		return nil, nil, err
 	}

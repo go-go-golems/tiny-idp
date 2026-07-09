@@ -25,7 +25,7 @@ printf '%s\n' \
   'var _ idp.RateLimiter = limiter{}' \
   '' \
   'func Build(ctx context.Context, path string) error {' \
-  '  store, err := sqlitestore.Open(path)' \
+  '  store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(path))' \
   '  if err != nil { return err }' \
   '  defer store.Close()' \
   '  var _ idpstore.Store = store' \

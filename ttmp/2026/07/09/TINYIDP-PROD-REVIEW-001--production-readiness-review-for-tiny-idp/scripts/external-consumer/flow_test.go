@@ -40,7 +40,7 @@ func (a fixedAuthenticator) AuthenticatePassword(_ context.Context, login, passw
 
 func TestExternalProductionAuthorizationCodePKCE(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlitestore.Open(filepath.Join(t.TempDir(), "external.db"))
+	store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "external.db")))
 	if err != nil {
 		t.Fatal(err)
 	}

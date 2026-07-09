@@ -78,7 +78,7 @@ func sameFile(source, dest string) (bool, error) {
 }
 
 func VerifySQLiteBackup(ctx context.Context, path string) error {
-	st, err := sqlitestore.Open(path)
+	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(path))
 	if err != nil {
 		return err
 	}

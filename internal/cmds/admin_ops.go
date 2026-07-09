@@ -1,6 +1,7 @@
 package cmds
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -92,7 +93,7 @@ func openAdminStore(dbPath string) (*sqlitestore.Store, func(), error) {
 	if dbPath == "" {
 		return nil, nil, fmt.Errorf("--db is required")
 	}
-	st, err := sqlitestore.Open(dbPath)
+	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(dbPath))
 	if err != nil {
 		return nil, nil, err
 	}

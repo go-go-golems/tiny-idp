@@ -56,7 +56,7 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	dbPath := filepath.Join(dir, "idp.db")
 
 	previousUmask := syscall.Umask(0)
-	store, openErr := sqlitestore.Open(dbPath)
+	store, openErr := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(dbPath))
 	syscall.Umask(previousUmask)
 	if openErr != nil {
 		return fmt.Errorf("open SQLite: %w", openErr)

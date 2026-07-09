@@ -100,10 +100,7 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (idpsto
 		return idpstore.User{}, err
 	}
 	cred.MustChangeAtLogin = req.MustChangeAtLogin
-	if err := s.Store.PutUser(ctx, login, u); err != nil {
-		return idpstore.User{}, err
-	}
-	if err := s.Store.PutPasswordCredential(ctx, cred); err != nil {
+	if err := s.Store.CreateUserWithCredential(ctx, login, u, cred); err != nil {
 		return idpstore.User{}, err
 	}
 	_ = s.Audit.Emit(ctx, idp.Event{Time: now, Name: "admin.user.created", Subject: u.Sub, Result: "accepted"})
@@ -134,10 +131,10 @@ func (s *Service) SetPassword(ctx context.Context, req SetPasswordRequest) error
 		return err
 	}
 	cred.MustChangeAtLogin = req.MustChangeAtLogin
-	if err := s.Store.PutPasswordCredential(ctx, cred); err != nil {
+	state := idpstore.AccountSecurityState{UserID: u.ID, LastSuccessfulLoginAt: &now}
+	if err := s.Store.ReplacePasswordAndSecurityState(ctx, cred, state); err != nil {
 		return err
 	}
-	_ = s.Store.ResetAccountSecurityState(ctx, u.ID, now)
 	_ = s.Audit.Emit(ctx, idp.Event{Time: now, Name: "admin.user.password_changed", Subject: u.Sub, Result: "accepted"})
 	return nil
 }

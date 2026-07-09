@@ -107,7 +107,7 @@ func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, passw
 			if err := s.checkAccountState(ctx, u, idpstore.PasswordCredential{}, now, meta); err != nil {
 				return idp.AuthResult{}, err
 			}
-			_ = s.store.ResetAccountSecurityState(ctx, u.ID, now)
+			_ = s.store.RecordSuccessfulLogin(ctx, u.ID, now, nil)
 			s.emit(ctx, "password.login.success", meta, u.Sub, "")
 			return idp.AuthResult{User: u, AMR: []string{"pwd"}}, nil
 		}
@@ -130,7 +130,7 @@ func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, passw
 			_ = s.store.PutPasswordCredential(ctx, updated)
 		}
 	}
-	_ = s.store.ResetAccountSecurityState(ctx, u.ID, now)
+	_ = s.store.RecordSuccessfulLogin(ctx, u.ID, now, nil)
 	s.emit(ctx, "password.login.success", meta, u.Sub, "")
 	return idp.AuthResult{User: u, MustChangePassword: credential.MustChangeAtLogin, AMR: []string{"pwd"}}, nil
 }
@@ -168,24 +168,12 @@ func (s *PasswordService) checkAccountState(ctx context.Context, u idpstore.User
 }
 
 func (s *PasswordService) recordFailure(ctx context.Context, userID string, now time.Time) error {
-	state, err := s.store.GetAccountSecurityState(ctx, userID)
-	if err != nil && !errors.Is(err, idpstore.ErrNotFound) {
-		return err
-	}
-	state.UserID = userID
-	if state.FirstFailedLoginAt == nil || (s.policy.LockoutWindow > 0 && now.Sub(*state.FirstFailedLoginAt) > s.policy.LockoutWindow) {
-		state.FailedLoginCount = 0
-		first := now
-		state.FirstFailedLoginAt = &first
-	}
-	state.FailedLoginCount++
-	last := now
-	state.LastFailedLoginAt = &last
-	if s.policy.LockoutThreshold > 0 && state.FailedLoginCount >= s.policy.LockoutThreshold {
-		lockedUntil := now.Add(s.policy.LockoutDuration)
-		state.LockedUntil = &lockedUntil
-	}
-	return s.store.PutAccountSecurityState(ctx, state)
+	_, err := s.store.RecordFailedLogin(ctx, userID, now, idpstore.LockoutPolicy{
+		Threshold: s.policy.LockoutThreshold,
+		Window:    s.policy.LockoutWindow,
+		Duration:  s.policy.LockoutDuration,
+	})
+	return err
 }
 
 func (s *PasswordService) rehashCredential(credential idpstore.PasswordCredential, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
