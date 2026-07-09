@@ -28,9 +28,9 @@ import (
 
 	"github.com/manuel/tinyidp/internal/admin"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
-	"github.com/manuel/tinyidp/internal/store/sqlite"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 type config struct {
@@ -137,7 +137,7 @@ func run(ctx context.Context, cfg config) error {
 			log.Warn().Err(err).Str("path", dir).Msg("remove runtime probe directory")
 		}
 	}()
-	store, err := sqlite.Open(filepath.Join(dir, "runtime.db"))
+	store, err := sqlitestore.Open(filepath.Join(dir, "runtime.db"))
 	if err != nil {
 		return fmt.Errorf("open SQLite: %w", err)
 	}

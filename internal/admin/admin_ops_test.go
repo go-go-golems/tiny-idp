@@ -11,8 +11,8 @@ import (
 	"github.com/manuel/tinyidp/internal/admin"
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
-	"github.com/manuel/tinyidp/internal/store/sqlite"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func TestServiceClientLifecycle(t *testing.T) {
@@ -51,7 +51,7 @@ func TestServiceClientLifecycle(t *testing.T) {
 func TestServiceKeysDoctorAndBackup(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "idp.db")
-	st, err := sqlite.Open(path)
+	st, err := sqlitestore.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}

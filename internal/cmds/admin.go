@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/store/sqlite"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func NewAdminCommand() *cobra.Command {
@@ -170,7 +170,7 @@ func openAdminService(dbPath string) (*admin.Service, func(), error) {
 	if strings.TrimSpace(dbPath) == "" {
 		return nil, nil, fmt.Errorf("--db is required")
 	}
-	st, err := sqlite.Open(dbPath)
+	st, err := sqlitestore.Open(dbPath)
 	if err != nil {
 		return nil, nil, err
 	}

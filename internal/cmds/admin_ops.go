@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/store/sqlite"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func newAdminInitCommand(dbPath *string) *cobra.Command {
@@ -43,7 +43,7 @@ func newAdminMigrateCommand(dbPath *string) *cobra.Command {
 		Use:   "migrate",
 		Short: "Apply SQLite migrations",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			names, err := sqlite.MigrationNames()
+			names, err := sqlitestore.MigrationNames()
 			if err != nil {
 				return err
 			}
@@ -88,11 +88,11 @@ func newAdminDoctorCommand(dbPath *string) *cobra.Command {
 	return cmd
 }
 
-func openAdminStore(dbPath string) (*sqlite.Store, func(), error) {
+func openAdminStore(dbPath string) (*sqlitestore.Store, func(), error) {
 	if dbPath == "" {
 		return nil, nil, fmt.Errorf("--db is required")
 	}
-	st, err := sqlite.Open(dbPath)
+	st, err := sqlitestore.Open(dbPath)
 	if err != nil {
 		return nil, nil, err
 	}

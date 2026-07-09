@@ -11,9 +11,9 @@ import (
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
-	"github.com/manuel/tinyidp/internal/store/sqlite"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func TestServiceCreateUserAndAuthenticate(t *testing.T) {
@@ -53,7 +53,7 @@ func TestServiceCreateUserRejectsDuplicateExplicitID(t *testing.T) {
 		"memory": func(t *testing.T) idpstore.Store { return memory.New() },
 		"sqlite": func(t *testing.T) idpstore.Store {
 			t.Helper()
-			st, err := sqlite.Open(filepath.Join(t.TempDir(), "idp.db"))
+			st, err := sqlitestore.Open(filepath.Join(t.TempDir(), "idp.db"))
 			if err != nil {
 				t.Fatal(err)
 			}

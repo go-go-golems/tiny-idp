@@ -1,4 +1,4 @@
-package sqlite_test
+package sqlitestore_test
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/store/sqlite"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func TestStoreSuite(t *testing.T) {
 	idpstore.RunStoreSuite(t, func(t *testing.T) idpstore.Store {
-		st, err := sqlite.Open(filepath.Join(t.TempDir(), "idp.db"))
+		st, err := sqlitestore.Open(filepath.Join(t.TempDir(), "idp.db"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -25,7 +25,7 @@ func TestStoreSuite(t *testing.T) {
 func TestSigningKeyRotationPersistsRetiredVerificationKey(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "idp.db")
-	st, err := sqlite.Open(path)
+	st, err := sqlitestore.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestSigningKeyRotationPersistsRetiredVerificationKey(t *testing.T) {
 	}
 	_ = st.Close()
 
-	st2, err := sqlite.Open(path)
+	st2, err := sqlitestore.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestSigningKeyRotationPersistsRetiredVerificationKey(t *testing.T) {
 
 func TestSigningKeyPersistsAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "idp.db")
-	st, err := sqlite.Open(path)
+	st, err := sqlitestore.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestSigningKeyPersistsAcrossRestart(t *testing.T) {
 	}
 	_ = st.Close()
 
-	st2, err := sqlite.Open(path)
+	st2, err := sqlitestore.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}

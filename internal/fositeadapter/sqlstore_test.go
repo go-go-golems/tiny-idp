@@ -14,15 +14,15 @@ import (
 
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/store/sqlite"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "idp.db")
 	secretKey := []byte("sqlite-fosite-secret-key-32-bytes")
-	st, err := sqlite.Open(dbPath)
+	st, err := sqlitestore.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
 func TestFositeSQLiteClientWithEmptyScopesRejectsRequestedScope(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "idp.db")
-	st, err := sqlite.Open(dbPath)
+	st, err := sqlitestore.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestFositeSQLiteDisabledClientRejectsPersistedAuthorizationCode(t *testing.
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "idp.db")
 	secretKey := []byte("sqlite-fosite-secret-key-32-bytes")
-	st, err := sqlite.Open(dbPath)
+	st, err := sqlitestore.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "idp.db")
 	secretKey := []byte("sqlite-fosite-secret-key-32-bytes")
 
-	st, err := sqlite.Open(dbPath)
+	st, err := sqlitestore.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st2, err := sqlite.Open(dbPath)
+	st2, err := sqlitestore.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st3, err := sqlite.Open(dbPath)
+	st3, err := sqlitestore.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}

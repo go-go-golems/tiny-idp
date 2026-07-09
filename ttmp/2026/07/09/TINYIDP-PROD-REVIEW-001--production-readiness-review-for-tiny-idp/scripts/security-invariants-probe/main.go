@@ -18,9 +18,9 @@ import (
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/passwordhash"
-	"github.com/manuel/tinyidp/internal/store/sqlite"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func main() {
@@ -56,7 +56,7 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	dbPath := filepath.Join(dir, "idp.db")
 
 	previousUmask := syscall.Umask(0)
-	store, openErr := sqlite.Open(dbPath)
+	store, openErr := sqlitestore.Open(dbPath)
 	syscall.Umask(previousUmask)
 	if openErr != nil {
 		return fmt.Errorf("open SQLite: %w", openErr)
@@ -137,7 +137,7 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	return nil
 }
 
-func probeConcurrentLockout(ctx context.Context, store *sqlite.Store, passwords *authn.PasswordService, rounds, attempts int) (int, int, bool, error) {
+func probeConcurrentLockout(ctx context.Context, store *sqlitestore.Store, passwords *authn.PasswordService, rounds, attempts int) (int, int, bool, error) {
 	user, err := store.GetUserByLogin(ctx, "short-password-user")
 	if err != nil {
 		return 0, 0, false, err

@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/manuel/tinyidp/internal/store/sqlite"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 type BackupResult struct {
@@ -78,7 +78,7 @@ func sameFile(source, dest string) (bool, error) {
 }
 
 func VerifySQLiteBackup(ctx context.Context, path string) error {
-	st, err := sqlite.Open(path)
+	st, err := sqlitestore.Open(path)
 	if err != nil {
 		return err
 	}
