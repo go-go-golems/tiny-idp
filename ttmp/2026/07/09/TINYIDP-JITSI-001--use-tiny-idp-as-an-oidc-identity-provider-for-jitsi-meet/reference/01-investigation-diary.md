@@ -132,6 +132,15 @@ architecture + diagrams, claim-mapping table + pseudocode, API references, 4 ADR
 phased implementation plan, testing strategy, risks/alternatives, intern onboarding). Committed research + probes as
 `85b3fde` (ticket dir only; the 60 MB built binary is git-ignored, never committed).
 
+## Step 5 — Finalize
+
+`docmgr doctor --ticket TINYIDP-JITSI-001` initially warned about (a) unknown vocab topics
+(`architecture`/`authentication`/`jitsi`/`research`) and (b) four `missing_related_file` entries. Cause of (b):
+I prefixed the relate paths with `$ABS/tiny-idp/internal/...` but `$ABS` already ended in `tiny-idp`, so the stored
+`repo://` paths were doubled. Fixed by adding the vocab topics and rewriting the four RelatedFiles paths to
+`repo://internal/...`. Doctor now passes clean (all checks passed). Uploaded the bundle (index, design guide, diary,
+tasks, changelog) to reMarkable at `/ai/2026/07/09/TINYIDP-JITSI-001` via `remarquee upload bundle`.
+
 ## Open questions being tracked
 
 - Does any Jitsi component accept a **JWKS URL** directly, or is PEM-by-kid the only RS256 path? (Affects whether a shim is mandatory.)
