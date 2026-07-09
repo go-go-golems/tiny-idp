@@ -14,17 +14,21 @@ Intent: long-term
 Owners: []
 RelatedFiles:
     - Path: repo://internal/admin/backup.go
-      Note: WAL-unsafe backup and mutating verification behavior
+      Note: Admin wrapper over verified online backup and offline restore
     - Path: repo://internal/authn/password.go
       Note: Password verification and lockout transition behavior
     - Path: repo://internal/fositeadapter/provider.go
       Note: Strict OAuth and OIDC composition and route ownership
-    - Path: repo://pkg/idpstore/interfaces.go
-      Note: Public durable record and persistence contracts introduced in Phase 1
-    - Path: repo://pkg/sqlitestore/store.go
-      Note: Public durable SQLite implementation and migrations introduced in Phase 1
     - Path: repo://pkg/embeddedidp/options.go
       Note: Public context-aware construction and validation boundary
+    - Path: repo://pkg/idpstore/interfaces.go
+      Note: Public durable record and persistence contracts introduced in Phase 1
+    - Path: repo://pkg/sqlitestore/backup.go
+      Note: Implemented Phase 2 online backup verification atomic publication and offline restore (commit 7cd13b4)
+    - Path: repo://pkg/sqlitestore/backup_test.go
+      Note: Phase 2 WAL concurrency corruption interruption permission and restore evidence
+    - Path: repo://pkg/sqlitestore/store.go
+      Note: Public durable SQLite implementation and migrations introduced in Phase 1
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/design-doc/01-tiny-idp-production-readiness-architecture-and-code-review.md
       Note: Source findings and release gate
 ExternalSources: []
@@ -33,6 +37,7 @@ LastUpdated: 2026-07-09T17:37:01.014365676-04:00
 WhatFor: Guiding implementation and review of the production embedding API and every release-hardening phase.
 WhenToUse: Read before implementing a phase, reviewing a hardening change, onboarding to tiny-idp, or assessing release evidence.
 ---
+
 
 
 # Production embedding API and release implementation guide
@@ -45,12 +50,21 @@ Fosite, durable domain state, password authentication, browser sessions,
 consent, signing keys, and OAuth/OIDC protocol storage. Production deployment is
 supposed to embed the strict engine's `http.Handler` in a host Go process.
 
-The current strict engine has a sound foundation, but the reviewed commit must
-not ship. Its exported construction API mentions Go `internal/` types, so an
-external module cannot construct the only production-shaped provider. The same
-review also reproduced reachable dependency vulnerabilities, WAL-unsafe backup,
-non-atomic security transitions, bypassable abuse controls, lost concurrent
-lockout updates, and permissive SQLite file creation.
+The strict engine had a sound foundation, but the reviewed baseline could not
+ship. Its exported construction API mentioned Go `internal/` types, so an
+external module could not construct the only production-shaped provider. The
+same review also reproduced reachable dependency vulnerabilities, WAL-unsafe
+backup, non-atomic security transitions, bypassable abuse controls, lost
+concurrent lockout updates, and permissive SQLite file creation.
+
+As of 2026-07-09, Phases 0, 1, and 2 are implemented. The selected dependency
+graph is vulnerability-clean; the public embedding API is consumable from an
+outside module and passes a TLS Authorization Code + S256 PKCE flow; and SQLite
+now has explicit transactions, named invariant operations, checksummed
+migrations, online backup, read-only verification, atomic publication, and
+verified offline restore. Sections labeled “current state” describe the review
+baseline unless an “implemented state” subsection says otherwise. Phases 3–5
+remain release blockers.
 
 This guide turns those findings into an ordered implementation program:
 
@@ -592,6 +606,243 @@ Restore is a separate operation:
 4. atomically install the verified artifact;
 5. reopen, run readiness, and complete a strict smoke flow;
 6. retain the rollback copy until operator acceptance.
+
+## Implemented Phase 1 and Phase 2 Reference
+
+This section records what the code does after Phases 1 and 2. It is the bridge
+between the earlier proposed design and the concrete API an intern will review.
+The public boundary is intentionally small: host applications import
+`pkg/embeddedidp`, `pkg/idp`, `pkg/idpstore`, and `pkg/sqlitestore`; Fosite and
+`database/sql` remain implementation details.
+
+### Phase 1 host-facing API
+
+Construction is context-aware and accepts only public or standard-library
+types (`pkg/embeddedidp/options.go`). In production mode, validation rejects a
+missing or unsafe component before any handler is returned:
+
+- HTTPS issuer and production-valid clients;
+- secure cookies and at least 32 bytes of token secret;
+- explicit audit sink, rate limiter, and client-address resolver;
+- a store reporting persistence and a positive schema version;
+- exactly one currently usable RS256 key;
+- parseable RSA private key with a modulus of at least 2048 bits.
+
+The lifecycle is:
+
+```text
+host startup context
+  -> sqlitestore.Open(ctx, Config)
+  -> provisioned clients/users/key already present
+  -> embeddedidp.New(ctx, Options)
+  -> provider.Readiness(ctx)
+  -> mount provider.Handler() in host HTTP server
+  -> host stops accepting traffic
+  -> provider.Close(shutdownCtx) (idempotent)
+  -> store.Close()
+```
+
+The host owns the store and HTTP server. `Provider.Close` does not close the
+injected store. The external fixture in the production-review ticket imports
+only public packages, starts a TLS test server, submits the CSRF login form,
+exchanges an authorization code with S256 PKCE, checks access and ID tokens,
+checks readiness, and closes.
+
+### Phase 2 public transaction API
+
+The transaction interfaces are defined at
+`pkg/idpstore/interfaces.go:105-160`. `ReadStore` exposes reads, while `TxStore`
+exposes domain operations within one implementation transaction. Neither
+mentions `*sql.DB`, `*sql.Tx`, nor SQLite driver types.
+
+```go
+err := store.Update(ctx, func(tx idpstore.TxStore) error {
+    if err := tx.PutUser(ctx, login, user); err != nil {
+        return err
+    }
+    return tx.PutPasswordCredential(ctx, credential)
+})
+```
+
+The named `CreateUserWithCredential` method packages this example so callers do
+not need to reproduce it. The SQLite callback implementation begins one
+`sql.Tx`, constructs a scoped store whose query runner is that transaction,
+preserves the callback error, and commits only after success
+(`pkg/sqlitestore/store.go:787-837`). The memory implementation clones every
+map, runs the callback against the clone, and replaces live maps only after
+success. Both reject a nested transaction with
+`idpstore.ErrNestedTransaction`.
+
+An important review rule is that “a method uses a mutex” does not imply “the
+method is transactional.” The mutex can serialize goroutines in one process;
+only the database transaction gives rollback and database-level isolation.
+
+### Complete multi-record transition inventory
+
+| Security transition | Before Phase 2 risk | Implemented boundary | Primary call site |
+|---|---|---|---|
+| User plus password credential | credential failure left an orphan user | `CreateUserWithCredential` | `internal/admin/users.go:67-107` |
+| Password plus security reset | reset failure left stale lockout state | `ReplacePasswordAndSecurityState` | `internal/admin/users.go:116-139` |
+| Failed-login increment | read/modify/write lost concurrent increments | `RecordFailedLogin` | `internal/authn/password.go:170-176` |
+| Successful-login reset plus optional session | partial success state | `RecordSuccessfulLogin` | password service and future session callers |
+| Authorization-code consumption | two consumers could pass the read | root call opens `Update`; scoped call validates and marks | `pkg/sqlitestore/store.go` |
+| Refresh-token replacement | old link could commit without new token | root call opens `Update`; scoped call writes both | `pkg/sqlitestore/store.go` |
+| Refresh reuse and family revocation | some family rows could remain live | reuse outcome commits detection and all revocations before returning the sentinel | `pkg/sqlitestore/store.go:557-596` |
+| Signing-key rotation | create/activate/retire could stop midway | `RotateSigningKey` | `internal/admin/keys.go:18-47` |
+| Fosite refresh/access revocation | one protocol token class could remain | one direct `sql.Tx` | `internal/fositeadapter/sqlstore.go:278-290` |
+
+The refresh-reuse case has subtle control flow. Reuse is an expected security
+outcome, but returning `ErrRefreshReuseDetected` directly from an `Update`
+callback would roll back the evidence and revocations. The root method therefore
+captures that outcome, lets the callback return `nil` so the security changes
+commit, and returns the sentinel only after commit:
+
+```text
+Update callback:
+    result, outcome = scoped.RotateRefreshToken(...)
+    if outcome == reuse-detected:
+        return nil             # commit detection + family revocation
+    return outcome             # real storage failures roll back
+after Update:
+    return result, outcome
+```
+
+### Key uniqueness and retirement
+
+Migration `003_signing_key_invariants.sql` adds a partial unique index for rows
+whose `active` column is one. Activation runs inside a transaction and first
+sets every row's scalar active column to zero, then updates the serialized key
+records and activates the target (`pkg/sqlitestore/store.go:702-752`). This
+ordering avoids a transient unique-index violation.
+
+Direct retirement of the active key returns `idpstore.ErrLastSigningKey`.
+Rotation generates the replacement, creates it inactive, makes it the unique
+active key, and retires the previous key within one transaction. The retired
+key remains a verification key until later retention work.
+
+### Migration ledger
+
+`MigrationNames` requires contiguous numeric prefixes beginning at one
+(`pkg/sqlitestore/store.go:185-207`). `Migrate` creates
+`schema_migrations(version, name, checksum, applied_at)`, computes SHA-256 over
+the exact embedded SQL, and either verifies the existing checksum or applies
+and records the migration in one transaction
+(`pkg/sqlitestore/store.go:212-268`).
+
+This makes three failure classes explicit:
+
+1. a missing or misordered migration fails before SQL execution;
+2. a modified historical migration fails checksum verification;
+3. failed new SQL rolls back and does not receive a ledger row.
+
+The schema version reported to production preflight is the maximum committed
+ledger version, not the number of files currently embedded in the binary.
+
+### SQLite configuration and topology
+
+The public configuration is `pkg/sqlitestore.Config`:
+
+```go
+type Config struct {
+    Path               string
+    BusyTimeout        time.Duration
+    JournalMode        string
+    Synchronous        string
+    MaxOpenConnections int
+}
+```
+
+`DefaultConfig` chooses a five-second busy timeout, WAL, `FULL`, foreign keys,
+and one connection. The implementation rejects any connection count other than
+one. That is a supported-topology assertion, not a tuning suggestion: it keeps
+connection-local PRAGMAs deterministic and matches the single-active-node
+design decision.
+
+The supported filesystem must provide SQLite locking, atomic same-filesystem
+rename, file fsync, and directory fsync. Local POSIX filesystems are in scope.
+NFS, SMB/CIFS, distributed filesystems, object-store mounts, and multiple active
+processes are not supported without separate qualification. The main DB, WAL,
+and SHM are forced to `0600`.
+
+### Online backup data flow
+
+The implementation lives in `pkg/sqlitestore/backup.go`. It reserves the sole
+source connection, which gives a stable in-process ordering point, captures a
+logical manifest, and uses `github.com/mattn/go-sqlite3.SQLiteConn.Backup` in
+bounded page batches:
+
+```text
+source DB (possibly committed pages in WAL)
+     |
+     | sqlite3_backup, 128 pages/step, context checked
+     v
+0600 temp DB in destination directory
+     |
+     | read-only immutable open
+     | integrity_check + schema + checksums + row counts + active key IDs
+     v
+fsync(temp) -> fsync(directory) -> rename(temp, final) -> fsync(directory)
+```
+
+The manifest covers every domain and Fosite table, every migration checksum,
+the highest committed schema version, and the ordered active-key IDs. A backup
+whose integrity is valid but whose logical manifest differs from the source
+snapshot is not published.
+
+Temporary and final backup files are `0600`; their dedicated directory is
+`0700`. The function refuses `/` and the shared system temp directory because
+changing either directory's mode would be unsafe. Before atomic rename, every
+error removes only the temporary path and preserves an existing published
+backup. This includes cancellation and injected `ENOSPC`.
+
+### Read-only verification and offline restore
+
+`VerifyBackup` uses a `file:` URI with `mode=ro&immutable=1`. It does not call
+`Open`, run migrations, create a journal, or rewrite metadata. Verification
+requires:
+
+1. `PRAGMA integrity_check` equals `ok`;
+2. schema version equals the current supported version;
+3. stored migration checksums equal the embedded SQL;
+4. optional expected manifest equals the artifact manifest.
+
+Restore is intentionally not an online operation. It first verifies the source,
+refuses a destination with `-wal` or `-shm`, copies with context checks into a
+same-directory `0600` temporary file, verifies that staged file again, preserves
+an existing main DB as `.pre-restore-<timestamp>`, atomically installs the
+staged file, and fsyncs the directory. The operator keeps the rollback copy
+until reopening, readiness, and a strict OIDC smoke flow succeed.
+
+### Phase 2 failure evidence
+
+The test suite is designed around the old-or-new-state rule:
+
+- callback injection and a credential conflict prove no orphan user or
+  credential (`pkg/sqlitestore/transaction_test.go:18-55`);
+- 24 simultaneous failed-login writers produce exactly 24 increments and a
+  lock (`pkg/sqlitestore/transaction_test.go:57-85`);
+- invalid active-key state proves a failed migration is not recorded, and a
+  tampered checksum prevents reopen
+  (`pkg/sqlitestore/transaction_test.go:87-134`);
+- a non-empty committed WAL is present before backup, and its client record is
+  present after restore (`pkg/sqlitestore/backup_test.go:16-82`);
+- restore preserves rollback data and refuses corruption
+  (`pkg/sqlitestore/backup_test.go:84-124`);
+- cancellation preserves the last published artifact and leaves no temp file
+  (`pkg/sqlitestore/backup_test.go:126-155`);
+- a held connection obeys context deadline rather than hanging
+  (`pkg/sqlitestore/backup_test.go:157-171`);
+- concurrent writers produce a self-consistent verifiable backup
+  (`pkg/sqlitestore/backup_test.go:173-204`);
+- an injected `syscall.ENOSPC` preserves the last good backup
+  (`pkg/sqlitestore/backup_fault_test.go`).
+
+The repository-specific Go analyzer `tinyidpatomicity` is implemented with
+`go/ast`, `go/types`, and `golang.org/x/tools/go/analysis`. It scans the admin,
+Fosite adapter, and public SQLite packages for functions containing multiple
+persistence mutations without `Begin`, `BeginTx`, `Update`, or a named atomic
+boundary. Transaction-scoped helpers require an explicit source directive, so
+future open-coded multi-write paths become review diagnostics.
 
 ## Authentication and Abuse-Control Design
 

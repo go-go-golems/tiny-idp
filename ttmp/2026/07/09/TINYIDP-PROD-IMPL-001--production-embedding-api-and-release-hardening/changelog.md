@@ -55,3 +55,30 @@ Steps 8-9: published store, policy, and SQLite packages and replaced embedding c
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Replacement embedding lifecycle
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/store.go — Public durable store
+
+## 2026-07-09
+
+Step 10: closed production construction and the outside-module TLS Authorization Code plus S256 PKCE gate (commit 88e29fd)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Production preflight requirements
+
+
+## 2026-07-09
+
+Step 11: implemented public transactions, named security invariants, checksummed migrations, and concurrent rollback evidence (commit df72fdd)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/store.go — Transactional SQLite and migration implementation
+
+
+## 2026-07-09
+
+Step 12: completed and verified online backup, atomic publication, offline restore, Phase 1 gate, and Phase 2 gate (commit 7cd13b4)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/backup.go — Verified recovery implementation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md — Checked Phase 1 and Phase 2 gates

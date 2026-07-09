@@ -30,40 +30,40 @@ tasks so partial implementation never looks like phase completion.
 - [x] Inventory every type currently crossing `pkg/embeddedidp` into `internal/` packages.
 - [x] Define public identity, policy, audit, limiter, authenticator, and store contracts without Fosite types.
 - [x] Create `pkg/idp` for stable public policy and runtime contracts.
-- [ ] Create `pkg/idpstore` for public records, read contracts, transactions, and invariant operations.
+- [x] Create `pkg/idpstore` for public records, read contracts, transactions, and invariant operations.
 - [x] Create `pkg/sqlitestore` as the supported durable implementation.
 - [x] Replace `embeddedidp.Options` with public or standard-library types only.
 - [x] Change construction to `New(ctx, Options)` and propagate startup cancellation.
 - [x] Add `Readiness(ctx)` with structured component results.
 - [x] Add idempotent `Close(ctx)` and document host/provider lifecycle ownership.
-- [ ] Fail production construction on missing audit, limiter, client-address, secret, schema, key, or persistent-store requirements.
+- [x] Fail production construction on missing audit, limiter, client-address, secret, schema, key, or persistent-store requirements.
 - [x] Delete the unusable pre-release surface directly; add no compatibility shim.
 - [x] Update repository examples and README to use only public packages.
 - [x] Convert the external-consumer failure probe into a separate-module positive integration test.
-- [ ] Complete Authorization Code + PKCE through the external-module fixture backed by public SQLite.
-- [ ] Phase 1 gate: an external application compiles, starts, checks readiness, completes strict OIDC, and shuts down cleanly.
+- [x] Complete Authorization Code + PKCE through the external-module fixture backed by public SQLite.
+- [x] Phase 1 gate: an external application compiles, starts, checks readiness, completes strict OIDC, and shuts down cleanly.
 
 ## Phase 2 — transactional persistence, backup, and restore
 
-- [ ] Document every security transition spanning multiple SQL statements or tables.
-- [ ] Define `View` and `Update` transaction boundaries without exposing raw driver types.
-- [ ] Implement atomic user-plus-credential creation.
-- [ ] Implement atomic password-plus-security-state replacement.
-- [ ] Implement atomic failed-login increment and lockout derivation.
-- [ ] Implement atomic success reset and session creation where required.
-- [ ] Implement atomic refresh rotation and reuse-family revocation.
-- [ ] Implement atomic signing-key activation, retirement, and last-key protection.
-- [ ] Add schema-level active-key and uniqueness protections where SQLite permits them.
-- [ ] Add explicit schema versions, migration ordering, and migration checksums.
-- [ ] Make migrations transactional and add upgrade failure-injection tests.
-- [ ] Replace raw file-copy backup with SQLite online backup semantics.
-- [ ] Write backups to owner-only temporary files and atomically publish after `fsync`.
-- [ ] Verify backups read-only with `integrity_check`, schema version, and source manifest comparisons.
-- [ ] Add a restore command/path that refuses incompatible or failed verification artifacts.
-- [ ] Enforce owner-only database, WAL, SHM, backup directory, and backup file permissions.
-- [ ] Configure and document busy timeout, journal mode, synchronous policy, connection limits, and supported filesystems.
-- [ ] Add concurrent-writer, WAL backup, restore, corruption, disk-full, busy-lock, and interruption tests.
-- [ ] Phase 2 gate: invariant, failure-injection, backup, and restore suites pass without silent partial state.
+- [x] Document every security transition spanning multiple SQL statements or tables.
+- [x] Define `View` and `Update` transaction boundaries without exposing raw driver types.
+- [x] Implement atomic user-plus-credential creation.
+- [x] Implement atomic password-plus-security-state replacement.
+- [x] Implement atomic failed-login increment and lockout derivation.
+- [x] Implement atomic success reset and session creation where required.
+- [x] Implement atomic refresh rotation and reuse-family revocation.
+- [x] Implement atomic signing-key activation, retirement, and last-key protection.
+- [x] Add schema-level active-key and uniqueness protections where SQLite permits them.
+- [x] Add explicit schema versions, migration ordering, and migration checksums.
+- [x] Make migrations transactional and add upgrade failure-injection tests.
+- [x] Replace raw file-copy backup with SQLite online backup semantics.
+- [x] Write backups to owner-only temporary files and atomically publish after `fsync`.
+- [x] Verify backups read-only with `integrity_check`, schema version, and source manifest comparisons.
+- [x] Add a restore command/path that refuses incompatible or failed verification artifacts.
+- [x] Enforce owner-only database, WAL, SHM, backup directory, and backup file permissions.
+- [x] Configure and document busy timeout, journal mode, synchronous policy, connection limits, and supported filesystems.
+- [x] Add concurrent-writer, WAL backup, restore, corruption, disk-full, busy-lock, and interruption tests.
+- [x] Phase 2 gate: invariant, failure-injection, backup, and restore suites pass without silent partial state.
 
 ## Phase 3 — mandatory authentication and abuse controls
 

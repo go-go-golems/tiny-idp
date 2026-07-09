@@ -31,6 +31,10 @@ RelatedFiles:
       Note: Public policy authentication and readiness contracts (commit 0bcbf24)
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Public durable store contracts (commit e042a15)
+    - Path: repo://pkg/sqlitestore/backup.go
+      Note: Step 12 verified recovery implementation (commit 7cd13b4)
+    - Path: repo://pkg/sqlitestore/backup_test.go
+      Note: Step 12 recovery and fault gate evidence
     - Path: repo://pkg/sqlitestore/store.go
       Note: Public SQLite implementation (commit 24c9a92)
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/01-production-embedding-api-and-release-implementation-guide.md
@@ -43,6 +47,7 @@ LastUpdated: 2026-07-09T17:37:01.160328301-04:00
 WhatFor: Preserving decisions, exact commands, failures, commits, verification, and continuation instructions across the multi-phase hardening effort.
 WhenToUse: Read before resuming work, reviewing a phase, investigating a regression, or assembling release evidence.
 ---
+
 
 
 
@@ -1247,3 +1252,427 @@ external module compile: PASS
 - `pkg/idp/contracts.go`
 - `pkg/idpstore/interfaces.go`
 - `pkg/sqlitestore/store.go`
+
+## Step 10: Close the production embedding preflight and external flow
+
+This step converted Phase 1's production-mode expectations into constructor
+invariants and extended the outside-module test from compilation to a complete
+Authorization Code + PKCE exchange. The fixture deliberately imports only the
+public packages, provisions public SQLite, serves the provider over test TLS,
+checks readiness, follows the CSRF-protected login form, exchanges the code,
+checks both tokens, and closes cleanly.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue, do ll of phase 1 and phase 2"
+
+**Assistant interpretation:** Finish every unchecked Phase 1 acceptance item,
+then continue directly into all Phase 2 durability work.
+
+**Inferred user intent:** Require executable release evidence rather than
+checking tasks based only on implementation inspection.
+
+**Commit (code):** `88e29fd` — "feat: enforce production embedding preflight"
+
+### What I did
+
+- Added the public client-address resolver contract and a direct-address
+  implementation for non-proxy deployments.
+- Required production audit, limiter, client-address resolution, durable store,
+  current schema, token secret, and a valid active RS256 key.
+- Parsed the active private key at startup and rejected non-RSA or sub-2048-bit
+  keys, expired keys, and multiple active verification keys.
+- Forwarded the resolved address into login metadata and limiter keys.
+- Added an external-module TLS flow using public SQLite, public provisioning
+  records, a public authenticator, a public limiter, and S256 PKCE.
+
+### Why
+
+- A production mode that silently supplies permissive defaults is a label, not
+  a security boundary.
+- A compile-only consumer test cannot prove that the exported contracts compose
+  into an operational provider.
+
+### What worked
+
+- The external fixture completed Authorization Code + PKCE and returned access
+  and ID tokens.
+- Production constructor tests and the complete repository suite passed.
+- The external script reported:
+
+  ```text
+  OK: external production embedding compiles and completes Authorization Code + PKCE
+  ```
+
+### What didn't work
+
+- No failed implementation attempt occurred in this slice.
+
+### What I learned
+
+- The public boundary is now sufficient for a real host without importing
+  Fosite or any `internal/` package.
+- Trusted-proxy interpretation remains deliberately host-owned; the provider
+  consumes the resolved address through a narrow interface.
+
+### What warrants a second pair of eyes
+
+- Confirm the production key floor and accepted algorithm remain RS256 with RSA
+  2048 bits for the first release.
+- Review the external fixture whenever the login form or public construction
+  contract changes.
+
+### Code review instructions
+
+- Start with `pkg/embeddedidp/options.go`, then follow resolver use through
+  `pkg/embeddedidp/provider.go` and `internal/fositeadapter/provider.go`.
+- Run the external API smoke script from the production-review ticket.
+
+### Technical details
+
+```text
+production preflight: PASS
+external module compile: PASS
+external TLS Authorization Code + S256 PKCE: PASS
+targeted race: PASS
+```
+
+## Step 11: Introduce atomic store operations and a migration ledger
+
+This step made transaction boundaries part of the public storage contract and
+implemented them in memory and SQLite. It then moved the security-sensitive
+call sites onto named invariant operations, added active-key schema protection,
+and replaced implicit migration counting with ordered checksummed records.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 10)
+
+**Assistant interpretation:** Implement the transactional half of Phase 2 first
+so online backup and restore can rely on a deterministic database policy.
+
+**Inferred user intent:** Eliminate partial security state and lost updates
+under concurrency before calling the SQLite deployment production-ready.
+
+**Commit (code):** `df72fdd` — "feat: make identity persistence transitions atomic"
+
+### What I did
+
+- Added `ReadStore`, `TxStore`, `View`, `Update`, and named atomic operations to
+  `pkg/idpstore` without exposing `database/sql` or driver types.
+- Implemented copy-on-commit transactions in memory and `sql.Tx`-scoped store
+  callbacks in SQLite.
+- Made user-plus-credential creation, password/security reset, failed-login
+  update, successful-login reset/session creation, and signing-key rotation
+  atomic.
+- Made Fosite refresh/access revocation commit as one SQLite transaction.
+- Added the partial unique active-signing-key index and final-active-key
+  retirement rejection.
+- Added a schema migration ledger with numeric ordering, SHA-256 checksums, and
+  one transaction per migration.
+- Replaced the public SQLite opening surface directly with
+  `Open(ctx, Config)`, secure defaults, WAL, `FULL` synchronous mode, a five
+  second busy timeout, one connection, and owner-only DB/WAL/SHM modes.
+- Added rollback, conflict, concurrent lockout-counter, and failed-migration
+  tests.
+
+### Why
+
+- A process mutex cannot provide rollback and cannot protect another process.
+- Named operations document invariants at the call boundary and are easier to
+  fault-test than open-coded sequences.
+- Migration names alone do not prove what SQL was applied; stored checksums do.
+
+### What worked
+
+- Twenty-four simultaneous failed-login writers produced a count of 24 with no
+  lost update and the expected lock.
+- Callback failure and credential conflict left no partially committed user.
+- A deliberately invalid active-key state made migration 003 fail without
+  recording migration 003.
+- Targeted race tests and the updated external production flow passed.
+
+### What didn't work
+
+- The first compile after adding `AtomicStore` correctly exposed missing SQLite
+  methods and a missing `errors` import:
+
+  ```text
+  *Store does not implement idpstore.Store (missing method CreateUserWithCredential)
+  internal/store/memory/store.go:493:10: undefined: errors
+  ```
+
+  Implementing the SQLite transaction surface and importing `errors` resolved
+  both; the next targeted test passed.
+- The direct `Open(ctx, Config)` API rewrite exposed missing `context` imports in
+  two command files. Adding those imports fixed the only build failure; the
+  full suite then passed.
+
+### What I learned
+
+- A one-connection pool is an intentional part of the supported single-active-
+  node envelope: it serializes security writers and prevents connection-local
+  PRAGMA drift.
+- Active-key uniqueness requires deactivating every row before activating the
+  target, otherwise the partial unique index can reject a valid rotation.
+
+### What was tricky to build
+
+- Transaction-scoped store methods must dispatch every query through the
+  injected runner while lifecycle, migration, and raw adapter access still use
+  the owning `*sql.DB`.
+- Memory transactions need a complete snapshot so callback failure cannot leak
+  writes into the live maps.
+
+### What warrants a second pair of eyes
+
+- Review the store interface size before the first public release.
+- Review whether the single-connection default should ever be configurable
+  above one for this SQLite implementation; current production guidance should
+  keep it at one.
+
+### What should be done in the future
+
+- Add online backup, read-only verification, atomic publication, and verified
+  restore before closing Phase 2.
+- Add nested-transaction misuse detection if future call sites accept both a
+  root store and a transaction-scoped store.
+
+### Code review instructions
+
+- Review `pkg/idpstore/interfaces.go`, then the two implementations, then
+  `pkg/sqlitestore/transaction_test.go`.
+- Run `go test -race ./pkg/sqlitestore ./internal/store/memory ./internal/authn`.
+
+### Technical details
+
+```text
+SQLite: WAL, synchronous=FULL, busy_timeout=5000ms, max connections=1
+migrations: ordered integer version + SHA-256 checksum + transactional apply
+rollback tests: PASS
+24-writer lockout test: PASS under race detector
+external production flow: PASS
+```
+
+## Step 12: Finish verified online backup, offline restore, and Phase 1–2 gates
+
+This step completed the recovery half of Phase 2 and then audited the entire
+Phase 1/2 surface as one release gate. The main database is no longer copied as
+a regular file: the store now takes a SQLite online snapshot, proves its
+logical identity, and publishes it only after durability operations succeed.
+Restore is a separate stopped-provider operation with two verification passes
+and a preserved rollback database.
+
+The resumed review also found and corrected two edge cases that the first green
+tests did not expose: a successful backup object could be finalized twice, and
+SQLite BUSY can appear as “not done, no error,” which would otherwise spin.
+This is why the phase gate includes source review and repository-specific AST
+analysis in addition to tests.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue, phase 1 and phase 2"
+
+**Assistant interpretation:** Resume after the repository-mandated debugging
+pause and finish every implementation, evidence, documentation, and delivery
+item in Phases 1 and 2.
+
+**Inferred user intent:** Reach durable long-running checkpoints where both
+phases are genuinely reviewable and checked, without treating a temporary
+compile error or green happy-path test as completion.
+
+**Commit (code):** `7cd13b4` — "feat: add verified sqlite backup and restore"
+
+### What I did
+
+- Added `Store.Backup`, `VerifyBackup`, and `Restore` in
+  `pkg/sqlitestore/backup.go`.
+- Used `SQLiteConn.Backup` in 128-page steps with context checks and bounded
+  retry pacing.
+- Captured and compared schema version, every migration checksum, every domain
+  and Fosite table count, and active signing-key IDs.
+- Verified artifacts with a read-only immutable connection and
+  `PRAGMA integrity_check` without invoking migrations.
+- Added mode-`0600` staging/final files, mode-`0700` dedicated directories,
+  file/directory fsync, same-filesystem rename, and pre-rename cancellation
+  checks.
+- Added offline restore with sidecar refusal, cancellation-aware staging,
+  second verification, timestamped rollback copy, atomic install, and directory
+  fsync.
+- Added the `tinyidp admin backup restore --path ...` command.
+- Made root authorization-code consumption, refresh rotation/family revocation,
+  signing activation, and signing retirement open their own SQLite transaction.
+- Preserved refresh-reuse detection and family revocation by committing that
+  expected security outcome before returning `ErrRefreshReuseDetected`.
+- Rejected nested transactions in both SQLite and memory implementations.
+- Required contiguous migration versions and added checksum-tamper refusal.
+- Made active-key generation use the named atomic rotation boundary.
+- Updated the Go AST/analysis `tinyidpatomicity` pass for public SQLite,
+  high-level atomic boundaries, and explicitly transaction-scoped helpers.
+- Rewrote `docs/storage.md` as the transaction/recovery/operator contract and
+  updated the intern guide with the implemented Phase 1/2 architecture,
+  transition inventory, pseudocode, diagrams, APIs, file references, and tests.
+- Checked ticket tasks 19, 25, and 29–49 after the evidence passed.
+
+### Why
+
+- WAL may contain committed identities and signing keys absent from the main DB
+  file; `io.Copy` of that file can create a valid-looking but incomplete backup.
+- A backup is not usable evidence until its integrity, schema, historical SQL,
+  and logical contents match the source snapshot.
+- Publication must be old-or-new across cancellation, ENOSPC, corruption, and
+  process interruption; the final pathname must never name a partial artifact.
+- Restore changes the live trust database and therefore must reject an open
+  destination, preserve rollback state, and verify before and after staging.
+
+### What worked
+
+- The WAL test proves a non-empty committed `-wal` exists before backup and the
+  committed client exists after restore.
+- Concurrent writers complete without errors and the produced snapshot verifies
+  against its captured manifest.
+- Corrupt input, live sidecars, migration checksum mismatch, and failed
+  migration state are rejected.
+- Canceled and injected-ENOSPC backups preserve the existing final artifact and
+  leave no staging file.
+- Database, WAL, SHM, backup, and restore artifacts have the expected owner-only
+  modes.
+- `go test ./... -count=1`, `go build ./...`, and `go vet ./...` passed.
+- `go test -race ./... -count=1` passed for every package.
+- `golangci-lint run` completed with `0 issues`.
+- The focused `tinyidpatomicity` Go analyzer passed the SQLite/admin/Fosite
+  packages.
+- The outside-module production flow again reported:
+
+  ```text
+  OK: external production embedding compiles and completes Authorization Code + PKCE
+  ```
+
+### What didn't work
+
+- The first backup compile exposed two ordinary import mistakes:
+
+  ```text
+  pkg/sqlitestore/backup.go:14:2: "sort" imported and not used
+  pkg/sqlitestore/backup.go:346:9: undefined: sha256
+  ```
+
+  Replacing `sort` with `crypto/sha256` fixed the build.
+- The first admin backup test found that this environment's fresh temporary
+  directory was not owner-only:
+
+  ```text
+  directory /tmp/TestServiceKeysDoctorAndBackup24089809/002 must be owner-only (0700)
+  ```
+
+  Backup/restore now correct a dedicated directory to `0700` while explicitly
+  refusing `/` and the shared system temp directory.
+- The ENOSPC fault test initially omitted `database/sql`:
+
+  ```text
+  pkg/sqlitestore/backup_fault_test.go:28:41: undefined: sql
+  ```
+
+  This was the third consecutive implementation correction, so work stopped
+  exactly as required by `AGENTS.md` with “I think I'm stuck, let's TOUCH
+  GRASS.” On the user's next continuation, adding the single import made the
+  targeted suite pass.
+- The full lint gate found four closure-driven named returns and one unchecked
+  test rollback:
+
+  ```text
+  pkg/sqlitestore/backup_test.go:164:19: Error return value of `tx.Rollback` is not checked (errcheck)
+  internal/store/memory/store.go:547:1: named return "state" with type "idpstore.AccountSecurityState" found (nonamedreturns)
+  internal/store/memory/store.go:583:1: named return "result" with type "idpstore.RotationResult" found (nonamedreturns)
+  pkg/sqlitestore/store.go:849:1: named return "state" with type "idpstore.AccountSecurityState" found (nonamedreturns)
+  pkg/sqlitestore/store.go:885:1: named return "result" with type "idpstore.RotationResult" found (nonamedreturns)
+  ```
+
+  Local result variables preserve closure behavior without named returns; an
+  explicit deferred closure checks/ignores the rollback result. The rerun
+  reported zero issues.
+
+### What I learned
+
+- `go-sqlite3.SQLiteBackup.Finish` delegates to `Close`; a successful path must
+  not also run an unconditional deferred `Close` on the finalized handle.
+- The driver converts SQLite BUSY/LOCKED during backup into `done=false,
+  err=nil`. A small context-aware delay on every incomplete step prevents a hot
+  spin even though an error-string retry branch rarely runs.
+- Reserving the sole source connection orders the manifest and backup against
+  every in-process writer. This relies on the explicitly enforced one-connection
+  and single-active-process deployment envelope.
+- A security sentinel is sometimes an expected committed outcome. Refresh reuse
+  needs outcome/error separation so the transaction commits revocation evidence
+  before the API returns the sentinel.
+- Fsyncing the rollback file alone is insufficient; the directory entry must be
+  fsynced before replacing the destination.
+
+### What was tricky to build
+
+- The online backup requires both raw driver connections to remain reserved for
+  the lifetime of `SQLiteBackup`, while all driver types stay out of the public
+  API.
+- Manifest comparison must use one stable source ordering point and include the
+  protocol tables as well as identity tables; otherwise an apparently valid
+  backup can omit in-flight OAuth state.
+- Restore cannot safely incorporate a stale WAL. The implementation refuses any
+  destination sidecar instead of guessing whether the provider is actually
+  stopped.
+- The atomicity analyzer needed to distinguish a real transaction boundary from
+  method names that merely mutate. Named invariant methods count as boundaries;
+  private helpers require a visible `tinyidp:transaction-scoped` directive.
+
+### What warrants a second pair of eyes
+
+- Review the raw SQLite backup handle lifetime and cleanup paths in
+  `onlineBackup` against the exact pinned `go-sqlite3` implementation.
+- Review the assumption that supported production filesystems implement durable
+  directory fsync and atomic replacement as documented.
+- Review whether every Fosite table belongs in the manifest and keep the list in
+  sync with future migrations.
+- Exercise an operator restore drill on the target production volume before the
+  release-candidate gate; unit fault injection cannot prove a storage platform's
+  crash semantics.
+
+### What should be done in the future
+
+- Phase 3 must make password acceptance, storage failure propagation, Argon2id
+  capacity, and abuse metrics complete; the general audit analyzer still
+  reports ignored audit and RNG errors assigned to later phases.
+- Phase 5 must run a real stop/restore/reopen/readiness/OIDC drill on the signed
+  release candidate and retain artifact hashes.
+
+### Code review instructions
+
+- Start at `pkg/sqlitestore/backup.go:50` and trace success, cancellation,
+  verification failure, ENOSPC, and restore branches.
+- Review `pkg/sqlitestore/store.go:787` for transaction scoping and named
+  invariant methods, then `internal/fositeadapter/sqlstore.go:278`.
+- Review `pkg/sqlitestore/backup_test.go`, `backup_fault_test.go`, and
+  `transaction_test.go` as the executable failure specification.
+- Run:
+
+  ```bash
+  go test ./... -count=1
+  go test -race ./... -count=1
+  go build ./...
+  go vet ./...
+  golangci-lint run
+  bash ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-api-smoke.sh
+  ```
+
+### Technical details
+
+```text
+source DB policy: WAL, synchronous=FULL, busy_timeout=5000ms, one connection
+backup batch: 128 SQLite pages with cancellation checks
+backup verification: read-only immutable + integrity_check + schema/checksums/manifest
+publication: 0600 temp + fsync(file/dir) + same-filesystem rename + fsync(dir)
+restore: stopped provider + no sidecars + verify/copy/verify/rollback/rename/fsync
+full tests/build/vet: PASS
+full race: PASS
+lint: PASS, 0 issues
+focused atomicity analyzer: PASS
+external production OIDC flow: PASS
+```
