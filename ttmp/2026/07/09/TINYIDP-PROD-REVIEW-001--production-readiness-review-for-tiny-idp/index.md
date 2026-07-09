@@ -42,6 +42,32 @@ decision and remediation plan.
 
 Current status: **active**
 
+### Review verdict
+
+**No-go for production on the reviewed commit.** The strict engine has a sound
+Fosite/PKCE/Argon2id/CSRF/persistence foundation, but release is blocked by the
+unusable external embedding API, reachable dependency/runtime vulnerabilities,
+WAL-unsafe backups, non-transactional security state, bypassable brute-force
+controls, and unsafe database permission defaults. The primary review contains
+the complete acceptance gate and phased remediation plan.
+
+### Evidence snapshot
+
+- Build, full tests, vet, race, pinned lint, Glazed lint, and rebuilt Staticcheck pass.
+- Three five-second native fuzz campaigns completed without failures.
+- Go 1.26.5 removes the active runtime's reachable standard-library findings; two reachable go-jose/v3 findings remain on v3.0.3.
+- Live probes reproduce external API compilation failure, WAL backup data loss, lockout lost updates, one-character password acceptance, expired-key acceptance, optional controls, and `0644` SQLite creation under permissive umask.
+- Runtime happy path completed 45 measured HTTP operations with zero request errors and no goroutine delta after connection cleanup.
+
+### Review commits
+
+- `bcca18c` — ticket and initial diary
+- `54fcbcf` — research, analyzers, probes, and runtime instrumentation
+- `c1da8d4` — research/instrumentation diary
+- `ca40c40` — security invariant and scanner evidence
+- `d282362` — full verification diary
+- `c387926` — primary production-readiness review
+
 ## Topics
 
 - oidc

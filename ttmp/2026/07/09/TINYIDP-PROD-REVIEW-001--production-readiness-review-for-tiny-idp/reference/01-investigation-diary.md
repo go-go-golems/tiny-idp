@@ -514,7 +514,259 @@ GOTOOLCHAIN=go1.26.5 go test ./... -count=1
 GOTOOLCHAIN=go1.26.5 govulncheck ./...
 ```
 
+## Step 5: Synthesize the intern-oriented production review
+
+This step converted the source, standards, tests, scanners, and probe evidence
+into one coherent architecture and production-readiness document. The report is
+designed to work at two altitudes: maintainers can act on its priority/acceptance
+tables, while a new intern can read from the package map through complete
+authorization, storage, authentication, refresh, key, and admin flows before
+encountering the findings.
+
+The report makes the ship decision explicit: the current commit is a no-go, but
+the strict engine has enough sound protocol and security primitives that a
+phased remediation is practical. Findings are separated from gosec false
+positives and documented mock behavior so the release decision is not inflated
+by irrelevant diagnostics.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 4)
+
+**Assistant interpretation:** Keep the detailed diary current while producing
+the requested comprehensive, technically clear review for an unfamiliar
+engineer.
+
+**Inferred user intent:** Deliver a durable engineering reference, not merely a
+short audit list, so a new contributor can understand and safely implement the
+production-hardening work.
+
+**Commit (code):** `c387926` — "docs(ticket): add tiny-idp production readiness review"
+
+### What I did
+
+- Wrote a 1,277-line / 7,734-word primary review with stable sections and line-level repository evidence.
+- Led with a no-go decision, strengths, six P0 blocker families, and a concrete definition of ready.
+- Explained the engine split, trust boundaries, package ownership, endpoint surface, startup, Authorization Code + PKCE, sessions/CSRF, passwords, consent/claims, refresh, keys, admin operations, and SQLite model.
+- Added an ASCII topology diagram, flow pseudocode, package/endpoint/gap/runtime tables, public API sketches, transaction/backup/login algorithms, and external API references.
+- Documented P0/P1/P2 findings with observed evidence, impact, recommended fix, and acceptance conditions.
+- Reconciled gosec output so false-positive cookie/open-redirect/debug findings were not mislabeled as production vulnerabilities.
+- Added six compact decision records and a five-phase, file-oriented implementation plan.
+- Added always-on/release test matrices, operational ship checklist, alternatives, open questions, and repository/ticket/external references.
+
+### Why
+
+- Findings without system orientation force an intern to rediscover control flow and trust boundaries before fixing anything.
+- Severity is useful only when tied to executable acceptance criteria.
+- The current pre-release API is already unusable externally, so the design needs to say explicitly that direct replacement is preferable to a compatibility layer.
+- Production readiness includes release engineering, restore, proxy/server, key/secret, monitoring, and incident-response responsibilities—not only OAuth endpoint correctness.
+
+### What worked
+
+- The report combines prose, bullets, tables, diagrams, pseudocode, API sketches, decision records, and file references as requested.
+- Major claims are anchored in the same source/probe evidence recorded in earlier diary steps.
+- The design preserves existing strengths such as Fosite ownership, exact redirects, S256 PKCE, Argon2id, hashed session handles, CSRF, and strict discovery rather than proposing a rewrite.
+- The proposed package design exposes no `internal/` types and explicitly avoids an unnecessary compatibility shim.
+- `git diff --check` passed and no template placeholders remain.
+
+### What didn't work
+
+- N/A. This step produced documentation only and introduced no command or render failure.
+
+### What I learned
+
+- The highest-leverage remediation order is dependency/toolchain patching, public API repair, persistence/backup atomicity, authentication controls, then operational/release proof.
+- SQLite remains viable for a one-active-process product if the supported envelope is explicit and tested; it should not be presented as transparent active/active storage.
+- The 64 MiB Argon2id setting is a security strength and a capacity constraint. The report therefore recommends bounding concurrent password work rather than weakening the hash.
+- Several current configuration fields (`SameSite`, per-client TTLs, must-change) are false contracts: they can be set or displayed without changing effective behavior.
+
+### What was tricky to build
+
+- The review needed to be unequivocal about blockers without obscuring the healthy protocol foundation. Separating confirmed production findings, mock-only behavior, scanner limitations, and unsupported-but-honestly-omitted features kept the decision precise.
+- Fosite and domain persistence overlap. The report calls out that domain refresh-token invariants do not automatically prove the strict Fosite SQL path, preventing a misleading conclusion from the shared store suite.
+- The host owns TLS and `http.Server`, while the library owns identity semantics. The proposed contract keeps that split but makes proxy trust, timeouts, limits, shutdown, and preflight executable release requirements.
+
+### What warrants a second pair of eyes
+
+- Verify that the product owner agrees with the proposed single-active-node SQLite envelope.
+- Confirm whether per-client TTLs, MFA/recovery, logout/revocation/introspection, and KMS/HSM custody are v1 requirements or intentionally deferred scope.
+- Review the direct public-package reorganization and atomic store API before implementation begins.
+- Validate severity and acceptance criteria for audit delivery semantics and database permission enforcement against the actual deployment platform.
+
+### What should be done in the future
+
+- Update this report as remediation decisions are accepted or superseded; do not let it become a stale one-time audit.
+- Convert each accepted P0/P1 acceptance criterion into a ticket task and automated regression.
+- Record the final release artifact hashes and conformance/restore evidence in a follow-up release record.
+
+### Code review instructions
+
+- Read the executive summary and finding register first for release scope.
+- New engineers should then read `What the System Is`, `Architecture for a New Engineer`, `Core Runtime Flows`, and `Storage Model` in order.
+- Maintainers planning work should focus on `Proposed Production Architecture`, decision records, phased implementation, and test strategy.
+- Cross-check raw evidence in the diary, `various/`, and source files linked in the report.
+- Run `rg -n '^#{1,4} ' <design-doc>` to inspect the complete stable outline.
+
+### Technical details
+
+Document checks:
+
+```text
+wc -lw .../design-doc/01-tiny-idp-production-readiness-architecture-and-code-review.md
+1277 lines, 7734 words
+
+git diff --check
+clean
+
+template placeholder search
+no TODO/FIXME/HTML template placeholders
+```
+
 ## Related
 
 - [Production readiness architecture and code review](../design-doc/01-tiny-idp-production-readiness-architecture-and-code-review.md)
+- [Ticket task list](../tasks.md)
+
+## Step 6: Validate ticket metadata and prepare the delivery artifact
+
+This step closed the documentation bookkeeping and reran the affected quality
+gates after making generated review artifacts valid docmgr documents. It also
+records the first validation failure instead of silently presenting only the
+eventual clean result.
+
+### Prompt Context
+
+**User prompt (verbatim):** “keep a frequent and detailed diary, btw. Backfill
+all that is necessary (read the skill for how to format it)”
+
+**Assistant interpretation:** Preserve a tiny-step account of final validation,
+including exact failures, fixes, commands, and intentional warnings before the
+review is delivered.
+
+**Inferred user intent:** Make the production decision reproducible and leave a
+continuation point that does not require reverse-engineering what happened at
+the end of the audit.
+
+**Commit (code):** pending at the start of this step.
+
+### What I did
+
+- Related the primary report and diary to the principal production files and
+  raw evidence with `docmgr doc relate`.
+- Updated the ticket index, task list, and changelog with the no-go verdict,
+  evidence snapshot, review commits, and completed work.
+- Ran `docmgr doctor --ticket TINYIDP-PROD-REVIEW-001` and preserved both the
+  initial failure and the post-fix result below.
+- Added full docmgr frontmatter to `scripts/README.md`.
+- Changed `scripts/runtime-analyze` so every regenerated `summary.md` receives
+  valid reference-document frontmatter and an updated timestamp.
+- Regenerated the runtime summary, tested every ticket Go package, ran the
+  complete repository lint target, and checked the diff for whitespace errors.
+
+### Why
+
+- A ticket is not complete if its primary artifacts fail the repository's own
+  documentation validator.
+- Fixing only the generated `summary.md` would be temporary; the analyzer must
+  preserve the invariant on every rerun.
+- The analyzer changed after the earlier verification checkpoint, so targeted
+  tests and the full lint gate needed to be repeated before delivery.
+
+### What worked
+
+- The second doctor run exited zero and reported no errors.
+- The affected package and all ticket script packages pass `go test`.
+- `git diff --check` is clean.
+- golangci-lint reports `0 issues`, and Glazed lint passes.
+- The regenerated runtime summary retains the same measured evidence while now
+  participating correctly in docmgr validation.
+
+### What didn't work
+
+The first doctor run found two errors because Markdown artifacts inside the
+ticket were missing YAML frontmatter:
+
+```text
+scripts/README.md: missing frontmatter
+various/runtime/summary.md: missing frontmatter
+```
+
+After adding frontmatter and regenerating the summary, doctor exited zero with
+two warnings:
+
+```text
+missing_numeric_prefix — scripts/README.md
+missing_numeric_prefix — various/runtime/summary.md
+```
+
+These are intentional names. `README.md` is the conventional scripts entry
+point, and `summary.md` is the stable generated output consumed by the runtime
+probe workflow. Renaming either would reduce discoverability or make the tool's
+documented output path misleading. There are no remaining doctor errors.
+
+### What I learned
+
+- `docmgr doctor` validates incidental Markdown under `scripts/` and
+  `various/`, not only documents under `design-doc/` and `reference/`.
+- Generated Markdown must own its metadata in the generator; a one-time manual
+  repair is not durable.
+- The ticket validator distinguishes actionable errors from convention
+  warnings, allowing stable artifact names where their role justifies them.
+
+### What was tricky to build
+
+- The runtime summary timestamp must be generated at analysis time without
+  changing the deterministic metrics calculations or source event stream.
+- The generated YAML needed quoted prose fields and stable topic/doc-type
+  values while remaining readable as a standalone report.
+
+### What warrants a second pair of eyes
+
+- Confirm the team prefers retaining stable `README.md` and `summary.md` names
+  over eliminating the two non-blocking numeric-prefix warnings.
+- Review the doc relations when remediation moves or replaces the public API,
+  storage, backup, or password-service files.
+
+### What should be done in the future
+
+- Keep the generated frontmatter contract covered when changing
+  `runtime-analyze`.
+- Rerun doctor after adding any future Markdown evidence to this ticket.
+- Update the runtime summary and report baseline after each blocker family is
+  remediated.
+
+### Code review instructions
+
+- Run `docmgr doctor --ticket TINYIDP-PROD-REVIEW-001`; accept only the two
+  documented numeric-prefix warnings.
+- Run `go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/...`.
+- Run `make lint` from the repository root.
+- Inspect the beginning of `various/runtime/summary.md` and confirm it contains
+  a complete `TINYIDP-PROD-REVIEW-001` reference frontmatter block.
+
+### Technical details
+
+Final pre-delivery commands:
+
+```text
+git diff --check
+go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-analyze \
+  ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/...
+make lint
+docmgr doctor --ticket TINYIDP-PROD-REVIEW-001
+```
+
+Observed result:
+
+```text
+ticket script tests: PASS
+golangci-lint: 0 issues
+Glazed lint: PASS
+docmgr doctor: exit 0, 0 errors, 2 documented naming warnings
+```
+
+## Related
+
+- [Production readiness architecture and code review](../design-doc/01-tiny-idp-production-readiness-architecture-and-code-review.md)
+- [Runtime probe summary](../various/runtime/summary.md)
 - [Ticket task list](../tasks.md)

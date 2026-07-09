@@ -1,3 +1,24 @@
+---
+Title: Production review tools
+Ticket: TINYIDP-PROD-REVIEW-001
+Status: active
+Topics:
+    - oidc
+    - go
+    - testing
+    - auth
+    - research
+DocType: reference
+Intent: long-term
+Owners: []
+RelatedFiles: []
+ExternalSources: []
+Summary: "Commands and intent for the typed analyzers, static audit, fuzzing, live probes, and runtime instrumentation built for the production review."
+LastUpdated: 2026-07-09T17:20:00-04:00
+WhatFor: "Reproducing production-readiness findings and rerunning the review checks after remediation."
+WhenToUse: "Use during code review, remediation, CI integration, and final release validation."
+---
+
 # Production review tools
 
 These tools make the production-readiness findings reproducible without

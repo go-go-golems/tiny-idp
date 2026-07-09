@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -130,7 +131,38 @@ func writeSummary(w io.Writer, input string, routes map[string]*routeStats, runt
 	for _, stats := range routes {
 		requestCount += len(stats.durations)
 	}
-	_, err := fmt.Fprintf(w, "# tiny-idp runtime probe summary\n\nSource: `%s`\n\nRequests observed: **%d**. Audit events emitted: **%d**.\n\n## HTTP observations\n\n| Operation | Count | Statuses | p50 | p95 | p99 | Mean bytes | Errors |\n|---|---:|---|---:|---:|---:|---:|---:|\n", input, requestCount, auditCount)
+	_, err := fmt.Fprintf(w, `---
+Title: tiny-idp runtime probe summary
+Ticket: TINYIDP-PROD-REVIEW-001
+Status: active
+Topics:
+    - oidc
+    - go
+    - testing
+    - auth
+    - research
+DocType: reference
+Intent: long-term
+Owners: []
+RelatedFiles: []
+ExternalSources: []
+Summary: "Measured strict production-mode login, token, refresh, read-path, Go runtime, SQLite pool, and audit behavior."
+LastUpdated: %s
+WhatFor: "Providing a bounded runtime regression baseline for the production review."
+WhenToUse: "Use when changing authentication, Fosite, SQLite, runtime limits, or observability."
+---
+
+# tiny-idp runtime probe summary
+
+Source: `+"`%s`"+`
+
+Requests observed: **%d**. Audit events emitted: **%d**.
+
+## HTTP observations
+
+| Operation | Count | Statuses | p50 | p95 | p99 | Mean bytes | Errors |
+|---|---:|---|---:|---:|---:|---:|---:|
+`, time.Now().UTC().Format(time.RFC3339), input, requestCount, auditCount)
 	if err != nil {
 		return err
 	}

@@ -1,3 +1,24 @@
+---
+Title: tiny-idp runtime probe summary
+Ticket: TINYIDP-PROD-REVIEW-001
+Status: active
+Topics:
+    - oidc
+    - go
+    - testing
+    - auth
+    - research
+DocType: reference
+Intent: long-term
+Owners: []
+RelatedFiles: []
+ExternalSources: []
+Summary: "Measured strict production-mode login, token, refresh, read-path, Go runtime, SQLite pool, and audit behavior."
+LastUpdated: 2026-07-09T21:27:54Z
+WhatFor: "Providing a bounded runtime regression baseline for the production review."
+WhenToUse: "Use when changing authentication, Fosite, SQLite, runtime limits, or observability."
+---
+
 # tiny-idp runtime probe summary
 
 Source: `ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/various/runtime/events.ndjson`

@@ -12,13 +12,61 @@ Topics:
 DocType: design-doc
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://README.md
+      Note: Documented engine split and intended production embedding path
+    - Path: repo://go.mod
+      Note: Toolchain and vulnerable transitive dependency graph
+    - Path: repo://internal/admin/backup.go
+      Note: Live backup data-loss blocker
+    - Path: repo://internal/admin/users.go
+      Note: Password lifecycle and non-transactional admin operations
+    - Path: repo://internal/authn/password.go
+      Note: Password verification, policy, lockout, audit, and concurrency findings
+    - Path: repo://internal/cmds/serve.go
+      Note: Dev-only server boundary and HTTP hardening ownership
+    - Path: repo://internal/fositeadapter/provider.go
+      Note: Strict provider composition, endpoints, controls, login, token, and claims
+    - Path: repo://internal/fositeadapter/sqlstore.go
+      Note: Fosite durable state and non-transactional refresh rotation
+    - Path: repo://internal/keys/rotation.go
+      Note: Signing key rotation invariant and crash window
+    - Path: repo://internal/passwordhash/argon2id.go
+      Note: Argon2id implementation and runtime capacity analysis
+    - Path: repo://internal/storage/interfaces.go
+      Note: Current entity-oriented store contract and proposed transaction boundary
+    - Path: repo://internal/store/sqlite/migrations/001_schema.sql
+      Note: Domain and Fosite schema reviewed for constraints/versioning/retention
+    - Path: repo://internal/store/sqlite/store.go
+      Note: SQLite persistence, key lifecycle, refresh operations, migrations, and permissions
+    - Path: repo://pkg/embeddedidp/options.go
+      Note: Public production contract and startup validation reviewed in P0-1/P1-2
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/reference/01-investigation-diary.md
+      Note: Chronological evidence supporting the final review
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/various/runtime/summary.md
+      Note: Measured strict-flow runtime baseline
 ExternalSources: []
-Summary: "Intern-oriented architecture, security, operations, code-quality, and implementation review for deciding whether tiny-idp can ship to production."
+Summary: Intern-oriented architecture, security, operations, code-quality, and implementation review for deciding whether tiny-idp can ship to production.
 LastUpdated: 2026-07-09T13:42:50.213115354-04:00
-WhatFor: "Understanding tiny-idp end to end, making the production ship decision, and implementing the prioritized remediation plan."
-WhenToUse: "Use for onboarding, security review, release planning, remediation implementation, and final production acceptance."
+WhatFor: Understanding tiny-idp end to end, making the production ship decision, and implementing the prioritized remediation plan.
+WhenToUse: Use for onboarding, security review, release planning, remediation implementation, and final production acceptance.
 ---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Tiny IDP production readiness architecture and code review
 
