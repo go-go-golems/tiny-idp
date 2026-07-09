@@ -4,11 +4,11 @@
 
 ## Data model
 
-- `domain.User` stores OIDC subject/profile/account state only.
-- `domain.PasswordCredential` stores the encoded password hash and password lifecycle flags.
-- `domain.AccountSecurityState` stores failed-login counters, lockout timestamps, and last successful login time.
+- `idpstore.User` stores OIDC subject/profile/account state only.
+- `idpstore.PasswordCredential` stores the encoded password hash and password lifecycle flags.
+- `idpstore.AccountSecurityState` stores failed-login counters, lockout timestamps, and last successful login time.
 
-Password hashes are encoded Argon2id strings and are never stored on `domain.User`.
+Password hashes are encoded Argon2id strings and are never stored on `idpstore.User`.
 
 ## Strict login behavior
 

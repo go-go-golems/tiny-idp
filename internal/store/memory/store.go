@@ -15,7 +15,8 @@ import (
 // Store is a concurrency-safe in-memory implementation of idpstore.Store. It is
 // intended for tests, examples, and dev-mode strict engine runs.
 type Store struct {
-	mu sync.Mutex
+	mu            sync.Mutex
+	inTransaction bool
 
 	clients            map[string]idpstore.Client
 	usersByID          map[string]idpstore.User
@@ -512,6 +513,9 @@ func (s *Store) Update(ctx context.Context, fn func(idpstore.TxStore) error) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if s.inTransaction {
+		return idpstore.ErrNestedTransaction
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	snapshot := s.cloneLocked()
@@ -540,12 +544,14 @@ func (s *Store) ReplacePasswordAndSecurityState(ctx context.Context, credential 
 	})
 }
 
-func (s *Store) RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy idpstore.LockoutPolicy) (state idpstore.AccountSecurityState, err error) {
-	err = s.Update(ctx, func(tx idpstore.TxStore) error {
-		state, err = tx.GetAccountSecurityState(ctx, userID)
-		if err != nil && !errors.Is(err, idpstore.ErrNotFound) {
-			return err
+func (s *Store) RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy idpstore.LockoutPolicy) (idpstore.AccountSecurityState, error) {
+	var state idpstore.AccountSecurityState
+	err := s.Update(ctx, func(tx idpstore.TxStore) error {
+		loaded, loadErr := tx.GetAccountSecurityState(ctx, userID)
+		if loadErr != nil && !errors.Is(loadErr, idpstore.ErrNotFound) {
+			return loadErr
 		}
+		state = loaded
 		state.UserID = userID
 		if state.FirstFailedLoginAt == nil || (policy.Window > 0 && now.Sub(*state.FirstFailedLoginAt) > policy.Window) {
 			state.FailedLoginCount = 0
@@ -576,8 +582,9 @@ func (s *Store) RecordSuccessfulLogin(ctx context.Context, userID string, now ti
 	})
 }
 
-func (s *Store) RotateSigningKey(ctx context.Context, next idpstore.SigningKey, now time.Time) (result idpstore.RotationResult, err error) {
-	err = s.Update(ctx, func(tx idpstore.TxStore) error {
+func (s *Store) RotateSigningKey(ctx context.Context, next idpstore.SigningKey, now time.Time) (idpstore.RotationResult, error) {
+	var result idpstore.RotationResult
+	err := s.Update(ctx, func(tx idpstore.TxStore) error {
 		old, oldErr := tx.ActiveSigningKey(ctx)
 		if oldErr != nil && !errors.Is(oldErr, idpstore.ErrNotFound) {
 			return oldErr
@@ -608,6 +615,7 @@ func (s *Store) RotateSigningKey(ctx context.Context, next idpstore.SigningKey, 
 
 func (s *Store) cloneLocked() *Store {
 	return &Store{
+		inTransaction:      true,
 		clients:            cloneMap(s.clients),
 		usersByID:          cloneMap(s.usersByID),
 		usersByLogin:       cloneMap(s.usersByLogin),

@@ -13,6 +13,7 @@ var (
 	ErrRefreshReuseDetected = errors.New("refresh token reuse detected")
 	ErrDuplicate            = errors.New("duplicate")
 	ErrLastSigningKey       = errors.New("cannot retire the final active signing key")
+	ErrNestedTransaction    = errors.New("nested store transactions are not supported")
 )
 
 type ClientStore interface {
@@ -123,17 +124,22 @@ type TxStore interface {
 	StoreOperations
 }
 
+// LockoutPolicy controls the atomic failed-login window and lock duration.
 type LockoutPolicy struct {
 	Threshold int
 	Window    time.Duration
 	Duration  time.Duration
 }
 
+// RotationResult reports the newly active key and the previous key, if any.
 type RotationResult struct {
 	Active  SigningKey
 	Retired *SigningKey
 }
 
+// AtomicStore exposes transaction callbacks and named security invariants.
+// Callback-scoped stores must not be retained; nested transactions fail with
+// ErrNestedTransaction.
 type AtomicStore interface {
 	View(ctx context.Context, fn func(ReadStore) error) error
 	Update(ctx context.Context, fn func(TxStore) error) error
@@ -144,6 +150,7 @@ type AtomicStore interface {
 	RotateSigningKey(ctx context.Context, next SigningKey, now time.Time) (RotationResult, error)
 }
 
+// Store is the complete persistence contract consumed by the embedded IdP.
 type Store interface {
 	StoreOperations
 	AtomicStore

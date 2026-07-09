@@ -25,10 +25,14 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+// Store is the supported durable, single-active-node SQLite implementation of
+// idpstore.Store.
 type Store struct {
-	db     *sql.DB
-	runner sqlRunner
-	mu     *sync.Mutex
+	db         *sql.DB
+	runner     sqlRunner
+	mu         *sync.Mutex
+	path       string
+	backupCopy func(context.Context, *sql.Conn, string) error
 }
 
 type sqlRunner interface {
@@ -39,6 +43,8 @@ type sqlRunner interface {
 
 var _ idpstore.Store = (*Store)(nil)
 
+// Config defines the SQLite file and durability policy. The supported
+// production envelope uses exactly one open connection on a local filesystem.
 type Config struct {
 	Path               string
 	BusyTimeout        time.Duration
@@ -47,6 +53,8 @@ type Config struct {
 	MaxOpenConnections int
 }
 
+// DefaultConfig returns WAL, synchronous=FULL, a five-second busy timeout, and
+// the required single connection.
 func DefaultConfig(path string) Config {
 	return Config{
 		Path:               path,
@@ -57,6 +65,8 @@ func DefaultConfig(path string) Config {
 	}
 }
 
+// Open creates or opens the database, applies checksummed migrations, and
+// enforces owner-only permissions on the database and SQLite sidecars.
 func Open(ctx context.Context, cfg Config) (*Store, error) {
 	if strings.TrimSpace(cfg.Path) == "" {
 		return nil, fmt.Errorf("sqlite path is required")
@@ -73,6 +83,9 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	}
 	if cfg.MaxOpenConnections <= 0 {
 		cfg.MaxOpenConnections = defaults.MaxOpenConnections
+	}
+	if cfg.MaxOpenConnections != 1 {
+		return nil, fmt.Errorf("SQLite store supports exactly one open connection; got %d", cfg.MaxOpenConnections)
 	}
 	cfg.JournalMode = strings.ToUpper(cfg.JournalMode)
 	cfg.Synchronous = strings.ToUpper(cfg.Synchronous)
@@ -102,7 +115,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	}
 	db.SetMaxOpenConns(cfg.MaxOpenConnections)
 	db.SetMaxIdleConns(cfg.MaxOpenConnections)
-	st := &Store{db: db, mu: &sync.Mutex{}}
+	st := &Store{db: db, mu: &sync.Mutex{}, path: cfg.Path}
 	pragmas := []string{
 		fmt.Sprintf("PRAGMA busy_timeout=%d", cfg.BusyTimeout.Milliseconds()),
 		"PRAGMA foreign_keys=ON",
@@ -167,6 +180,8 @@ func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
 // durability. Callers must not close the returned handle.
 func (s *Store) SQLDB() *sql.DB { return s.db }
 
+// MigrationNames returns embedded migration names after verifying contiguous,
+// monotonically increasing numeric versions.
 func MigrationNames() ([]string, error) {
 	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
@@ -180,9 +195,20 @@ func MigrationNames() ([]string, error) {
 		names = append(names, entry.Name())
 	}
 	sort.Strings(names)
+	for index, name := range names {
+		version, err := strconv.Atoi(strings.SplitN(name, "_", 2)[0])
+		if err != nil {
+			return nil, fmt.Errorf("parse migration version %q: %w", name, err)
+		}
+		if version != index+1 {
+			return nil, fmt.Errorf("migration %q has version %d; expected contiguous version %d", name, version, index+1)
+		}
+	}
 	return names, nil
 }
 
+// Migrate verifies prior checksums and applies each pending migration in its
+// own transaction.
 func (s *Store) Migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,
@@ -402,6 +428,15 @@ func (s *Store) CreateAuthorizationCode(ctx context.Context, c idpstore.Authoriz
 	return mapDup(err)
 }
 func (s *Store) ConsumeAuthorizationCode(ctx context.Context, codeHash []byte, now time.Time) (idpstore.AuthorizationCode, error) {
+	if s.runner == nil {
+		var code idpstore.AuthorizationCode
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			var err error
+			code, err = tx.ConsumeAuthorizationCode(ctx, codeHash, now)
+			return err
+		})
+		return code, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := hashKey(codeHash)
@@ -473,6 +508,21 @@ func (s *Store) GetRefreshToken(ctx context.Context, tokenHash []byte) (idpstore
 	return dec[idpstore.RefreshToken](b)
 }
 func (s *Store) RotateRefreshToken(ctx context.Context, oldHash []byte, next idpstore.RefreshToken, now time.Time) (idpstore.RefreshToken, error) {
+	if s.runner == nil {
+		var rotated idpstore.RefreshToken
+		var outcomeErr error
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			rotated, outcomeErr = tx.RotateRefreshToken(ctx, oldHash, next, now)
+			if errors.Is(outcomeErr, idpstore.ErrRefreshReuseDetected) {
+				return nil
+			}
+			return outcomeErr
+		})
+		if err != nil {
+			return idpstore.RefreshToken{}, err
+		}
+		return rotated, outcomeErr
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old, err := s.GetRefreshToken(ctx, oldHash)
@@ -505,12 +555,21 @@ func (s *Store) putRefresh(ctx context.Context, t idpstore.RefreshToken) error {
 	return err
 }
 func (s *Store) RevokeRefreshTokenFamily(ctx context.Context, tokenHash []byte, at time.Time) error {
+	if s.runner == nil {
+		return s.Update(ctx, func(tx idpstore.TxStore) error {
+			return tx.RevokeRefreshTokenFamily(ctx, tokenHash, at)
+		})
+	}
 	t, err := s.GetRefreshToken(ctx, tokenHash)
 	if err != nil {
 		return err
 	}
 	return s.revokeFamily(ctx, t.GrantID, at)
 }
+
+// revokeFamily runs only on a transaction-scoped Store.
+//
+// tinyidp:transaction-scoped
 func (s *Store) revokeFamily(ctx context.Context, grantID string, at time.Time) error {
 	rows, err := s.conn().QueryContext(ctx, `SELECT data FROM refresh_tokens WHERE grant_id=?`, grantID)
 	if err != nil {
@@ -641,6 +700,11 @@ func (s *Store) VerificationKeys(ctx context.Context) ([]idpstore.SigningKey, er
 	return out, rows.Err()
 }
 func (s *Store) ActivateSigningKey(ctx context.Context, kid string) error {
+	if s.runner == nil {
+		return s.Update(ctx, func(tx idpstore.TxStore) error {
+			return tx.ActivateSigningKey(ctx, kid)
+		})
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rows, err := s.conn().QueryContext(ctx, `SELECT id,data FROM signing_keys`)
@@ -688,6 +752,11 @@ func (s *Store) ActivateSigningKey(ctx context.Context, kid string) error {
 	return nil
 }
 func (s *Store) RetireSigningKey(ctx context.Context, kid string) error {
+	if s.runner == nil {
+		return s.Update(ctx, func(tx idpstore.TxStore) error {
+			return tx.RetireSigningKey(ctx, kid)
+		})
+	}
 	k, err := s.getSigningKey(ctx, kid)
 	if err != nil {
 		return err
@@ -719,12 +788,15 @@ func (s *Store) View(ctx context.Context, fn func(idpstore.ReadStore) error) err
 	if fn == nil {
 		return fmt.Errorf("view callback is required")
 	}
+	if s.runner != nil {
+		return idpstore.ErrNestedTransaction
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return fmt.Errorf("begin read transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	scoped := &Store{db: s.db, runner: tx, mu: s.mu}
+	scoped := &Store{db: s.db, runner: tx, mu: s.mu, path: s.path, backupCopy: s.backupCopy}
 	if err := fn(scoped); err != nil {
 		return err
 	}
@@ -738,12 +810,15 @@ func (s *Store) Update(ctx context.Context, fn func(idpstore.TxStore) error) err
 	if fn == nil {
 		return fmt.Errorf("update callback is required")
 	}
+	if s.runner != nil {
+		return idpstore.ErrNestedTransaction
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin write transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	scoped := &Store{db: s.db, runner: tx, mu: s.mu}
+	scoped := &Store{db: s.db, runner: tx, mu: s.mu, path: s.path, backupCopy: s.backupCopy}
 	if err := fn(scoped); err != nil {
 		return err
 	}
@@ -771,12 +846,14 @@ func (s *Store) ReplacePasswordAndSecurityState(ctx context.Context, credential 
 	})
 }
 
-func (s *Store) RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy idpstore.LockoutPolicy) (state idpstore.AccountSecurityState, err error) {
-	err = s.Update(ctx, func(tx idpstore.TxStore) error {
-		state, err = tx.GetAccountSecurityState(ctx, userID)
-		if err != nil && !errors.Is(err, idpstore.ErrNotFound) {
-			return err
+func (s *Store) RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy idpstore.LockoutPolicy) (idpstore.AccountSecurityState, error) {
+	var state idpstore.AccountSecurityState
+	err := s.Update(ctx, func(tx idpstore.TxStore) error {
+		loaded, loadErr := tx.GetAccountSecurityState(ctx, userID)
+		if loadErr != nil && !errors.Is(loadErr, idpstore.ErrNotFound) {
+			return loadErr
 		}
+		state = loaded
 		state.UserID = userID
 		if state.FirstFailedLoginAt == nil || (policy.Window > 0 && now.Sub(*state.FirstFailedLoginAt) > policy.Window) {
 			state.FailedLoginCount = 0
@@ -807,8 +884,9 @@ func (s *Store) RecordSuccessfulLogin(ctx context.Context, userID string, now ti
 	})
 }
 
-func (s *Store) RotateSigningKey(ctx context.Context, next idpstore.SigningKey, now time.Time) (result idpstore.RotationResult, err error) {
-	err = s.Update(ctx, func(tx idpstore.TxStore) error {
+func (s *Store) RotateSigningKey(ctx context.Context, next idpstore.SigningKey, now time.Time) (idpstore.RotationResult, error) {
+	var result idpstore.RotationResult
+	err := s.Update(ctx, func(tx idpstore.TxStore) error {
 		old, oldErr := tx.ActiveSigningKey(ctx)
 		if oldErr != nil && !errors.Is(oldErr, idpstore.ErrNotFound) {
 			return oldErr

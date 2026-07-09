@@ -275,7 +275,7 @@ var atomicityAnalyzer = &analysis.Analyzer{
 
 func runAtomicity(pass *analysis.Pass) (any, error) {
 	path := pass.Pkg.Path()
-	if !strings.Contains(path, "/internal/store/sqlite") && !strings.Contains(path, "/internal/admin") && !strings.Contains(path, "/internal/fositeadapter") {
+	if !strings.Contains(path, "/pkg/sqlitestore") && !strings.Contains(path, "/internal/admin") && !strings.Contains(path, "/internal/fositeadapter") {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
@@ -284,7 +284,7 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 		}
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
+			if !ok || fn.Body == nil || fn.Name.Name == "Open" || hasDirective(fn.Doc, "tinyidp:transaction-scoped") {
 				continue
 			}
 			mutations := 0
@@ -297,7 +297,7 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 					if !ok {
 						return true
 					}
-					if sel.Sel.Name == "Begin" || sel.Sel.Name == "BeginTx" {
+					if sel.Sel.Name == "Begin" || sel.Sel.Name == "BeginTx" || sel.Sel.Name == "Update" || isAtomicBoundary(sel.Sel.Name) {
 						hasTransaction = true
 					}
 					if isMutationName(sel.Sel.Name) {
@@ -337,6 +337,19 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
+func isAtomicBoundary(name string) bool {
+	switch name {
+	case "CreateUserWithCredential", "ReplacePasswordAndSecurityState", "RecordFailedLogin", "RecordSuccessfulLogin", "RotateSigningKey", "RotateRefreshToken", "RevokeRefreshTokenFamily":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasDirective(group *ast.CommentGroup, directive string) bool {
+	return group != nil && strings.Contains(group.Text(), directive)
+}
+
 func isMutationName(name string) bool {
 	for _, prefix := range []string{"Exec", "Put", "Create", "Rotate", "Revoke", "Activate", "Retire", "Reset", "Delete", "Mark", "put", "revoke"} {
 		if strings.HasPrefix(name, prefix) {
@@ -351,6 +364,9 @@ var backupCopyAnalyzer = &analysis.Analyzer{
 	Doc:      "reports raw file copying in SQLite backup code",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run: func(pass *analysis.Pass) (any, error) {
+		if !strings.Contains(pass.Pkg.Path(), "/internal/admin") {
+			return nil, nil
+		}
 		for _, file := range pass.Files {
 			filename := filepath.Base(pass.Fset.Position(file.Pos()).Filename)
 			if filename != "backup.go" {

@@ -114,6 +114,25 @@ INSERT INTO signing_keys(id,active,data) VALUES ('one',1,'{}'),('two',1,'{}');`)
 	}
 }
 
+func TestMigrationChecksumMismatchRefusesOpen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "checksum.db")
+	st, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SQLDB().ExecContext(ctx, `UPDATE schema_migrations SET checksum='tampered' WHERE version=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if reopened, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(path)); err == nil {
+		_ = reopened.Close()
+		t.Fatal("Open accepted a migration checksum mismatch")
+	}
+}
+
 func openTestStore(t *testing.T) *sqlitestore.Store {
 	t.Helper()
 	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))

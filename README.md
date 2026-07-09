@@ -7,7 +7,7 @@ There are two engines, and picking the right one matters:
 | Engine | Flag | Store | Intended use | Notes |
 |--------|------|-------|--------------|-------|
 | **mock** | `--engine mock` (default) | in-memory | Local dev, integration tests, **failure simulation** | Rich scenario catalog, debug routes, device grant, DPoP, JWKS failure modes. Not for production. |
-| **strict** | `--engine fosite` | in-memory (via `serve`) or a persistent `storage.Store` (via `pkg/embeddedidp`) | Production-like OAuth/OIDC behavior | Fosite validation, Auth-Code + PKCE only, CSRF, security headers, persistent consent/keys, Argon2id login. |
+| **strict** | `--engine fosite` | in-memory (via `serve`) or a persistent `idpstore.Store` (via `pkg/embeddedidp`) | Production-like OAuth/OIDC behavior | Fosite validation, Auth-Code + PKCE only, CSRF, security headers, persistent consent/keys, Argon2id login. |
 
 > **Maturity, read this.** The `mock` engine and **`tinyidp serve` are for local/testing use** — bind to loopback (`127.0.0.1`) and never expose them to the internet. A **production deployment is the _strict_ engine embedded through `pkg/embeddedidp`** with a **persistent store** (for example `pkg/sqlitestore`), `ProductionMode`, secure cookies, a ≥32-byte token secret, and an active persistent signing key — these are enforced by `embeddedidp.Options.Validate(ctx)`. `serve --engine fosite` currently runs the strict engine in **dev mode with an in-memory store**, so it is a preview of strict behavior, not a production server. See [`docs/security-profile.md`](docs/security-profile.md).
 >
@@ -207,7 +207,7 @@ The strict engine is designed to be embedded in your own service with a durable 
 
 ### Storage and persistence
 
-Strict-engine domain state flows through `idpstore.Store`. `pkg/sqlitestore` is the durable embedded implementation; its migration owns all schema — clients, users, grants, authorization codes, access/refresh tokens, consents, sessions, signing keys, and the Fosite protocol tables. **Production mode requires a persistent store** (`embeddedidp.Options.Validate(ctx)` rejects an in-memory store unless `AllowInMemoryStoresInProduction` is set). Invariants the store guarantees: one-time-use authorization codes (even under parallel consumption), refresh-token rotation with reuse-detection that revokes the family, scope-normalized consent lookup, hashed-handle-only sessions, and signing keys that persist across restart with retired keys still verifiable. See [`docs/storage.md`](docs/storage.md).
+Strict-engine domain state flows through `idpstore.Store`. `pkg/sqlitestore` is the durable single-active-node implementation; its checksummed migrations own all domain and Fosite schema. **Production mode requires a persistent store** and has no in-memory override. Named store operations atomically protect user/credential creation, password/security-state replacement, login counters, authorization-code use, refresh rotation/reuse revocation, and signing-key rotation. SQLite defaults to WAL, `synchronous=FULL`, a five-second busy timeout, and exactly one connection. See [`docs/storage.md`](docs/storage.md) for the deployment, filesystem, transaction, backup, and restore contract.
 
 ### Admin CLI
 
@@ -221,7 +221,7 @@ tinyidp admin --db ./tinyidp.db
 ├── client  create | list | get | disable | enable | rotate-secret
 ├── keys    generate | rotate | list | retire
 ├── user    create | set-password | get | disable | enable
-├── backup  create --out <file> | verify --path <file>
+├── backup  create --out <file> | verify --path <file> | restore --path <file>
 └── export  diagnostics                           # sanitized (no secret hashes, no private PEM)
 ```
 
@@ -241,7 +241,7 @@ Client/keys/diagnostics output redacts secret hashes and never prints private ke
 
 ### Users and passwords (durable)
 
-Strict login uses durable records split across three domain types: `domain.User` (subject/profile/account state), `domain.PasswordCredential` (the **encoded Argon2id hash** and lifecycle flags — never stored on `User`), and `domain.AccountSecurityState` (failed-login counters, lockout, last-successful-login). The strict adapter authenticates `POST /authorize` through a `PasswordAuthenticator`, returns the generic `invalid login or password` on failure, and emits stable audit reason codes (`invalid_credentials`, `account_disabled`, `account_locked`). Provision credentials with the admin CLI, preferring stdin so secrets stay out of shell history:
+Strict login uses durable public records split across three types: `idpstore.User` (subject/profile/account state), `idpstore.PasswordCredential` (the **encoded Argon2id hash** and lifecycle flags — never stored on `User`), and `idpstore.AccountSecurityState` (failed-login counters, lockout, last-successful-login). The strict adapter authenticates `POST /authorize` through an `idp.PasswordAuthenticator`, returns the generic `invalid login or password` on failure, and emits stable audit reason codes (`invalid_credentials`, `account_disabled`, `account_locked`). Provision credentials with the admin CLI, preferring stdin so secrets stay out of shell history:
 
 ```bash
 printf '%s\n' 'alice-password' | \
@@ -270,17 +270,20 @@ import (
 )
 
 ctx := context.Background()
-store, err := sqlitestore.Open("tinyidp.db")
+store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig("tinyidp.db"))
 if err != nil { /* handle */ }
 defer store.Close()
 
 provider, err := embeddedidp.New(ctx, embeddedidp.Options{
     Issuer: "https://id.example.com",
     Mode:   embeddedidp.ProductionMode,        // enforces the invariants below
-    Store:  store,                              // persistent storage.Store (SQLite)
+    Store:  store,                              // persistent idpstore.Store (SQLite)
     Cookie: embeddedidp.CookieConfig{Secure: true},
     Token:  embeddedidp.TokenConfig{SecretKey: secret /* >= 32 bytes */},
-    // optional: Audit, Consent, RateLimiter, Authenticator
+    Audit: auditSink,                           // required in production
+    RateLimiter: limiter,                       // required in production
+    ClientAddress: resolver,                    // required in production
+    Authenticator: authenticator,
 })
 if err != nil { /* Validate() failed */ }
 defer provider.Close(context.Background())
@@ -291,7 +294,7 @@ mux.Handle("/", provider.Handler())
 http.ListenAndServe("127.0.0.1:5556", mux)
 ```
 
-`Options.Validate(ctx)` enforces the production contract: valid issuer for the mode, a non-nil store, every client valid for the mode, and in `ProductionMode` a ≥32-byte token secret, secure cookies, a persistent store, and an active signing key. `Readiness(ctx)` reports lifecycle/store/key checks and `Close(ctx)` is idempotent. A runnable dev example is in [`examples/embedded/main.go`](examples/embedded/main.go). See [`docs/security-profile.md`](docs/security-profile.md) for the full enabled-controls list and the release gate.
+`Options.Validate(ctx)` enforces the production contract: a valid HTTPS issuer, valid clients, a ≥32-byte token secret, secure cookies, explicit audit/limiter/client-address implementations, a persistent current-schema store, and exactly one currently usable RS256 RSA key of at least 2048 bits. `Readiness(ctx)` reports lifecycle/store/key checks and `Close(ctx)` is idempotent. A runnable dev example is in [`examples/embedded/main.go`](examples/embedded/main.go). See [`docs/security-profile.md`](docs/security-profile.md) for the full enabled-controls list and the release gate.
 
 ---
 
@@ -410,7 +413,7 @@ Common symptoms:
 Deep-dive docs for the productized strict engine live under `docs/`:
 
 - [`docs/security-profile.md`](docs/security-profile.md) — strict-engine security baseline, enabled controls, unsupported features, release gate.
-- [`docs/storage.md`](docs/storage.md) — the `storage.Store` profile and SQLite schema/invariants.
+- [`docs/storage.md`](docs/storage.md) — the `idpstore.Store` profile, transactions, SQLite durability, backup, and restore.
 - [`docs/users-and-passwords.md`](docs/users-and-passwords.md) — Argon2id credentials and strict login behavior.
 - [`docs/key-rotation.md`](docs/key-rotation.md) — safe signing-key rotation.
 - [`docs/admin-cli.md`](docs/admin-cli.md) — the `tinyidp admin` command surface.

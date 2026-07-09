@@ -25,14 +25,14 @@ func (s *Service) GenerateSigningKey(ctx context.Context, kid string, active boo
 		return idpstore.SigningKey{}, err
 	}
 	key.Active = active
-	if err := s.Store.CreateSigningKey(ctx, key); err != nil {
-		return idpstore.SigningKey{}, err
-	}
 	if active {
-		if err := s.Store.ActivateSigningKey(ctx, key.ID); err != nil {
+		result, err := s.Store.RotateSigningKey(ctx, key, s.Clock().UTC())
+		if err != nil {
 			return idpstore.SigningKey{}, err
 		}
-		key.Active = true
+		key = result.Active
+	} else if err := s.Store.CreateSigningKey(ctx, key); err != nil {
+		return idpstore.SigningKey{}, err
 	}
 	_ = s.Audit.Emit(ctx, idp.Event{Time: key.CreatedAt, Name: "admin.key.generated", Result: "accepted", Fields: map[string]string{"kid": key.ID}})
 	return key, nil

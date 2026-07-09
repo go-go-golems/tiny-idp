@@ -11,6 +11,22 @@ import (
 // RunStoreSuite verifies invariants every store implementation must satisfy.
 func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
+	t.Run("nested transactions are rejected", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		err := st.Update(ctx, func(tx TxStore) error {
+			nested, ok := tx.(interface {
+				Update(context.Context, func(TxStore) error) error
+			})
+			if !ok {
+				t.Fatal("transaction implementation does not expose its nested-operation guard")
+			}
+			return nested.Update(ctx, func(TxStore) error { return nil })
+		})
+		if !errors.Is(err, ErrNestedTransaction) {
+			t.Fatalf("nested Update error = %v, want %v", err, ErrNestedTransaction)
+		}
+	})
 	t.Run("authorization code can be consumed once", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)
