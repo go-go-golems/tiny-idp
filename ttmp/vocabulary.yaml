@@ -17,6 +17,14 @@ topics:
       description: Authentication and authorization
     - slug: xgoja
       description: xgoja generated host examples, providers, and smoke-test workflows
+    - slug: architecture
+      description: Topic used by TINYIDP-JITSI-001 research and design.
+    - slug: authentication
+      description: Topic used by TINYIDP-JITSI-001 research and design.
+    - slug: jitsi
+      description: Topic used by TINYIDP-JITSI-001 research and design.
+    - slug: research
+      description: Topic used by TINYIDP-JITSI-001 research and design.
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
