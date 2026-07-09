@@ -7,9 +7,9 @@ tasks so partial implementation never looks like phase completion.
 ## Ticket foundation and design
 
 - [x] Create the implementation ticket, design document, diary, and phase ledger.
-- [ ] Write the intern-oriented architecture, API, and implementation guide.
-- [ ] Relate the implementation guide and diary to the production files that shape the design.
-- [ ] Validate the ticket with `docmgr doctor` and resolve actionable findings.
+- [x] Write the intern-oriented architecture, API, and implementation guide.
+- [x] Relate the implementation guide and diary to the production files that shape the design.
+- [x] Validate the ticket with `docmgr doctor` and resolve actionable findings.
 - [ ] Dry-run and upload the implementation guide bundle to reMarkable.
 
 ## Phase 0 — dependency and toolchain security baseline
