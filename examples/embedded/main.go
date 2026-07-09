@@ -6,32 +6,24 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"time"
 
-	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func main() {
 	ctx := context.Background()
-	st := memory.New()
-	secretKey := []byte("example-secret-key-32-bytes-minimum")
-	_ = st.PutClient(ctx, idpstore.Client{
-		ID: "example-app", Public: true,
-		RedirectURIs:  []string{"http://localhost:8080/callback"},
-		AllowedScopes: []string{"openid", "profile", "email", "offline_access"},
-		RequirePKCE:   true,
-	})
-	_ = st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"})
-	key, err := keys.GenerateRSA("example-key", time.Now())
+	st, err := sqlitestore.Open("tinyidp.db")
 	if err != nil {
 		log.Fatal(err)
 	}
-	_ = st.CreateSigningKey(ctx, key)
+	defer func() { _ = st.Close() }()
 
-	provider, err := embeddedidp.New(embeddedidp.Options{
+	// Provision clients, users, credentials, and an active signing key with the
+	// tinyidp admin commands before starting the embedded provider.
+	secretKey := []byte("example-secret-key-32-bytes-minimum")
+
+	provider, err := embeddedidp.New(ctx, embeddedidp.Options{
 		Issuer: "http://127.0.0.1:5556",
 		Mode:   embeddedidp.DevMode,
 		Store:  st,
@@ -40,6 +32,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer func() { _ = provider.Close(context.Background()) }()
 
 	mux := http.NewServeMux()
 	mux.Handle("/", provider.Handler())

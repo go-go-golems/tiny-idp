@@ -58,11 +58,11 @@ without a transaction boundary.
 ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-api-smoke.sh
 ```
 
-The script creates a temporary external module and attempts to compile the
-production embedding example. It succeeds as an audit probe only when the Go
-compiler reproduces the expected `use of internal package ... not allowed`
-failure. Once the public storage boundary is fixed, this probe should be
-replaced by a positive external-consumer integration test.
+The script creates a temporary external module that imports only
+`pkg/embeddedidp`, `pkg/idp`, `pkg/idpstore`, and `pkg/sqlitestore`. It compiles
+production construction, handler access, readiness, and close against the local
+repository replacement. Any regression that reintroduces an internal type at
+the exported boundary fails external compilation.
 
 ## SQLite live-backup probe
 

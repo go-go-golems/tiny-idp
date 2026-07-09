@@ -9,7 +9,7 @@ There are two engines, and picking the right one matters:
 | **mock** | `--engine mock` (default) | in-memory | Local dev, integration tests, **failure simulation** | Rich scenario catalog, debug routes, device grant, DPoP, JWKS failure modes. Not for production. |
 | **strict** | `--engine fosite` | in-memory (via `serve`) or a persistent `storage.Store` (via `pkg/embeddedidp`) | Production-like OAuth/OIDC behavior | Fosite validation, Auth-Code + PKCE only, CSRF, security headers, persistent consent/keys, Argon2id login. |
 
-> **Maturity, read this.** The `mock` engine and **`tinyidp serve` are for local/testing use** — bind to loopback (`127.0.0.1`) and never expose them to the internet. A **production deployment is the _strict_ engine embedded through `pkg/embeddedidp`** with a **persistent store** (e.g. `internal/store/sqlite`), `ProductionMode`, secure cookies, a ≥32-byte token secret, and an active persistent signing key — these are enforced by `embeddedidp.Options.Validate`. `serve --engine fosite` currently runs the strict engine in **dev mode with an in-memory store**, so it is a preview of strict behavior, not a production server. See [`docs/security-profile.md`](docs/security-profile.md).
+> **Maturity, read this.** The `mock` engine and **`tinyidp serve` are for local/testing use** — bind to loopback (`127.0.0.1`) and never expose them to the internet. A **production deployment is the _strict_ engine embedded through `pkg/embeddedidp`** with a **persistent store** (for example `pkg/sqlitestore`), `ProductionMode`, secure cookies, a ≥32-byte token secret, and an active persistent signing key — these are enforced by `embeddedidp.Options.Validate(ctx)`. `serve --engine fosite` currently runs the strict engine in **dev mode with an in-memory store**, so it is a preview of strict behavior, not a production server. See [`docs/security-profile.md`](docs/security-profile.md).
 >
 > **Honest caveats.** The strict engine has passed a **hosted OpenID Foundation Basic OP conformance run with zero hard failures** (suite 5.2.0; discovery + static clients) — this is *not* a claim of formal certification. Still missing/in progress: a config-backed runtime store loader for `serve` (today the durable path is `admin` + `pkg/embeddedidp`), a token `/revoke` or `/introspect` HTTP route, and `/end-session`/device/DPoP in strict mode. `serve` uses plain `http.ListenAndServe`; production expects TLS to be terminated at a reverse proxy (the strict profile requires an `https://` issuer and secure cookies, not in-process TLS).
 
@@ -207,7 +207,7 @@ The strict engine is designed to be embedded in your own service with a durable 
 
 ### Storage and persistence
 
-Strict-engine domain state flows through `internal/storage.Store`. `internal/store/sqlite` is the durable embedded implementation; its migration owns all schema — clients, users, grants, authorization codes, access/refresh tokens, consents, sessions, signing keys, and the Fosite protocol tables. **Production mode requires a persistent store** (`embeddedidp.Options.Validate` rejects an in-memory store unless `AllowInMemoryStoresInProduction` is set). Invariants the store guarantees: one-time-use authorization codes (even under parallel consumption), refresh-token rotation with reuse-detection that revokes the family, scope-normalized consent lookup, hashed-handle-only sessions, and signing keys that persist across restart with retired keys still verifiable. See [`docs/storage.md`](docs/storage.md).
+Strict-engine domain state flows through `idpstore.Store`. `pkg/sqlitestore` is the durable embedded implementation; its migration owns all schema — clients, users, grants, authorization codes, access/refresh tokens, consents, sessions, signing keys, and the Fosite protocol tables. **Production mode requires a persistent store** (`embeddedidp.Options.Validate(ctx)` rejects an in-memory store unless `AllowInMemoryStoresInProduction` is set). Invariants the store guarantees: one-time-use authorization codes (even under parallel consumption), refresh-token rotation with reuse-detection that revokes the family, scope-normalized consent lookup, hashed-handle-only sessions, and signing keys that persist across restart with retired keys still verifiable. See [`docs/storage.md`](docs/storage.md).
 
 ### Admin CLI
 
@@ -258,25 +258,32 @@ The strict engine signs ID tokens with the active key in the store's `KeyStore` 
 
 ### Embedding the provider (`pkg/embeddedidp`)
 
-Run the strict IdP inside your own binary. `embeddedidp.New(Options)` returns a `*Provider` whose `Handler()` you mount on any `*http.ServeMux`:
+Run the strict IdP inside your own binary. `embeddedidp.New(ctx, Options)` returns a `*Provider` whose `Handler()` you mount on any `*http.ServeMux`:
 
 ```go
 import (
+    "context"
     "net/http"
 
-    "github.com/manuel/tinyidp/internal/store/sqlite" // a persistent storage.Store
     "github.com/manuel/tinyidp/pkg/embeddedidp"
+    "github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
-provider, err := embeddedidp.New(embeddedidp.Options{
+ctx := context.Background()
+store, err := sqlitestore.Open("tinyidp.db")
+if err != nil { /* handle */ }
+defer store.Close()
+
+provider, err := embeddedidp.New(ctx, embeddedidp.Options{
     Issuer: "https://id.example.com",
     Mode:   embeddedidp.ProductionMode,        // enforces the invariants below
     Store:  store,                              // persistent storage.Store (SQLite)
-    Cookie: embeddedidp.CookieConfig{Secure: true, SameSite: "Lax"},
+    Cookie: embeddedidp.CookieConfig{Secure: true},
     Token:  embeddedidp.TokenConfig{SecretKey: secret /* >= 32 bytes */},
     // optional: Audit, Consent, RateLimiter, Authenticator
 })
 if err != nil { /* Validate() failed */ }
+defer provider.Close(context.Background())
 
 mux := http.NewServeMux()
 mux.Handle("/", provider.Handler())
@@ -284,7 +291,7 @@ mux.Handle("/", provider.Handler())
 http.ListenAndServe("127.0.0.1:5556", mux)
 ```
 
-`Options.Validate()` enforces the production contract: valid issuer for the mode, a non-nil store, every client valid for the mode, and in `ProductionMode` a ≥32-byte token secret, secure cookies, a persistent store, and an active signing key. A runnable dev example is in [`examples/embedded/main.go`](examples/embedded/main.go). See [`docs/security-profile.md`](docs/security-profile.md) for the full enabled-controls list and the release gate.
+`Options.Validate(ctx)` enforces the production contract: valid issuer for the mode, a non-nil store, every client valid for the mode, and in `ProductionMode` a ≥32-byte token secret, secure cookies, a persistent store, and an active signing key. `Readiness(ctx)` reports lifecycle/store/key checks and `Close(ctx)` is idempotent. A runnable dev example is in [`examples/embedded/main.go`](examples/embedded/main.go). See [`docs/security-profile.md`](docs/security-profile.md) for the full enabled-controls list and the release gate.
 
 ---
 

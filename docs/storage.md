@@ -1,10 +1,10 @@
 # tiny-idp Strict Engine Storage Profile
 
-The strict engine stores domain state through `internal/storage.Store`. Production mode requires a persistent store unless tests explicitly override validation.
+The strict engine stores domain state through the public `pkg/idpstore.Store` contract. Production mode requires a persistent store unless tests explicitly override validation.
 
 ## SQLite store
 
-`internal/store/sqlite` is the initial durable embedded store. Its migration currently creates:
+`pkg/sqlitestore` is the initial durable embedded store. Its migration currently creates:
 
 - clients
 - users

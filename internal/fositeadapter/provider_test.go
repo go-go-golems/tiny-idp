@@ -35,7 +35,7 @@ func TestUnsupportedRequestObjectRedirectsWithStableError(t *testing.T) {
 	if err := st.CreateSigningKey(ctx, key); err != nil {
 		t.Fatal(err)
 	}
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: []byte("request-object-secret-32-bytes!!")})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: []byte("request-object-secret-32-bytes!!")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestProductionProviderRejectsMissingSecretKey(t *testing.T) {
 	_ = st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(ctx, key)
-	if _, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: idpstore.ProductionMode}); err == nil {
+	if _, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: idpstore.ProductionMode}); err == nil {
 		t.Fatal("expected production provider to reject missing secret key")
 	}
 }
@@ -202,7 +202,7 @@ func TestStrictProviderHasNoDebugRoute(t *testing.T) {
 	st := memory.New()
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(context.Background(), key)
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 	if err := st.PutPasswordCredential(ctx, credential); err != nil {
 		t.Fatal(err)
 	}
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: secretKey, Mode: idpstore.ProductionMode, Authenticator: svc, Consent: fositeadapter.AlwaysSkipConsent{}})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: secretKey, Mode: idpstore.ProductionMode, Authenticator: svc, Consent: fositeadapter.AlwaysSkipConsent{}})
 	if err != nil {
 		t.Fatal(err)
 	}

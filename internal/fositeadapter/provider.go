@@ -76,7 +76,13 @@ type Provider struct {
 	sessionTTL    time.Duration
 }
 
-func NewProvider(opts Options) (*Provider, error) {
+func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	iss, err := oidcmeta.ParseIssuer(opts.Issuer)
 	if err != nil {
 		return nil, err
@@ -154,7 +160,7 @@ func NewProvider(opts Options) (*Provider, error) {
 		},
 	}
 
-	fs, err := buildFositeStore(opts.Store, cfg, opts.ClientSecrets)
+	fs, err := buildFositeStore(ctx, opts.Store, cfg, opts.ClientSecrets)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +188,7 @@ type composedFositeStore struct {
 	memoryStore *fositememory.MemoryStore
 }
 
-func buildFositeStore(st idpstore.Store, cfg *fosite.Config, plainSecrets map[string]string) (*composedFositeStore, error) {
+func buildFositeStore(ctx context.Context, st idpstore.Store, cfg *fosite.Config, plainSecrets map[string]string) (*composedFositeStore, error) {
 	if sqlProvider, ok := st.(sqlDBProvider); ok {
 		s, err := newSQLFositeStore(sqlProvider.SQLDB(), st, cfg, plainSecrets)
 		if err != nil {
@@ -191,7 +197,7 @@ func buildFositeStore(st idpstore.Store, cfg *fosite.Config, plainSecrets map[st
 		return &composedFositeStore{store: s}, nil
 	}
 	fs := fositememory.NewMemoryStore()
-	clients, err := st.ListClients(context.Background())
+	clients, err := st.ListClients(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +216,7 @@ func buildFositeStore(st idpstore.Store, cfg *fosite.Config, plainSecrets map[st
 		}
 		if !c.Public {
 			if secret, ok := plainSecrets[c.ID]; ok {
-				hashed, err := hasher.Hash(context.Background(), []byte(secret))
+				hashed, err := hasher.Hash(ctx, []byte(secret))
 				if err != nil {
 					return nil, err
 				}

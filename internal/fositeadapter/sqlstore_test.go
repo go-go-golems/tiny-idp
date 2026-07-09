@@ -40,7 +40,7 @@ func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
 	if err := st.CreateSigningKey(ctx, key); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
+	provider, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestFositeSQLiteClientWithEmptyScopesRejectsRequestedScope(t *testing.T) {
 	if err := st.CreateSigningKey(ctx, key); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("sqlite-empty-scopes-secret-32")})
+	provider, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("sqlite-empty-scopes-secret-32")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestFositeSQLiteDisabledClientRejectsPersistedAuthorizationCode(t *testing.
 	if err := st.CreateSigningKey(ctx, key); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
+	provider, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 	if err := st.CreateSigningKey(ctx, key); err != nil {
 		t.Fatal(err)
 	}
-	provider1, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
+	provider1, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider2, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st2, SecretKey: secretKey})
+	provider2, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st2, SecretKey: secretKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st3.Close()
-	provider3, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st3, SecretKey: secretKey})
+	provider3, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st3, SecretKey: secretKey})
 	if err != nil {
 		t.Fatal(err)
 	}

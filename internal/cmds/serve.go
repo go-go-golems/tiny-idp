@@ -265,7 +265,7 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 	if err := st.CreateSigningKey(context.Background(), key); err != nil {
 		return nil, err
 	}
-	return fositeadapter.NewProvider(fositeadapter.Options{Issuer: cfg.Issuer, Store: st, SecretKey: strictDevSecretKey, Mode: idpstore.DevMode, ClientSecrets: plainClientSecrets})
+	return fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: cfg.Issuer, Store: st, SecretKey: strictDevSecretKey, Mode: idpstore.DevMode, ClientSecrets: plainClientSecrets})
 }
 
 func applyScenarioClaims(u *idpstore.User, claims map[string]any) {

@@ -22,7 +22,7 @@ func TestBrowserSessionSilentAuthorizeAndPromptNone(t *testing.T) {
 	_ = st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(ctx, key)
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("session-secret-key-32-bytes!!!!!")})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("session-secret-key-32-bytes!!!!!")})
 	if err != nil {
 		t.Fatal(err)
 	}

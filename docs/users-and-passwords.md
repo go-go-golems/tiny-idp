@@ -54,5 +54,5 @@ Prefer `--password-from-stdin` so passwords do not land in shell history. The `-
 Use:
 
 ```bash
-go test ./internal/passwordhash ./internal/authn ./internal/admin ./internal/fositeadapter ./internal/store/memory ./internal/store/sqlite ./pkg/embeddedidp
+go test ./internal/passwordhash ./internal/authn ./internal/admin ./internal/fositeadapter ./internal/store/memory ./pkg/sqlitestore ./pkg/embeddedidp
 ```

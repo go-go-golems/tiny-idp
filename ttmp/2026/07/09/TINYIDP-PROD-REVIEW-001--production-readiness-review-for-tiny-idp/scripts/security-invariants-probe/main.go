@@ -110,7 +110,7 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	if err := store.CreateSigningKey(ctx, expiredKey); err != nil {
 		return err
 	}
-	provider, err := embeddedidp.New(embeddedidp.Options{
+	provider, err := embeddedidp.New(context.Background(), embeddedidp.Options{
 		Issuer: "https://id.example.test",
 		Mode:   embeddedidp.ProductionMode,
 		Store:  store,

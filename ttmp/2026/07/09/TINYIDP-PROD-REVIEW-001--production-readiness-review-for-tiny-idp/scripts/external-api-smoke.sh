@@ -12,30 +12,39 @@ printf '%s\n' \
   'package consumer' \
   '' \
   'import (' \
-  '  "github.com/manuel/tinyidp/internal/store/sqlite"' \
+  '  "context"' \
+  '' \
+  '  "github.com/manuel/tinyidp/pkg/idp"' \
+  '  "github.com/manuel/tinyidp/pkg/idpstore"' \
   '  "github.com/manuel/tinyidp/pkg/embeddedidp"' \
+  '  "github.com/manuel/tinyidp/pkg/sqlitestore"' \
   ')' \
   '' \
-  'func Build() error {' \
-  '  store, err := sqlite.Open("idp.db")' \
+  'type limiter struct{}' \
+  'func (limiter) Allow(context.Context, string) bool { return true }' \
+  'var _ idp.RateLimiter = limiter{}' \
+  '' \
+  'func Build(ctx context.Context, path string) error {' \
+  '  store, err := sqlitestore.Open(path)' \
   '  if err != nil { return err }' \
   '  defer store.Close()' \
-  '  _, err = embeddedidp.New(embeddedidp.Options{Store: store})' \
+  '  var _ idpstore.Store = store' \
+  '  provider, err := embeddedidp.New(ctx, embeddedidp.Options{' \
+  '    Issuer: "https://issuer.example.test",' \
+  '    Mode: embeddedidp.ProductionMode,' \
+  '    Store: store,' \
+  '    Cookie: embeddedidp.CookieConfig{Secure: true},' \
+  '    Token: embeddedidp.TokenConfig{SecretKey: []byte("external-consumer-secret-32-bytes")},' \
+  '    Audit: idp.NewMemorySink(),' \
+  '    RateLimiter: limiter{},' \
+  '  })' \
+  '  if err != nil { return err }' \
+  '  _ = provider.Handler()' \
+  '  _ = provider.Readiness(ctx)' \
+  '  err = provider.Close(ctx)' \
   '  return err' \
   '}' > "$probe_dir/consumer/consumer.go"
 
-set +e
 output="$(cd "$probe_dir" && GOWORK=off go test -mod=mod ./consumer 2>&1)"
-status=$?
-set -e
 printf '%s\n' "$output"
-
-if [[ $status -eq 0 ]]; then
-  printf 'UNEXPECTED: external production embedding compiled successfully\n' >&2
-  exit 1
-fi
-if [[ "$output" != *"use of internal package"*"not allowed"* ]]; then
-  printf 'UNEXPECTED: compilation failed for a reason other than the public/internal API boundary\n' >&2
-  exit 1
-fi
-printf 'EXPECTED: external production embedding is blocked by Go internal-package visibility\n'
+printf 'OK: external production embedding imports only public tiny-idp packages and compiles\n'

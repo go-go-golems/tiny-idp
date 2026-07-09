@@ -17,8 +17,7 @@ const (
 )
 
 type CookieConfig struct {
-	Secure   bool
-	SameSite string
+	Secure bool
 }
 
 type TokenConfig struct {
@@ -38,7 +37,13 @@ type Options struct {
 	AllowInMemoryStoresInProduction bool
 }
 
-func (o Options) Validate() error {
+func (o Options) Validate(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	mode := o.Mode
 	if mode == "" {
 		mode = DevMode
@@ -49,7 +54,7 @@ func (o Options) Validate() error {
 	if o.Store == nil {
 		return fmt.Errorf("store is required")
 	}
-	clients, err := o.Store.ListClients(context.Background())
+	clients, err := o.Store.ListClients(ctx)
 	if err != nil {
 		return fmt.Errorf("list clients: %w", err)
 	}
@@ -68,7 +73,7 @@ func (o Options) Validate() error {
 		if reporter, ok := o.Store.(idpstore.PersistentReporter); ok && !reporter.Persistent() && !o.AllowInMemoryStoresInProduction {
 			return fmt.Errorf("production mode requires persistent stores")
 		}
-		if _, err := o.Store.ActiveSigningKey(context.Background()); err != nil {
+		if _, err := o.Store.ActiveSigningKey(ctx); err != nil {
 			return fmt.Errorf("production mode requires active signing key: %w", err)
 		}
 	}

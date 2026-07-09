@@ -66,7 +66,7 @@ func TestPromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent(t *testing.T) 
 		t.Fatal(err)
 	}
 	_ = st.CreateSigningKey(ctx, key)
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("prompt-none-consent-secret-32"), Consent: fositeadapter.NewStoredConsent(st, 0)})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("prompt-none-consent-secret-32"), Consent: fositeadapter.NewStoredConsent(st, 0)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = st.CreateSigningKey(ctx, key)
-	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: idpstore.ProductionMode, SecretKey: []byte("stored-consent-secret-32-bytes!!!"), Authenticator: svc})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: idpstore.ProductionMode, SecretKey: []byte("stored-consent-secret-32-bytes!!!"), Authenticator: svc})
 	if err != nil {
 		t.Fatal(err)
 	}

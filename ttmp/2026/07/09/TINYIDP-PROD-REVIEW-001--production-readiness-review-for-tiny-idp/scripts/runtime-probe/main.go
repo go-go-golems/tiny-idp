@@ -176,11 +176,11 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("create signing key: %w", err)
 	}
 
-	provider, err := embeddedidp.New(embeddedidp.Options{
+	provider, err := embeddedidp.New(context.Background(), embeddedidp.Options{
 		Issuer:      "https://id.example.test",
 		Mode:        embeddedidp.ProductionMode,
 		Store:       store,
-		Cookie:      embeddedidp.CookieConfig{Secure: true, SameSite: "Lax"},
+		Cookie:      embeddedidp.CookieConfig{Secure: true},
 		Token:       embeddedidp.TokenConfig{SecretKey: []byte("runtime-probe-secret-key-32-bytes-minimum")},
 		Audit:       auditSink,
 		RateLimiter: fositeadapter.NewFixedWindowRateLimiter(10_000, time.Minute),

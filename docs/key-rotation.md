@@ -27,7 +27,7 @@ A safe rotation has three states:
 ## Validation
 
 ```bash
-go test ./internal/keys ./internal/store/sqlite ./internal/fositeadapter
+go test ./internal/keys ./pkg/sqlitestore ./internal/fositeadapter
 ```
 
 Important tests:
