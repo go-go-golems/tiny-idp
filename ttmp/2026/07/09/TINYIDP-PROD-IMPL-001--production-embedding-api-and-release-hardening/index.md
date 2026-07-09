@@ -47,7 +47,7 @@ are complete.
 
 Current status: **active**
 
-Current phase: **Phase 0 — dependency and toolchain security baseline**
+Current phase: **Phase 1 — consumable public embedding API**
 
 Release status: **blocked until all phase gates pass**
 

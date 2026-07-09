@@ -28,3 +28,12 @@ Step 5: established the Go 1.26.5 and go-jose/v3 3.0.5 release baseline with CI,
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/ci.yml — Phase 0 CI enforcement
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/go.mod — Release dependency and toolchain baseline
+
+## 2026-07-09
+
+Step 6: closed Phase 0 from committed state and advanced to Phase 1 (code commit a2c86a9)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/go.mod — Verified Phase 0 release graph
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md — Phase 0 gate and Phase 1 progress state

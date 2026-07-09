@@ -23,7 +23,7 @@ tasks so partial implementation never looks like phase completion.
 - [x] Run existing parser fuzz seeds and strict local conformance smoke tests.
 - [x] Add or update CI so the exact supported Go patch level and `govulncheck` are release gates.
 - [x] Produce or wire an SBOM and provenance record for release artifacts.
-- [ ] Phase 0 gate: commit evidence for a reproducible, vulnerability-clean release graph.
+- [x] Phase 0 gate: commit evidence for a reproducible, vulnerability-clean release graph.
 
 ## Phase 1 — consumable public embedding API
 

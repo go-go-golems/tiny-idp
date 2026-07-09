@@ -753,3 +753,109 @@ CGO_ENABLED=1 linux/amd64
 - `Makefile`
 - `.github/workflows/ci.yml`
 - `.github/workflows/release-evidence.yml`
+
+## Step 6: Close the Phase 0 gate from committed state
+
+This step reran the Phase 0 acceptance gate after both the implementation and
+its evidence were committed. It separates “the change passed while being
+developed” from “the recorded commit is reproducibly green,” then advances the
+ticket to the public embedding API phase.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement phases sequentially and close each only
+after a clean, committed verification checkpoint.
+
+**Inferred user intent:** Prevent optimistic phase completion based on an
+uncommitted or partially verified workspace.
+
+**Commit (code):** `a2c86a9` — "build: establish secure release baseline"
+
+### What I did
+
+- Started from committed code and committed Step 5 evidence.
+- Ran `make verify`, which executes build, full tests, pinned lint, Glazed lint,
+  and pinned govulncheck in module mode.
+- Ran actionlint v1.7.7 against both workflows.
+- Required `git diff --exit-code` and `git diff --cached --exit-code` to pass.
+- Checked the Phase 0 gate task and changed the ticket's current phase to Phase
+  1.
+
+### Why
+
+- A phase gate should describe a repository commit another engineer can check
+  out, not transient working state.
+- Advancing the index only after the gate keeps the ticket overview honest.
+
+### What worked
+
+- Build and all tests passed.
+- golangci-lint reported zero issues; Glazed lint passed.
+- govulncheck reported zero reachable vulnerabilities.
+- Both GitHub Actions workflows passed actionlint.
+- Tracked and staged diffs were empty. Only the two pre-existing untracked
+  source directories belonging to `TINYIDP-PROD-001` remain, and they were not
+  included in any commit.
+
+### What didn't work
+
+- The clean-commit gate passed on its first run. The subsequent docmgr
+  changelog update repeated the known helper formatting issue:
+
+  ```text
+  ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/changelog.md:40: new blank line at EOF.
+  ```
+
+  Removing the final blank line restored the documentation whitespace gate.
+
+### What I learned
+
+- Toolchain-qualified linter caches make the second verification both correct
+  and fast: the exact Go 1.26.5 binaries were reused without the stale-builder
+  error.
+
+### What was tricky to build
+
+- “Clean” had to be defined as no tracked or staged changes because unrelated
+  user-owned untracked directories predate this ticket. Deleting or staging them
+  would violate scope; the explicit diff checks prove the Phase 0 commit itself
+  is stable.
+
+### What warrants a second pair of eyes
+
+- Confirm the release policy accepts zero *reachable* vulnerabilities while
+  retaining visibility into unreachable advisories.
+
+### What should be done in the future
+
+- Use the same committed-state gate pattern at the end of every later phase.
+
+### Code review instructions
+
+- Check out `a2c86a9` or later and run `make verify` with network access for any
+  missing pinned tools.
+- Run actionlint v1.7.7 and confirm both tracked diff commands exit zero.
+
+### Technical details
+
+```text
+make verify
+  build: PASS
+  tests: PASS
+  golangci-lint: 0 issues
+  Glazed lint: PASS
+  govulncheck: 0 reachable vulnerabilities
+
+actionlint: PASS
+git diff --exit-code: PASS
+git diff --cached --exit-code: PASS
+```
+
+## Related
+
+- [Implementation guide](../design-doc/01-production-embedding-api-and-release-implementation-guide.md)
+- [Phase ledger](../tasks.md)
+- `go.mod`
+- `.github/workflows/ci.yml`
