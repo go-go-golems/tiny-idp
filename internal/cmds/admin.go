@@ -32,6 +32,7 @@ throwaway databases only.`,
 	cmd.AddCommand(newAdminKeysCommand(&dbPath))
 	cmd.AddCommand(newAdminUserCommand(&dbPath))
 	cmd.AddCommand(newAdminBackupCommand(&dbPath))
+	cmd.AddCommand(newAdminExportCommand(&dbPath))
 	return cmd
 }
 
