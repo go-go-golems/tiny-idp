@@ -1,0 +1,32 @@
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-4945
+    Go JOSE Panics in JWE decryption in github.com/go-jose/go-jose
+  More info: https://pkg.go.dev/vuln/GO-2026-4945
+  Module: github.com/go-jose/go-jose/v3
+    Found in: github.com/go-jose/go-jose/v3@v3.0.3
+    Fixed in: github.com/go-jose/go-jose/v3@v3.0.5
+    Example traces found:
+      #1: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.JSONWebKeySet.Key
+      #2: internal/fositeadapter/provider.go:419:45: fositeadapter.Provider.token calls fosite.Fosite.NewAccessResponse, which eventually calls jose.JSONWebSignature.CompactSerialize
+      #3: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.JSONWebSignature.UnsafePayloadWithoutVerification
+      #4: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.JSONWebSignature.Verify
+      #5: internal/fositeadapter/provider.go:419:45: fositeadapter.Provider.token calls fosite.Fosite.NewAccessResponse, which eventually calls jose.NewSigner
+      #6: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.ParseSigned
+      #7: internal/fositeadapter/provider.go:419:45: fositeadapter.Provider.token calls fosite.Fosite.NewAccessResponse, which eventually calls jose.genericSigner.Sign
+      #8: internal/fositeadapter/provider.go:24:2: fositeadapter.init calls jwt.init, which calls jose.init
+
+Vulnerability #2: GO-2025-3485
+    DoS in go-jose Parsing in github.com/go-jose/go-jose
+  More info: https://pkg.go.dev/vuln/GO-2025-3485
+  Module: github.com/go-jose/go-jose/v3
+    Found in: github.com/go-jose/go-jose/v3@v3.0.3
+    Fixed in: github.com/go-jose/go-jose/v3@v3.0.4
+    Example traces found:
+      #1: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.ParseSigned
+
+Your code is affected by 2 vulnerabilities from 1 module.
+This scan also found 1 vulnerability in packages you import and 1 vulnerability
+in modules you require, but your code doesn't appear to call these
+vulnerabilities.
+Use '-show verbose' for more details.

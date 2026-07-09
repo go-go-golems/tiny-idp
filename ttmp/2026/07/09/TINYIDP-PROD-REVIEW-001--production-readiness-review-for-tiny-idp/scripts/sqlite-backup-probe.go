@@ -38,7 +38,11 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			log.Warn().Err(err).Str("path", dir).Msg("remove backup probe directory")
+		}
+	}()
 
 	source := filepath.Join(dir, "source.db")
 	backup := filepath.Join(dir, "backup.db")
@@ -84,10 +88,10 @@ func run(ctx context.Context) error {
 	}
 	defer copyStore.Close()
 	_, lookupErr := copyStore.GetClient(ctx, client.ID)
-	switch {
-	case lookupErr == nil:
+	switch lookupErr {
+	case nil:
 		return fmt.Errorf("probe assumption failed: copied file unexpectedly contains WAL-only client")
-	case lookupErr == storage.ErrNotFound:
+	case storage.ErrNotFound:
 		fmt.Println("CONFIRMED: backup opens successfully but omits a committed client stored in the source WAL")
 		return nil
 	default:

@@ -56,6 +56,22 @@ the WAL, calls the product's file-copy backup function, and demonstrates that
 the resulting backup can open successfully while silently omitting committed
 data.
 
+## Security invariant probe
+
+```bash
+go run \
+  ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/security-invariants-probe \
+  --rounds 25 --attempts 5 --log-level info
+```
+
+This probe checks production-sensitive invariants that are hard to establish
+from happy-path tests: SQLite file permissions under a permissive umask,
+minimum-password enforcement, `MustChangeAtLogin` propagation, production
+construction with an expired active signing key and nil audit/rate controls,
+and concurrent failed-login accounting. It uses fast Argon2id test parameters
+only for the concurrency reproduction; the normal runtime probe measures the
+real 64 MiB password configuration.
+
 ## Parser fuzz harnesses
 
 ```bash

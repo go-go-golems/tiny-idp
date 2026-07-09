@@ -132,7 +132,11 @@ func run(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			log.Warn().Err(err).Str("path", dir).Msg("remove runtime probe directory")
+		}
+	}()
 	store, err := sqlite.Open(filepath.Join(dir, "runtime.db"))
 	if err != nil {
 		return fmt.Errorf("open SQLite: %w", err)
@@ -450,6 +454,8 @@ func readRuntimeMetrics() map[string]float64 {
 			out[sample.Name] = float64(sample.Value.Uint64())
 		case runtimemetrics.KindFloat64:
 			out[sample.Name] = sample.Value.Float64()
+		case runtimemetrics.KindBad, runtimemetrics.KindFloat64Histogram:
+			continue
 		}
 	}
 	return out
