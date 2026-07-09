@@ -27,6 +27,14 @@ RelatedFiles:
       Note: Typed repository-specific production analyzer (commit 54fcbcf)
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go
       Note: Strict-flow runtime instrumentation and profile capture (commit 54fcbcf)
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/security-invariants-probe/main.go
+      Note: Reproduces password, lockout, key-validation, control-default, and database-permission gaps (commit ca40c40)
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/various/gosec-product.json
+      Note: Product-only gosec findings used for manual triage
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/various/govulncheck-go1.26.1.txt
+      Note: Reachable vulnerability report for the active Go 1.26.1 toolchain
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/various/govulncheck-go1.26.5.txt
+      Note: Patched-toolchain report isolating remaining go-jose vulnerabilities
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/various/runtime/summary.md
       Note: Measured runtime baseline for the strict happy path (commit 54fcbcf)
 ExternalSources: []
@@ -35,6 +43,10 @@ LastUpdated: 2026-07-09T13:42:50.339918882-04:00
 WhatFor: Making the audit reproducible and allowing another engineer to continue or challenge the review.
 WhenToUse: Use while reviewing findings, rerunning checks, or continuing production-hardening work.
 ---
+
+
+
+
 
 
 
@@ -355,6 +367,151 @@ Requests observed: 45
 Audit events emitted: 9
 /sched/goroutines:goroutines delta: 0
 /gc/heap/allocs:bytes delta: ~67.9 MB
+```
+
+## Step 4: Run the full verification and security gate
+
+This step moved from targeted evidence to broad release-candidate validation.
+The normal and race-enabled test suites, build, vet, pinned project lint,
+Glazed lint, rebuilt Staticcheck, gosec, govulncheck, short native fuzz
+campaigns, and a patched-Go compatibility run were all exercised. Results were
+separated into tool failures, scanner false positives, and confirmed ship
+blockers.
+
+The step also added a dedicated security-invariant probe after static review
+showed several gaps that deserved runtime proof. It reproduced permissive
+database permissions, ineffective minimum-password policy, expired-key
+acceptance, optional production controls, and lost concurrent lockout updates.
+
+### Prompt Context
+
+**User prompt (verbatim):**
+
+> continue
+
+> keep a frequent and detailed diary, btw. Backfill all that is necessary (read the skill for how to format it)
+
+**Assistant interpretation:** Resume the interrupted verification work, keep
+the diary current using the strict diary format, and backfill every material
+command, result, failure, and conclusion before proceeding.
+
+**Inferred user intent:** Preserve enough chronological evidence that another
+engineer can reproduce the ship decision and understand how each finding was
+confirmed or dismissed.
+
+**Commit (code):** `ca40c40` — "audit(tinyidp): add security invariant verification"
+
+### What I did
+
+- Recovered the interrupted parallel verification call instead of rerunning completed work.
+- Ran `go build ./...`, `go test ./... -count=1`, `go vet ./...`, and `go test -race ./... -count=1` through the normal workspace.
+- Ran pinned `make lint`, including golangci-lint v2.12.2 and the Glazed analyzer.
+- Rebuilt Staticcheck v0.6.1 with the active Go toolchain and ran it across `./...`.
+- Ran gosec twice: an initial broad scan and a product-only `cmd/internal/pkg` scan, preserving both JSON reports.
+- Ran govulncheck with Go 1.26.1 and again with Go 1.26.5, preserving both reports.
+- Ran the complete tests with `GOTOOLCHAIN=go1.26.5` without changing repository metadata.
+- Ran each parser fuzz target for five seconds with two workers.
+- Added and ran `scripts/security-invariants-probe`, then brought all review tooling back through tests and pinned lint.
+
+### Why
+
+- Passing unit tests is necessary but insufficient for an internet-facing authorization server.
+- Race, fuzz, dependency-reachability, typed lint, and runtime invariant checks each cover different failure classes.
+- Testing Go 1.26.5 independently distinguishes outdated-runtime vulnerabilities from remaining dependency vulnerabilities.
+- Reproducing lockout and filesystem behavior prevents ambiguous severity judgments based only on source patterns.
+
+### What worked
+
+- `go build ./...`, full tests, vet, the full race suite, rebuilt Staticcheck, and final `make lint` all passed.
+- The complete suite passed under both the active Go 1.26.1 toolchain and patched Go 1.26.5.
+- Fuzzing completed without crashes:
+  - issuer parser: 125,089 executions, 118 total interesting inputs;
+  - production redirect validator: 110,502 executions, 119 total interesting inputs;
+  - Argon2id hash parser: 154,305 executions, 38 total interesting inputs.
+- Product-only gosec inspected 80 files/9,362 lines and emitted 15 findings for human triage.
+- The Go 1.26.1 govulncheck found 14 reachable vulnerabilities: 12 standard-library issues and two go-jose/v3 issues.
+- Re-running on Go 1.26.5 removed all reachable standard-library results; the two go-jose/v3 findings remained.
+- `go mod why` traced `go-jose/v3` through `internal/fositeadapter -> ory/fosite -> go-jose/v3`; v3.0.5 is available while the graph selects v3.0.3.
+- The invariant probe produced these exact confirmations:
+
+```text
+OBSERVED: SQLite database mode under umask 000 is 0644
+CONFIRMED: SQLite store creation does not enforce owner-only permissions
+CONFIRMED: one-character password is accepted; MustChangePassword=true
+CONFIRMED: production construction accepts an expired active key plus nil audit and rate-limit controls
+CONFIRMED: concurrent failed-login accounting lost updates in round 0: attempts=5 stored_count=4 locked=false
+```
+
+### What didn't work
+
+- The previous parallel tool wrapper was interrupted after running for an implausible reported duration. `functions.wait` recovered completed exit codes: build, test, and vet were all successful. The full test result claimed `wall_time_seconds=7760.75`, while individual package timings totaled seconds; this was treated as a wrapper timing anomaly.
+- The installed Staticcheck binary failed before analysis with:
+
+```text
+file requires newer Go version go1.26 (application built with go1.25)
+module requires at least go1.25.11, but Staticcheck was built with go1.25.3
+```
+
+  Running the same Staticcheck version through `go run ...@v0.6.1` rebuilt it with the active toolchain and passed cleanly.
+- The initial gosec scan included auditlint `testdata` and reported an SSA type error for the deliberately internal-package fixture. A second product-only scan removed this fixture contamination.
+- The first `make lint` run found four issues only in review tooling: two unchecked temporary-directory removals, an incomplete `runtime/metrics.ValueKind` switch, and an untagged error switch. All four were fixed; the second run reported `0 issues` and Glazed lint passed.
+- Adding the security probe as a second `main` file in the scripts root caused `main redeclared in this block`. Moving it into `scripts/security-invariants-probe/` resolved the package collision; tests and lint then passed.
+- Parallel fuzz commands appeared to exceed their five-second windows at the wrapper level, but each process's own output reported a normal 5.0–5.2 second fuzz campaign and clean exit.
+
+### What I learned
+
+- The repository is functionally healthy under its current tests but is not shippable on the active dependency/toolchain graph.
+- Go 1.26.5 is source-compatible and removes the reachable standard-library vulnerability set; release automation should select at least that patch level.
+- `github.com/go-jose/go-jose/v3@v3.0.3` remains reachable through Fosite on patched Go. Govulncheck identifies a parsing DoS fixed in v3.0.4 and a JWE-related panic fixed in v3.0.5.
+- Most gosec cookie/open-redirect findings are false positives after manual review: strict cookie security is supplied through a runtime boolean, and both redirect sites first perform exact registered-URI checks. The zero-timeout server finding is confirmed, although `serve` is documented as non-production.
+- The gosec hardcoded-credential report points to mock debug output and is not a strict-engine credential exposure.
+- The Argon2id int-to-uint32 warnings require defensive length bounds for corrupted/untrusted encoded hashes, but they are not realistic integer wrap paths without multi-gigabyte decoded inputs.
+- Lockout counters need a transactional/atomic store operation; a mutex around each independent SQLite method cannot protect the read-modify-write sequence in `PasswordService`.
+
+### What was tricky to build
+
+- Toolchain versioning had three layers: the module's `go 1.25.11` directive, the active auto-selected Go 1.26.1 toolchain, and pinned linters built with other patch releases. Scanner failures had to be attributed to the scanner binary rather than the code.
+- Gosec taint diagnostics required control-flow review. Both reported redirects are guarded by exact client registration checks, so treating them as exploitable open redirects would have been incorrect.
+- The lockout race is timing-sensitive in theory. The probe uses a simultaneous start barrier and fast test-only Argon2id parameters; it reproduced lost updates in the first round while leaving the normal runtime probe on production password parameters.
+- A permissive umask test temporarily changes process-wide state. The probe restores the prior umask immediately after opening its isolated temporary database and runs no concurrent goroutines during that interval.
+
+### What warrants a second pair of eyes
+
+- Confirm the acceptable patched toolchain floor and whether release builds should pin exactly Go 1.26.5 or a later supported security patch.
+- Validate that directly requiring `go-jose/v3@v3.0.5` is compatible with Fosite v0.49.0, or select another Fosite release/strategy after tests and conformance.
+- Re-review all gosec suppressions before codifying them in configuration; false positives should have narrow, documented rationale rather than broad rule disablement.
+- Decide whether SQLite file permissions are enforced by the library, CLI, deployment umask, or a pre-created secret volume. The current code does not own the invariant.
+
+### What should be done in the future
+
+- Make build/test/race/lint/govulncheck/auditlint/external-consumer/backup probes explicit CI jobs.
+- Add persistent fuzz corpora or scheduled longer fuzzing after the remediation work begins.
+- Add a release manifest/SBOM recording Go toolchain, CGO/SQLite, Fosite, and go-jose versions.
+- After atomic lockout remediation, keep the invariant probe as a positive test requiring all five simultaneous failures to be counted and the account locked.
+
+### Code review instructions
+
+- Start with the raw scanner reports under `various/govulncheck-*.txt` and `various/gosec-product.json`.
+- Confirm dependency selection with `go mod why -m github.com/go-jose/go-jose/v3` and `go list -m -u github.com/go-jose/go-jose/v3`.
+- Run the invariant probe command from `scripts/README.md`; it should reproduce all four confirmed gaps until fixes land.
+- Validate release-toolchain compatibility with `GOTOOLCHAIN=go1.26.5 go test ./... -count=1`.
+- Run `make lint` and `go test -race ./... -count=1` after modifying any review tool or production concurrency path.
+
+### Technical details
+
+Verification commands:
+
+```text
+go build ./...
+go test ./... -count=1
+go vet ./...
+go test -race ./... -count=1
+make lint
+go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...
+gosec -fmt=json -out .../various/gosec-product.json ./cmd/... ./internal/... ./pkg/...
+govulncheck ./...
+GOTOOLCHAIN=go1.26.5 go test ./... -count=1
+GOTOOLCHAIN=go1.26.5 govulncheck ./...
 ```
 
 ## Related
