@@ -83,6 +83,11 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (domain
 	if id == "" {
 		id = newID("user")
 	}
+	if _, err := s.Store.GetUser(ctx, id); err == nil {
+		return domain.User{}, storage.ErrDuplicate
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return domain.User{}, err
+	}
 	sub := strings.TrimSpace(req.Sub)
 	if sub == "" {
 		sub = id

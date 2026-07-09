@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/storage"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/manuel/tinyidp/internal/store/sqlite"
 )
 
 func TestServiceCreateUserAndAuthenticate(t *testing.T) {
@@ -41,6 +43,40 @@ func TestServiceCreateUserAndAuthenticate(t *testing.T) {
 	}
 	if result.User.Sub != u.Sub {
 		t.Fatalf("auth user = %#v, want sub %s", result.User, u.Sub)
+	}
+}
+
+func TestServiceCreateUserRejectsDuplicateExplicitID(t *testing.T) {
+	ctx := context.Background()
+	stores := map[string]func(t *testing.T) storage.Store{
+		"memory": func(t *testing.T) storage.Store { return memory.New() },
+		"sqlite": func(t *testing.T) storage.Store {
+			t.Helper()
+			st, err := sqlite.Open(filepath.Join(t.TempDir(), "idp.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = st.Close() })
+			return st
+		},
+	}
+	for name, newStore := range stores {
+		t.Run(name, func(t *testing.T) {
+			st := newStore(t)
+			svc, err := admin.NewService(st, admin.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", ID: "fixed-user-id", Password: []byte("alice-password")}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice-alias", ID: "fixed-user-id", Password: []byte("alias-password")}); !errors.Is(err, storage.ErrDuplicate) {
+				t.Fatalf("duplicate id err=%v", err)
+			}
+			if _, err := st.GetUserByLogin(ctx, "alice-alias"); !errors.Is(err, storage.ErrNotFound) {
+				t.Fatalf("duplicate id left alias behind: %v", err)
+			}
+		})
 	}
 }
 

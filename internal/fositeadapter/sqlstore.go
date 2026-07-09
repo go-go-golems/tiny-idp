@@ -49,9 +49,6 @@ func (s *sqlFositeStore) toFositeClient(ctx context.Context, c domain.Client) (f
 		GrantTypes:    []string{"authorization_code", "refresh_token"},
 		Scopes:        append([]string(nil), c.AllowedScopes...),
 	}
-	if len(fc.Scopes) == 0 {
-		fc.Scopes = []string{"openid", "profile", "email", "offline_access"}
-	}
 	if !c.Public {
 		if secret, ok := s.secrets[c.ID]; ok {
 			hashed, err := (&fosite.BCrypt{Config: s.config}).Hash(ctx, []byte(secret))

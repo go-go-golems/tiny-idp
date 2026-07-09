@@ -58,6 +58,61 @@ func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
 	refreshTokenMustFail(t, ts.URL, oldRefresh)
 }
 
+func TestFositeSQLiteClientWithEmptyScopesRejectsRequestedScope(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "idp.db")
+	st, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-empty-scopes", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("sqlite-empty-scopes-secret-32")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(provider.Handler())
+	defer ts.Close()
+
+	verifier := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	q := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {"spa"},
+		"redirect_uri":          {"http://localhost/callback"},
+		"scope":                 {"openid"},
+		"state":                 {"state-1234567890"},
+		"nonce":                 {"nonce-1234567890"},
+		"code_challenge":        {s256(verifier)},
+		"code_challenge_method": {"S256"},
+	}
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Get(ts.URL + "/authorize?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("authorize status=%d body=%s", resp.StatusCode, b)
+	}
+	loc, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loc.Query().Get("error") != "invalid_scope" {
+		t.Fatalf("error=%q location=%s", loc.Query().Get("error"), loc.String())
+	}
+}
+
 func TestFositeSQLiteDisabledClientRejectsPersistedAuthorizationCode(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "idp.db")

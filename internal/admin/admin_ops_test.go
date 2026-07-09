@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -98,5 +99,19 @@ func TestServiceKeysDoctorAndBackup(t *testing.T) {
 	}
 	if err := admin.VerifySQLiteBackup(ctx, backupPath); err != nil {
 		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.CreateSQLiteBackup(ctx, path, path); err == nil {
+		t.Fatal("expected same-file backup to be rejected")
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Size() != before.Size() || after.Size() == 0 {
+		t.Fatalf("source database was modified by rejected backup: before=%d after=%d", before.Size(), after.Size())
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +51,77 @@ func TestStoredConsentPersistsScopeApproval(t *testing.T) {
 	}
 	if !require {
 		t.Fatalf("revoked consent should require consent again")
+	}
+}
+
+func TestPromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	user := domain.User{ID: "u1", Sub: "sub-1"}
+	client := domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}}
+	_ = st.PutClient(ctx, client)
+	_ = st.PutUser(ctx, "alice", user)
+	key, err := keys.GenerateRSA("kid-1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.CreateSigningKey(ctx, key)
+	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("prompt-none-consent-secret-32"), Consent: fositeadapter.NewStoredConsent(st, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+
+	verifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	form := authorizeForm(verifier)
+	form.Set("scope", "openid")
+	form.Set("consent_approved", "true")
+	csrf, csrfCookie := fetchCSRF(t, ts.URL, form)
+	form.Set("csrf_token", csrf)
+	noRedirect := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(csrfCookie)
+	resp, err := noRedirect.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login status=%d", resp.StatusCode)
+	}
+	var sessionCookie *http.Cookie
+	for _, c := range resp.Cookies() {
+		if c.Name == "tinyidp_session" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("session cookie missing")
+	}
+
+	q := authorizeForm(verifier)
+	q.Del("login")
+	q.Set("scope", "openid email")
+	q.Set("prompt", "none")
+	q.Set("state", "state-consent-required")
+	getReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/authorize?"+q.Encode(), nil)
+	getReq.AddCookie(sessionCookie)
+	silent, err := noRedirect.Do(getReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer silent.Body.Close()
+	if silent.StatusCode != http.StatusFound && silent.StatusCode != http.StatusSeeOther {
+		t.Fatalf("silent status=%d, want OAuth error redirect", silent.StatusCode)
+	}
+	loc, err := url.Parse(silent.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loc.Query().Get("error") != "consent_required" {
+		t.Fatalf("prompt=none error=%q location=%s", loc.Query().Get("error"), loc.String())
 	}
 }
 

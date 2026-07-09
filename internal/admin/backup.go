@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,6 +20,13 @@ type BackupResult struct {
 func CreateSQLiteBackup(_ context.Context, source, dest string) (BackupResult, error) {
 	if source == "" || dest == "" {
 		return BackupResult{}, fmt.Errorf("source and destination are required")
+	}
+	same, err := sameFile(source, dest)
+	if err != nil {
+		return BackupResult{}, err
+	}
+	if same {
+		return BackupResult{}, fmt.Errorf("backup destination must differ from source database")
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return BackupResult{}, err
@@ -41,6 +49,32 @@ func CreateSQLiteBackup(_ context.Context, source, dest string) (BackupResult, e
 		return BackupResult{}, closeErr
 	}
 	return BackupResult{Source: source, Path: dest, Bytes: bytes}, nil
+}
+
+func sameFile(source, dest string) (bool, error) {
+	sourceAbs, err := filepath.Abs(source)
+	if err != nil {
+		return false, err
+	}
+	destAbs, err := filepath.Abs(dest)
+	if err != nil {
+		return false, err
+	}
+	if sourceAbs == destAbs {
+		return true, nil
+	}
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		return false, err
+	}
+	destInfo, err := os.Stat(dest)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return os.SameFile(sourceInfo, destInfo), nil
 }
 
 func VerifySQLiteBackup(ctx context.Context, path string) error {

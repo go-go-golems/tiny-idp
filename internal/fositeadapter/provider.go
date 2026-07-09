@@ -213,9 +213,6 @@ func buildFositeStore(st storage.Store, cfg *fosite.Config, plainSecrets map[str
 			GrantTypes:    []string{"authorization_code", "refresh_token"},
 			Scopes:        append([]string(nil), c.AllowedScopes...),
 		}
-		if len(fc.Scopes) == 0 {
-			fc.Scopes = []string{"openid", "profile", "email", "offline_access"}
-		}
 		if !c.Public {
 			if secret, ok := plainSecrets[c.ID]; ok {
 				hashed, err := hasher.Hash(context.Background(), []byte(secret))
@@ -331,6 +328,10 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 			}
 			if !requireConsent {
 				p.finishAuthorize(w, r, ar, u, sess.AuthTime, false)
+				return
+			}
+			if promptHas(ar.GetRequestForm().Get("prompt"), "none") {
+				p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrConsentRequired)
 				return
 			}
 			p.renderInteraction(w, ar, false, true)
