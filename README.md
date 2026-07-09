@@ -1,13 +1,33 @@
 # tinyidp
 
-A minimal mock [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) Identity Provider for **local development and integration testing**. It exists to replace Keycloak-in-Docker when all you need is a working OIDC provider that issues RS256-signed ID tokens.
+A compact, self-contained [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) Identity Provider written in Go. It started life as a mock IdP to replace Keycloak-in-Docker for local development, and it still does that job well — but it has since grown a **strict, Fosite-backed engine**, **durable SQLite storage**, **Argon2id password credentials**, **persistent signing keys with rotation**, an **operational `admin` CLI**, and an **embeddable Go package** (`pkg/embeddedidp`) so you can run a real OIDC provider inside your own binary.
 
-> ⚠️ **Not production-grade.** No real account system, consent screen, persistent keys, token revocation, or TLS enforcement. Refresh tokens and RP-initiated logout are implemented for testing semantics only and are in-memory. Bind to loopback (`127.0.0.1`) and never expose to the internet. See the design doc in `ttmp/` (ticket `MOCK-OIDC-IDP`).
+There are two engines, and picking the right one matters:
 
-## Run
+| Engine | Flag | Store | Intended use | Notes |
+|--------|------|-------|--------------|-------|
+| **mock** | `--engine mock` (default) | in-memory | Local dev, integration tests, **failure simulation** | Rich scenario catalog, debug routes, device grant, DPoP, JWKS failure modes. Not for production. |
+| **strict** | `--engine fosite` | in-memory (via `serve`) or a persistent `storage.Store` (via `pkg/embeddedidp`) | Production-like OAuth/OIDC behavior | Fosite validation, Auth-Code + PKCE only, CSRF, security headers, persistent consent/keys, Argon2id login. |
+
+> **Maturity, read this.** The `mock` engine and **`tinyidp serve` are for local/testing use** — bind to loopback (`127.0.0.1`) and never expose them to the internet. A **production deployment is the _strict_ engine embedded through `pkg/embeddedidp`** with a **persistent store** (e.g. `internal/store/sqlite`), `ProductionMode`, secure cookies, a ≥32-byte token secret, and an active persistent signing key — these are enforced by `embeddedidp.Options.Validate`. `serve --engine fosite` currently runs the strict engine in **dev mode with an in-memory store**, so it is a preview of strict behavior, not a production server. See [`docs/security-profile.md`](docs/security-profile.md).
+>
+> **Honest caveats.** The strict engine has passed a **hosted OpenID Foundation Basic OP conformance run with zero hard failures** (suite 5.2.0; discovery + static clients) — this is *not* a claim of formal certification. Still missing/in progress: a config-backed runtime store loader for `serve` (today the durable path is `admin` + `pkg/embeddedidp`), a token `/revoke` or `/introspect` HTTP route, and `/end-session`/device/DPoP in strict mode. `serve` uses plain `http.ListenAndServe`; production expects TLS to be terminated at a reverse proxy (the strict profile requires an `https://` issuer and secure cookies, not in-process TLS).
+
+---
+
+## Quick start (mock engine, local dev)
 
 ```bash
 go run ./cmd/tinyidp serve
+```
+
+Point your OIDC client at:
+
+```
+issuer:        http://localhost:5556
+client_id:     dev-client
+client_secret: (empty)
+scopes:        openid profile email
 ```
 
 The CLI is built on the [Glazed](https://github.com/go-go-golems/glazed) command framework. Configuration is layered with predictable precedence (low → high):
@@ -24,12 +44,14 @@ The OIDC provider config is a **reusable Glazed field section** (`internal/secti
 
 | Flag | Env | Config key | Default | Meaning |
 |------|-----|------------|---------|---------|
+| `--engine` | `TINYIDP_ENGINE` | `oidc.engine` | `mock` | Provider engine: `mock` (local failure simulation) or `fosite` (strict production-like behavior). |
 | `--issuer` | `TINYIDP_ISSUER` | `oidc.issuer` | `http://localhost:5556` | Issuer URL; endpoints derived from it. Path-based issuers such as `http://localhost:5556/realms/demo` are supported. |
 | `--addr` | `TINYIDP_ADDR` | `oidc.addr` | `127.0.0.1:5556` | Listen address (loopback by default). |
 | `--client-id` | `TINYIDP_CLIENT_ID` | `oidc.client-id` | `dev-client` | Accepted client ID. |
 | `--client-secret` | `TINYIDP_CLIENT_SECRET` | `oidc.client-secret` | (empty) | If set, `/token` enforces it; if empty, client is public. |
 | `--redirect-uris` | `TINYIDP_REDIRECT_URIS` | `oidc.redirect-uris` | `http://localhost:3000/callback,http://127.0.0.1:3000/callback` | Allowlist (repeatable flag / list in config). |
-| `--users-file` | `TINYIDP_USERS_FILE` | `oidc.users-file` | (empty) | Optional YAML/JSON file with seeded users and claims. |
+| `--extra-clients` | `TINYIDP_EXTRA_CLIENTS` | `oidc.extra-clients` | (empty) | Extra clients, one per entry, pipe-separated `id\|secret\|redirect[\|redirect...]`. |
+| `--users-file` | `TINYIDP_USERS_FILE` | `oidc.users-file` | (empty) | Optional YAML/JSON file with seeded users and claims (mock engine). |
 
 ### Examples
 
@@ -78,7 +100,12 @@ Checked-in portable examples live under `examples/configs/`:
 
 `oidc.users-file` is currently resolved relative to the process working directory. For portable examples, run tinyidp from the repository root or use an absolute users-file path.
 
-### Seeded users
+### Engines: mock vs strict (fosite)
+
+- **mock** (default) is the local-testing engine. It backs everything in-memory, ships a **scenario registry** (synthetic users, malformed-token and JWKS failure modes), exposes loopback-only **`/debug/*`** routes, and implements the device grant and DPoP for integration tests. Choose it for reproducing OIDC edge cases cheaply.
+- **fosite** (strict) runs the production-shaped code path: [ory/fosite](https://github.com/ory/fosite) for OAuth/OIDC validation and response writing, **Authorization Code + PKCE (`S256`) only**, exact redirect-URI allow-listing, server-side browser sessions with hashed opaque cookies, CSRF on login/consent POSTs, security headers, `Cache-Control: no-store`, persistent consent, and **Argon2id password login** via a `PasswordAuthenticator`. Select it with `--engine fosite`. Features explicitly **not** available in strict mode today: debug routes, scenario failure injection, implicit/hybrid flows, production device grant, production DPoP, and dynamic client registration ([`docs/security-profile.md`](docs/security-profile.md)).
+
+### Seeded users (mock engine)
 
 By default, any login derives a stable synthetic user. For tests that need fixed subjects or app-specific claim shapes, pass a users file:
 
@@ -117,7 +144,7 @@ A ready-to-copy personal-inbox fixture is available at `examples/users/personal-
 
 Seeded users override builtins with the same login, so you can keep using `alice` and `bob` while making their `sub`, `email`, `name`, and claims deterministic for a test suite.
 
-`password` is optional. When it is omitted or empty, that seeded user keeps the default local-test behavior and any submitted password is accepted. When `password` is set, the authorize form must submit the exact fixture password or tinyidp returns `401 invalid login or password` without creating a session or authorization code. These are plain local test fixtures, not production credentials.
+`password` is optional. When it is omitted or empty, that seeded user keeps the default local-test behavior and any submitted password is accepted. When `password` is set, the authorize form must submit the exact fixture password or tinyidp returns `401 invalid login or password` without creating a session or authorization code. These are plain local test fixtures, not production credentials. For **durable** users with real hashed credentials (used by the strict engine and production embedding), see [Users and passwords](#users-and-passwords-durable) below.
 
 Common authorization claims can be written as top-level generic fields: `groups`, `roles`, `tenant`, `preferred_username`, and `locale`. These expand into ordinary top-level ID token and userinfo claims. The raw `claims` map is still the escape hatch for provider-specific or unusual claim shapes; explicit `claims` values override the generic fields when the same claim name appears in both places.
 
@@ -172,15 +199,104 @@ go run ./cmd/tinyidp help scenarios                        # the scenario catalo
 go run ./cmd/tinyidp help reference                        # config, clients, endpoints
 ```
 
-## DPoP sender-constrained tokens
+---
 
-tinyidp supports DPoP-bound access tokens for local and integration tests. If a `/token` request includes a valid `DPoP` proof JWT, tinyidp stores the proof key thumbprint with the issued opaque access token and returns `token_type: DPoP`. Calling `/userinfo` with that token then requires `Authorization: DPoP <token>` plus a fresh proof signed by the same key and containing the correct `ath` hash of the access token.
+## Production path (strict engine)
 
-Bearer behavior remains unchanged when no `DPoP` header is present. Refresh tokens issued from a DPoP-bound flow are bound to the same key and require matching DPoP proofs during rotation. See `tinyidp help tutorial-dpop`.
+The strict engine is designed to be embedded in your own service with a durable store. The moving parts are: a persistent **store**, the **admin CLI** to provision it, **Argon2id** user credentials, **persistent signing keys** with a safe rotation invariant, and the **`pkg/embeddedidp`** package that wires them into an `http.Handler`.
 
-## Device authorization grant
+### Storage and persistence
 
-tinyidp implements the OAuth 2.0 Device Authorization Grant for local and integration-test clients. A device starts with `POST /device_authorization`, shows the returned `user_code` and `verification_uri` to the user, and polls `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` until the browser approval form at `/device` approves or denies the request.
+Strict-engine domain state flows through `internal/storage.Store`. `internal/store/sqlite` is the durable embedded implementation; its migration owns all schema — clients, users, grants, authorization codes, access/refresh tokens, consents, sessions, signing keys, and the Fosite protocol tables. **Production mode requires a persistent store** (`embeddedidp.Options.Validate` rejects an in-memory store unless `AllowInMemoryStoresInProduction` is set). Invariants the store guarantees: one-time-use authorization codes (even under parallel consumption), refresh-token rotation with reuse-detection that revokes the family, scope-normalized consent lookup, hashed-handle-only sessions, and signing keys that persist across restart with retired keys still verifiable. See [`docs/storage.md`](docs/storage.md).
+
+### Admin CLI
+
+`tinyidp admin` is the operational surface for SQLite-backed deployments. All commands take an explicit `--db` path:
+
+```
+tinyidp admin --db ./tinyidp.db
+├── init [--generate-signing-key --kid <kid>]   # create DB, apply migrations, optional first key
+├── migrate [--dry-run]                          # apply embedded migrations
+├── doctor                                        # validate clients + signing keys (production rules)
+├── client  create | list | get | disable | enable | rotate-secret
+├── keys    generate | rotate | list | retire
+├── user    create | set-password | get | disable | enable
+├── backup  create --out <file> | verify --path <file>
+└── export  diagnostics                           # sanitized (no secret hashes, no private PEM)
+```
+
+```bash
+# Bootstrap a database and an initial signing key.
+tinyidp admin --db ./tinyidp.db init --generate-signing-key --kid initial-rsa-1
+
+# Register a confidential client (generated secret printed once).
+tinyidp admin --db ./tinyidp.db client create \
+  --id web-app --generate-secret \
+  --redirect-uri https://app.example.test/callback \
+  --scope openid --scope profile --scope email --scope offline_access \
+  --require-pkce
+```
+
+Client/keys/diagnostics output redacts secret hashes and never prints private key PEM. See [`docs/admin-cli.md`](docs/admin-cli.md).
+
+### Users and passwords (durable)
+
+Strict login uses durable records split across three domain types: `domain.User` (subject/profile/account state), `domain.PasswordCredential` (the **encoded Argon2id hash** and lifecycle flags — never stored on `User`), and `domain.AccountSecurityState` (failed-login counters, lockout, last-successful-login). The strict adapter authenticates `POST /authorize` through a `PasswordAuthenticator`, returns the generic `invalid login or password` on failure, and emits stable audit reason codes (`invalid_credentials`, `account_disabled`, `account_locked`). Provision credentials with the admin CLI, preferring stdin so secrets stay out of shell history:
+
+```bash
+printf '%s\n' 'alice-password' | \
+  tinyidp admin --db ./tinyidp.db user create \
+    --login alice --email alice@example.test --email-verified \
+    --name 'Alice Example' --password-from-stdin
+```
+
+See [`docs/users-and-passwords.md`](docs/users-and-passwords.md).
+
+### Signing keys and rotation
+
+The strict engine signs ID tokens with the active key in the store's `KeyStore` and publishes `VerificationKeys` at `/jwks`. `internal/keys.RotateRSA` implements a safe three-state rotation: generate a new key → make it active for new tokens → retire the previous key but keep it in JWKS so relying parties can validate old ID tokens until they expire. Keep retired keys published for at least the maximum ID-token lifetime plus clock skew. See [`docs/key-rotation.md`](docs/key-rotation.md).
+
+### Embedding the provider (`pkg/embeddedidp`)
+
+Run the strict IdP inside your own binary. `embeddedidp.New(Options)` returns a `*Provider` whose `Handler()` you mount on any `*http.ServeMux`:
+
+```go
+import (
+    "net/http"
+
+    "github.com/manuel/tinyidp/internal/store/sqlite" // a persistent storage.Store
+    "github.com/manuel/tinyidp/pkg/embeddedidp"
+)
+
+provider, err := embeddedidp.New(embeddedidp.Options{
+    Issuer: "https://id.example.com",
+    Mode:   embeddedidp.ProductionMode,        // enforces the invariants below
+    Store:  store,                              // persistent storage.Store (SQLite)
+    Cookie: embeddedidp.CookieConfig{Secure: true, SameSite: "Lax"},
+    Token:  embeddedidp.TokenConfig{SecretKey: secret /* >= 32 bytes */},
+    // optional: Audit, Consent, RateLimiter, Authenticator
+})
+if err != nil { /* Validate() failed */ }
+
+mux := http.NewServeMux()
+mux.Handle("/", provider.Handler())
+// The handler speaks plain HTTP; terminate TLS at a reverse proxy in front.
+http.ListenAndServe("127.0.0.1:5556", mux)
+```
+
+`Options.Validate()` enforces the production contract: valid issuer for the mode, a non-nil store, every client valid for the mode, and in `ProductionMode` a ≥32-byte token secret, secure cookies, a persistent store, and an active signing key. A runnable dev example is in [`examples/embedded/main.go`](examples/embedded/main.go). See [`docs/security-profile.md`](docs/security-profile.md) for the full enabled-controls list and the release gate.
+
+---
+
+## DPoP sender-constrained tokens (mock engine)
+
+The mock engine supports DPoP-bound access tokens for local and integration tests. If a `/token` request includes a valid `DPoP` proof JWT, tinyidp stores the proof key thumbprint with the issued opaque access token and returns `token_type: DPoP`. Calling `/userinfo` with that token then requires `Authorization: DPoP <token>` plus a fresh proof signed by the same key and containing the correct `ath` hash of the access token.
+
+Bearer behavior remains unchanged when no `DPoP` header is present. Refresh tokens issued from a DPoP-bound flow are bound to the same key and require matching DPoP proofs during rotation. See `tinyidp help tutorial-dpop`. (DPoP is not part of the strict production profile.)
+
+## Device authorization grant (mock engine)
+
+The mock engine implements the OAuth 2.0 Device Authorization Grant for local and integration-test clients. A device starts with `POST /device_authorization`, shows the returned `user_code` and `verification_uri` to the user, and polls `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` until the browser approval form at `/device` approves or denies the request.
 
 Quick start:
 
@@ -198,28 +314,19 @@ curl -sS -X POST http://localhost:5556/token \
   -d device_code="$(echo "$DEVICE_JSON" | jq -r .device_code)" | jq .
 ```
 
-Polling before approval returns `authorization_pending`; polling too quickly returns `slow_down`; denied, expired, mismatched, unknown, or already-used device codes return the corresponding OAuth error. See `tinyidp help tutorial-device-authorization`.
+Polling before approval returns `authorization_pending`; polling too quickly returns `slow_down`; denied, expired, mismatched, unknown, or already-used device codes return the corresponding OAuth error. See `tinyidp help tutorial-device-authorization`. (The device grant is not part of the strict production profile.)
 
-## Configure your app (RP)
+## Clients (mock engine builtins)
 
-Point your OIDC client at:
-
-```
-issuer:        http://localhost:5556
-client_id:     dev-client
-client_secret: (empty)
-scopes:        openid profile email
-```
-
-## Clients
-
-The provider ships with three built-in clients, so a single running instance can test public (SPA), confidential (web app), and permissive (quick-test) relying parties:
+The mock engine ships three built-in clients, so a single running instance can test public (SPA), confidential (web app), and permissive (quick-test) relying parties:
 
 | Client ID | Type | PKCE | Secret | Default redirect URI |
 |-----------|------|------|--------|---------------------|
 | `dev-client` | public | optional | (none) | `http://localhost:3000/callback`, `http://127.0.0.1:3000/callback` |
 | `public-spa` | public | **required** | (none) | `http://localhost:8080/callback` |
 | `web-app` | confidential | optional | `dev-secret` | `http://localhost:8080/callback` |
+
+(In the strict/production path, clients are provisioned in the store via `tinyidp admin client create`.)
 
 ### Configuring a client (merge behavior)
 
@@ -233,20 +340,35 @@ So `--client-id public-spa --redirect-uris http://localhost:9090/cb` yields a `p
 
 ## Endpoints
 
+The two engines expose **different route sets**. Shared by both:
+
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /.well-known/openid-configuration` | Discovery metadata. |
 | `GET /jwks` | Public signing keys (JWKS). |
 | `GET /authorize` | Authorization endpoint (login form → code). |
+| `POST /token` | Token endpoint (`authorization_code`, `refresh_token`; device-code in mock). |
+| `GET /userinfo` | UserInfo (bearer access token → claims). |
+| `GET /healthz` | Liveness. |
+
+Mock engine only:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /end-session` | RP-initiated logout. |
 | `POST /device_authorization` | OAuth device-code start endpoint. |
 | `GET/POST /device` | Browser approval/denial form for device-code requests. |
-| `POST /token` | Token endpoint (`authorization_code`, `refresh_token`, and device-code grants). |
-| `GET /userinfo` | UserInfo (bearer access token → claims). |
-| `GET /end-session` | RP-initiated logout. |
-| `GET /healthz` | Liveness. |
 | `GET/POST /debug/*` | Loopback-only introspection, reset, and JWKS failure-mode controls. |
 
-When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/device_authorization`, `/device`, `/token`, `/userinfo`, `/jwks`, and `/end-session` endpoint URLs. Root routes remain available for simple local testing. Path-based issuers are URL-shape compatibility only; seeded-user claims stay provider-neutral.
+Strict (fosite) engine only:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /readyz` | Readiness (store/migrations/active-key checks). |
+
+The strict engine deliberately does **not** serve `/device*`, `/debug/*`, or `/end-session` today, and there is **no** token `/revoke` or `/introspect` HTTP route yet (see [`docs/security-profile.md`](docs/security-profile.md)).
+
+When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/token`, `/userinfo`, and `/jwks` endpoint URLs. Root routes remain available for simple local testing. Path-based issuers are URL-shape compatibility only; seeded-user claims stay provider-neutral.
 
 ## xgoja personal-inbox smoke ergonomics
 
@@ -276,9 +398,22 @@ Common symptoms:
 - `redirect_uri not allowed for this client`: make the app public base URL match the config's redirect URI.
 - discovery works at `/` but not under a path: use a path-based issuer and fetch discovery under that same prefix.
 
+## Documentation
+
+Deep-dive docs for the productized strict engine live under `docs/`:
+
+- [`docs/security-profile.md`](docs/security-profile.md) — strict-engine security baseline, enabled controls, unsupported features, release gate.
+- [`docs/storage.md`](docs/storage.md) — the `storage.Store` profile and SQLite schema/invariants.
+- [`docs/users-and-passwords.md`](docs/users-and-passwords.md) — Argon2id credentials and strict login behavior.
+- [`docs/key-rotation.md`](docs/key-rotation.md) — safe signing-key rotation.
+- [`docs/admin-cli.md`](docs/admin-cli.md) — the `tinyidp admin` command surface.
+- [`docs/conformance.md`](docs/conformance.md) — conformance runner and coverage.
+
 ## Status
 
-- **Phase 0–4** — baseline OIDC happy path, multiple synthetic users, scenario registry, self-documenting login page, failure scenarios (done).
-- **Glazed CLI** — reusable `oidc` field section, layered config (flags/env/config), **profiles** (`--profile` resolves `profiles.yaml`), **`print-config`** command (done).
-- **Phase 5–11** — multiple clients, sessions, claims, debug UI, refresh tokens, JWKS rotation, and RP-initiated logout (done).
-- **Phase 12** — Go test helper package (deferred; see `ttmp/.../reference/02-implementation-phases-and-tasks.md`).
+- **Mock engine (Phases 0–11)** — baseline OIDC happy path, synthetic/scenario users, self-documenting login page, failure scenarios, multiple clients, sessions, claims, debug UI, refresh tokens, JWKS rotation, RP-initiated logout, device grant, and DPoP (done).
+- **Glazed CLI** — reusable `oidc` field section, layered config (flags/env/config), **profiles**, **`print-config`**, and `--engine` selection (done).
+- **Strict/production engine** — Fosite-backed Auth-Code + PKCE, durable SQLite storage, persistent consent, Argon2id user/password storage (bcrypt for client secrets), persistent signing keys + rotation, `pkg/embeddedidp` embeddable provider, and the `tinyidp admin` operational CLI (done; see the `TINYIDP-PROD-001`, `TINYIDP-USERS-001`, and `TINYIDP-ADMIN-001` tickets under `ttmp/`).
+- **Conformance** — the strict engine passed a hosted OpenID Foundation **Basic OP** run with zero hard failures (not formal certification); see [`docs/conformance.md`](docs/conformance.md).
+- **Validated integration** — verified live as the OIDC provider for **Jitsi Meet** via an OIDC→Jitsi-JWT adapter (`TINYIDP-JITSI-001`); no new IdP features were required.
+- **In progress / next** — structured, config-backed runtime configuration and store loading for `serve` (design-only in `TINYIDP-PROD-CONFIG-001`; today the durable path is `admin` + `pkg/embeddedidp`), a token `/revoke`/`/introspect` route, and broader strict-mode protocol coverage.
