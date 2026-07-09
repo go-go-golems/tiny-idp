@@ -25,11 +25,12 @@ import (
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
-type allowLimiter struct{}
-
-func (allowLimiter) Allow(context.Context, string) bool { return true }
-
 type fixedAuthenticator struct{ user idpstore.User }
+
+func (a fixedAuthenticator) ProductionReady() bool { return true }
+func (a fixedAuthenticator) PasswordWorkStats() idp.PasswordWorkStats {
+	return idp.PasswordWorkStats{Capacity: 1}
+}
 
 func (a fixedAuthenticator) AuthenticatePassword(_ context.Context, login, password string, _ idp.LoginMetadata) (idp.AuthResult, error) {
 	if login != "alice" || password != "correct horse battery staple" {
@@ -66,7 +67,7 @@ func TestExternalProductionAuthorizationCodePKCE(t *testing.T) {
 		Cookie:        embeddedidp.CookieConfig{Secure: true},
 		Token:         embeddedidp.TokenConfig{SecretKey: []byte("external-flow-secret-key-32-bytes-minimum")},
 		Audit:         idp.NewMemorySink(),
-		RateLimiter:   allowLimiter{},
+		RateLimiter:   idp.NewFixedWindowRateLimiter(10_000, time.Minute),
 		ClientAddress: idp.DirectClientAddressResolver{},
 		Authenticator: fixedAuthenticator{user: user},
 	})

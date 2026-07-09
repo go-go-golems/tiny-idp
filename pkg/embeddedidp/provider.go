@@ -14,6 +14,7 @@ import (
 
 type Provider struct {
 	handler http.Handler
+	adapter *fositeadapter.Provider
 	store   idpstore.Store
 	closed  atomic.Bool
 }
@@ -28,11 +29,11 @@ func New(ctx context.Context, opts Options) (*Provider, error) {
 	if err := opts.Validate(ctx); err != nil {
 		return nil, err
 	}
-	adapter, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, Audit: opts.Audit, Consent: opts.Consent, RateLimiter: opts.RateLimiter, ClientAddress: opts.ClientAddress, Authenticator: opts.Authenticator})
+	adapter, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, Audit: opts.Audit, Consent: opts.Consent, RateLimiter: opts.RateLimiter, ClientAddress: opts.ClientAddress, Authenticator: opts.Authenticator, PasswordPolicy: opts.PasswordPolicy, PasswordWork: opts.PasswordWork})
 	if err != nil {
 		return nil, err
 	}
-	return &Provider{handler: adapter.Handler(), store: opts.Store}, nil
+	return &Provider{handler: adapter.Handler(), adapter: adapter, store: opts.Store}, nil
 }
 
 func (p *Provider) Handler() http.Handler {
@@ -43,6 +44,15 @@ func (p *Provider) Handler() http.Handler {
 		}
 		p.handler.ServeHTTP(w, r)
 	})
+}
+
+// PasswordWorkStats reports non-secret Argon2 capacity and saturation metrics
+// when the configured authenticator exposes them.
+func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
+	if p == nil || p.adapter == nil {
+		return idp.PasswordWorkStats{}, false
+	}
+	return p.adapter.PasswordWorkStats()
 }
 
 func (p *Provider) Readiness(ctx context.Context) idp.ReadinessReport {

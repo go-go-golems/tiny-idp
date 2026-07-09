@@ -49,7 +49,7 @@ func newAdminUserCommand(dbPath *string) *cobra.Command {
 
 func newAdminUserCreateCommand(dbPath *string) *cobra.Command {
 	var login, password, email, name, sub, id string
-	var emailVerified, passwordFromStdin, mustChange bool
+	var emailVerified, passwordFromStdin bool
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a user and password credential",
@@ -63,7 +63,7 @@ func newAdminUserCreateCommand(dbPath *string) *cobra.Command {
 				return err
 			}
 			defer closeFn()
-			u, err := svc.CreateUser(cmd.Context(), admin.CreateUserRequest{Login: login, Password: pw, ID: id, Sub: sub, Email: email, EmailVerified: emailVerified, Name: name, MustChangeAtLogin: mustChange})
+			u, err := svc.CreateUser(cmd.Context(), admin.CreateUserRequest{Login: login, Password: pw, ID: id, Sub: sub, Email: email, EmailVerified: emailVerified, Name: name})
 			if err != nil {
 				return err
 			}
@@ -73,7 +73,6 @@ func newAdminUserCreateCommand(dbPath *string) *cobra.Command {
 	cmd.Flags().StringVar(&login, "login", "", "Login name")
 	cmd.Flags().StringVar(&password, "password", "", "Password value (prefer --password-from-stdin outside tests)")
 	cmd.Flags().BoolVar(&passwordFromStdin, "password-from-stdin", false, "Read password from stdin")
-	cmd.Flags().BoolVar(&mustChange, "must-change", false, "Require password change at next login")
 	cmd.Flags().StringVar(&id, "id", "", "Optional user ID")
 	cmd.Flags().StringVar(&sub, "sub", "", "Optional OIDC subject; defaults to user ID")
 	cmd.Flags().StringVar(&email, "email", "", "Email claim")
@@ -85,7 +84,7 @@ func newAdminUserCreateCommand(dbPath *string) *cobra.Command {
 
 func newAdminUserSetPasswordCommand(dbPath *string) *cobra.Command {
 	var login, password string
-	var passwordFromStdin, mustChange bool
+	var passwordFromStdin bool
 	cmd := &cobra.Command{
 		Use:   "set-password",
 		Short: "Set or replace a user's password credential",
@@ -99,7 +98,7 @@ func newAdminUserSetPasswordCommand(dbPath *string) *cobra.Command {
 				return err
 			}
 			defer closeFn()
-			if err := svc.SetPassword(cmd.Context(), admin.SetPasswordRequest{Login: login, Password: pw, MustChangeAtLogin: mustChange}); err != nil {
+			if err := svc.SetPassword(cmd.Context(), admin.SetPasswordRequest{Login: login, Password: pw}); err != nil {
 				return err
 			}
 			return writeJSONLine(cmd.OutOrStdout(), map[string]any{"status": "password-updated", "login": login})
@@ -108,7 +107,6 @@ func newAdminUserSetPasswordCommand(dbPath *string) *cobra.Command {
 	cmd.Flags().StringVar(&login, "login", "", "Login name")
 	cmd.Flags().StringVar(&password, "password", "", "Password value (prefer --password-from-stdin outside tests)")
 	cmd.Flags().BoolVar(&passwordFromStdin, "password-from-stdin", false, "Read password from stdin")
-	cmd.Flags().BoolVar(&mustChange, "must-change", false, "Require password change at next login")
 	_ = cmd.MarkFlagRequired("login")
 	return cmd
 }

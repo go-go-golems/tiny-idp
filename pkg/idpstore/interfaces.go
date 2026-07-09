@@ -147,6 +147,7 @@ type AtomicStore interface {
 	ReplacePasswordAndSecurityState(ctx context.Context, credential PasswordCredential, state AccountSecurityState) error
 	RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy LockoutPolicy) (AccountSecurityState, error)
 	RecordSuccessfulLogin(ctx context.Context, userID string, now time.Time, session *Session) error
+	RevokeUserSecurityArtifacts(ctx context.Context, userID string, at time.Time) error
 	RotateSigningKey(ctx context.Context, next SigningKey, now time.Time) (RotationResult, error)
 }
 

@@ -3,6 +3,7 @@ package authn_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cred, err := svc.HashCredential("u1", "alice", []byte("alice-password"), now)
+	cred, err := svc.HashCredential(ctx, "u1", "alice", []byte("alice-password-long"), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,7 @@ func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 	if err := st.PutAccountSecurityState(ctx, idpstore.AccountSecurityState{UserID: "u1", FailedLoginCount: 2, LockedUntil: &lockedUntil}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AuthenticatePassword(ctx, "alice", "alice-password", idp.LoginMetadata{ClientID: "spa"}); !errors.Is(err, authn.ErrAccountLocked) {
+	if _, err := svc.AuthenticatePassword(ctx, "alice", "alice-password-long", idp.LoginMetadata{ClientID: "spa"}); !errors.Is(err, authn.ErrAccountLocked) {
 		t.Fatalf("locked err=%v", err)
 	}
 	later := now.Add(2 * time.Minute)
@@ -44,7 +45,7 @@ func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := svc.AuthenticatePassword(ctx, "alice", "alice-password", idp.LoginMetadata{ClientID: "spa"})
+	result, err := svc.AuthenticatePassword(ctx, "alice", "alice-password-long", idp.LoginMetadata{ClientID: "spa"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +61,104 @@ func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 	}
 }
 
+type failingSecurityStore struct {
+	idpstore.Store
+	failFailure bool
+	failSuccess bool
+}
+
+func (s *failingSecurityStore) RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy idpstore.LockoutPolicy) (idpstore.AccountSecurityState, error) {
+	if s.failFailure {
+		return idpstore.AccountSecurityState{}, errors.New("injected failed-login storage error")
+	}
+	return s.Store.RecordFailedLogin(ctx, userID, now, policy)
+}
+
+func (s *failingSecurityStore) RecordSuccessfulLogin(ctx context.Context, userID string, now time.Time, session *idpstore.Session) error {
+	if s.failSuccess {
+		return errors.New("injected success-reset storage error")
+	}
+	return s.Store.RecordSuccessfulLogin(ctx, userID, now, session)
+}
+
+func TestPasswordServiceStorageFailuresFailClosed(t *testing.T) {
+	ctx := context.Background()
+	base := memory.New()
+	store := &failingSecurityStore{Store: base}
+	now := time.Now().UTC()
+	if err := base.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "subject-1"}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := authn.NewPasswordService(store, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := service.HashCredential(ctx, "u1", "alice", []byte("a valid password phrase"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := base.PutPasswordCredential(ctx, credential); err != nil {
+		t.Fatal(err)
+	}
+	store.failFailure = true
+	if _, err := service.AuthenticatePassword(ctx, "alice", "wrong password phrase", idp.LoginMetadata{}); !errors.Is(err, authn.ErrAuthenticationUnavailable) {
+		t.Fatalf("failed-login storage error = %v", err)
+	}
+	store.failFailure = false
+	store.failSuccess = true
+	if _, err := service.AuthenticatePassword(ctx, "alice", "a valid password phrase", idp.LoginMetadata{}); !errors.Is(err, authn.ErrAuthenticationUnavailable) {
+		t.Fatalf("success-reset storage error = %v", err)
+	}
+}
+
+func TestPasswordWorkIsBoundedAndObservableAtProductionParams(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	now := time.Now().UTC()
+	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "subject-1"}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := authn.NewPasswordService(store, authn.Options{
+		Hasher: passwordhash.New(passwordhash.DefaultParams()),
+		Work:   idp.PasswordWorkConfig{MaxConcurrent: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := service.HashCredential(ctx, "u1", "alice", []byte("a valid password phrase"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutPasswordCredential(ctx, credential); err != nil {
+		t.Fatal(err)
+	}
+	const attempts = 6
+	start := make(chan struct{})
+	errs := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := service.AuthenticatePassword(ctx, "alice", "wrong password phrase", idp.LoginMetadata{})
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if !errors.Is(err, authn.ErrInvalidCredentials) {
+			t.Fatalf("authentication error = %v", err)
+		}
+	}
+	stats := service.PasswordWorkStats()
+	if stats.Capacity != 1 || stats.InFlight != 0 || stats.Saturations == 0 || stats.Completed < attempts+1 || stats.TotalDuration == 0 {
+		t.Fatalf("password work stats = %#v", stats)
+	}
+}
+
 func TestPasswordServiceRejectsWrongPasswordAndLocks(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
@@ -72,7 +171,7 @@ func TestPasswordServiceRejectsWrongPasswordAndLocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cred, err := svc.HashCredential("u1", "alice", []byte("right-password"), now)
+	cred, err := svc.HashCredential(ctx, "u1", "alice", []byte("right-password-long"), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +188,7 @@ func TestPasswordServiceRejectsWrongPasswordAndLocks(t *testing.T) {
 	if state.LockedUntil == nil {
 		t.Fatalf("expected lockout: %#v", state)
 	}
-	if _, err := svc.AuthenticatePassword(ctx, "alice", "right-password", idp.LoginMetadata{}); !errors.Is(err, authn.ErrAccountLocked) {
+	if _, err := svc.AuthenticatePassword(ctx, "alice", "right-password-long", idp.LoginMetadata{}); !errors.Is(err, authn.ErrAccountLocked) {
 		t.Fatalf("locked err=%v", err)
 	}
 }

@@ -62,7 +62,6 @@ type PasswordCredential struct {
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	PasswordChangedAt time.Time
-	MustChangeAtLogin bool
 	Disabled          bool
 }
 

@@ -157,7 +157,7 @@ func (s *sqlFositeStore) CreateAuthorizeCodeSession(ctx context.Context, code st
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_authorize_codes(signature,active,request_json) VALUES(?,?,?)`, code, 1, b)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_authorize_codes(signature,active,subject,request_json) VALUES(?,?,?,?)`, code, 1, requesterSubject(req), b)
 	return err
 }
 func (s *sqlFositeStore) GetAuthorizeCodeSession(ctx context.Context, code string, _ fosite.Session) (fosite.Requester, error) {
@@ -192,7 +192,7 @@ func (s *sqlFositeStore) CreatePKCERequestSession(ctx context.Context, code stri
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_pkces(signature,request_json) VALUES(?,?)`, code, b)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_pkces(signature,subject,request_json) VALUES(?,?,?)`, code, requesterSubject(req), b)
 	return err
 }
 func (s *sqlFositeStore) GetPKCERequestSession(ctx context.Context, code string, _ fosite.Session) (fosite.Requester, error) {
@@ -208,7 +208,7 @@ func (s *sqlFositeStore) CreateOpenIDConnectSession(ctx context.Context, authori
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_oidc_sessions(signature,request_json) VALUES(?,?)`, authorizeCode, b)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_oidc_sessions(signature,subject,request_json) VALUES(?,?,?)`, authorizeCode, requesterSubject(req), b)
 	return err
 }
 func (s *sqlFositeStore) GetOpenIDConnectSession(ctx context.Context, authorizeCode string, requester fosite.Requester) (fosite.Requester, error) {
@@ -224,7 +224,7 @@ func (s *sqlFositeStore) CreateAccessTokenSession(ctx context.Context, signature
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_access_tokens(signature,request_id,request_json) VALUES(?,?,?)`, signature, req.GetID(), b)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_access_tokens(signature,request_id,subject,request_json) VALUES(?,?,?,?)`, signature, req.GetID(), requesterSubject(req), b)
 	return err
 }
 func (s *sqlFositeStore) GetAccessTokenSession(ctx context.Context, signature string, _ fosite.Session) (fosite.Requester, error) {
@@ -240,8 +240,15 @@ func (s *sqlFositeStore) CreateRefreshTokenSession(ctx context.Context, signatur
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_refresh_tokens(signature,request_id,active,access_token_signature,request_json) VALUES(?,?,?,?,?)`, signature, req.GetID(), 1, accessTokenSignature, b)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_refresh_tokens(signature,request_id,active,access_token_signature,subject,request_json) VALUES(?,?,?,?,?,?)`, signature, req.GetID(), 1, accessTokenSignature, requesterSubject(req), b)
 	return err
+}
+
+func requesterSubject(req fosite.Requester) string {
+	if req == nil || req.GetSession() == nil {
+		return ""
+	}
+	return req.GetSession().GetSubject()
 }
 func (s *sqlFositeStore) GetRefreshTokenSession(ctx context.Context, signature string, _ fosite.Session) (fosite.Requester, error) {
 	var active int

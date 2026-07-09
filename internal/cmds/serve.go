@@ -24,6 +24,7 @@ import (
 	"github.com/manuel/tinyidp/internal/sections/oidc"
 	"github.com/manuel/tinyidp/internal/server"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -238,7 +239,7 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 			return nil, err
 		}
 	}
-	passwords, err := authn.NewPasswordService(st, authn.Options{})
+	passwords, err := authn.NewPasswordService(st, authn.Options{Acceptance: idp.DevelopmentPasswordAcceptancePolicy()})
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +250,7 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 			return nil, err
 		}
 		if sc.Password != "" {
-			credential, err := passwords.HashCredential(u.ID, sc.Name, []byte(sc.Password), time.Now().UTC())
+			credential, err := passwords.HashCredential(context.Background(), u.ID, sc.Name, []byte(sc.Password), time.Now().UTC())
 			if err != nil {
 				return nil, err
 			}

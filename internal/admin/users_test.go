@@ -24,26 +24,44 @@ func TestServiceCreateUserAndAuthenticate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "Alice", Password: []byte("alice-password"), Email: "alice@example.test", Name: "Alice"})
+	u, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "Alice", Password: []byte("alice-password-long"), Email: "alice@example.test", Name: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if u.Sub == "" || u.ID == "" || u.PreferredUsername != "alice" {
 		t.Fatalf("bad user: %#v", u)
 	}
-	if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", Password: []byte("other-password")}); !errors.Is(err, idpstore.ErrDuplicate) {
+	if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", Password: []byte("other-password-long")}); !errors.Is(err, idpstore.ErrDuplicate) {
 		t.Fatalf("duplicate err=%v", err)
 	}
 	authSvc, err := authn.NewPasswordService(st, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := authSvc.AuthenticatePassword(ctx, "alice", "alice-password", idp.LoginMetadata{})
+	result, err := authSvc.AuthenticatePassword(ctx, "alice", "alice-password-long", idp.LoginMetadata{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.User.Sub != u.Sub {
 		t.Fatalf("auth user = %#v, want sub %s", result.User, u.Sub)
+	}
+}
+
+func TestServiceEnforcesPasswordAcceptanceOnCreateAndReset(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	service, err := admin.NewService(store, admin.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", Password: []byte("too-short")}); !errors.Is(err, idp.ErrPasswordRejected) {
+		t.Fatalf("short create password error = %v", err)
+	}
+	if _, err := service.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", Password: []byte("a valid password phrase")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetPassword(ctx, admin.SetPasswordRequest{Login: "alice", Password: []byte("temporarypassword")}); !errors.Is(err, idp.ErrPasswordRejected) {
+		t.Fatalf("blocklisted reset password error = %v", err)
 	}
 }
 
@@ -68,10 +86,10 @@ func TestServiceCreateUserRejectsDuplicateExplicitID(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", ID: "fixed-user-id", Password: []byte("alice-password")}); err != nil {
+			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice", ID: "fixed-user-id", Password: []byte("alice-password-long")}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice-alias", ID: "fixed-user-id", Password: []byte("alias-password")}); !errors.Is(err, idpstore.ErrDuplicate) {
+			if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "alice-alias", ID: "fixed-user-id", Password: []byte("alias-password-long")}); !errors.Is(err, idpstore.ErrDuplicate) {
 				t.Fatalf("duplicate id err=%v", err)
 			}
 			if _, err := st.GetUserByLogin(ctx, "alice-alias"); !errors.Is(err, idpstore.ErrNotFound) {
@@ -88,18 +106,18 @@ func TestServiceSetPasswordAndDisableUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "bob", Password: []byte("old-password")}); err != nil {
+	if _, err := svc.CreateUser(ctx, admin.CreateUserRequest{Login: "bob", Password: []byte("old-password-long")}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetPassword(ctx, admin.SetPasswordRequest{Login: "bob", Password: []byte("new-password"), MustChangeAtLogin: true}); err != nil {
+	if err := svc.SetPassword(ctx, admin.SetPasswordRequest{Login: "bob", Password: []byte("new-password-long")}); err != nil {
 		t.Fatal(err)
 	}
 	cred, err := st.GetPasswordCredentialByLogin(ctx, "bob")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cred.MustChangeAtLogin {
-		t.Fatal("password credential should require change at login")
+	if len(cred.PasswordHash) == 0 {
+		t.Fatal("password credential hash is empty")
 	}
 	if _, err := svc.SetUserDisabled(ctx, "bob", true); err != nil {
 		t.Fatal(err)
@@ -108,7 +126,7 @@ func TestServiceSetPasswordAndDisableUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authSvc.AuthenticatePassword(ctx, "bob", "new-password", idp.LoginMetadata{}); !errors.Is(err, authn.ErrAccountDisabled) {
+	if _, err := authSvc.AuthenticatePassword(ctx, "bob", "new-password-long", idp.LoginMetadata{}); !errors.Is(err, authn.ErrAccountDisabled) {
 		t.Fatalf("disabled login err=%v", err)
 	}
 }

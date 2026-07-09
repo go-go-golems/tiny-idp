@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/manuel/tinyidp/pkg/idpstore"
@@ -50,6 +51,101 @@ func (DirectClientAddressResolver) ResolveClientAddress(r *http.Request) (string
 	return host, nil
 }
 
+func (DirectClientAddressResolver) ProductionReady() bool { return true }
+
+// TrustedProxyConfig defines which immediate/intermediate proxies may supply
+// X-Forwarded-For. Untrusted peers never influence the resolved address.
+type TrustedProxyConfig struct {
+	TrustedCIDRs []string
+	MaxHops      int
+}
+
+type TrustedProxyResolver struct {
+	trusted []*net.IPNet
+	maxHops int
+}
+
+var _ ClientAddressResolver = (*TrustedProxyResolver)(nil)
+var _ ProductionReadyReporter = (*TrustedProxyResolver)(nil)
+
+func NewTrustedProxyResolver(cfg TrustedProxyConfig) (*TrustedProxyResolver, error) {
+	if len(cfg.TrustedCIDRs) == 0 {
+		return nil, fmt.Errorf("at least one trusted proxy CIDR is required")
+	}
+	if cfg.MaxHops <= 0 {
+		cfg.MaxHops = 8
+	}
+	resolver := &TrustedProxyResolver{maxHops: cfg.MaxHops}
+	for _, raw := range cfg.TrustedCIDRs {
+		_, network, err := net.ParseCIDR(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, fmt.Errorf("parse trusted proxy CIDR %q: %w", raw, err)
+		}
+		resolver.trusted = append(resolver.trusted, network)
+	}
+	return resolver, nil
+}
+
+func (r *TrustedProxyResolver) ResolveClientAddress(req *http.Request) (string, error) {
+	if req == nil {
+		return "", fmt.Errorf("request is required")
+	}
+	peer, err := remoteIP(req.RemoteAddr)
+	if err != nil {
+		return "", err
+	}
+	if r == nil || !r.isTrusted(peer) {
+		return peer.String(), nil
+	}
+	values := strings.Split(req.Header.Get("X-Forwarded-For"), ",")
+	if len(values) == 1 && strings.TrimSpace(values[0]) == "" {
+		return peer.String(), nil
+	}
+	if len(values) > r.maxHops {
+		return "", fmt.Errorf("forwarded address chain exceeds %d hops", r.maxHops)
+	}
+	chain := make([]net.IP, 0, len(values)+1)
+	for _, value := range values {
+		ip := net.ParseIP(strings.TrimSpace(value))
+		if ip == nil {
+			return "", fmt.Errorf("invalid forwarded client address")
+		}
+		chain = append(chain, ip)
+	}
+	chain = append(chain, peer)
+	for i := len(chain) - 1; i >= 0; i-- {
+		if !r.isTrusted(chain[i]) {
+			return chain[i].String(), nil
+		}
+	}
+	return chain[0].String(), nil
+}
+
+func (r *TrustedProxyResolver) ProductionReady() bool {
+	return r != nil && len(r.trusted) > 0 && r.maxHops > 0
+}
+
+func (r *TrustedProxyResolver) isTrusted(ip net.IP) bool {
+	for _, network := range r.trusted {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func remoteIP(address string) (net.IP, error) {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("parse remote address: %w", err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil, fmt.Errorf("remote address is not an IP")
+	}
+	return ip, nil
+}
+
 // LoginMetadata contains request context safe for authentication policy and
 // audit. RemoteAddr is the immediate peer until Phase 3 introduces the trusted
 // client-address resolver.
@@ -61,9 +157,8 @@ type LoginMetadata struct {
 
 // AuthResult is the successful result of password authentication.
 type AuthResult struct {
-	User               idpstore.User
-	MustChangePassword bool
-	AMR                []string
+	User idpstore.User
+	AMR  []string
 }
 
 // PasswordAuthenticator verifies a login without exposing the concrete

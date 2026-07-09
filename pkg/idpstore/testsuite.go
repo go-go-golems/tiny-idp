@@ -27,6 +27,43 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 			t.Fatalf("nested Update error = %v, want %v", err, ErrNestedTransaction)
 		}
 	})
+
+	t.Run("password security artifact revocation is user scoped", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Now().UTC()
+		if err := st.PutUser(ctx, "alice", User{ID: "u1", Sub: "subject-1"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateGrant(ctx, Grant{ID: "g1", UserID: "u1"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateAuthorizationCode(ctx, AuthorizationCode{CodeHash: []byte("user-code"), UserID: "u1", ExpiresAt: now.Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateAccessToken(ctx, AccessToken{TokenHash: []byte("user-access"), UserID: "u1"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateRefreshToken(ctx, RefreshToken{TokenHash: []byte("user-refresh"), GrantID: "g1", UserID: "u1"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateSession(ctx, Session{IDHash: []byte("user-session"), UserID: "u1"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.RevokeUserSecurityArtifacts(ctx, "u1", now); err != nil {
+			t.Fatal(err)
+		}
+		grant, _ := st.GetGrant(ctx, "g1")
+		access, _ := st.GetAccessToken(ctx, []byte("user-access"))
+		refresh, _ := st.GetRefreshToken(ctx, []byte("user-refresh"))
+		session, _ := st.GetSession(ctx, []byte("user-session"))
+		if grant.RevokedAt == nil || access.RevokedAt == nil || refresh.RevokedAt == nil || session.RevokedAt == nil {
+			t.Fatalf("artifacts not revoked: grant=%#v access=%#v refresh=%#v session=%#v", grant, access, refresh, session)
+		}
+		if _, err := st.ConsumeAuthorizationCode(ctx, []byte("user-code"), now); !errors.Is(err, ErrAlreadyConsumed) {
+			t.Fatalf("authorization code after password revocation = %v", err)
+		}
+	})
 	t.Run("authorization code can be consumed once", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)

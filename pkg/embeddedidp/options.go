@@ -27,16 +27,18 @@ type TokenConfig struct {
 }
 
 type Options struct {
-	Issuer        string
-	Mode          Mode
-	Store         idpstore.Store
-	Cookie        CookieConfig
-	Token         TokenConfig
-	Audit         idp.Sink
-	Consent       idp.ConsentPolicy
-	RateLimiter   idp.RateLimiter
-	ClientAddress idp.ClientAddressResolver
-	Authenticator idp.PasswordAuthenticator
+	Issuer         string
+	Mode           Mode
+	Store          idpstore.Store
+	Cookie         CookieConfig
+	Token          TokenConfig
+	Audit          idp.Sink
+	Consent        idp.ConsentPolicy
+	RateLimiter    idp.RateLimiter
+	ClientAddress  idp.ClientAddressResolver
+	Authenticator  idp.PasswordAuthenticator
+	PasswordPolicy idp.PasswordAcceptancePolicy
+	PasswordWork   idp.PasswordWorkConfig
 }
 
 func (o Options) Validate(ctx context.Context) error {
@@ -80,6 +82,34 @@ func (o Options) Validate(ctx context.Context) error {
 		}
 		if o.ClientAddress == nil {
 			return fmt.Errorf("production mode requires a client address resolver")
+		}
+		if reporter, ok := o.RateLimiter.(idp.ProductionReadyReporter); !ok || !reporter.ProductionReady() {
+			return fmt.Errorf("production mode requires a production-ready rate limiter")
+		}
+		if reporter, ok := o.ClientAddress.(idp.ProductionReadyReporter); !ok || !reporter.ProductionReady() {
+			return fmt.Errorf("production mode requires a production-ready client address resolver")
+		}
+		policy := o.PasswordPolicy
+		if policy.MinCharacters == 0 {
+			policy = idp.DefaultPasswordAcceptancePolicy()
+		}
+		if policy.MinCharacters < 15 || policy.MaxCharacters < 64 || policy.Blocklist == nil {
+			return fmt.Errorf("production mode requires NIST-aligned password acceptance policy")
+		}
+		work := o.PasswordWork
+		if work.MaxConcurrent == 0 {
+			work = idp.DefaultPasswordWorkConfig()
+		}
+		if work.MaxConcurrent < 1 {
+			return fmt.Errorf("production mode requires bounded password work")
+		}
+		if o.Authenticator != nil {
+			if reporter, ok := o.Authenticator.(idp.ProductionReadyReporter); !ok || !reporter.ProductionReady() {
+				return fmt.Errorf("production mode requires a production-ready password authenticator")
+			}
+			if _, ok := o.Authenticator.(idp.PasswordWorkReporter); !ok {
+				return fmt.Errorf("production mode requires password work metrics")
+			}
 		}
 		reporter, ok := o.Store.(idpstore.PersistentReporter)
 		if !ok || !reporter.Persistent() {

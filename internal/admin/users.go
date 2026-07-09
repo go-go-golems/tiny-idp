@@ -24,9 +24,11 @@ type Service struct {
 }
 
 type Options struct {
-	Hasher passwordhash.Hasher
-	Clock  func() time.Time
-	Audit  idp.Sink
+	Hasher         passwordhash.Hasher
+	PasswordPolicy idp.PasswordAcceptancePolicy
+	PasswordWork   idp.PasswordWorkConfig
+	Clock          func() time.Time
+	Audit          idp.Sink
 }
 
 func NewService(store idpstore.Store, opts Options) (*Service, error) {
@@ -41,7 +43,7 @@ func NewService(store idpstore.Store, opts Options) (*Service, error) {
 	if sink == nil {
 		sink = idp.NoopSink{}
 	}
-	passwords, err := authn.NewPasswordService(store, authn.Options{Hasher: opts.Hasher, Clock: clock, Audit: sink})
+	passwords, err := authn.NewPasswordService(store, authn.Options{Hasher: opts.Hasher, Acceptance: opts.PasswordPolicy, Work: opts.PasswordWork, Clock: clock, Audit: sink})
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +63,6 @@ type CreateUserRequest struct {
 	Roles             []string
 	Tenant            string
 	Locale            string
-	MustChangeAtLogin bool
 }
 
 func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (idpstore.User, error) {
@@ -95,11 +96,10 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (idpsto
 	if err := u.Validate(); err != nil {
 		return idpstore.User{}, err
 	}
-	cred, err := s.Passwords.HashCredential(u.ID, login, req.Password, now)
+	cred, err := s.Passwords.HashCredential(ctx, u.ID, login, req.Password, now)
 	if err != nil {
 		return idpstore.User{}, err
 	}
-	cred.MustChangeAtLogin = req.MustChangeAtLogin
 	if err := s.Store.CreateUserWithCredential(ctx, login, u, cred); err != nil {
 		return idpstore.User{}, err
 	}
@@ -108,9 +108,8 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (idpsto
 }
 
 type SetPasswordRequest struct {
-	Login             string
-	Password          []byte
-	MustChangeAtLogin bool
+	Login    string
+	Password []byte
 }
 
 func (s *Service) SetPassword(ctx context.Context, req SetPasswordRequest) error {
@@ -126,12 +125,11 @@ func (s *Service) SetPassword(ctx context.Context, req SetPasswordRequest) error
 		return err
 	}
 	now := s.Clock().UTC()
-	cred, err := s.Passwords.HashCredential(u.ID, login, req.Password, now)
+	cred, err := s.Passwords.HashCredential(ctx, u.ID, login, req.Password, now)
 	if err != nil {
 		return err
 	}
-	cred.MustChangeAtLogin = req.MustChangeAtLogin
-	state := idpstore.AccountSecurityState{UserID: u.ID, LastSuccessfulLoginAt: &now}
+	state := idpstore.AccountSecurityState{UserID: u.ID}
 	if err := s.Store.ReplacePasswordAndSecurityState(ctx, cred, state); err != nil {
 		return err
 	}

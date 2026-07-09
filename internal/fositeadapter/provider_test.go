@@ -363,7 +363,7 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := svc.HashCredential("u1", "alice", []byte("alice-password"), time.Now().UTC())
+	credential, err := svc.HashCredential(ctx, "u1", "alice", []byte("alice-password-long"), time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +405,7 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 		t.Fatalf("wrong password status = %d, want 401", resp.StatusCode)
 	}
 
-	form.Set("password", "alice-password")
+	form.Set("password", "alice-password-long")
 	csrfToken, csrfCookie = fetchCSRF(t, ts.URL, form)
 	form.Set("csrf_token", csrfToken)
 	reqAuth, _ = http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))

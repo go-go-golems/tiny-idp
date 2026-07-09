@@ -3,6 +3,8 @@ package authn
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/manuel/tinyidp/internal/passwordhash"
@@ -12,14 +14,14 @@ import (
 )
 
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrAccountDisabled    = errors.New("account disabled")
-	ErrAccountLocked      = errors.New("account locked")
+	ErrInvalidCredentials        = errors.New("invalid credentials")
+	ErrAccountDisabled           = errors.New("account disabled")
+	ErrAccountLocked             = errors.New("account locked")
+	ErrAuthenticationUnavailable = errors.New("authentication unavailable")
+	ErrPasswordWorkRejected      = errors.New("password work rejected")
 )
 
 type PasswordPolicy struct {
-	MinLength         int
-	MaxLength         int
 	LockoutThreshold  int
 	LockoutWindow     time.Duration
 	LockoutDuration   time.Duration
@@ -28,22 +30,37 @@ type PasswordPolicy struct {
 }
 
 func DefaultPasswordPolicy() PasswordPolicy {
-	return PasswordPolicy{MinLength: 8, MaxLength: 1024, LockoutThreshold: 5, LockoutWindow: 15 * time.Minute, LockoutDuration: 15 * time.Minute}
+	return PasswordPolicy{LockoutThreshold: 5, LockoutWindow: 15 * time.Minute, LockoutDuration: 15 * time.Minute}
 }
 
 type Options struct {
-	Hasher passwordhash.Hasher
-	Policy PasswordPolicy
-	Clock  func() time.Time
-	Audit  idp.Sink
+	Hasher     passwordhash.Hasher
+	Policy     PasswordPolicy
+	Acceptance idp.PasswordAcceptancePolicy
+	Work       idp.PasswordWorkConfig
+	Clock      func() time.Time
+	Audit      idp.Sink
 }
 
 type PasswordService struct {
-	store  idpstore.Store
-	hasher passwordhash.Hasher
-	policy PasswordPolicy
-	clock  func() time.Time
-	audit  idp.Sink
+	store      idpstore.Store
+	hasher     passwordhash.Hasher
+	policy     PasswordPolicy
+	clock      func() time.Time
+	audit      idp.Sink
+	acceptance idp.PasswordAcceptancePolicy
+	work       chan struct{}
+	metrics    passwordWorkMetrics
+}
+
+type passwordWorkMetrics struct {
+	inFlight      atomic.Int64
+	waiting       atomic.Int64
+	saturations   atomic.Uint64
+	rejected      atomic.Uint64
+	completed     atomic.Uint64
+	totalWait     atomic.Int64
+	totalDuration atomic.Int64
 }
 
 var _ idp.PasswordAuthenticator = (*PasswordService)(nil)
@@ -57,11 +74,19 @@ func NewPasswordService(store idpstore.Store, opts Options) (*PasswordService, e
 		hasher = passwordhash.New(passwordhash.DefaultParams())
 	}
 	policy := opts.Policy
-	if policy.MaxLength == 0 && policy.MinLength == 0 && policy.LockoutThreshold == 0 && policy.LockoutWindow == 0 && policy.LockoutDuration == 0 && len(policy.DummyHash) == 0 {
+	if policy.LockoutThreshold == 0 && policy.LockoutWindow == 0 && policy.LockoutDuration == 0 && len(policy.DummyHash) == 0 {
 		policy = DefaultPasswordPolicy()
 	}
-	if policy.MaxLength == 0 {
-		policy.MaxLength = 1024
+	acceptance := opts.Acceptance
+	if acceptance.MinCharacters == 0 {
+		acceptance = idp.DefaultPasswordAcceptancePolicy()
+	}
+	workConfig := opts.Work
+	if workConfig.MaxConcurrent == 0 {
+		workConfig = idp.DefaultPasswordWorkConfig()
+	}
+	if workConfig.MaxConcurrent < 1 {
+		return nil, fmt.Errorf("password work max concurrency must be positive")
 	}
 	if len(policy.DummyHash) == 0 {
 		dummy, err := hasher.HashPassword([]byte("tinyidp dummy password verifier"))
@@ -78,26 +103,30 @@ func NewPasswordService(store idpstore.Store, opts Options) (*PasswordService, e
 	if sink == nil {
 		sink = idp.NoopSink{}
 	}
-	return &PasswordService{store: store, hasher: hasher, policy: policy, clock: clock, audit: sink}, nil
+	return &PasswordService{store: store, hasher: hasher, policy: policy, clock: clock, audit: sink, acceptance: acceptance, work: make(chan struct{}, workConfig.MaxConcurrent)}, nil
 }
 
 func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, password string, meta idp.LoginMetadata) (idp.AuthResult, error) {
 	now := s.clock().UTC()
 	normalized := user.Normalize(login)
-	if normalized == "" || (password == "" && !s.policy.AllowPasswordless) {
-		s.dummyVerify(password)
-		s.emit(ctx, "password.login.failure", meta, "", "invalid_credentials")
-		return idp.AuthResult{}, ErrInvalidCredentials
-	}
-	if len(password) > s.policy.MaxLength {
-		s.dummyVerify(password)
+	passwordBytes, normalizeErr := s.acceptance.NormalizePassword([]byte(password))
+	if normalized == "" || normalizeErr != nil || (password == "" && !s.policy.AllowPasswordless) {
+		if err := s.dummyVerify(ctx, passwordBytes); err != nil {
+			return idp.AuthResult{}, err
+		}
 		s.emit(ctx, "password.login.failure", meta, "", "invalid_credentials")
 		return idp.AuthResult{}, ErrInvalidCredentials
 	}
 
 	u, userErr := s.store.GetUserByLogin(ctx, normalized)
 	if userErr != nil {
-		s.dummyVerify(password)
+		if !errors.Is(userErr, idpstore.ErrNotFound) {
+			s.emit(ctx, "password.login.unavailable", meta, "", "store_error")
+			return idp.AuthResult{}, fmt.Errorf("%w: load user", ErrAuthenticationUnavailable)
+		}
+		if err := s.dummyVerify(ctx, passwordBytes); err != nil {
+			return idp.AuthResult{}, err
+		}
 		s.emit(ctx, "password.login.failure", meta, "", "invalid_credentials")
 		return idp.AuthResult{}, ErrInvalidCredentials
 	}
@@ -107,36 +136,75 @@ func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, passw
 			if err := s.checkAccountState(ctx, u, idpstore.PasswordCredential{}, now, meta); err != nil {
 				return idp.AuthResult{}, err
 			}
-			_ = s.store.RecordSuccessfulLogin(ctx, u.ID, now, nil)
+			if err := s.store.RecordSuccessfulLogin(ctx, u.ID, now, nil); err != nil {
+				return idp.AuthResult{}, fmt.Errorf("%w: reset successful login", ErrAuthenticationUnavailable)
+			}
 			s.emit(ctx, "password.login.success", meta, u.Sub, "")
 			return idp.AuthResult{User: u, AMR: []string{"pwd"}}, nil
 		}
-		s.dummyVerify(password)
+		if !errors.Is(credErr, idpstore.ErrNotFound) {
+			s.emit(ctx, "password.login.unavailable", meta, u.Sub, "store_error")
+			return idp.AuthResult{}, fmt.Errorf("%w: load credential", ErrAuthenticationUnavailable)
+		}
+		if err := s.dummyVerify(ctx, passwordBytes); err != nil {
+			return idp.AuthResult{}, err
+		}
 		s.emit(ctx, "password.login.failure", meta, u.Sub, "invalid_credentials")
 		return idp.AuthResult{}, ErrInvalidCredentials
 	}
 	if err := s.checkAccountState(ctx, u, credential, now, meta); err != nil {
+		if !errors.Is(err, ErrAccountDisabled) && !errors.Is(err, ErrAccountLocked) {
+			return idp.AuthResult{}, fmt.Errorf("%w: account state", ErrAuthenticationUnavailable)
+		}
 		return idp.AuthResult{}, err
 	}
 
-	needsRehash, err := s.hasher.VerifyPassword([]byte(password), credential.PasswordHash)
+	release, err := s.beginPasswordWork(ctx)
 	if err != nil {
-		_ = s.recordFailure(ctx, u.ID, now)
+		return idp.AuthResult{}, err
+	}
+	needsRehash, err := s.hasher.VerifyPassword(passwordBytes, credential.PasswordHash)
+	release()
+	if err != nil {
+		if !errors.Is(err, passwordhash.ErrPasswordMismatch) {
+			s.emit(ctx, "password.login.unavailable", meta, u.Sub, "credential_error")
+			return idp.AuthResult{}, fmt.Errorf("%w: verify credential", ErrAuthenticationUnavailable)
+		}
+		if failureErr := s.recordFailure(ctx, u.ID, now); failureErr != nil {
+			s.emit(ctx, "password.login.unavailable", meta, u.Sub, "store_error")
+			return idp.AuthResult{}, fmt.Errorf("%w: record failed login", ErrAuthenticationUnavailable)
+		}
 		s.emit(ctx, "password.login.failure", meta, u.Sub, "invalid_credentials")
 		return idp.AuthResult{}, ErrInvalidCredentials
 	}
 	if needsRehash {
-		if updated, err := s.rehashCredential(credential, []byte(password), now); err == nil {
-			_ = s.store.PutPasswordCredential(ctx, updated)
+		updated, err := s.rehashCredential(ctx, credential, passwordBytes, now)
+		if err != nil {
+			return idp.AuthResult{}, fmt.Errorf("%w: rehash credential", ErrAuthenticationUnavailable)
+		}
+		if err := s.store.PutPasswordCredential(ctx, updated); err != nil {
+			return idp.AuthResult{}, fmt.Errorf("%w: persist rehash", ErrAuthenticationUnavailable)
 		}
 	}
-	_ = s.store.RecordSuccessfulLogin(ctx, u.ID, now, nil)
+	if err := s.store.RecordSuccessfulLogin(ctx, u.ID, now, nil); err != nil {
+		s.emit(ctx, "password.login.unavailable", meta, u.Sub, "store_error")
+		return idp.AuthResult{}, fmt.Errorf("%w: reset successful login", ErrAuthenticationUnavailable)
+	}
 	s.emit(ctx, "password.login.success", meta, u.Sub, "")
-	return idp.AuthResult{User: u, MustChangePassword: credential.MustChangeAtLogin, AMR: []string{"pwd"}}, nil
+	return idp.AuthResult{User: u, AMR: []string{"pwd"}}, nil
 }
 
-func (s *PasswordService) HashCredential(userID, login string, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
-	encoded, err := s.hasher.HashPassword(password)
+func (s *PasswordService) HashCredential(ctx context.Context, userID, login string, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
+	normalized, err := s.acceptance.NormalizeAndValidatePassword(ctx, password, login, userID)
+	if err != nil {
+		return idpstore.PasswordCredential{}, err
+	}
+	release, err := s.beginPasswordWork(ctx)
+	if err != nil {
+		return idpstore.PasswordCredential{}, err
+	}
+	encoded, err := s.hasher.HashPassword(normalized)
+	release()
 	if err != nil {
 		return idpstore.PasswordCredential{}, err
 	}
@@ -176,8 +244,13 @@ func (s *PasswordService) recordFailure(ctx context.Context, userID string, now 
 	return err
 }
 
-func (s *PasswordService) rehashCredential(credential idpstore.PasswordCredential, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
+func (s *PasswordService) rehashCredential(ctx context.Context, credential idpstore.PasswordCredential, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
+	release, err := s.beginPasswordWork(ctx)
+	if err != nil {
+		return idpstore.PasswordCredential{}, err
+	}
 	encoded, err := s.hasher.HashPassword(password)
+	release()
 	if err != nil {
 		return idpstore.PasswordCredential{}, err
 	}
@@ -190,8 +263,62 @@ func (s *PasswordService) rehashCredential(credential idpstore.PasswordCredentia
 	return credential, nil
 }
 
-func (s *PasswordService) dummyVerify(password string) {
-	_, _ = s.hasher.VerifyPassword([]byte(password), s.policy.DummyHash)
+func (s *PasswordService) dummyVerify(ctx context.Context, password []byte) error {
+	release, err := s.beginPasswordWork(ctx)
+	if err != nil {
+		return err
+	}
+	_, _ = s.hasher.VerifyPassword(password, s.policy.DummyHash)
+	release()
+	return nil
+}
+
+func (s *PasswordService) beginPasswordWork(ctx context.Context) (func(), error) {
+	waitStart := time.Now()
+	waited := false
+	select {
+	case s.work <- struct{}{}:
+	default:
+		waited = true
+		s.metrics.saturations.Add(1)
+		s.metrics.waiting.Add(1)
+		select {
+		case s.work <- struct{}{}:
+			s.metrics.waiting.Add(-1)
+		case <-ctx.Done():
+			s.metrics.waiting.Add(-1)
+			s.metrics.rejected.Add(1)
+			return nil, fmt.Errorf("%w: %w", ErrPasswordWorkRejected, ctx.Err())
+		}
+	}
+	if waited {
+		s.metrics.totalWait.Add(time.Since(waitStart).Nanoseconds())
+	}
+	s.metrics.inFlight.Add(1)
+	started := time.Now()
+	return func() {
+		<-s.work
+		s.metrics.inFlight.Add(-1)
+		s.metrics.completed.Add(1)
+		s.metrics.totalDuration.Add(time.Since(started).Nanoseconds())
+	}, nil
+}
+
+func (s *PasswordService) PasswordWorkStats() idp.PasswordWorkStats {
+	return idp.PasswordWorkStats{
+		Capacity:      cap(s.work),
+		InFlight:      s.metrics.inFlight.Load(),
+		Waiting:       s.metrics.waiting.Load(),
+		Saturations:   s.metrics.saturations.Load(),
+		Rejected:      s.metrics.rejected.Load(),
+		Completed:     s.metrics.completed.Load(),
+		TotalWait:     s.metrics.totalWait.Load(),
+		TotalDuration: s.metrics.totalDuration.Load(),
+	}
+}
+
+func (s *PasswordService) ProductionReady() bool {
+	return s != nil && cap(s.work) > 0 && s.acceptance.MinCharacters >= 15 && s.acceptance.MaxCharacters >= 64 && s.acceptance.Blocklist != nil
 }
 
 func (s *PasswordService) emit(ctx context.Context, name string, meta idp.LoginMetadata, subject, reason string) {

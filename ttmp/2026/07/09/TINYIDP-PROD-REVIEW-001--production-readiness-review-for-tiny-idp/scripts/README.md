@@ -85,13 +85,12 @@ go run \
   --rounds 25 --attempts 5 --log-level info
 ```
 
-This probe checks production-sensitive invariants that are hard to establish
-from happy-path tests: SQLite file permissions under a permissive umask,
-minimum-password enforcement, `MustChangeAtLogin` propagation, production
-construction with an expired active signing key and nil audit/rate controls,
-and concurrent failed-login accounting. It uses fast Argon2id test parameters
-only for the concurrency reproduction; the normal runtime probe measures the
-real 64 MiB password configuration.
+This positive probe asserts production-sensitive invariants that are hard to
+establish from happy-path tests: SQLite owner-only permissions under a
+permissive umask, minimum-password enforcement, production rejection of an
+expired active key and missing controls, and concurrent failed-login accounting
+without lost updates. It uses fast Argon2id test parameters only for repeated
+lockout checks; the password-work load tool measures the real 64 MiB profile.
 
 ## Parser fuzz harnesses
 

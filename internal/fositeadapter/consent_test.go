@@ -136,7 +136,7 @@ func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := svc.HashCredential("u1", "alice", []byte("alice-password"), time.Now().UTC())
+	credential, err := svc.HashCredential(ctx, "u1", "alice", []byte("alice-password-long"), time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 
 	form := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	form.Set("scope", "openid email")
-	form.Set("password", "alice-password")
+	form.Set("password", "alice-password-long")
 	csrf, csrfCookie := fetchCSRF(t, ts.URL, form)
 	form.Set("csrf_token", csrf)
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))

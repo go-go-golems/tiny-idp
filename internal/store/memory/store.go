@@ -540,8 +540,64 @@ func (s *Store) ReplacePasswordAndSecurityState(ctx context.Context, credential 
 		if err := tx.PutPasswordCredential(ctx, credential); err != nil {
 			return err
 		}
-		return tx.PutAccountSecurityState(ctx, state)
+		if err := tx.PutAccountSecurityState(ctx, state); err != nil {
+			return err
+		}
+		scoped, ok := tx.(*Store)
+		if !ok {
+			return errors.New("unexpected memory transaction implementation")
+		}
+		scoped.revokeUserSecurityArtifacts(credential.UserID, &credential.PasswordChangedAt)
+		return nil
 	})
+}
+
+func (s *Store) RevokeUserSecurityArtifacts(ctx context.Context, userID string, at time.Time) error {
+	return s.Update(ctx, func(tx idpstore.TxStore) error {
+		scoped, ok := tx.(*Store)
+		if !ok {
+			return errors.New("unexpected memory transaction implementation")
+		}
+		scoped.revokeUserSecurityArtifacts(userID, &at)
+		return nil
+	})
+}
+
+func (s *Store) revokeUserSecurityArtifacts(userID string, at *time.Time) {
+	when := time.Now().UTC()
+	if at != nil && !at.IsZero() {
+		when = at.UTC()
+	}
+	for key, grant := range s.grants {
+		if grant.UserID == userID && grant.RevokedAt == nil {
+			grant.RevokedAt = &when
+			s.grants[key] = grant
+		}
+	}
+	for key, code := range s.codes {
+		if code.UserID == userID && code.ConsumedAt == nil {
+			code.ConsumedAt = &when
+			s.codes[key] = code
+		}
+	}
+	for key, token := range s.access {
+		if token.UserID == userID && token.RevokedAt == nil {
+			token.RevokedAt = &when
+			s.access[key] = token
+		}
+	}
+	for key, token := range s.refresh {
+		if token.UserID == userID && token.RevokedAt == nil {
+			token.RevokedAt = &when
+			s.refresh[key] = token
+		}
+	}
+	for key, session := range s.sessions {
+		if session.UserID == userID && session.RevokedAt == nil {
+			session.RevokedAt = &when
+			s.sessions[key] = session
+		}
+	}
 }
 
 func (s *Store) RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy idpstore.LockoutPolicy) (idpstore.AccountSecurityState, error) {

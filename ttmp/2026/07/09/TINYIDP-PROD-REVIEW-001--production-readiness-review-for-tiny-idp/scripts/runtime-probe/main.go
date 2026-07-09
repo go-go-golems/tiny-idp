@@ -27,7 +27,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
@@ -183,7 +182,7 @@ func run(ctx context.Context, cfg config) error {
 		Cookie:        embeddedidp.CookieConfig{Secure: true},
 		Token:         embeddedidp.TokenConfig{SecretKey: []byte("runtime-probe-secret-key-32-bytes-minimum")},
 		Audit:         auditSink,
-		RateLimiter:   fositeadapter.NewFixedWindowRateLimiter(10_000, time.Minute),
+		RateLimiter:   idp.NewFixedWindowRateLimiter(10_000, time.Minute),
 		ClientAddress: idp.DirectClientAddressResolver{},
 	})
 	if err != nil {

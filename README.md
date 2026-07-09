@@ -284,6 +284,8 @@ provider, err := embeddedidp.New(ctx, embeddedidp.Options{
     RateLimiter: limiter,                       // required in production
     ClientAddress: resolver,                    // required in production
     Authenticator: authenticator,
+    PasswordPolicy: idp.DefaultPasswordAcceptancePolicy(),
+    PasswordWork: idp.PasswordWorkConfig{MaxConcurrent: 2},
 })
 if err != nil { /* Validate() failed */ }
 defer provider.Close(context.Background())

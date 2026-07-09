@@ -133,6 +133,58 @@ func TestMigrationChecksumMismatchRefusesOpen(t *testing.T) {
 	}
 }
 
+func TestPasswordReplacementRevokesDomainAndProtocolArtifacts(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	now := time.Now().UTC()
+	if err := st.CreateUserWithCredential(ctx, "alice", idpstore.User{ID: "u1", Sub: "subject-1"}, idpstore.PasswordCredential{UserID: "u1", Login: "alice"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSession(ctx, idpstore.Session{IDHash: []byte("session"), UserID: "u1"}); err != nil {
+		t.Fatal(err)
+	}
+	protocolRows := []string{
+		`INSERT INTO fosite_authorize_codes(signature,active,subject,request_json) VALUES('code',1,'subject-1','{}')`,
+		`INSERT INTO fosite_pkces(signature,subject,request_json) VALUES('pkce','subject-1','{}')`,
+		`INSERT INTO fosite_oidc_sessions(signature,subject,request_json) VALUES('oidc','subject-1','{}')`,
+		`INSERT INTO fosite_access_tokens(signature,request_id,subject,request_json) VALUES('access','request','subject-1','{}')`,
+		`INSERT INTO fosite_refresh_tokens(signature,request_id,active,access_token_signature,subject,request_json) VALUES('refresh','request',1,'access','subject-1','{}')`,
+	}
+	for _, statement := range protocolRows {
+		if _, err := st.SQLDB().ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	credential := idpstore.PasswordCredential{UserID: "u1", Login: "alice", PasswordChangedAt: now}
+	state := idpstore.AccountSecurityState{UserID: "u1", LastSuccessfulLoginAt: &now}
+	if err := st.ReplacePasswordAndSecurityState(ctx, credential, state); err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.GetSession(ctx, []byte("session"))
+	if err != nil || session.RevokedAt == nil {
+		t.Fatalf("session after password replacement = %#v, err=%v", session, err)
+	}
+	checks := []struct {
+		query string
+		want  int
+	}{
+		{`SELECT active FROM fosite_authorize_codes WHERE signature='code'`, 0},
+		{`SELECT COUNT(*) FROM fosite_pkces WHERE signature='pkce'`, 0},
+		{`SELECT COUNT(*) FROM fosite_oidc_sessions WHERE signature='oidc'`, 0},
+		{`SELECT COUNT(*) FROM fosite_access_tokens WHERE signature='access'`, 0},
+		{`SELECT active FROM fosite_refresh_tokens WHERE signature='refresh'`, 0},
+	}
+	for _, check := range checks {
+		var got int
+		if err := st.SQLDB().QueryRowContext(ctx, check.query).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != check.want {
+			t.Fatalf("query %q = %d, want %d", check.query, got, check.want)
+		}
+	}
+}
+
 func openTestStore(t *testing.T) *sqlitestore.Store {
 	t.Helper()
 	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))

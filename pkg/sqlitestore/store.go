@@ -842,8 +842,145 @@ func (s *Store) ReplacePasswordAndSecurityState(ctx context.Context, credential 
 		if err := tx.PutPasswordCredential(ctx, credential); err != nil {
 			return err
 		}
-		return tx.PutAccountSecurityState(ctx, state)
+		if err := tx.PutAccountSecurityState(ctx, state); err != nil {
+			return err
+		}
+		scoped, ok := tx.(*Store)
+		if !ok {
+			return fmt.Errorf("unexpected SQLite transaction implementation")
+		}
+		return scoped.revokeUserSecurityArtifacts(ctx, credential.UserID, credential.PasswordChangedAt)
 	})
+}
+
+func (s *Store) RevokeUserSecurityArtifacts(ctx context.Context, userID string, at time.Time) error {
+	return s.Update(ctx, func(tx idpstore.TxStore) error {
+		scoped, ok := tx.(*Store)
+		if !ok {
+			return fmt.Errorf("unexpected SQLite transaction implementation")
+		}
+		return scoped.revokeUserSecurityArtifacts(ctx, userID, at)
+	})
+}
+
+// revokeUserSecurityArtifacts runs only on a transaction-scoped Store.
+//
+// tinyidp:transaction-scoped
+func (s *Store) revokeUserSecurityArtifacts(ctx context.Context, userID string, at time.Time) error {
+	user, err := s.GetUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	type record struct {
+		key  string
+		data []byte
+	}
+	load := func(query string) ([]record, error) {
+		rows, err := s.conn().QueryContext(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var records []record
+		for rows.Next() {
+			var item record
+			if err := rows.Scan(&item.key, &item.data); err != nil {
+				return nil, err
+			}
+			records = append(records, item)
+		}
+		return records, rows.Err()
+	}
+	grants, err := load(`SELECT id,data FROM grants`)
+	if err != nil {
+		return err
+	}
+	for _, item := range grants {
+		grant, err := dec[idpstore.Grant](item.data)
+		if err != nil {
+			return err
+		}
+		if grant.UserID == userID && grant.RevokedAt == nil {
+			grant.RevokedAt = &at
+			data, _ := enc(grant)
+			if _, err := s.conn().ExecContext(ctx, `UPDATE grants SET data=? WHERE id=?`, data, item.key); err != nil {
+				return err
+			}
+		}
+	}
+	for _, table := range []struct {
+		name  string
+		apply func([]byte) ([]byte, bool, error)
+	}{
+		{"authorization_codes", func(data []byte) ([]byte, bool, error) {
+			value, err := dec[idpstore.AuthorizationCode](data)
+			if err != nil || value.UserID != userID || value.ConsumedAt != nil {
+				return nil, false, err
+			}
+			value.ConsumedAt = &at
+			encoded, err := enc(value)
+			return encoded, true, err
+		}},
+		{"access_tokens", func(data []byte) ([]byte, bool, error) {
+			value, err := dec[idpstore.AccessToken](data)
+			if err != nil || value.UserID != userID || value.RevokedAt != nil {
+				return nil, false, err
+			}
+			value.RevokedAt = &at
+			encoded, err := enc(value)
+			return encoded, true, err
+		}},
+		{"refresh_tokens", func(data []byte) ([]byte, bool, error) {
+			value, err := dec[idpstore.RefreshToken](data)
+			if err != nil || value.UserID != userID || value.RevokedAt != nil {
+				return nil, false, err
+			}
+			value.RevokedAt = &at
+			encoded, err := enc(value)
+			return encoded, true, err
+		}},
+		{"sessions", func(data []byte) ([]byte, bool, error) {
+			value, err := dec[idpstore.Session](data)
+			if err != nil || value.UserID != userID || value.RevokedAt != nil {
+				return nil, false, err
+			}
+			value.RevokedAt = &at
+			encoded, err := enc(value)
+			return encoded, true, err
+		}},
+	} {
+		records, err := load(`SELECT hash,data FROM ` + table.name)
+		if err != nil {
+			return err
+		}
+		for _, item := range records {
+			data, update, err := table.apply(item.data)
+			if err != nil {
+				return err
+			}
+			if update {
+				if _, err := s.conn().ExecContext(ctx, `UPDATE `+table.name+` SET data=? WHERE hash=?`, data, item.key); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	statements := []string{
+		`UPDATE fosite_authorize_codes SET active=0 WHERE subject=?`,
+		`DELETE FROM fosite_pkces WHERE subject=?`,
+		`DELETE FROM fosite_oidc_sessions WHERE subject=?`,
+		`DELETE FROM fosite_access_tokens WHERE subject=?`,
+		`UPDATE fosite_refresh_tokens SET active=0 WHERE subject=?`,
+	}
+	for _, statement := range statements {
+		if _, err := s.conn().ExecContext(ctx, statement, user.Sub); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy idpstore.LockoutPolicy) (idpstore.AccountSecurityState, error) {

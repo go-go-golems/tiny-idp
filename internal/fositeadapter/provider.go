@@ -9,8 +9,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -52,13 +55,15 @@ type Options struct {
 	// ClientSecrets optionally supplies plaintext client secrets for callers that
 	// are converting legacy/dev config into Fosite's BCrypt client store. The
 	// production embedded API should prefer BCrypt hashes in idpstore.Client.SecretHash.
-	ClientSecrets map[string]string
-	CookieSecure  bool
-	Audit         idp.Sink
-	Consent       idp.ConsentPolicy
-	RateLimiter   idp.RateLimiter
-	ClientAddress idp.ClientAddressResolver
-	Authenticator idp.PasswordAuthenticator
+	ClientSecrets  map[string]string
+	CookieSecure   bool
+	Audit          idp.Sink
+	Consent        idp.ConsentPolicy
+	RateLimiter    idp.RateLimiter
+	ClientAddress  idp.ClientAddressResolver
+	Authenticator  idp.PasswordAuthenticator
+	PasswordPolicy idp.PasswordAcceptancePolicy
+	PasswordWork   idp.PasswordWorkConfig
 }
 
 type Provider struct {
@@ -76,6 +81,14 @@ type Provider struct {
 	clientAddress idp.ClientAddressResolver
 	authenticator idp.PasswordAuthenticator
 	sessionTTL    time.Duration
+}
+
+func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
+	reporter, ok := p.authenticator.(idp.PasswordWorkReporter)
+	if !ok {
+		return idp.PasswordWorkStats{}, false
+	}
+	return reporter.PasswordWorkStats(), true
 }
 
 func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
@@ -122,8 +135,11 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		if opts.Mode != idpstore.ProductionMode {
 			policy.AllowPasswordless = true
 			policy.LockoutThreshold = 0
+			if opts.PasswordPolicy.MinCharacters == 0 {
+				opts.PasswordPolicy = idp.DevelopmentPasswordAcceptancePolicy()
+			}
 		}
-		authenticator, err := authn.NewPasswordService(opts.Store, authn.Options{Audit: opts.Audit, Policy: policy})
+		authenticator, err := authn.NewPasswordService(opts.Store, authn.Options{Audit: opts.Audit, Policy: policy, Acceptance: opts.PasswordPolicy, Work: opts.PasswordWork})
 		if err != nil {
 			return nil, fmt.Errorf("build password authenticator: %w", err)
 		}
@@ -378,8 +394,18 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 		authTime := sess.AuthTime
 		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
 		if login != "" {
+			if !p.allowLogin(r.Context(), ar.GetClient().GetID(), clientAddress, login) {
+				_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.rate_limited", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "rate_limited"})
+				http.Error(w, "rate limited", http.StatusTooManyRequests)
+				return
+			}
 			result, err := p.authenticator.AuthenticatePassword(r.Context(), login, r.PostForm.Get("password"), idp.LoginMetadata{RemoteAddr: clientAddress, UserAgent: r.UserAgent(), ClientID: ar.GetClient().GetID()})
 			if err != nil {
+				if errors.Is(err, authn.ErrAuthenticationUnavailable) || errors.Is(err, authn.ErrPasswordWorkRejected) {
+					_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.unavailable", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "authentication_unavailable"})
+					http.Error(w, "authentication temporarily unavailable", http.StatusServiceUnavailable)
+					return
+				}
 				_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: authn.AuditReason(err)})
 				http.Error(w, "invalid login or password", http.StatusUnauthorized)
 				return
@@ -400,6 +426,23 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (p *Provider) allowLogin(ctx context.Context, clientID, clientAddress, login string) bool {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(login))))
+	account := hex.EncodeToString(sum[:])
+	keys := []string{
+		"login:account:" + account,
+		"login:client:" + clientID,
+		"login:address:" + clientAddress,
+	}
+	allowed := true
+	for _, key := range keys {
+		if !p.rateLimiter.Allow(ctx, key) {
+			allowed = false
+		}
+	}
+	return allowed
 }
 
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
