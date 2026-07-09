@@ -14,15 +14,15 @@ tasks so partial implementation never looks like phase completion.
 
 ## Phase 0 — dependency and toolchain security baseline
 
-- [ ] Record the current selected Go, Fosite, go-jose, SQLite, and CGO dependency graph.
-- [ ] Pin the supported release Go patch level in repository and CI configuration.
-- [ ] Upgrade `github.com/go-jose/go-jose/v3` to v3.0.5 or later through the smallest compatible dependency change.
-- [ ] Run `go mod tidy` and review every module-graph change.
-- [ ] Run build, unit, vet, race, lint, Staticcheck, and ticket audit analyzers on the exact graph.
-- [ ] Run `govulncheck` and require zero reachable known vulnerabilities or a documented expiry-bound exception.
-- [ ] Run existing parser fuzz seeds and strict local conformance smoke tests.
-- [ ] Add or update CI so the exact supported Go patch level and `govulncheck` are release gates.
-- [ ] Produce or wire an SBOM and provenance record for release artifacts.
+- [x] Record the current selected Go, Fosite, go-jose, SQLite, and CGO dependency graph.
+- [x] Pin the supported release Go patch level in repository and CI configuration.
+- [x] Upgrade `github.com/go-jose/go-jose/v3` to v3.0.5 or later through the smallest compatible dependency change.
+- [x] Run `go mod tidy` and review every module-graph change.
+- [x] Run build, unit, vet, race, lint, Staticcheck, and ticket audit analyzers on the exact graph.
+- [x] Run `govulncheck` and require zero reachable known vulnerabilities or a documented expiry-bound exception.
+- [x] Run existing parser fuzz seeds and strict local conformance smoke tests.
+- [x] Add or update CI so the exact supported Go patch level and `govulncheck` are release gates.
+- [x] Produce or wire an SBOM and provenance record for release artifacts.
 - [ ] Phase 0 gate: commit evidence for a reproducible, vulnerability-clean release graph.
 
 ## Phase 1 — consumable public embedding API

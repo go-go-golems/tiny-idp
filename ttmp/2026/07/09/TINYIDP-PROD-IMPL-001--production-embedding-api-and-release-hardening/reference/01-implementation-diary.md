@@ -13,8 +13,16 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://.github/workflows/ci.yml
+      Note: Exact-toolchain build test lint race and vulnerability gates (commit a2c86a9)
+    - Path: repo://.github/workflows/release-evidence.yml
+      Note: SBOM checksum environment and provenance workflow (commit a2c86a9)
+    - Path: repo://Makefile
+      Note: Pinned vulnerability gate and toolchain-aware linter caches (commit a2c86a9)
     - Path: repo://go.mod
-      Note: Phase 0 dependency and toolchain baseline
+      Note: |-
+        Phase 0 dependency and toolchain baseline
+        Phase 0 Go toolchain and go-jose dependency baseline (commit a2c86a9)
     - Path: repo://pkg/embeddedidp/options.go
       Note: First production API implementation target
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/01-production-embedding-api-and-release-implementation-guide.md
@@ -27,6 +35,7 @@ LastUpdated: 2026-07-09T17:37:01.160328301-04:00
 WhatFor: Preserving decisions, exact commands, failures, commits, verification, and continuation instructions across the multi-phase hardening effort.
 WhenToUse: Read before resuming work, reviewing a phase, investigating a regression, or assembling release evidence.
 ---
+
 
 
 # Implementation diary
@@ -519,3 +528,228 @@ OK: uploaded TINYIDP PROD IMPL 001 Implementation Guide.pdf -> /ai/2026/07/09/TI
 
 - [Implementation guide](../design-doc/01-production-embedding-api-and-release-implementation-guide.md)
 - [Phase ledger](../tasks.md)
+
+## Step 5: Implement the Phase 0 secure release baseline
+
+This step repaired the known vulnerable release graph before changing the public
+API. It kept Fosite at 0.49.0, upgraded only go-jose/v3, selected an exact patched
+Go toolchain for module/release mode, and made those choices executable in local
+targets and GitHub Actions.
+
+It also wired first-class release evidence: a tag/manual workflow builds the
+CGO-enabled Linux artifact on the exact toolchain, records build/module/Go
+environment metadata, generates an SPDX JSON SBOM, calculates a checksum,
+attests build provenance, and uploads the complete evidence directory.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Begin implementing the ordered production phases,
+starting with a reproducible vulnerability-clean dependency/toolchain baseline,
+and preserve detailed verification and failures.
+
+**Inferred user intent:** Remove known reachable vulnerabilities and ensure they
+cannot silently return because developer machines, CI, or cached tools use a
+different Go patch level or dependency graph.
+
+**Commit (code):** `a2c86a9` — "build: establish secure release baseline"
+
+### What I did
+
+- Recorded the starting graph:
+  - workspace toolchain: Go 1.26.1 from the shared `go.work`;
+  - module language floor: Go 1.25.11;
+  - Fosite 0.49.0;
+  - go-jose/v3 3.0.3;
+  - go-sqlite3 1.14.32;
+  - CGO enabled on linux/amd64.
+- Confirmed the go-jose/v3 path is `internal/fositeadapter -> Fosite ->
+  go-jose/v3`.
+- Upgraded go-jose/v3 from 3.0.3 to 3.0.5 and ran `go mod tidy`.
+- Added `toolchain go1.26.5` while retaining the Go 1.25.11 language floor.
+- Added pinned `make vuln` (`govulncheck` v1.5.0) and composite `make verify`.
+- Made golangci-lint and Glazed-lint cache names include the exact Go toolchain
+  so stale binaries cannot target an older language version.
+- Added `.github/workflows/ci.yml` with exact Go 1.26.5 build, test, vet, race,
+  smoke, lint, and reachable-vulnerability jobs.
+- Added `.github/workflows/release-evidence.yml` with checksum, build info, Go
+  environment, SPDX JSON SBOM, GitHub provenance attestation, and artifact
+  upload.
+- Validated workflows with Ruby YAML parsing and actionlint v1.7.7.
+- Ran build, full tests, vet, race, lint, rebuilt Staticcheck, the custom Go
+  analyzer, govulncheck, three fuzz campaigns, strict conformance, and module
+  checksum verification.
+
+### Why
+
+- Untrusted OAuth/JWT inputs reach go-jose through Fosite; reachable known
+  parser/panic vulnerabilities are release blockers even when happy-path tests
+  pass.
+- `go` language and `toolchain` directives solve different problems. Retaining
+  the language floor avoids an unnecessary source-language bump while exact
+  release mode selects the verified security patch.
+- CI must set `GOTOOLCHAIN=local` after installing Go 1.26.5 so automatic
+  selection cannot hide a mismatched runner image.
+- SBOM and provenance belong in the release path, not as a manual afterthought.
+
+### What worked
+
+- `go get` upgraded only go-jose/v3; Fosite remained at 0.49.0.
+- `GOWORK=off go version` selects Go 1.26.5 from the new toolchain directive.
+- Build, unit/integration tests, vet, and race all pass on Go 1.26.5.
+- Rebuilt Staticcheck v0.6.1 passes.
+- The corrected lint run reports zero issues and Glazed lint passes.
+- govulncheck v1.5.0 reports:
+
+  ```text
+  No vulnerabilities found.
+
+  Your code is affected by 0 vulnerabilities.
+  This scan also found 2 vulnerabilities in packages you import and 14
+  vulnerabilities in modules you require, but your code doesn't appear to call
+  these vulnerabilities.
+  ```
+
+- Issuer fuzzing executed 365,956 inputs with 179 interesting cases.
+- Production redirect fuzzing executed 347,323 inputs with 171 interesting
+  cases.
+- Argon2id hash fuzzing executed 353,848 inputs with 51 interesting cases.
+- The strict local conformance script completed all full-suite, strict Fosite,
+  durable storage, and key checks and printed its `OK` result.
+- `go mod verify`, YAML parsing, actionlint, and `git diff --check` pass.
+
+### What didn't work
+
+- The first lint run reused `/tmp/golangci-lint-v2.12.2`, which had been built
+  with Go 1.25.11. Once `toolchain go1.26.5` changed the target, golangci-lint
+  correctly rejected the mismatch:
+
+  ```text
+  Error: can't load config: the Go language version (go1.25) used to build golangci-lint is lower than the targeted Go version (1.26.5)
+  The command is terminated due to an error: can't load config: the Go language version (go1.25) used to build golangci-lint is lower than the targeted Go version (1.26.5)
+  make: *** [Makefile:45: lint] Error 3
+  ```
+
+  Adding `$(GO_TOOLCHAIN_VERSION)` to both linter paths forced rebuilds with Go
+  1.26.5. The retry reported the correct builder and passed:
+
+  ```text
+  golangci-lint has version 2.12.2 built with go1.26.5
+  0 issues.
+  ```
+
+- The custom audit analyzer exited 1/status 3 because it intentionally detects
+  unresolved later-phase release blockers. Findings included the external
+  internal-type API, ignored CSPRNG errors, no-op audit, allow-all limiting,
+  raw `RemoteAddr`, discarded audit errors, non-transactional persistence, and
+  raw SQLite copy. This is expected negative-gate evidence, not a Phase 0
+  regression. It must become clean as Phases 1–4 land.
+
+- The Step 5 changelog update again appended a blank line at EOF. The exact
+  whitespace diagnostic was:
+
+  ```text
+  ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/changelog.md:31: new blank line at EOF.
+  ```
+
+  Removing only that final blank line restored `git diff --check`.
+
+### What I learned
+
+- A versioned tool binary path is insufficient when the tool validates the
+  target language version; the builder Go version is also part of the cache key.
+- The shared workspace remains on Go 1.26.1, but module/release mode correctly
+  selects 1.26.5. CI explicitly uses module mode, so the release graph is not
+  coupled to the developer workspace.
+- `go mod tidy` promoted zerolog, x/sync, and x/tools to direct requirements
+  because tracked ticket instrumentation/analyzers import them. These are real
+  module packages under `./...`, not unexplained dependency churn.
+- Dependency removal is not the goal of govulncheck: two imported-package and 14
+  required-module advisories remain unreachable. The release gate is zero
+  reachable vulnerabilities, with verbose evidence available for review.
+
+### What was tricky to build
+
+- The workspace and module intentionally select different Go patch versions.
+  Verification had to use `GOWORK=off` to prove the release directive while
+  normal workspace commands continue to work as requested.
+- tiny-idp uses go-sqlite3 and therefore CGO. Generic project templates assuming
+  `CGO_ENABLED=0` would produce a nonfunctional release design, so the evidence
+  workflow builds natively on Ubuntu and records CGO state instead of pretending
+  to offer cross-platform static artifacts.
+- The local project-setup skill's workflow conventions were useful, but its
+  force-scaffold path would overwrite project-specific Makefile/README content.
+  Only the relevant CI/security/release patterns were adapted.
+
+### What warrants a second pair of eyes
+
+- Review whether Go 1.26.5 is the desired fixed release patch or whether policy
+  should automatically advance to later security patches after explicit
+  qualification.
+- Review GitHub permission availability for provenance attestations on the
+  repository/account plan.
+- Review whether unreachable vulnerability findings require a documented
+  inventory/exception even though the executable call graph is clean.
+- Review the CGO/SQLite target matrix before Phase 5 expands beyond Linux amd64.
+
+### What should be done in the future
+
+- Keep govulncheck v1.5.0 and action versions on an explicit update cadence.
+- Add the custom audit analyzer as a required CI job only when its current
+  finding set has been remediated or baselined with narrow expiring exceptions.
+- Expand release artifacts and signing only after the supported OS/architecture
+  and SQLite build strategy are decided in Phase 5.
+
+### Code review instructions
+
+- Start with `go.mod` and confirm the language floor, toolchain directive, and
+  go-jose selection.
+- Inspect `Makefile` cache keys and run `make vuln` followed by `make lint`.
+- Inspect both workflows for exact `go-version: 1.26.5` and
+  `GOTOOLCHAIN: local`.
+- Run `GOWORK=off go mod verify`, `GOWORK=off go test ./... -count=1`, and
+  `GOWORK=off go test -race ./... -count=1`.
+- Run actionlint against `.github/workflows/*.yml`.
+- Expect the ticket audit analyzer to remain red only on documented later-phase
+  findings; investigate any new category immediately.
+
+### Technical details
+
+Key commands:
+
+```text
+go get github.com/go-jose/go-jose/v3@v3.0.5
+go mod tidy
+GOWORK=off go build ./...
+GOWORK=off go test ./... -count=1
+GOWORK=off go vet ./...
+GOWORK=off go test -race ./... -count=1
+make lint
+GOWORK=off go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...
+make vuln
+GOWORK=off go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yml
+GOWORK=off bash scripts/run-conformance.sh
+GOWORK=off go mod verify
+```
+
+Selected graph after the change:
+
+```text
+Go release toolchain: go1.26.5
+github.com/ory/fosite v0.49.0
+github.com/go-jose/go-jose/v3 v3.0.5
+github.com/mattn/go-sqlite3 v1.14.32
+govulncheck v1.5.0
+golangci-lint v2.12.2 built with go1.26.5
+CGO_ENABLED=1 linux/amd64
+```
+
+## Related
+
+- [Implementation guide](../design-doc/01-production-embedding-api-and-release-implementation-guide.md)
+- [Phase ledger](../tasks.md)
+- `go.mod`
+- `Makefile`
+- `.github/workflows/ci.yml`
+- `.github/workflows/release-evidence.yml`
