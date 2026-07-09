@@ -82,3 +82,11 @@ Step 12: completed and verified online backup, atomic publication, offline resto
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/backup.go — Verified recovery implementation
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md — Checked Phase 1 and Phase 2 gates
+
+## 2026-07-09
+
+Published the committed Phase 1 and Phase 2 guide, storage reference, diary, and ledger bundle to reMarkable at /ai/2026/07/09/TINYIDP-PROD-IMPL-001
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/01-production-embedding-api-and-release-implementation-guide.md — Uploaded Phase 1 and Phase 2 completion guide

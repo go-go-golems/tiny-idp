@@ -1547,6 +1547,12 @@ compile error or green happy-path test as completion.
   ```text
   OK: external production embedding compiles and completes Authorization Code + PKCE
   ```
+- The required reMarkable dry-run listed the implementation guide, storage
+  reference, diary, and phase ledger. The real upload then reported:
+
+  ```text
+  OK: uploaded TINYIDP PROD IMPL 001 Phase 1 and 2 Completion.pdf -> /ai/2026/07/09/TINYIDP-PROD-IMPL-001
+  ```
 
 ### What didn't work
 
@@ -1675,4 +1681,5 @@ full race: PASS
 lint: PASS, 0 issues
 focused atomicity analyzer: PASS
 external production OIDC flow: PASS
+reMarkable completion bundle: UPLOADED
 ```
