@@ -10,7 +10,7 @@ tasks so partial implementation never looks like phase completion.
 - [x] Write the intern-oriented architecture, API, and implementation guide.
 - [x] Relate the implementation guide and diary to the production files that shape the design.
 - [x] Validate the ticket with `docmgr doctor` and resolve actionable findings.
-- [ ] Dry-run and upload the implementation guide bundle to reMarkable.
+- [x] Dry-run and upload the implementation guide bundle to reMarkable.
 
 ## Phase 0 — dependency and toolchain security baseline
 

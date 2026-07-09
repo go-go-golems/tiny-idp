@@ -416,3 +416,106 @@ docmgr doctor --ticket TINYIDP-PROD-IMPL-001 --stale-after 30
 
 - [Implementation guide](../design-doc/01-production-embedding-api-and-release-implementation-guide.md)
 - [Phase ledger](../tasks.md)
+
+## Step 4: Deliver the guide and phase ledger to reMarkable
+
+This step published the stable reading copy after the documentation checkpoint
+was committed and validated. The bundle contains the full intern-oriented guide
+followed by the live 90-task phase ledger; raw implementation evidence and the
+diary remain repository-native.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Upload the implementation guide to a dated,
+ticket-specific reMarkable location using a safe preview before external state
+changes.
+
+**Inferred user intent:** Make the long-form design and execution plan available
+for focused offline reading while preserving docmgr as the source of truth.
+
+**Commit (code):** `f5fc49a` — "docs(ticket): add production implementation guide"
+
+### What I did
+
+- Selected the implementation guide and `tasks.md` as the reading bundle.
+- Ran `remarquee upload bundle --dry-run` with a stable name, dated ticket
+  folder, ToC depth 2, and non-interactive mode.
+- Verified both input paths, render target, and remote destination in dry-run
+  output.
+- Ran the identical upload without `--dry-run` and captured the uploader's
+  explicit success response.
+- Checked the reMarkable delivery task after success.
+
+### Why
+
+- The guide explains why and how; the task ledger makes the long-term sequence
+  usable during review.
+- A dry run prevents an incorrect name, input set, or destination from mutating
+  external state.
+- Excluding the diary avoids a circular re-upload merely to include the diary's
+  own upload receipt.
+
+### What worked
+
+- Dry run exited zero and selected exactly the two intended Markdown files.
+- PDF rendering and upload succeeded on the first attempt.
+- The uploader reported the exact expected dated destination.
+
+### What didn't work
+
+- Dry run and actual upload both succeeded without authentication retry.
+  Afterwards, the changelog helper repeated its known trailing-newline behavior,
+  and `git diff --check` reported:
+
+  ```text
+  ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/changelog.md:22: new blank line at EOF.
+  ```
+
+  Removing the final blank line restored the whitespace gate without changing
+  the delivery record.
+
+### What I learned
+
+- The phase ledger renders cleanly as a second bundle document and keeps the
+  implementation guide's narrative separate from live checkbox state.
+
+### What was tricky to build
+
+- The upload process temporarily returned a long-running execution session
+  after the wrapper wait completed. Polling that existing session produced the
+  final success line; no duplicate upload command was issued.
+
+### What warrants a second pair of eyes
+
+- Verify on-device readability of the wide package/ownership tables and ASCII
+  sequence diagrams in the default layout.
+
+### What should be done in the future
+
+- Publish a superseding bundle when accepted architecture changes materially;
+  do not force-overwrite a document that may contain annotations.
+
+### Code review instructions
+
+- Treat the local ticket as authoritative; the device PDF is a reading copy.
+- Compare the uploaded bundle name/destination below with the requested ticket.
+
+### Technical details
+
+```text
+DRY: bundle name=TINYIDP PROD IMPL 001 Implementation Guide
+DRY: remote-dir=/ai/2026/07/09/TINYIDP-PROD-IMPL-001
+DRY: include design-doc/01-production-embedding-api-and-release-implementation-guide.md
+DRY: include tasks.md
+DRY: pandoc <bundle> -> <tmp>/TINYIDP PROD IMPL 001 Implementation Guide.pdf
+DRY: upload TINYIDP PROD IMPL 001 Implementation Guide.pdf -> /ai/2026/07/09/TINYIDP-PROD-IMPL-001
+
+OK: uploaded TINYIDP PROD IMPL 001 Implementation Guide.pdf -> /ai/2026/07/09/TINYIDP-PROD-IMPL-001
+```
+
+## Related
+
+- [Implementation guide](../design-doc/01-production-embedding-api-and-release-implementation-guide.md)
+- [Phase ledger](../tasks.md)
