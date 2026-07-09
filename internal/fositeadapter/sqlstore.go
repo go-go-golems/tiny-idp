@@ -34,7 +34,7 @@ func newSQLFositeStore(db *sql.DB, project storage.Store, config *fosite.Config,
 
 func (s *sqlFositeStore) GetClient(ctx context.Context, id string) (fosite.Client, error) {
 	c, err := s.project.GetClient(ctx, id)
-	if err != nil {
+	if err != nil || c.Disabled {
 		return nil, fosite.ErrNotFound
 	}
 	return s.toFositeClient(ctx, c)
@@ -174,7 +174,7 @@ func (s *sqlFositeStore) GetAuthorizeCodeSession(ctx context.Context, code strin
 	if err != nil {
 		return nil, err
 	}
-	req, err := restoreRequester(b)
+	req, err := s.restoreActiveRequester(ctx, b)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (s *sqlFositeStore) GetRefreshTokenSession(ctx context.Context, signature s
 	if err != nil {
 		return nil, err
 	}
-	req, err := restoreRequester(b)
+	req, err := s.restoreActiveRequester(ctx, b)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +295,23 @@ func (s *sqlFositeStore) getRequester(ctx context.Context, query, signature stri
 	if err != nil {
 		return nil, err
 	}
-	return restoreRequester(b)
+	return s.restoreActiveRequester(ctx, b)
+}
+
+func (s *sqlFositeStore) restoreActiveRequester(ctx context.Context, b []byte) (fosite.Requester, error) {
+	req, err := restoreRequester(b)
+	if err != nil {
+		return nil, err
+	}
+	client := req.GetClient()
+	if client == nil || client.GetID() == "" {
+		return nil, fosite.ErrNotFound
+	}
+	domainClient, err := s.project.GetClient(ctx, client.GetID())
+	if err != nil || domainClient.Disabled {
+		return nil, fosite.ErrNotFound
+	}
+	return req, nil
 }
 
 func (s *sqlFositeStore) Authenticate(_ context.Context, name string, secret string) (string, error) {

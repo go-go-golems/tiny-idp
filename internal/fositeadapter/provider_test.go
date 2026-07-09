@@ -187,6 +187,17 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	}
 }
 
+func TestProductionProviderRejectsMissingSecretKey(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	_ = st.PutClient(ctx, domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}})
+	key, _ := keys.GenerateRSA("kid-1", time.Now())
+	_ = st.CreateSigningKey(ctx, key)
+	if _, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: domain.ProductionMode}); err == nil {
+		t.Fatal("expected production provider to reject missing secret key")
+	}
+}
+
 func TestStrictProviderHasNoDebugRoute(t *testing.T) {
 	st := memory.New()
 	key, _ := keys.GenerateRSA("kid-1", time.Now())

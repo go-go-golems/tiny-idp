@@ -16,6 +16,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 
+	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/client"
 	"github.com/manuel/tinyidp/internal/domain"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
@@ -237,11 +238,24 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 			return nil, err
 		}
 	}
+	passwords, err := authn.NewPasswordService(st, authn.Options{})
+	if err != nil {
+		return nil, err
+	}
 	for _, sc := range scenarios.All() {
 		u := domain.User{ID: sc.User.Sub, Sub: sc.User.Sub, Email: sc.User.Email, Name: sc.User.Name, EmailVerified: true}
 		applyScenarioClaims(&u, sc.ExtraClaims)
 		if err := st.PutUser(context.Background(), sc.Name, u); err != nil {
 			return nil, err
+		}
+		if sc.Password != "" {
+			credential, err := passwords.HashCredential(u.ID, sc.Name, []byte(sc.Password), time.Now().UTC())
+			if err != nil {
+				return nil, err
+			}
+			if err := st.PutPasswordCredential(context.Background(), credential); err != nil {
+				return nil, err
+			}
 		}
 	}
 	key, err := keys.GenerateRSA("strict-dev-key-1", time.Now())

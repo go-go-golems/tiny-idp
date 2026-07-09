@@ -61,6 +61,9 @@ func (o Options) Validate() error {
 		}
 	}
 	if mode == ProductionMode {
+		if len(o.Token.SecretKey) < 32 {
+			return fmt.Errorf("production mode requires token secret key of at least 32 bytes")
+		}
 		if !o.Cookie.Secure {
 			return fmt.Errorf("production cookies must be secure")
 		}

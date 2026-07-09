@@ -13,6 +13,17 @@ import (
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 )
 
+func TestProductionValidationRejectsMissingTokenSecret(t *testing.T) {
+	st := memory.New()
+	_ = st.PutClient(context.Background(), domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}})
+	key, _ := keys.GenerateRSA("kid-1", time.Now())
+	_ = st.CreateSigningKey(context.Background(), key)
+	_, err := embeddedidp.New(embeddedidp.Options{Issuer: "https://example.com/idp", Mode: embeddedidp.ProductionMode, Store: st, Cookie: embeddedidp.CookieConfig{Secure: true}, AllowInMemoryStoresInProduction: true})
+	if err == nil {
+		t.Fatal("expected production token secret rejection")
+	}
+}
+
 func TestProductionValidationRejectsHTTPAndMemory(t *testing.T) {
 	st := memory.New()
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
@@ -21,7 +32,7 @@ func TestProductionValidationRejectsHTTPAndMemory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected production HTTP issuer rejection")
 	}
-	_, err = embeddedidp.New(embeddedidp.Options{Issuer: "https://example.com/idp", Mode: embeddedidp.ProductionMode, Store: st, Cookie: embeddedidp.CookieConfig{Secure: true}})
+	_, err = embeddedidp.New(embeddedidp.Options{Issuer: "https://example.com/idp", Mode: embeddedidp.ProductionMode, Store: st, Cookie: embeddedidp.CookieConfig{Secure: true}, Token: embeddedidp.TokenConfig{SecretKey: []byte("production-secret-key-32-bytes-min")}})
 	if err == nil {
 		t.Fatal("expected production memory store rejection")
 	}

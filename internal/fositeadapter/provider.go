@@ -92,6 +92,9 @@ func NewProvider(opts Options) (*Provider, error) {
 	if opts.Mode == "" {
 		opts.Mode = domain.DevMode
 	}
+	if opts.Mode == domain.ProductionMode && len(opts.SecretKey) < 32 {
+		return nil, fmt.Errorf("production mode requires a token secret key of at least 32 bytes")
+	}
 	if len(opts.SecretKey) == 0 {
 		opts.SecretKey = []byte("tinyidp-dev-secret-key-at-least-32-bytes")
 	}
@@ -199,6 +202,9 @@ func buildFositeStore(st storage.Store, cfg *fosite.Config, plainSecrets map[str
 	}
 	hasher := &fosite.BCrypt{Config: cfg}
 	for _, c := range clients {
+		if c.Disabled {
+			continue
+		}
 		fc := &fosite.DefaultClient{
 			ID:            c.ID,
 			Public:        c.Public,
@@ -580,7 +586,7 @@ func firstNonEmpty(values ...string) string {
 
 func (p *Provider) clientAllowsRedirect(ctx context.Context, clientID, redirectURI string) bool {
 	client, err := p.store.GetClient(ctx, clientID)
-	if err != nil {
+	if err != nil || client.Disabled {
 		return false
 	}
 	for _, allowed := range client.RedirectURIs {

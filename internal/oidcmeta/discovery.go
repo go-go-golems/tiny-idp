@@ -28,7 +28,6 @@ func ProductionDiscovery(issuer string) (Discovery, error) {
 		TokenEndpoint:                     iss.Endpoint("/token"),
 		UserinfoEndpoint:                  iss.Endpoint("/userinfo"),
 		JWKSURI:                           iss.Endpoint("/jwks"),
-		EndSessionEndpoint:                iss.Endpoint("/end-session"),
 		ResponseTypesSupported:            []string{"code"},
 		GrantTypesSupported:               []string{"authorization_code", "refresh_token"},
 		SubjectTypesSupported:             []string{"public"},

@@ -58,6 +58,45 @@ func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
 	refreshTokenMustFail(t, ts.URL, oldRefresh)
 }
 
+func TestFositeSQLiteDisabledClientRejectsPersistedAuthorizationCode(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "idp.db")
+	secretKey := []byte("sqlite-fosite-secret-key-32-bytes")
+	st, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	client := domain.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}
+	if err := st.PutClient(ctx, client); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutUser(ctx, "alice", domain.User{ID: "u1", Sub: "user-alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-disabled", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(provider.Handler())
+	defer ts.Close()
+
+	verifier := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	code := authorizeForCode(t, ts.URL, verifier)
+	client.Disabled = true
+	if err := st.PutClient(ctx, client); err != nil {
+		t.Fatal(err)
+	}
+	exchangeCodeMustFail(t, ts.URL, code, verifier)
+}
+
 func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "idp.db")
@@ -162,6 +201,25 @@ func authorizeForCode(t *testing.T, baseURL, verifier string) string {
 		t.Fatalf("missing code in location %s", loc.String())
 	}
 	return code
+}
+
+func exchangeCodeMustFail(t *testing.T, baseURL, code, verifier string) {
+	t.Helper()
+	resp, err := http.PostForm(baseURL+"/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {"spa"},
+		"code":          {code},
+		"redirect_uri":  {"http://localhost/callback"},
+		"code_verifier": {verifier},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("token exchange unexpectedly succeeded: %s", b)
+	}
 }
 
 func exchangeCode(t *testing.T, baseURL, code, verifier string) map[string]any {

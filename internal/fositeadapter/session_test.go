@@ -86,6 +86,18 @@ func TestBrowserSessionSilentAuthorizeAndPromptNone(t *testing.T) {
 	if maxAge.StatusCode != http.StatusOK {
 		t.Fatalf("expired max_age status=%d, want login form", maxAge.StatusCode)
 	}
+	q.Set("state", "state-max-age-zero")
+	q.Set("max_age", "0")
+	maxAgeZeroReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/authorize?"+q.Encode(), nil)
+	maxAgeZeroReq.AddCookie(sessionCookie)
+	maxAgeZero, err := http.DefaultClient.Do(maxAgeZeroReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer maxAgeZero.Body.Close()
+	if maxAgeZero.StatusCode != http.StatusOK {
+		t.Fatalf("max_age=0 status=%d, want login form", maxAgeZero.StatusCode)
+	}
 	q.Del("max_age")
 
 	q.Set("prompt", "none")
