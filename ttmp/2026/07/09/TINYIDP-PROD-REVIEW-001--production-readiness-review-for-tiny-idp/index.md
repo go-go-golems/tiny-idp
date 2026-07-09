@@ -1,7 +1,7 @@
 ---
 Title: Production readiness review for tiny-idp
 Ticket: TINYIDP-PROD-REVIEW-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - go
@@ -15,7 +15,7 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: "Evidence-based architecture, security, operations, and code-quality review before tiny-idp is shipped to production."
-LastUpdated: 2026-07-09T13:42:50.075172502-04:00
+LastUpdated: 2026-07-09T17:31:17-04:00
 WhatFor: "Deciding whether tiny-idp is production-ready and planning the remediation required before release."
 WhenToUse: "Use during release review, onboarding, implementation hardening, and operational readiness work."
 ---
@@ -40,7 +40,7 @@ decision and remediation plan.
 
 ## Status
 
-Current status: **active**
+Current status: **complete**
 
 ### Review verdict
 
@@ -67,6 +67,7 @@ the complete acceptance gate and phased remediation plan.
 - `ca40c40` — security invariant and scanner evidence
 - `d282362` — full verification diary
 - `c387926` — primary production-readiness review
+- `d3c5e26` — final evidence relations, diary, metadata, and validation checkpoint
 
 ## Topics
 

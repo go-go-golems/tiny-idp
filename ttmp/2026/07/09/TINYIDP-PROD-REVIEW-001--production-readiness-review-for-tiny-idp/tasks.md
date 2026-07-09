@@ -9,4 +9,4 @@
 - [x] Run build, unit, race, fuzz, static-analysis, security, and live smoke checks where feasible.
 - [x] Write the intern-oriented production-readiness review and prioritized remediation plan.
 - [x] Relate evidence files, update changelog/index, and pass `docmgr doctor`.
-- [ ] Dry-run and upload the final document bundle to reMarkable.
+- [x] Dry-run and upload the final document bundle to reMarkable.

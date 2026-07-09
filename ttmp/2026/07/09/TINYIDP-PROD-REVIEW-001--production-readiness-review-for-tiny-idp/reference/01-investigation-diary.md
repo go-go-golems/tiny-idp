@@ -1,7 +1,7 @@
 ---
 Title: Investigation diary
 Ticket: TINYIDP-PROD-REVIEW-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - go
@@ -39,7 +39,7 @@ RelatedFiles:
       Note: Measured runtime baseline for the strict happy path (commit 54fcbcf)
 ExternalSources: []
 Summary: Chronological evidence, commands, failures, decisions, and verification for the tiny-idp production-readiness review.
-LastUpdated: 2026-07-09T13:42:50.339918882-04:00
+LastUpdated: 2026-07-09T17:31:17-04:00
 WhatFor: Making the audit reproducible and allowing another engineer to continue or challenge the review.
 WhenToUse: Use while reviewing findings, rerunning checks, or continuing production-hardening work.
 ---
@@ -763,6 +763,115 @@ ticket script tests: PASS
 golangci-lint: 0 issues
 Glazed lint: PASS
 docmgr doctor: exit 0, 0 errors, 2 documented naming warnings
+```
+
+## Related
+
+- [Production readiness architecture and code review](../design-doc/01-tiny-idp-production-readiness-architecture-and-code-review.md)
+- [Runtime probe summary](../various/runtime/summary.md)
+- [Ticket task list](../tasks.md)
+
+## Step 7: Deliver the review bundle to reMarkable
+
+This step performed the required safe delivery sequence: first resolve the
+bundle and destination without rendering or uploading, then render and upload
+the same inputs non-interactively. The local ticket remains the evidence system
+of record; the reMarkable PDF is the reading copy.
+
+### Prompt Context
+
+**User prompt (verbatim):** “Store in the ticket and the nupload to remarkable.”
+
+**Assistant interpretation:** Preserve the complete review locally and publish
+a readable PDF bundle to a dated, ticket-specific reMarkable folder.
+
+**Inferred user intent:** Make the technical production review available for
+focused offline reading without losing the repository-native source and raw
+evidence.
+
+**Commit (code):** `d3c5e26` — "docs(ticket): finalize production review evidence"
+
+### What I did
+
+- Selected the primary architecture/code/implementation review and the measured
+  runtime summary as the reading bundle.
+- Ran the exact upload command with `--dry-run`, `--non-interactive`, a stable
+  document name, and a dated ticket destination.
+- Verified that both source paths, the intermediate PDF name, and remote folder
+  resolved as intended.
+- Repeated the command without `--dry-run` and captured the uploader's success
+  response.
+- Did not invoke reMarkable account, status, or post-upload listing commands.
+
+### Why
+
+- The primary report is the coherent intern-oriented reading path; the runtime
+  summary is a compact empirical appendix.
+- Scanner JSON, profiles, source captures, scripts, and the diary are more
+  useful in their native ticket form and would make the device bundle noisy.
+- A dry run prevents destination/name/input mistakes before external state is
+  changed.
+
+### What worked
+
+- The dry run exited zero and included exactly the two intended Markdown files.
+- Pandoc rendered the combined bundle successfully.
+- The uploader returned an explicit `OK: uploaded` result for the requested
+  destination.
+
+### What didn't work
+
+- N/A. Both the dry run and actual upload succeeded on the first attempt.
+
+### What I learned
+
+- The two-document bundle preserves the explanatory narrative and measured
+  runtime baseline without overwhelming the reading copy with raw output.
+- The stable ticket path maps cleanly to a matching dated reMarkable directory.
+
+### What was tricky to build
+
+- Delivery needed to happen after final report/frontmatter validation but before
+  recording the upload result in this local-only diary. Excluding the diary from
+  the device bundle avoids a circular re-upload solely to include its own
+  delivery receipt.
+
+### What warrants a second pair of eyes
+
+- On-device, verify the table of contents, wide finding tables, ASCII diagrams,
+  and long code/file references are comfortable to read in the default layout.
+
+### What should be done in the future
+
+- Upload a superseding review rather than overwriting this production decision
+  after remediation; preserving the reviewed-state record makes deltas clear.
+- If annotations are made on the device, do not use a forced overwrite workflow
+  without first preserving them.
+
+### Code review instructions
+
+- Treat the repository ticket as authoritative for scripts, sources, raw
+  scanner output, profiles, and the complete diary.
+- Treat the reMarkable bundle as a convenience reading copy of the primary
+  report and runtime appendix.
+
+### Technical details
+
+Dry-run result:
+
+```text
+DRY: bundle name=TINYIDP PROD REVIEW 001 Production Readiness Review
+DRY: remote-dir=/ai/2026/07/09/TINYIDP-PROD-REVIEW-001
+DRY: include design-doc/01-tiny-idp-production-readiness-architecture-and-code-review.md
+DRY: include various/runtime/summary.md
+DRY: pandoc <bundle> -> <tmp>/TINYIDP PROD REVIEW 001 Production Readiness Review.pdf
+DRY: upload TINYIDP PROD REVIEW 001 Production Readiness Review.pdf -> /ai/2026/07/09/TINYIDP-PROD-REVIEW-001
+```
+
+Actual upload result:
+
+```text
+OK: uploaded TINYIDP PROD REVIEW 001 Production Readiness Review.pdf -> /ai/2026/07/09/TINYIDP-PROD-REVIEW-001
 ```
 
 ## Related
