@@ -28,7 +28,7 @@ func New(ctx context.Context, opts Options) (*Provider, error) {
 	if err := opts.Validate(ctx); err != nil {
 		return nil, err
 	}
-	adapter, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, Audit: opts.Audit, Consent: opts.Consent, RateLimiter: opts.RateLimiter, Authenticator: opts.Authenticator})
+	adapter, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, Audit: opts.Audit, Consent: opts.Consent, RateLimiter: opts.RateLimiter, ClientAddress: opts.ClientAddress, Authenticator: opts.Authenticator})
 	if err != nil {
 		return nil, err
 	}

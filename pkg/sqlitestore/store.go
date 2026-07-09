@@ -44,6 +44,17 @@ func Open(path string) (*Store, error) {
 func (s *Store) Close() error     { return s.db.Close() }
 func (s *Store) Persistent() bool { return true }
 
+func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
+	names, err := MigrationNames()
+	if err != nil {
+		return 0, err
+	}
+	if err := s.db.PingContext(ctx); err != nil {
+		return 0, err
+	}
+	return len(names), nil
+}
+
 // SQLDB exposes the underlying database to adapter packages that need to store
 // protocol-specific state while reusing the same SQLite file and transaction
 // durability. Callers must not close the returned handle.

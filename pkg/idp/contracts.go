@@ -4,6 +4,9 @@ package idp
 
 import (
 	"context"
+	"fmt"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/manuel/tinyidp/pkg/idpstore"
@@ -20,6 +23,31 @@ type ConsentPolicy interface {
 // non-secret key. Production construction requires an explicit implementation.
 type RateLimiter interface {
 	Allow(ctx context.Context, key string) bool
+}
+
+// ClientAddressResolver returns a normalized client address from an HTTP
+// request according to the host's trusted-proxy policy.
+type ClientAddressResolver interface {
+	ResolveClientAddress(r *http.Request) (string, error)
+}
+
+// DirectClientAddressResolver trusts only the immediate TCP peer and ignores
+// forwarded headers. It is the safe choice when no trusted reverse proxy is in
+// front of the provider.
+type DirectClientAddressResolver struct{}
+
+func (DirectClientAddressResolver) ResolveClientAddress(r *http.Request) (string, error) {
+	if r == nil {
+		return "", fmt.Errorf("request is required")
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return "", fmt.Errorf("parse remote address: %w", err)
+	}
+	if net.ParseIP(host) == nil {
+		return "", fmt.Errorf("remote address is not an IP")
+	}
+	return host, nil
 }
 
 // LoginMetadata contains request context safe for authentication policy and

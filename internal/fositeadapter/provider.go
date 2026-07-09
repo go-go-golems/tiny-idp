@@ -57,6 +57,7 @@ type Options struct {
 	Audit         idp.Sink
 	Consent       idp.ConsentPolicy
 	RateLimiter   idp.RateLimiter
+	ClientAddress idp.ClientAddressResolver
 	Authenticator idp.PasswordAuthenticator
 }
 
@@ -72,6 +73,7 @@ type Provider struct {
 	audit         idp.Sink
 	consent       idp.ConsentPolicy
 	rateLimiter   idp.RateLimiter
+	clientAddress idp.ClientAddressResolver
 	authenticator idp.PasswordAuthenticator
 	sessionTTL    time.Duration
 }
@@ -111,6 +113,9 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	}
 	if opts.RateLimiter == nil {
 		opts.RateLimiter = AllowAllRateLimiter{}
+	}
+	if opts.ClientAddress == nil {
+		opts.ClientAddress = idp.DirectClientAddressResolver{}
 	}
 	if opts.Authenticator == nil {
 		policy := authn.DefaultPasswordPolicy()
@@ -164,7 +169,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, audit: opts.Audit, consent: opts.Consent, rateLimiter: opts.RateLimiter, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, audit: opts.Audit, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -348,7 +353,12 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
 		}
-		if !p.rateLimiter.Allow(r.Context(), "authorize:"+r.RemoteAddr) {
+		clientAddress, err := p.clientAddress.ResolveClientAddress(r)
+		if err != nil {
+			http.Error(w, "resolve client address failed", http.StatusInternalServerError)
+			return
+		}
+		if !p.rateLimiter.Allow(r.Context(), "authorize:"+clientAddress) {
 			_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.rate_limited", Result: "rejected", Reason: "rate_limited"})
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return
@@ -368,7 +378,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 		authTime := sess.AuthTime
 		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
 		if login != "" {
-			result, err := p.authenticator.AuthenticatePassword(r.Context(), login, r.PostForm.Get("password"), idp.LoginMetadata{RemoteAddr: r.RemoteAddr, UserAgent: r.UserAgent(), ClientID: ar.GetClient().GetID()})
+			result, err := p.authenticator.AuthenticatePassword(r.Context(), login, r.PostForm.Get("password"), idp.LoginMetadata{RemoteAddr: clientAddress, UserAgent: r.UserAgent(), ClientID: ar.GetClient().GetID()})
 			if err != nil {
 				_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: authn.AuditReason(err)})
 				http.Error(w, "invalid login or password", http.StatusUnauthorized)
@@ -405,7 +415,12 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 		tokenError(w, http.StatusBadRequest, "invalid_request", "invalid form")
 		return
 	}
-	if !p.rateLimiter.Allow(r.Context(), "token:"+r.Form.Get("client_id")+":"+r.RemoteAddr) {
+	clientAddress, err := p.clientAddress.ResolveClientAddress(r)
+	if err != nil {
+		tokenError(w, http.StatusInternalServerError, "server_error", "resolve client address failed")
+		return
+	}
+	if !p.rateLimiter.Allow(r.Context(), "token:"+r.Form.Get("client_id")+":"+clientAddress) {
 		_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: "rate_limited"})
 		tokenError(w, http.StatusTooManyRequests, "temporarily_unavailable", "rate limited")
 		return

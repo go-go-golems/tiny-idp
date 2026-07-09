@@ -103,3 +103,8 @@ type Store interface {
 type PersistentReporter interface {
 	Persistent() bool
 }
+
+// SchemaReporter exposes the durable schema version for production preflight.
+type SchemaReporter interface {
+	SchemaVersion(ctx context.Context) (int, error)
+}

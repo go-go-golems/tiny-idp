@@ -37,6 +37,7 @@ printf '%s\n' \
   '    Token: embeddedidp.TokenConfig{SecretKey: []byte("external-consumer-secret-32-bytes")},' \
   '    Audit: idp.NewMemorySink(),' \
   '    RateLimiter: limiter{},' \
+  '    ClientAddress: idp.DirectClientAddressResolver{},' \
   '  })' \
   '  if err != nil { return err }' \
   '  _ = provider.Handler()' \
@@ -44,7 +45,8 @@ printf '%s\n' \
   '  err = provider.Close(ctx)' \
   '  return err' \
   '}' > "$probe_dir/consumer/consumer.go"
+cp "$repo_root/ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-consumer/flow_test.go" "$probe_dir/consumer/flow_test.go"
 
 output="$(cd "$probe_dir" && GOWORK=off go test -mod=mod ./consumer 2>&1)"
 printf '%s\n' "$output"
-printf 'OK: external production embedding imports only public tiny-idp packages and compiles\n'
+printf 'OK: external production embedding compiles and completes Authorization Code + PKCE\n'

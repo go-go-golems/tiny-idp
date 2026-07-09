@@ -177,13 +177,14 @@ func run(ctx context.Context, cfg config) error {
 	}
 
 	provider, err := embeddedidp.New(context.Background(), embeddedidp.Options{
-		Issuer:      "https://id.example.test",
-		Mode:        embeddedidp.ProductionMode,
-		Store:       store,
-		Cookie:      embeddedidp.CookieConfig{Secure: true},
-		Token:       embeddedidp.TokenConfig{SecretKey: []byte("runtime-probe-secret-key-32-bytes-minimum")},
-		Audit:       auditSink,
-		RateLimiter: fositeadapter.NewFixedWindowRateLimiter(10_000, time.Minute),
+		Issuer:        "https://id.example.test",
+		Mode:          embeddedidp.ProductionMode,
+		Store:         store,
+		Cookie:        embeddedidp.CookieConfig{Secure: true},
+		Token:         embeddedidp.TokenConfig{SecretKey: []byte("runtime-probe-secret-key-32-bytes-minimum")},
+		Audit:         auditSink,
+		RateLimiter:   fositeadapter.NewFixedWindowRateLimiter(10_000, time.Minute),
+		ClientAddress: idp.DirectClientAddressResolver{},
 	})
 	if err != nil {
 		return fmt.Errorf("create production provider: %w", err)
