@@ -48,10 +48,10 @@ func (s *Store) Persistent() bool { return true }
 // durability. Callers must not close the returned handle.
 func (s *Store) SQLDB() *sql.DB { return s.db }
 
-func (s *Store) Migrate(ctx context.Context) error {
+func MigrationNames() ([]string, error) {
 	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -61,6 +61,14 @@ func (s *Store) Migrate(ctx context.Context) error {
 		names = append(names, entry.Name())
 	}
 	sort.Strings(names)
+	return names, nil
+}
+
+func (s *Store) Migrate(ctx context.Context) error {
+	names, err := MigrationNames()
+	if err != nil {
+		return err
+	}
 	for _, name := range names {
 		b, err := migrations.ReadFile("migrations/" + name)
 		if err != nil {

@@ -25,7 +25,13 @@ land in shell history. The --password flag is available for tests and local
 throwaway databases only.`,
 	}
 	cmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to tinyidp SQLite database")
+	cmd.AddCommand(newAdminInitCommand(&dbPath))
+	cmd.AddCommand(newAdminMigrateCommand(&dbPath))
+	cmd.AddCommand(newAdminDoctorCommand(&dbPath))
+	cmd.AddCommand(newAdminClientCommand(&dbPath))
+	cmd.AddCommand(newAdminKeysCommand(&dbPath))
 	cmd.AddCommand(newAdminUserCommand(&dbPath))
+	cmd.AddCommand(newAdminBackupCommand(&dbPath))
 	return cmd
 }
 
