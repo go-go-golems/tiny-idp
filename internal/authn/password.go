@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/user"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -16,18 +16,6 @@ var (
 	ErrAccountDisabled    = errors.New("account disabled")
 	ErrAccountLocked      = errors.New("account locked")
 )
-
-type LoginMetadata struct {
-	RemoteAddr string
-	UserAgent  string
-	ClientID   string
-}
-
-type AuthResult struct {
-	User               idpstore.User
-	MustChangePassword bool
-	AMR                []string
-}
 
 type PasswordPolicy struct {
 	MinLength         int
@@ -47,7 +35,7 @@ type Options struct {
 	Hasher passwordhash.Hasher
 	Policy PasswordPolicy
 	Clock  func() time.Time
-	Audit  audit.Sink
+	Audit  idp.Sink
 }
 
 type PasswordService struct {
@@ -55,8 +43,10 @@ type PasswordService struct {
 	hasher passwordhash.Hasher
 	policy PasswordPolicy
 	clock  func() time.Time
-	audit  audit.Sink
+	audit  idp.Sink
 }
+
+var _ idp.PasswordAuthenticator = (*PasswordService)(nil)
 
 func NewPasswordService(store idpstore.Store, opts Options) (*PasswordService, error) {
 	if store == nil {
@@ -86,54 +76,54 @@ func NewPasswordService(store idpstore.Store, opts Options) (*PasswordService, e
 	}
 	sink := opts.Audit
 	if sink == nil {
-		sink = audit.NoopSink{}
+		sink = idp.NoopSink{}
 	}
 	return &PasswordService{store: store, hasher: hasher, policy: policy, clock: clock, audit: sink}, nil
 }
 
-func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, password string, meta LoginMetadata) (AuthResult, error) {
+func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, password string, meta idp.LoginMetadata) (idp.AuthResult, error) {
 	now := s.clock().UTC()
 	normalized := user.Normalize(login)
 	if normalized == "" || (password == "" && !s.policy.AllowPasswordless) {
 		s.dummyVerify(password)
 		s.emit(ctx, "password.login.failure", meta, "", "invalid_credentials")
-		return AuthResult{}, ErrInvalidCredentials
+		return idp.AuthResult{}, ErrInvalidCredentials
 	}
 	if len(password) > s.policy.MaxLength {
 		s.dummyVerify(password)
 		s.emit(ctx, "password.login.failure", meta, "", "invalid_credentials")
-		return AuthResult{}, ErrInvalidCredentials
+		return idp.AuthResult{}, ErrInvalidCredentials
 	}
 
 	u, userErr := s.store.GetUserByLogin(ctx, normalized)
 	if userErr != nil {
 		s.dummyVerify(password)
 		s.emit(ctx, "password.login.failure", meta, "", "invalid_credentials")
-		return AuthResult{}, ErrInvalidCredentials
+		return idp.AuthResult{}, ErrInvalidCredentials
 	}
 	credential, credErr := s.store.GetPasswordCredentialByLogin(ctx, normalized)
 	if credErr != nil {
 		if errors.Is(credErr, idpstore.ErrNotFound) && s.policy.AllowPasswordless {
 			if err := s.checkAccountState(ctx, u, idpstore.PasswordCredential{}, now, meta); err != nil {
-				return AuthResult{}, err
+				return idp.AuthResult{}, err
 			}
 			_ = s.store.ResetAccountSecurityState(ctx, u.ID, now)
 			s.emit(ctx, "password.login.success", meta, u.Sub, "")
-			return AuthResult{User: u, AMR: []string{"pwd"}}, nil
+			return idp.AuthResult{User: u, AMR: []string{"pwd"}}, nil
 		}
 		s.dummyVerify(password)
 		s.emit(ctx, "password.login.failure", meta, u.Sub, "invalid_credentials")
-		return AuthResult{}, ErrInvalidCredentials
+		return idp.AuthResult{}, ErrInvalidCredentials
 	}
 	if err := s.checkAccountState(ctx, u, credential, now, meta); err != nil {
-		return AuthResult{}, err
+		return idp.AuthResult{}, err
 	}
 
 	needsRehash, err := s.hasher.VerifyPassword([]byte(password), credential.PasswordHash)
 	if err != nil {
 		_ = s.recordFailure(ctx, u.ID, now)
 		s.emit(ctx, "password.login.failure", meta, u.Sub, "invalid_credentials")
-		return AuthResult{}, ErrInvalidCredentials
+		return idp.AuthResult{}, ErrInvalidCredentials
 	}
 	if needsRehash {
 		if updated, err := s.rehashCredential(credential, []byte(password), now); err == nil {
@@ -142,7 +132,7 @@ func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, passw
 	}
 	_ = s.store.ResetAccountSecurityState(ctx, u.ID, now)
 	s.emit(ctx, "password.login.success", meta, u.Sub, "")
-	return AuthResult{User: u, MustChangePassword: credential.MustChangeAtLogin, AMR: []string{"pwd"}}, nil
+	return idp.AuthResult{User: u, MustChangePassword: credential.MustChangeAtLogin, AMR: []string{"pwd"}}, nil
 }
 
 func (s *PasswordService) HashCredential(userID, login string, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
@@ -157,7 +147,7 @@ func (s *PasswordService) HashCredential(userID, login string, password []byte, 
 	return idpstore.PasswordCredential{UserID: userID, Login: user.Normalize(login), PasswordHash: encoded, HashAlgorithm: passwordhash.AlgorithmArgon2id, HashParams: params, CreatedAt: now, UpdatedAt: now, PasswordChangedAt: now}, nil
 }
 
-func (s *PasswordService) checkAccountState(ctx context.Context, u idpstore.User, credential idpstore.PasswordCredential, now time.Time, meta LoginMetadata) error {
+func (s *PasswordService) checkAccountState(ctx context.Context, u idpstore.User, credential idpstore.PasswordCredential, now time.Time, meta idp.LoginMetadata) error {
 	if u.Disabled || credential.Disabled {
 		s.emit(ctx, "password.login.failure", meta, u.Sub, "account_disabled")
 		return ErrAccountDisabled
@@ -216,12 +206,12 @@ func (s *PasswordService) dummyVerify(password string) {
 	_, _ = s.hasher.VerifyPassword([]byte(password), s.policy.DummyHash)
 }
 
-func (s *PasswordService) emit(ctx context.Context, name string, meta LoginMetadata, subject, reason string) {
+func (s *PasswordService) emit(ctx context.Context, name string, meta idp.LoginMetadata, subject, reason string) {
 	result := "accepted"
 	if reason != "" {
 		result = "rejected"
 	}
-	_ = s.audit.Emit(ctx, audit.Event{Time: s.clock().UTC(), Name: name, ClientID: meta.ClientID, Subject: subject, Result: result, Reason: reason, Fields: map[string]string{"remote_addr": meta.RemoteAddr}})
+	_ = s.audit.Emit(ctx, idp.Event{Time: s.clock().UTC(), Name: name, ClientID: meta.ClientID, Subject: subject, Result: result, Reason: reason, Fields: map[string]string{"remote_addr": meta.RemoteAddr}})
 }
 
 func AuditReason(err error) string {

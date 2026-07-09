@@ -20,6 +20,7 @@ import (
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/sqlite"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
+	"github.com/manuel/tinyidp/pkg/idp"
 )
 
 func main() {
@@ -85,7 +86,7 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	if err != nil {
 		return fmt.Errorf("one-character password was unexpectedly rejected: %w", err)
 	}
-	authResult, err := service.Passwords.AuthenticatePassword(ctx, "short-password-user", "x", authn.LoginMetadata{ClientID: "probe"})
+	authResult, err := service.Passwords.AuthenticatePassword(ctx, "short-password-user", "x", idp.LoginMetadata{ClientID: "probe"})
 	if err != nil {
 		return fmt.Errorf("authenticate accepted one-character password: %w", err)
 	}
@@ -154,7 +155,7 @@ func probeConcurrentLockout(ctx context.Context, store *sqlite.Store, passwords 
 				case <-groupCtx.Done():
 					return groupCtx.Err()
 				}
-				_, authErr := passwords.AuthenticatePassword(groupCtx, "short-password-user", "wrong", authn.LoginMetadata{ClientID: "probe"})
+				_, authErr := passwords.AuthenticatePassword(groupCtx, "short-password-user", "wrong", idp.LoginMetadata{ClientID: "probe"})
 				if authErr == nil || (!errors.Is(authErr, authn.ErrInvalidCredentials) && !errors.Is(authErr, authn.ErrAccountLocked)) {
 					return fmt.Errorf("unexpected authentication result: %v", authErr)
 				}

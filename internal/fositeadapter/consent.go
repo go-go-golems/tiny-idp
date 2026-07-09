@@ -6,15 +6,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
-type ConsentPolicy interface {
-	RequireConsent(ctx context.Context, user idpstore.User, client idpstore.Client, scopes []string) (bool, error)
-	RecordConsent(ctx context.Context, user idpstore.User, client idpstore.Client, scopes []string) error
-}
-
 type AlwaysSkipConsent struct{}
+
+var _ idp.ConsentPolicy = AlwaysSkipConsent{}
 
 func (AlwaysSkipConsent) RequireConsent(context.Context, idpstore.User, idpstore.Client, []string) (bool, error) {
 	return false, nil
@@ -27,6 +25,8 @@ type StoredConsent struct {
 	store idpstore.ConsentStore
 	ttl   time.Duration
 }
+
+var _ idp.ConsentPolicy = (*StoredConsent)(nil)
 
 func NewStoredConsent(store idpstore.ConsentStore, ttl time.Duration) *StoredConsent {
 	return &StoredConsent{store: store, ttl: ttl}
@@ -63,6 +63,8 @@ type RememberConsent struct {
 	mu   sync.Mutex
 	seen map[string]struct{}
 }
+
+var _ idp.ConsentPolicy = (*RememberConsent)(nil)
 
 func NewRememberConsent() *RememberConsent { return &RememberConsent{seen: map[string]struct{}{}} }
 func (p *RememberConsent) RequireConsent(_ context.Context, user idpstore.User, client idpstore.Client, scopes []string) (bool, error) {

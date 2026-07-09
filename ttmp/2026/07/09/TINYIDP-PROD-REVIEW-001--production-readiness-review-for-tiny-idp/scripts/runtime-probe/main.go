@@ -27,10 +27,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/store/sqlite"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
+	"github.com/manuel/tinyidp/pkg/idp"
 )
 
 type config struct {
@@ -143,7 +143,7 @@ func run(ctx context.Context, cfg config) error {
 	}
 	defer store.Close()
 
-	auditSink := audit.NewMemorySink()
+	auditSink := idp.NewMemorySink()
 	adminService, err := admin.NewService(store, admin.Options{Audit: auditSink})
 	if err != nil {
 		return fmt.Errorf("create admin service: %w", err)

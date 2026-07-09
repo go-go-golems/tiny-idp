@@ -12,6 +12,7 @@ import (
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/internal/store/sqlite"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -37,7 +38,7 @@ func TestServiceCreateUserAndAuthenticate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := authSvc.AuthenticatePassword(ctx, "alice", "alice-password", authn.LoginMetadata{})
+	result, err := authSvc.AuthenticatePassword(ctx, "alice", "alice-password", idp.LoginMetadata{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +108,7 @@ func TestServiceSetPasswordAndDisableUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authSvc.AuthenticatePassword(ctx, "bob", "new-password", authn.LoginMetadata{}); !errors.Is(err, authn.ErrAccountDisabled) {
+	if _, err := authSvc.AuthenticatePassword(ctx, "bob", "new-password", idp.LoginMetadata{}); !errors.Is(err, authn.ErrAccountDisabled) {
 		t.Fatalf("disabled login err=%v", err)
 	}
 }

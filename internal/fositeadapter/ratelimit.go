@@ -4,13 +4,13 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/manuel/tinyidp/pkg/idp"
 )
 
-type RateLimiter interface {
-	Allow(ctx context.Context, key string) bool
-}
-
 type AllowAllRateLimiter struct{}
+
+var _ idp.RateLimiter = AllowAllRateLimiter{}
 
 func (AllowAllRateLimiter) Allow(context.Context, string) bool { return true }
 
@@ -21,6 +21,8 @@ type FixedWindowRateLimiter struct {
 	now     func() time.Time
 	buckets map[string]rateBucket
 }
+
+var _ idp.RateLimiter = (*FixedWindowRateLimiter)(nil)
 
 type rateBucket struct {
 	start time.Time

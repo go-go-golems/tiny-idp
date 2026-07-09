@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/user"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -20,13 +20,13 @@ type Service struct {
 	Store     idpstore.Store
 	Passwords *authn.PasswordService
 	Clock     func() time.Time
-	Audit     audit.Sink
+	Audit     idp.Sink
 }
 
 type Options struct {
 	Hasher passwordhash.Hasher
 	Clock  func() time.Time
-	Audit  audit.Sink
+	Audit  idp.Sink
 }
 
 func NewService(store idpstore.Store, opts Options) (*Service, error) {
@@ -39,7 +39,7 @@ func NewService(store idpstore.Store, opts Options) (*Service, error) {
 	}
 	sink := opts.Audit
 	if sink == nil {
-		sink = audit.NoopSink{}
+		sink = idp.NoopSink{}
 	}
 	passwords, err := authn.NewPasswordService(store, authn.Options{Hasher: opts.Hasher, Clock: clock, Audit: sink})
 	if err != nil {
@@ -106,7 +106,7 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (idpsto
 	if err := s.Store.PutPasswordCredential(ctx, cred); err != nil {
 		return idpstore.User{}, err
 	}
-	_ = s.Audit.Emit(ctx, audit.Event{Time: now, Name: "admin.user.created", Subject: u.Sub, Result: "accepted"})
+	_ = s.Audit.Emit(ctx, idp.Event{Time: now, Name: "admin.user.created", Subject: u.Sub, Result: "accepted"})
 	return u, nil
 }
 
@@ -138,7 +138,7 @@ func (s *Service) SetPassword(ctx context.Context, req SetPasswordRequest) error
 		return err
 	}
 	_ = s.Store.ResetAccountSecurityState(ctx, u.ID, now)
-	_ = s.Audit.Emit(ctx, audit.Event{Time: now, Name: "admin.user.password_changed", Subject: u.Sub, Result: "accepted"})
+	_ = s.Audit.Emit(ctx, idp.Event{Time: now, Name: "admin.user.password_changed", Subject: u.Sub, Result: "accepted"})
 	return nil
 }
 
@@ -160,7 +160,7 @@ func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bo
 	if disabled {
 		name = "admin.user.disabled"
 	}
-	_ = s.Audit.Emit(ctx, audit.Event{Time: u.UpdatedAt, Name: name, Subject: u.Sub, Result: "accepted"})
+	_ = s.Audit.Emit(ctx, idp.Event{Time: u.UpdatedAt, Name: name, Subject: u.Sub, Result: "accepted"})
 	return u, nil
 }
 

@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 func main() {

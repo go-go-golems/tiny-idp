@@ -175,7 +175,7 @@ var securityDefaultAnalyzer = &analysis.Analyzer{
 				path = named.Obj().Pkg().Path()
 			}
 			switch {
-			case named.Obj().Name() == "NoopSink" && strings.HasSuffix(path, "/internal/audit"):
+			case named.Obj().Name() == "NoopSink" && strings.HasSuffix(path, "/pkg/idp"):
 				pass.Reportf(lit.Pos(), "NoopSink silently discards security audit events; production construction should require an explicit durable sink")
 			case named.Obj().Name() == "AllowAllRateLimiter" && strings.HasSuffix(path, "/internal/fositeadapter"):
 				pass.Reportf(lit.Pos(), "AllowAllRateLimiter silently disables request throttling; production construction should require an explicit limiter")

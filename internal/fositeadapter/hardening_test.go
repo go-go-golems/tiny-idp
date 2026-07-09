@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -23,7 +23,7 @@ func TestAuthorizeRequiresCSRFAndEmitsAudit(t *testing.T) {
 	_ = st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(ctx, key)
-	sink := audit.NewMemorySink()
+	sink := idp.NewMemorySink()
 	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("hardening-secret-key-32-bytes!!!!"), Audit: sink})
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestAuditReasonsUseStableCodes(t *testing.T) {
 	st := memory.New()
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(ctx, key)
-	sink := audit.NewMemorySink()
+	sink := idp.NewMemorySink()
 	p, err := fositeadapter.NewProvider(fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("audit-reason-secret-32-bytes!!!!"), Audit: sink})
 	if err != nil {
 		t.Fatal(err)

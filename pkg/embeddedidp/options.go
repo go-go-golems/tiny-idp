@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/manuel/tinyidp/internal/audit"
-	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -32,10 +31,10 @@ type Options struct {
 	Store                           idpstore.Store
 	Cookie                          CookieConfig
 	Token                           TokenConfig
-	Audit                           audit.Sink
-	Consent                         fositeadapter.ConsentPolicy
-	RateLimiter                     fositeadapter.RateLimiter
-	Authenticator                   fositeadapter.PasswordAuthenticator
+	Audit                           idp.Sink
+	Consent                         idp.ConsentPolicy
+	RateLimiter                     idp.RateLimiter
+	Authenticator                   idp.PasswordAuthenticator
 	AllowInMemoryStoresInProduction bool
 }
 

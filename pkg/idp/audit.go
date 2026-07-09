@@ -1,4 +1,4 @@
-package audit
+package idp
 
 import (
 	"context"
@@ -25,10 +25,14 @@ type NoopSink struct{}
 
 func (NoopSink) Emit(context.Context, Event) error { return nil }
 
+var _ Sink = NoopSink{}
+
 type MemorySink struct {
 	mu     sync.Mutex
 	events []Event
 }
+
+var _ Sink = (*MemorySink)(nil)
 
 func NewMemorySink() *MemorySink { return &MemorySink{} }
 func (s *MemorySink) Emit(_ context.Context, e Event) error {

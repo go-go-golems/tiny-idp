@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/audit"
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -20,7 +20,7 @@ func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
 		t.Fatal(err)
 	}
-	sink := audit.NewMemorySink()
+	sink := idp.NewMemorySink()
 	svc, err := authn.NewPasswordService(st, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams()), Clock: func() time.Time { return now }, Audit: sink})
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 	if err := st.PutAccountSecurityState(ctx, idpstore.AccountSecurityState{UserID: "u1", FailedLoginCount: 2, LockedUntil: &lockedUntil}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AuthenticatePassword(ctx, "alice", "alice-password", authn.LoginMetadata{ClientID: "spa"}); !errors.Is(err, authn.ErrAccountLocked) {
+	if _, err := svc.AuthenticatePassword(ctx, "alice", "alice-password", idp.LoginMetadata{ClientID: "spa"}); !errors.Is(err, authn.ErrAccountLocked) {
 		t.Fatalf("locked err=%v", err)
 	}
 	later := now.Add(2 * time.Minute)
@@ -44,7 +44,7 @@ func TestPasswordServiceAuthenticatesAndResetsFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := svc.AuthenticatePassword(ctx, "alice", "alice-password", authn.LoginMetadata{ClientID: "spa"})
+	result, err := svc.AuthenticatePassword(ctx, "alice", "alice-password", idp.LoginMetadata{ClientID: "spa"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestPasswordServiceRejectsWrongPasswordAndLocks(t *testing.T) {
 	}
 	_ = st.PutPasswordCredential(ctx, cred)
 	for i := 0; i < 2; i++ {
-		if _, err := svc.AuthenticatePassword(ctx, "alice", "wrong", authn.LoginMetadata{}); !errors.Is(err, authn.ErrInvalidCredentials) {
+		if _, err := svc.AuthenticatePassword(ctx, "alice", "wrong", idp.LoginMetadata{}); !errors.Is(err, authn.ErrInvalidCredentials) {
 			t.Fatalf("attempt %d err=%v", i, err)
 		}
 	}
@@ -89,7 +89,7 @@ func TestPasswordServiceRejectsWrongPasswordAndLocks(t *testing.T) {
 	if state.LockedUntil == nil {
 		t.Fatalf("expected lockout: %#v", state)
 	}
-	if _, err := svc.AuthenticatePassword(ctx, "alice", "right-password", authn.LoginMetadata{}); !errors.Is(err, authn.ErrAccountLocked) {
+	if _, err := svc.AuthenticatePassword(ctx, "alice", "right-password", idp.LoginMetadata{}); !errors.Is(err, authn.ErrAccountLocked) {
 		t.Fatalf("locked err=%v", err)
 	}
 }
@@ -102,7 +102,7 @@ func TestPasswordServiceAllowsPasswordlessOnlyWhenPolicyAllows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AuthenticatePassword(ctx, "alice", "anything", authn.LoginMetadata{}); !errors.Is(err, authn.ErrInvalidCredentials) {
+	if _, err := svc.AuthenticatePassword(ctx, "alice", "anything", idp.LoginMetadata{}); !errors.Is(err, authn.ErrInvalidCredentials) {
 		t.Fatalf("err=%v, want invalid credentials", err)
 	}
 	policy := authn.DefaultPasswordPolicy()
@@ -111,7 +111,7 @@ func TestPasswordServiceAllowsPasswordlessOnlyWhenPolicyAllows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := svc.AuthenticatePassword(ctx, "alice", "anything", authn.LoginMetadata{})
+	result, err := svc.AuthenticatePassword(ctx, "alice", "anything", idp.LoginMetadata{})
 	if err != nil {
 		t.Fatal(err)
 	}
