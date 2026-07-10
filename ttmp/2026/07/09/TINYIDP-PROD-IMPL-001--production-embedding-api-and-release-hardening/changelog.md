@@ -119,3 +119,12 @@ Step 15: implemented the production TLS host, emergency key purge, release/recov
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Production host implementation
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/release-gates.yml — Exact-hash race/fuzz/fault/recovery/hosted gate
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/reference/03-release-candidate-evidence-packet-and-approval-ledger.md — Release decision and blockers
+
+## 2026-07-09
+
+Step 16: dry-ran and uploaded the committed guide, runbook, evidence ledger, runtime summary, diary, and task bundle to reMarkable at /ai/2026/07/09/TINYIDP-PROD-IMPL-001
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/01-production-embedding-api-and-release-implementation-guide.md — Primary uploaded guide
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/reference/03-release-candidate-evidence-packet-and-approval-ledger.md — Uploaded not-approved decision ledger

@@ -2298,3 +2298,22 @@ signed artifact/SBOM/provenance: WORKFLOW READY, NOT PRODUCED
 independent review/release approval: NOT OBTAINED
 release decision: NOT APPROVED
 ```
+
+## Step 16: Publish the committed review bundle to reMarkable
+
+The final local documentation bundle was rendered only after the implementation
+guide, operator runbook, runtime analysis, evidence/approval ledger, diary, and
+task state passed `docmgr doctor` and were committed as `babf302`.
+
+The required dry run listed all six Markdown inputs, ToC depth two, and remote
+directory `/ai/2026/07/09/TINYIDP-PROD-IMPL-001`. The actual non-interactive
+upload then returned:
+
+```text
+OK: uploaded TINYIDP PROD IMPL 001 Release Candidate Review.pdf -> /ai/2026/07/09/TINYIDP-PROD-IMPL-001
+```
+
+No account query or post-upload cloud listing was performed. The uploader's
+success response is the delivery evidence. This publication does not alter the
+release decision; the PDF prominently records the candidate as not approved
+and leaves the external/human gates unchecked.
