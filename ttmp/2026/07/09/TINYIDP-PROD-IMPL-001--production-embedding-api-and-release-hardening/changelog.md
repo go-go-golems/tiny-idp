@@ -90,3 +90,12 @@ Published the committed Phase 1 and Phase 2 guide, storage reference, diary, and
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/01-production-embedding-api-and-release-implementation-guide.md — Uploaded Phase 1 and Phase 2 completion guide
+
+## 2026-07-09
+
+Step 13: closed Phase 3 with NIST-aligned password policy, bounded observable Argon2 work, trusted-address and three-dimensional throttling, fail-closed storage, and password-change revocation (commit 7022e7d)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/authn/password.go — Bounded fail-closed password authentication
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md — Checked Phase 3 gate

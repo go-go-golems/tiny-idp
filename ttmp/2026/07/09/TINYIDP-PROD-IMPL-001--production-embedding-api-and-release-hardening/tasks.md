@@ -67,20 +67,20 @@ tasks so partial implementation never looks like phase completion.
 
 ## Phase 3 — mandatory authentication and abuse controls
 
-- [ ] Define password acceptance policy separately from Argon2id encoding parameters.
-- [ ] Enforce password policy on user creation, reset, and password change.
-- [ ] Implement a real must-change-password flow or remove the unsupported state.
-- [ ] Require a production rate limiter; reject nil or permissive defaults.
-- [ ] Define trusted-proxy configuration and a public client-address resolver contract.
-- [ ] Rate-limit by account, client, and trusted client address without leaking account existence.
-- [ ] Bound concurrent Argon2id work with a context-aware semaphore.
-- [ ] Export saturation, wait, rejection, and duration metrics for password work.
-- [ ] Make storage failures in lockout/reset paths fail closed and observable.
-- [ ] Define password-change revocation behavior for sessions, authorization codes, and refresh families.
-- [ ] Add simultaneous failed-login tests that prove no lost updates.
-- [ ] Add abuse/load tests at production Argon2id parameters and memory limits.
-- [ ] Convert the security-invariants probe from reproducing gaps to asserting protections.
-- [ ] Phase 3 gate: authentication controls are mandatory, atomic, bounded, observable, and load-tested.
+- [x] Define password acceptance policy separately from Argon2id encoding parameters.
+- [x] Enforce password policy on user creation, reset, and password change.
+- [x] Implement a real must-change-password flow or remove the unsupported state.
+- [x] Require a production rate limiter; reject nil or permissive defaults.
+- [x] Define trusted-proxy configuration and a public client-address resolver contract.
+- [x] Rate-limit by account, client, and trusted client address without leaking account existence.
+- [x] Bound concurrent Argon2id work with a context-aware semaphore.
+- [x] Export saturation, wait, rejection, and duration metrics for password work.
+- [x] Make storage failures in lockout/reset paths fail closed and observable.
+- [x] Define password-change revocation behavior for sessions, authorization codes, and refresh families.
+- [x] Add simultaneous failed-login tests that prove no lost updates.
+- [x] Add abuse/load tests at production Argon2id parameters and memory limits.
+- [x] Convert the security-invariants probe from reproducing gaps to asserting protections.
+- [x] Phase 3 gate: authentication controls are mandatory, atomic, bounded, observable, and load-tested.
 
 ## Phase 4 — keys, audit, readiness, and maintenance
 

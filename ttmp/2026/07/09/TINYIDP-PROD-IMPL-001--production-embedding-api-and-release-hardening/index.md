@@ -48,9 +48,10 @@ are complete.
 Current status: **active**
 
 Completed gates: **Phase 0 — dependency baseline; Phase 1 — consumable public
-embedding API; Phase 2 — transactional persistence, backup, and restore**
+embedding API; Phase 2 — transactional persistence, backup, and restore; Phase
+3 — mandatory authentication and abuse controls**
 
-Current phase: **Phase 3 — mandatory authentication and abuse controls**
+Current phase: **Phase 4 — keys, audit, readiness, and maintenance**
 
 Release status: **blocked until all phase gates pass**
 

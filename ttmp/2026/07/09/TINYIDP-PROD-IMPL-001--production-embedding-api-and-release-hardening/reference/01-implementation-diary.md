@@ -23,12 +23,16 @@ RelatedFiles:
       Note: |-
         Phase 0 dependency and toolchain baseline
         Phase 0 Go toolchain and go-jose dependency baseline (commit a2c86a9)
+    - Path: repo://internal/authn/password.go
+      Note: Step 13 bounded fail-closed authentication (commit 7022e7d)
     - Path: repo://pkg/embeddedidp/options.go
       Note: First production API implementation target
     - Path: repo://pkg/embeddedidp/provider.go
       Note: Context lifecycle and readiness API (commit e65ff53)
     - Path: repo://pkg/idp/contracts.go
       Note: Public policy authentication and readiness contracts (commit 0bcbf24)
+    - Path: repo://pkg/idp/password.go
+      Note: Step 13 public password policy and work metrics (commit 7022e7d)
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Public durable store contracts (commit e042a15)
     - Path: repo://pkg/sqlitestore/backup.go
@@ -41,12 +45,15 @@ RelatedFiles:
       Note: Implementation design this diary tracks
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md
       Note: Durable 90-task phase ledger
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/various/phase3-password-load.json
+      Note: Production Argon2 load evidence
 ExternalSources: []
 Summary: Chronological implementation record for the production embedding API and release-hardening program.
 LastUpdated: 2026-07-09T17:37:01.160328301-04:00
 WhatFor: Preserving decisions, exact commands, failures, commits, verification, and continuation instructions across the multi-phase hardening effort.
 WhenToUse: Read before resuming work, reviewing a phase, investigating a regression, or assembling release evidence.
 ---
+
 
 
 
@@ -1682,4 +1689,191 @@ lint: PASS, 0 issues
 focused atomicity analyzer: PASS
 external production OIDC flow: PASS
 reMarkable completion bundle: UPLOADED
+```
+
+## Step 13: Make password authentication bounded, fail-closed, and abuse-aware
+
+This step completed Phase 3 as one security boundary rather than a collection
+of independent checks. Password establishment now follows one public policy;
+every Argon2 operation uses a bounded context-aware capacity gate; storage
+failures cannot silently accept or reset a login; and the HTTP adapter consumes
+account, client, and trusted-address limiter buckets before password work.
+
+The unsupported must-change flag was removed directly. Password replacement
+now revokes browser, domain OAuth, and Fosite protocol state in the same SQLite
+transaction that installs the credential, so a password change does not leave
+old sessions or refresh capability usable.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue with all the phases"
+
+**Assistant interpretation:** Continue the long-lived ticket through every
+remaining implementation and release-evidence phase, keeping the same diary,
+task, commit, and reMarkable discipline.
+
+**Inferred user intent:** Turn the reviewed pre-release service into a genuinely
+production-assessable artifact, while distinguishing locally completed work
+from external gates that need real services or human sign-off.
+
+**Commit (code):** `7022e7d` — "feat: bound password authentication and abuse controls"
+
+### What I did
+
+- Researched the final July 2025 NIST SP 800-63B-4 password requirements and
+  saved the official authenticator section under the ticket `sources/` folder
+  using Defuddle.
+- Added public `PasswordAcceptancePolicy`, `PasswordBlocklist`, NFC
+  normalization, 15-character production minimum, 64+-character allowance,
+  byte ceiling, common/context blocklisting, and non-secret rejection reasons.
+- Applied the policy inside `HashCredential(ctx, ...)`, covering admin create
+  and set-password paths without coupling acceptance to Argon2 parameters.
+- Deleted `MustChangeAtLogin`, `MustChangePassword`, and their CLI flags because
+  no complete password-change interaction existed.
+- Added a context-aware semaphore around hash, verify, rehash, and dummy work.
+- Exported capacity, in-flight, waiting, saturation, context rejection,
+  completion, total wait, and total duration metrics through
+  `Provider.PasswordWorkStats`.
+- Made user/credential/account-state read failures, failed-login writes,
+  success resets, malformed stored hashes, and rehash persistence failures
+  return `ErrAuthenticationUnavailable`; the adapter maps those to HTTP 503.
+- Added public `FixedWindowRateLimiter` with production readiness and counters.
+- Added hashed-account, client, and resolved-address keys, evaluating all three
+  without embedding the login in the key.
+- Added `TrustedProxyResolver` with explicit CIDRs, right-to-left XFF walking,
+  hop bounds, and untrusted-peer header rejection.
+- Added migration 004 subject columns/indexes and atomic password-change
+  revocation for domain grants/codes/tokens/sessions plus Fosite code, PKCE,
+  OIDC, access, and refresh rows.
+- Converted the negative security-invariants probe into a positive assertion
+  tool.
+- Added and ran the production-parameter password load tool; stored its JSON
+  evidence under `various/phase3-password-load.json`.
+
+### Why
+
+- NIST SP 800-63B-4 now requires 15 characters for single-factor passwords,
+  recommends allowing at least 64, forbids composition rules, requires a
+  blocklist, and requires account throttling.
+- Argon2id's 64 MiB default makes unconstrained parallel verification a memory
+  denial-of-service primitive.
+- Ignoring a lockout/reset storage failure turns storage degradation into a
+  security-policy bypass.
+- A password change is incomplete if old sessions and refresh state survive.
+- Forwarded addresses are trustworthy only when every accepted forwarding hop
+  is explicitly inside the host's trust policy.
+
+### What worked
+
+- Full tests, build, vet, lint, and full race passed after Phase 3.
+- The outside-module production OIDC flow still passed with the new production
+  readiness contracts.
+- The positive invariant probe reported owner-only storage, short-password
+  rejection, unsafe production-construction rejection, and ten rounds of five
+  concurrent failures without a lost update.
+- The 64 MiB Argon2 load completed 24 attempts with eight workers and capacity
+  two in 1.047 seconds (22.9 attempts/second). It recorded 22 saturations, zero
+  rejections, 25 completed operations including setup, 5.27 seconds aggregate
+  wait, and 2.14 seconds aggregate Argon2 duration.
+- The load's observed post-run allocation was 134,547,360 bytes with
+  349,899,096 bytes of Go runtime system memory, consistent with bounded rather
+  than eight-way 64 MiB work.
+
+### What didn't work
+
+- Defuddle extracted the complete 87,761-byte NIST page but its metadata pass
+  emitted a relative-URL exception:
+
+  ```text
+  Failed to parse URL: TypeError: Invalid URL
+  input: '/800-63-4/sp800-63b/authenticators/'
+  ```
+
+  `wc` and the extracted heading/body confirmed the output file was complete,
+  so the valid extraction was retained and the metadata warning recorded.
+- The first full compile after moving the fixed-window limiter public found one
+  stale runtime-probe import:
+
+  ```text
+  scripts/runtime-probe/main.go:30:2: "github.com/manuel/tinyidp/internal/fositeadapter" imported and not used
+  ```
+
+  Removing that import made the next full test pass.
+- Staticcheck rejected a test expression that intentionally called the same
+  limiter twice:
+
+  ```text
+  pkg/idp/security_test.go:56:5: SA4000: identical expressions on the left and right side of the '||' operator
+  ```
+
+  Expressing the two attempts as a loop removed the ambiguity; lint then
+  reported zero issues.
+
+### What I learned
+
+- Password acceptance and password hashing cost are separate contracts. One
+  decides what may be established; the other decides how accepted bytes are
+  encoded and how much work verification consumes.
+- The account limiter key can remain stable without disclosing the account by
+  hashing the normalized login; all keys must be consumed even if one already
+  rejects to avoid bucket-dependent behavior.
+- Refresh/token revocation needs an indexed subject in protocol storage. JSON
+  request blobs are sufficient for restoration but are the wrong operational
+  index for security transitions.
+- Correct-password verification is not complete until the successful-login
+  reset commits; otherwise a storage outage can leave contradictory state.
+
+### What was tricky to build
+
+- Unknown-account dummy verification, real verification, hashing, and rehashing
+  all need the same semaphore or one path can bypass the capacity limit.
+- Refreshing an old Argon2 encoding after successful verification must fail
+  closed if either fresh salt generation or persistence fails, without
+  misclassifying a wrong password as storage corruption.
+- Password revocation spans JSON domain rows and Fosite's protocol-specific
+  tables. Migration 004 backfills the subject from existing request JSON, then
+  future writes persist it directly.
+- A reverse proxy chain must be walked from the immediate peer leftward; taking
+  the first XFF item without proving the trusted suffix lets clients spoof it.
+
+### What warrants a second pair of eyes
+
+- Review whether the bundled baseline blocklist is sufficient for the intended
+  deployment or whether production policy must inject a maintained breach list.
+- Review the production Argon2 capacity of two against the actual container
+  memory limit and desired login latency.
+- Review every Fosite table populated by future grant types so password-change
+  revocation remains complete.
+- Review whether the in-process fixed-window limiter meets the intended
+  single-node availability model; it is deliberately not a distributed limit.
+
+### What should be done in the future
+
+- Phase 4 readiness should surface password saturation, limiter health, audit
+  delivery, schema, key expiry, and maintenance state together.
+- Phase 5 should repeat the load with the production host's real memory/cgroup
+  limits and capture runtime/database/audit metrics over a sustained interval.
+
+### Code review instructions
+
+- Start at `pkg/idp/password.go`, then follow policy/work through
+  `internal/authn/password.go` and `pkg/embeddedidp/options.go`.
+- Review limiter/address behavior in `pkg/idp/ratelimit.go`,
+  `pkg/idp/contracts.go`, and `Provider.allowLogin`.
+- Review migration 004, Fosite inserts, and both store implementations' password
+  artifact revocation.
+- Run the full race suite, external API smoke, positive security probe, and
+  password load command recorded above.
+
+### Technical details
+
+```text
+password establishment: NFC, min 15 chars, max 1024 chars/4096 bytes, blocklist
+argon2id: 64 MiB, iterations=3, parallelism=2, capacity=2 by default
+limiter dimensions: sha256(account), client ID, trusted client IP
+password-change revocation: domain + browser + Fosite protocol rows in one tx
+full test/build/vet/lint/race: PASS
+external OIDC flow: PASS
+positive invariant probe: PASS
+production Argon2 load: PASS
 ```
