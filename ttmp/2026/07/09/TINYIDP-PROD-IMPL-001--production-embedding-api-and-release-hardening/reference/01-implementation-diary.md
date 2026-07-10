@@ -2906,3 +2906,142 @@ accepted consent denial: OAuth access_denied
 compatibility fallback: prohibited
 baseline result: PASS
 ```
+
+## Step 20: Capture red interaction regressions and implement the persistence substrate
+
+This step translated the authorization findings into executable HTTP regressions,
+confirmed each defect against the unmodified provider, and implemented the
+server-owned interaction record in the public store contract, memory store, and
+SQLite store. The record stores only a keyed handle hash, a canonical request,
+required-action bits, binding hashes, lifecycle timestamps, and a typed terminal
+outcome.
+
+The common store suite treats terminal consumption as the security boundary. A
+record can be read without mutation, but only one caller may move it from pending
+to an approved, denied, or rejected terminal outcome. Expired records and invalid
+outcomes fail closed.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Create a detailed set of phases each with detailed tasks (so we can keep precise track of where we are in the implementation work), and then implement them task by task, keeping a detailed diary as you work. I am going on a run, and I want you to do all of 1. - 5. at the very least."
+
+**Assistant interpretation:** Implement the task ledger continuously, preserving
+failing-first evidence and committing the interaction persistence layer as an
+independently reviewable unit.
+
+**Inferred user intent:** Make the eventual security claims traceable to tests
+that failed before the implementation and to storage behavior shared by every
+supported backend.
+
+### What I did
+
+- Added a reusable cookie-jar browser harness in
+  `internal/fositeadapter/interaction_hardening_test.go`.
+- Added regressions for forced `prompt=login`, expired `max_age`, malformed
+  `max_age`, explicit consent denial, browser mutation of `state`, and concurrent
+  duplicate submission.
+- Ran the focused regressions before changing provider behavior.
+- Added `InteractionRecord`, `InteractionRequiredAction`, and
+  `InteractionOutcome` to `pkg/idpstore`.
+- Added create, get, and atomic consume operations to `StoreOperations`,
+  `ReadStore`, and the complete `Store` contract.
+- Implemented copy-isolated interaction persistence in the memory store,
+  including transaction clone/replace behavior.
+- Added SQLite migration `006_authorization_interactions.sql`, conditional
+  terminal consumption, indexes, and maintenance deletion.
+- Added common store tests for copy isolation, expiry, invalid outcomes, and 16
+  concurrent terminal attempts.
+- Ran:
+
+  ```bash
+  go test ./internal/fositeadapter -run 'TestForcedPromptLogin|TestExpiredMaxAge|TestMalformedMaxAge|TestConsentDenial|TestAuthorizationState|TestAuthorizationInteraction' -count=1
+  gofmt -w pkg/idpstore/testsuite.go
+  go test ./pkg/idpstore ./internal/store/memory ./pkg/sqlitestore -count=1
+  ```
+
+### Why
+
+- Browser-hidden OAuth parameters cannot serve as an authorization continuation;
+  they are attacker-controlled on the resume request.
+- A one-time state machine requires an atomic backend primitive. A handler-level
+  get followed by update would permit concurrent duplicate terminal outcomes.
+- Common contract tests prevent memory and SQLite behavior from drifting at the
+  precise boundary on which replay prevention depends.
+
+### What worked
+
+- The failing-first run reproduced the forced-login and `max_age=0` session-reuse
+  bypasses: a blank resumed POST issued an authorization code.
+- Invalid, negative, and overflowing `max_age` values rendered a credential form.
+- Browser replacement of the original state returned `attacker-state`.
+- Two concurrent submissions produced two authorization codes.
+- After correcting the test parser to read hidden inputs only, consent decisions
+  are no longer inferred from the visible checkbox by the harness.
+- The memory and SQLite store suites passed, including exactly one successful
+  consume among 16 concurrent callers.
+
+### What didn't work
+
+- The first consent-denial observation was invalid because the initial HTML parser
+  collected every input, including the visible checked-value checkbox. Restricting
+  the parser to `type="hidden"` fixed the harness before provider implementation.
+- The HTTP regression suite remains intentionally red at this boundary because
+  the current provider still trusts hidden continuation parameters and has no
+  one-time interaction handle.
+
+### What I learned
+
+- SQLite's conditional `UPDATE ... WHERE consumed_at IS NULL AND expires_at > ?`
+  gives the terminal transition a single database linearization point.
+- The memory store already clones state for transaction callbacks, so omitting the
+  interaction map from clone or replace would have silently lost transactions.
+- The interaction schema can remain generic and secret-free; raw interaction and
+  browser handles never need durable storage.
+
+### What was tricky to build
+
+- Returning the pre-transition record from `ConsumeInteraction` is useful to the
+  handler, but the stored copy must receive both `ConsumedAt` and `Outcome` while
+  preserving copy isolation for maps and byte slices.
+- Top-level SQLite calls must use the store transaction boundary, while calls on
+  an already scoped transaction must execute directly to avoid prohibited nested
+  transactions.
+
+### What warrants a second pair of eyes
+
+- Confirm that the interaction outcome vocabulary is sufficient for operational
+  reporting without exposing protocol secrets.
+- Review whether rejected validation attempts should terminally consume an
+  interaction or remain retryable by class of error.
+- Review the ten-minute interaction retention target when the provider option is
+  added.
+
+### What should be done in the future
+
+1. Replace the current CSRF double-submit token with a browser nonce and an HMAC
+   bound to the opaque interaction handle.
+2. Create records only after Fosite validates the original GET request.
+3. Reconstruct resumed Fosite requests exclusively from canonical stored values.
+4. Enforce required fresh authentication and explicit consent before atomic
+   consume.
+
+### Code review instructions
+
+- Run `go test ./pkg/idpstore ./internal/store/memory ./pkg/sqlitestore -count=1`.
+- Inspect `ConsumeInteraction` in both backends for a single terminal transition.
+- Verify migration 006 stores the serialized public record but indexes lifecycle
+  columns separately for atomic consume and maintenance.
+- Do not treat the red provider regressions as a release failure until the next
+  handler-migration boundary; they are the preserved before-state evidence.
+
+### Technical details
+
+```text
+raw interaction handle persisted: no
+terminal outcomes: approved, denied, rejected
+atomic consume predicate: pending AND unexpired
+memory concurrent winners: 1/16
+sqlite concurrent winners: 1/16
+focused store suites: PASS
+provider regressions before migration: FAIL as expected
+```

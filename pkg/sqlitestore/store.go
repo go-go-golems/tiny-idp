@@ -673,6 +673,71 @@ func (s *Store) RevokeSession(ctx context.Context, idHash []byte, at time.Time) 
 	return err
 }
 
+func (s *Store) CreateInteraction(ctx context.Context, interaction idpstore.InteractionRecord) error {
+	data, err := enc(interaction)
+	if err != nil {
+		return err
+	}
+	_, err = s.conn().ExecContext(ctx, `INSERT INTO authorization_interactions(hash,expires_at,consumed_at,data) VALUES(?,?,NULL,?)`, hashKey(interaction.IDHash), interaction.ExpiresAt.UTC(), data)
+	return mapDup(err)
+}
+
+func (s *Store) GetInteraction(ctx context.Context, idHash []byte) (idpstore.InteractionRecord, error) {
+	var data []byte
+	err := s.conn().QueryRowContext(ctx, `SELECT data FROM authorization_interactions WHERE hash=?`, hashKey(idHash)).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return idpstore.InteractionRecord{}, idpstore.ErrNotFound
+	}
+	if err != nil {
+		return idpstore.InteractionRecord{}, err
+	}
+	return dec[idpstore.InteractionRecord](data)
+}
+
+func (s *Store) ConsumeInteraction(ctx context.Context, idHash []byte, now time.Time, outcome idpstore.InteractionOutcome) (idpstore.InteractionRecord, error) {
+	if !outcome.Valid() {
+		return idpstore.InteractionRecord{}, idpstore.ErrInvalidInteractionOutcome
+	}
+	if s.runner == nil {
+		var consumed idpstore.InteractionRecord
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			var err error
+			consumed, err = tx.ConsumeInteraction(ctx, idHash, now, outcome)
+			return err
+		})
+		return consumed, err
+	}
+	interaction, err := s.GetInteraction(ctx, idHash)
+	if err != nil {
+		return idpstore.InteractionRecord{}, err
+	}
+	if interaction.ConsumedAt != nil {
+		return idpstore.InteractionRecord{}, idpstore.ErrAlreadyConsumed
+	}
+	if !interaction.ExpiresAt.IsZero() && !now.Before(interaction.ExpiresAt) {
+		return idpstore.InteractionRecord{}, idpstore.ErrExpired
+	}
+	now = now.UTC()
+	interaction.ConsumedAt = &now
+	interaction.Outcome = outcome
+	data, err := enc(interaction)
+	if err != nil {
+		return idpstore.InteractionRecord{}, err
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE authorization_interactions SET consumed_at=?,data=? WHERE hash=? AND consumed_at IS NULL`, now, data, hashKey(idHash))
+	if err != nil {
+		return idpstore.InteractionRecord{}, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return idpstore.InteractionRecord{}, err
+	}
+	if count != 1 {
+		return idpstore.InteractionRecord{}, idpstore.ErrAlreadyConsumed
+	}
+	return interaction, nil
+}
+
 func (s *Store) CreateSigningKey(ctx context.Context, k idpstore.SigningKey) error {
 	b, _ := enc(k)
 	active := 0

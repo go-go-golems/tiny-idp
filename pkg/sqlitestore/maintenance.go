@@ -64,6 +64,11 @@ func (s *Store) Maintain(ctx context.Context, now time.Time, policy idpstore.Mai
 		})); err != nil {
 			return err
 		}
+		if err = add(deleteJSONRecords[idpstore.InteractionRecord](ctx, scoped.conn(), "authorization_interactions", "hash", func(v idpstore.InteractionRecord) bool {
+			return expiredOrTerminal(v.ExpiresAt, v.ConsumedAt, domainCutoff)
+		})); err != nil {
+			return err
+		}
 
 		protocolCutoff := now.Add(-policy.ProtocolStateRetention)
 		for _, table := range []string{"fosite_authorize_codes", "fosite_pkces", "fosite_oidc_sessions", "fosite_access_tokens", "fosite_refresh_tokens"} {

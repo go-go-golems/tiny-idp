@@ -30,6 +30,7 @@ type Store struct {
 	refresh            map[string]idpstore.RefreshToken
 	consents           map[string]idpstore.Consent
 	sessions           map[string]idpstore.Session
+	interactions       map[string]idpstore.InteractionRecord
 	keys               map[string]idpstore.SigningKey
 }
 
@@ -50,6 +51,7 @@ func New() *Store {
 		refresh:            map[string]idpstore.RefreshToken{},
 		consents:           map[string]idpstore.Consent{},
 		sessions:           map[string]idpstore.Session{},
+		interactions:       map[string]idpstore.InteractionRecord{},
 		keys:               map[string]idpstore.SigningKey{},
 	}
 }
@@ -430,6 +432,69 @@ func (s *Store) RevokeSession(_ context.Context, idHash []byte, at time.Time) er
 	return nil
 }
 
+func (s *Store) CreateInteraction(_ context.Context, interaction idpstore.InteractionRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := hashKey(interaction.IDHash)
+	if _, ok := s.interactions[key]; ok {
+		return idpstore.ErrDuplicate
+	}
+	s.interactions[key] = cloneInteraction(interaction)
+	return nil
+}
+
+func (s *Store) GetInteraction(_ context.Context, idHash []byte) (idpstore.InteractionRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	interaction, ok := s.interactions[hashKey(idHash)]
+	if !ok {
+		return idpstore.InteractionRecord{}, idpstore.ErrNotFound
+	}
+	return cloneInteraction(interaction), nil
+}
+
+func (s *Store) ConsumeInteraction(_ context.Context, idHash []byte, now time.Time, outcome idpstore.InteractionOutcome) (idpstore.InteractionRecord, error) {
+	if !outcome.Valid() {
+		return idpstore.InteractionRecord{}, idpstore.ErrInvalidInteractionOutcome
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := hashKey(idHash)
+	interaction, ok := s.interactions[key]
+	if !ok {
+		return idpstore.InteractionRecord{}, idpstore.ErrNotFound
+	}
+	if interaction.ConsumedAt != nil {
+		return idpstore.InteractionRecord{}, idpstore.ErrAlreadyConsumed
+	}
+	if !interaction.ExpiresAt.IsZero() && !now.Before(interaction.ExpiresAt) {
+		return idpstore.InteractionRecord{}, idpstore.ErrExpired
+	}
+	now = now.UTC()
+	interaction.ConsumedAt = &now
+	interaction.Outcome = outcome
+	s.interactions[key] = interaction
+	return cloneInteraction(interaction), nil
+}
+
+func cloneInteraction(interaction idpstore.InteractionRecord) idpstore.InteractionRecord {
+	interaction.IDHash = append([]byte(nil), interaction.IDHash...)
+	interaction.RequestDigest = append([]byte(nil), interaction.RequestDigest...)
+	interaction.BrowserBindingHash = append([]byte(nil), interaction.BrowserBindingHash...)
+	interaction.SessionIDHash = append([]byte(nil), interaction.SessionIDHash...)
+	interaction.GenerationHash = append([]byte(nil), interaction.GenerationHash...)
+	request := make(map[string][]string, len(interaction.CanonicalRequest))
+	for key, values := range interaction.CanonicalRequest {
+		request[key] = append([]string(nil), values...)
+	}
+	interaction.CanonicalRequest = request
+	if interaction.ConsumedAt != nil {
+		consumed := *interaction.ConsumedAt
+		interaction.ConsumedAt = &consumed
+	}
+	return interaction
+}
+
 func (s *Store) CreateSigningKey(_ context.Context, key idpstore.SigningKey) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -702,6 +767,7 @@ func (s *Store) cloneLocked() *Store {
 		refresh:            cloneMap(s.refresh),
 		consents:           cloneMap(s.consents),
 		sessions:           cloneMap(s.sessions),
+		interactions:       cloneInteractionMap(s.interactions),
 		keys:               cloneMap(s.keys),
 	}
 }
@@ -719,7 +785,16 @@ func (s *Store) replaceLocked(next *Store) {
 	s.refresh = next.refresh
 	s.consents = next.consents
 	s.sessions = next.sessions
+	s.interactions = next.interactions
 	s.keys = next.keys
+}
+
+func cloneInteractionMap(source map[string]idpstore.InteractionRecord) map[string]idpstore.InteractionRecord {
+	clone := make(map[string]idpstore.InteractionRecord, len(source))
+	for key, value := range source {
+		clone[key] = cloneInteraction(value)
+	}
+	return clone
 }
 
 func cloneMap[K comparable, V any](source map[K]V) map[K]V {

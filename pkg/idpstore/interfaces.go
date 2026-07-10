@@ -7,15 +7,16 @@ import (
 )
 
 var (
-	ErrNotFound             = errors.New("not found")
-	ErrAlreadyConsumed      = errors.New("already consumed")
-	ErrExpired              = errors.New("expired")
-	ErrRefreshReuseDetected = errors.New("refresh token reuse detected")
-	ErrDuplicate            = errors.New("duplicate")
-	ErrLastSigningKey       = errors.New("cannot retire the final active signing key")
-	ErrActiveSigningKey     = errors.New("cannot purge an active signing key")
-	ErrSigningKeyNotRetired = errors.New("cannot purge a signing key that has not been retired")
-	ErrNestedTransaction    = errors.New("nested store transactions are not supported")
+	ErrNotFound                  = errors.New("not found")
+	ErrAlreadyConsumed           = errors.New("already consumed")
+	ErrExpired                   = errors.New("expired")
+	ErrRefreshReuseDetected      = errors.New("refresh token reuse detected")
+	ErrDuplicate                 = errors.New("duplicate")
+	ErrLastSigningKey            = errors.New("cannot retire the final active signing key")
+	ErrActiveSigningKey          = errors.New("cannot purge an active signing key")
+	ErrSigningKeyNotRetired      = errors.New("cannot purge a signing key that has not been retired")
+	ErrNestedTransaction         = errors.New("nested store transactions are not supported")
+	ErrInvalidInteractionOutcome = errors.New("invalid interaction outcome")
 )
 
 type ClientStore interface {
@@ -79,6 +80,14 @@ type SessionStore interface {
 	RevokeSession(ctx context.Context, idHash []byte, at time.Time) error
 }
 
+// InteractionStore persists server-owned browser authorization continuations.
+// Raw interaction handles are never stored; callers supply keyed hashes.
+type InteractionStore interface {
+	CreateInteraction(ctx context.Context, interaction InteractionRecord) error
+	GetInteraction(ctx context.Context, idHash []byte) (InteractionRecord, error)
+	ConsumeInteraction(ctx context.Context, idHash []byte, now time.Time, outcome InteractionOutcome) (InteractionRecord, error)
+}
+
 type KeyStore interface {
 	ActiveSigningKey(ctx context.Context) (SigningKey, error)
 	VerificationKeys(ctx context.Context) ([]SigningKey, error)
@@ -99,6 +108,7 @@ type StoreOperations interface {
 	RefreshTokenStore
 	ConsentStore
 	SessionStore
+	InteractionStore
 	KeyStore
 }
 
@@ -118,6 +128,7 @@ type ReadStore interface {
 	GetRefreshToken(ctx context.Context, tokenHash []byte) (RefreshToken, error)
 	GetConsent(ctx context.Context, userID, clientID string, scopes []string) (Consent, error)
 	GetSession(ctx context.Context, idHash []byte) (Session, error)
+	GetInteraction(ctx context.Context, idHash []byte) (InteractionRecord, error)
 	ActiveSigningKey(ctx context.Context) (SigningKey, error)
 	VerificationKeys(ctx context.Context) ([]SigningKey, error)
 }

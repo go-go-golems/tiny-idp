@@ -63,6 +63,12 @@ func (s *Store) Maintain(ctx context.Context, now time.Time, policy idpstore.Mai
 			report.DomainRecords++
 		}
 	}
+	for key, value := range s.interactions {
+		if expiredMemory(value.ExpiresAt, value.ConsumedAt, cutoff) {
+			delete(s.interactions, key)
+			report.DomainRecords++
+		}
+	}
 	keyCutoff := now.Add(-policy.SigningKeyRetention)
 	for key, value := range s.keys {
 		if !value.Active && !value.NotAfter.IsZero() && value.NotAfter.Before(keyCutoff) {

@@ -121,6 +121,96 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		}
 	})
 
+	t.Run("authorization interaction is isolated and consumed once", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Now().UTC()
+		idHash := []byte("interaction-1")
+		original := InteractionRecord{
+			IDHash:           idHash,
+			CanonicalRequest: map[string][]string{"state": {"original"}, "scope": {"openid", "email"}},
+			RequestDigest:    []byte("digest"),
+			ClientID:         "client",
+			RequiredActions:  InteractionRequireFreshLogin | InteractionRequireConsent,
+			CreatedAt:        now,
+			ExpiresAt:        now.Add(time.Minute),
+		}
+		if err := st.CreateInteraction(ctx, original); err != nil {
+			t.Fatalf("create interaction: %v", err)
+		}
+		original.CanonicalRequest["state"][0] = "mutated-after-create"
+		original.RequestDigest[0] = 'X'
+		stored, err := st.GetInteraction(ctx, idHash)
+		if err != nil {
+			t.Fatalf("get interaction: %v", err)
+		}
+		if stored.CanonicalRequest["state"][0] != "original" || string(stored.RequestDigest) != "digest" {
+			t.Fatalf("interaction was not copy-isolated: %#v", stored)
+		}
+		stored.CanonicalRequest["state"][0] = "mutated-after-get"
+		again, err := st.GetInteraction(ctx, idHash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if again.CanonicalRequest["state"][0] != "original" {
+			t.Fatalf("returned interaction aliases store state: %#v", again.CanonicalRequest)
+		}
+		consumed, err := st.ConsumeInteraction(ctx, idHash, now.Add(time.Second), InteractionOutcomeApproved)
+		if err != nil {
+			t.Fatalf("consume interaction: %v", err)
+		}
+		if consumed.ConsumedAt == nil || consumed.Outcome != InteractionOutcomeApproved {
+			t.Fatalf("bad consumed interaction: %#v", consumed)
+		}
+		if _, err := st.ConsumeInteraction(ctx, idHash, now.Add(2*time.Second), InteractionOutcomeApproved); !errors.Is(err, ErrAlreadyConsumed) {
+			t.Fatalf("second consume got %v, want %v", err, ErrAlreadyConsumed)
+		}
+	})
+
+	t.Run("authorization interaction expiration and outcomes are enforced", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Now().UTC()
+		idHash := []byte("interaction-expired")
+		if err := st.CreateInteraction(ctx, InteractionRecord{IDHash: idHash, CreatedAt: now.Add(-time.Minute), ExpiresAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.ConsumeInteraction(ctx, idHash, now, InteractionOutcomeApproved); !errors.Is(err, ErrExpired) {
+			t.Fatalf("expired consume got %v, want %v", err, ErrExpired)
+		}
+		if _, err := st.ConsumeInteraction(ctx, idHash, now.Add(-time.Second), InteractionOutcome("unknown")); !errors.Is(err, ErrInvalidInteractionOutcome) {
+			t.Fatalf("invalid outcome got %v, want %v", err, ErrInvalidInteractionOutcome)
+		}
+	})
+
+	t.Run("parallel authorization interaction consumption has one winner", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Now().UTC()
+		idHash := []byte("interaction-race")
+		if err := st.CreateInteraction(ctx, InteractionRecord{IDHash: idHash, CreatedAt: now, ExpiresAt: now.Add(time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		success := 0
+		for range 16 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if _, err := st.ConsumeInteraction(ctx, idHash, now, InteractionOutcomeApproved); err == nil {
+					mu.Lock()
+					success++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		if success != 1 {
+			t.Fatalf("success count = %d, want 1", success)
+		}
+	})
+
 	t.Run("refresh token rotation and reuse detection", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)

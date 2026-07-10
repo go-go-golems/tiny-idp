@@ -172,6 +172,57 @@ type Session struct {
 	RevokedAt  *time.Time
 }
 
+// InteractionRequiredAction is a bit set of native actions that must be
+// satisfied before an authorization interaction may be consumed.
+type InteractionRequiredAction uint32
+
+const (
+	InteractionRequireLogin InteractionRequiredAction = 1 << iota
+	InteractionRequireFreshLogin
+	InteractionRequireConsent
+	InteractionRequireStepUp
+)
+
+func (a InteractionRequiredAction) Has(want InteractionRequiredAction) bool { return a&want != 0 }
+
+// InteractionOutcome is the terminal reason recorded by an atomic consume.
+// Pending is represented by an empty outcome and a nil ConsumedAt.
+type InteractionOutcome string
+
+const (
+	InteractionOutcomeApproved InteractionOutcome = "approved"
+	InteractionOutcomeDenied   InteractionOutcome = "denied"
+	InteractionOutcomeRejected InteractionOutcome = "rejected"
+)
+
+func (o InteractionOutcome) Valid() bool {
+	switch o {
+	case InteractionOutcomeApproved, InteractionOutcomeDenied, InteractionOutcomeRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// InteractionRecord is the server-owned continuation for one validated
+// authorization request. CanonicalRequest contains validated public protocol
+// parameters, never credentials or raw browser/session/interaction handles.
+type InteractionRecord struct {
+	IDHash             []byte
+	CanonicalRequest   map[string][]string
+	RequestDigest      []byte
+	ClientID           string
+	RedirectURI        string
+	RequiredActions    InteractionRequiredAction
+	BrowserBindingHash []byte
+	SessionIDHash      []byte
+	GenerationHash     []byte
+	CreatedAt          time.Time
+	ExpiresAt          time.Time
+	ConsumedAt         *time.Time
+	Outcome            InteractionOutcome
+}
+
 // SigningKey is a persisted signing key plus lifecycle metadata.
 type SigningKey struct {
 	ID            string

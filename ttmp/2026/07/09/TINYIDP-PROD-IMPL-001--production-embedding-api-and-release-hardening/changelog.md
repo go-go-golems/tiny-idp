@@ -152,3 +152,7 @@ Step 19: expanded authorization hardening into 31 detailed tasks with accepted s
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/reference/05-authorization-interaction-hardening-implementation-ledger.md — Task-by-task implementation ledger
+
+## 2026-07-10
+
+Added red authorization-interaction regressions and implemented server-owned interaction persistence with atomic one-time consume in memory and SQLite.
