@@ -4,7 +4,7 @@ set -euo pipefail
 out="${1:?usage: 03-collect-licenses.sh OUTPUT_DIRECTORY}"
 mkdir -p "$out"
 
-go list -m -f '{{.Path}}\t{{.Version}}\t{{.Dir}}' all | \
+go list -m -f '{{printf "%s\t%s\t%s" .Path .Version .Dir}}' all | \
 while IFS=$'\t' read -r module version directory; do
   test -n "$directory" || continue
   safe="$(printf '%s@%s' "$module" "$version" | tr '/:' '__')"
