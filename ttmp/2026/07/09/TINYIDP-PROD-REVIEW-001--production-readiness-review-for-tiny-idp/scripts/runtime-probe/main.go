@@ -142,7 +142,11 @@ func run(ctx context.Context, cfg config) error {
 	}
 	defer store.Close()
 
-	auditSink := idp.NewMemorySink()
+	auditSink, err := idp.NewFileAuditSink(filepath.Join(dir, "audit", "events.jsonl"))
+	if err != nil {
+		return fmt.Errorf("create audit sink: %w", err)
+	}
+	defer auditSink.Close()
 	adminService, err := admin.NewService(store, admin.Options{Audit: auditSink})
 	if err != nil {
 		return fmt.Errorf("create admin service: %w", err)
@@ -203,13 +207,14 @@ func run(ctx context.Context, cfg config) error {
 	client.CloseIdleConnections()
 	time.Sleep(25 * time.Millisecond)
 	emitSnapshot(emit, "after", store.SQLDB())
-	if err := emit.emit(event{Type: "summary", At: time.Now().UTC(), AuditCount: len(auditSink.Events())}); err != nil {
+	auditCount := int(auditSink.AuditHealth(ctx).Delivered)
+	if err := emit.emit(event{Type: "summary", At: time.Now().UTC(), AuditCount: auditCount}); err != nil {
 		return err
 	}
 	if err := writeHeapProfile(cfg.heapProfile); err != nil {
 		return err
 	}
-	log.Info().Int("requests", cfg.requests).Int("concurrency", cfg.concurrency).Int("audit_events", len(auditSink.Events())).Msg("runtime probe complete")
+	log.Info().Int("requests", cfg.requests).Int("concurrency", cfg.concurrency).Int("audit_events", auditCount).Msg("runtime probe complete")
 	return nil
 }
 

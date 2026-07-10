@@ -59,7 +59,26 @@ func (s *sqlFositeStore) toFositeClient(ctx context.Context, c idpstore.Client) 
 			fc.Secret = append([]byte(nil), c.SecretHash...)
 		}
 	}
-	return fc, nil
+	return clientWithLifespans(fc, c), nil
+}
+
+func clientWithLifespans(fc *fosite.DefaultClient, c idpstore.Client) fosite.Client {
+	config := &fosite.ClientLifespanConfig{
+		AuthorizationCodeGrantAccessTokenLifespan:  durationPointer(c.AccessTokenTTL),
+		AuthorizationCodeGrantIDTokenLifespan:      durationPointer(c.IDTokenTTL),
+		AuthorizationCodeGrantRefreshTokenLifespan: durationPointer(c.RefreshTokenTTL),
+		RefreshTokenGrantAccessTokenLifespan:       durationPointer(c.AccessTokenTTL),
+		RefreshTokenGrantIDTokenLifespan:           durationPointer(c.IDTokenTTL),
+		RefreshTokenGrantRefreshTokenLifespan:      durationPointer(c.RefreshTokenTTL),
+	}
+	return &fosite.DefaultClientWithCustomTokenLifespans{DefaultClient: fc, TokenLifespans: config}
+}
+
+func durationPointer(value time.Duration) *time.Duration {
+	if value <= 0 {
+		return nil
+	}
+	return &value
 }
 
 type persistedRequest struct {
@@ -75,14 +94,17 @@ type persistedRequest struct {
 }
 
 type persistedClient struct {
-	ID            string   `json:"id"`
-	Secret        []byte   `json:"secret,omitempty"`
-	RedirectURIs  []string `json:"redirect_uris"`
-	GrantTypes    []string `json:"grant_types"`
-	ResponseTypes []string `json:"response_types"`
-	Scopes        []string `json:"scopes"`
-	Audience      []string `json:"audience"`
-	Public        bool     `json:"public"`
+	ID              string        `json:"id"`
+	Secret          []byte        `json:"secret,omitempty"`
+	RedirectURIs    []string      `json:"redirect_uris"`
+	GrantTypes      []string      `json:"grant_types"`
+	ResponseTypes   []string      `json:"response_types"`
+	Scopes          []string      `json:"scopes"`
+	Audience        []string      `json:"audience"`
+	Public          bool          `json:"public"`
+	AccessTokenTTL  time.Duration `json:"access_token_ttl,omitempty"`
+	IDTokenTTL      time.Duration `json:"id_token_ttl,omitempty"`
+	RefreshTokenTTL time.Duration `json:"refresh_token_ttl,omitempty"`
 }
 
 type persistedSession struct {
@@ -99,7 +121,7 @@ func persistRequester(req fosite.Requester) ([]byte, error) {
 	}
 	pc := persistedClient{}
 	if c := req.GetClient(); c != nil {
-		pc = persistedClient{ID: c.GetID(), Secret: append([]byte(nil), c.GetHashedSecret()...), RedirectURIs: append([]string(nil), c.GetRedirectURIs()...), GrantTypes: append([]string(nil), c.GetGrantTypes()...), ResponseTypes: append([]string(nil), c.GetResponseTypes()...), Scopes: append([]string(nil), c.GetScopes()...), Audience: append([]string(nil), c.GetAudience()...), Public: c.IsPublic()}
+		pc = persistedClient{ID: c.GetID(), Secret: append([]byte(nil), c.GetHashedSecret()...), RedirectURIs: append([]string(nil), c.GetRedirectURIs()...), GrantTypes: append([]string(nil), c.GetGrantTypes()...), ResponseTypes: append([]string(nil), c.GetResponseTypes()...), Scopes: append([]string(nil), c.GetScopes()...), Audience: append([]string(nil), c.GetAudience()...), Public: c.IsPublic(), AccessTokenTTL: fosite.GetEffectiveLifespan(c, fosite.GrantTypeAuthorizationCode, fosite.AccessToken, 0), IDTokenTTL: fosite.GetEffectiveLifespan(c, fosite.GrantTypeAuthorizationCode, fosite.IDToken, 0), RefreshTokenTTL: fosite.GetEffectiveLifespan(c, fosite.GrantTypeAuthorizationCode, fosite.RefreshToken, 0)}
 	}
 	ps := persistedSession{}
 	if sess := req.GetSession(); sess != nil {
@@ -131,6 +153,7 @@ func restoreRequester(b []byte) (fosite.Requester, error) {
 		return nil, err
 	}
 	fc := &fosite.DefaultClient{ID: pr.Client.ID, Secret: pr.Client.Secret, RedirectURIs: pr.Client.RedirectURIs, GrantTypes: pr.Client.GrantTypes, ResponseTypes: pr.Client.ResponseTypes, Scopes: pr.Client.Scopes, Audience: pr.Client.Audience, Public: pr.Client.Public}
+	client := clientWithLifespans(fc, idpstore.Client{AccessTokenTTL: pr.Client.AccessTokenTTL, IDTokenTTL: pr.Client.IDTokenTTL, RefreshTokenTTL: pr.Client.RefreshTokenTTL})
 	sess := &openid.DefaultSession{Claims: pr.Session.Claims, Headers: pr.Session.Headers, ExpiresAt: pr.Session.ExpiresAt, Username: pr.Session.Username, Subject: pr.Session.Subject}
 	if sess.Claims == nil {
 		sess.Claims = &fositejwt.IDTokenClaims{Subject: pr.Session.Subject, Extra: map[string]interface{}{}}
@@ -141,7 +164,7 @@ func restoreRequester(b []byte) (fosite.Requester, error) {
 	if sess.ExpiresAt == nil {
 		sess.ExpiresAt = map[fosite.TokenType]time.Time{}
 	}
-	return &fosite.Request{ID: pr.ID, RequestedAt: pr.RequestedAt, Client: fc, RequestedScope: fosite.Arguments(pr.RequestedScope), GrantedScope: fosite.Arguments(pr.GrantedScope), Form: pr.Form, Session: sess, RequestedAudience: fosite.Arguments(pr.RequestedAudience), GrantedAudience: fosite.Arguments(pr.GrantedAudience)}, nil
+	return &fosite.Request{ID: pr.ID, RequestedAt: pr.RequestedAt, Client: client, RequestedScope: fosite.Arguments(pr.RequestedScope), GrantedScope: fosite.Arguments(pr.GrantedScope), Form: pr.Form, Session: sess, RequestedAudience: fosite.Arguments(pr.RequestedAudience), GrantedAudience: fosite.Arguments(pr.GrantedAudience)}, nil
 }
 
 func cloneValues(v url.Values) url.Values {

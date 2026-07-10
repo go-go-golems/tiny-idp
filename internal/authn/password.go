@@ -43,14 +43,15 @@ type Options struct {
 }
 
 type PasswordService struct {
-	store      idpstore.Store
-	hasher     passwordhash.Hasher
-	policy     PasswordPolicy
-	clock      func() time.Time
-	audit      idp.Sink
-	acceptance idp.PasswordAcceptancePolicy
-	work       chan struct{}
-	metrics    passwordWorkMetrics
+	store         idpstore.Store
+	hasher        passwordhash.Hasher
+	policy        PasswordPolicy
+	clock         func() time.Time
+	audit         idp.Sink
+	acceptance    idp.PasswordAcceptancePolicy
+	work          chan struct{}
+	metrics       passwordWorkMetrics
+	auditFailures atomic.Uint64
 }
 
 type passwordWorkMetrics struct {
@@ -65,6 +66,7 @@ type passwordWorkMetrics struct {
 
 var _ idp.PasswordAuthenticator = (*PasswordService)(nil)
 
+// tinyidp:development-default -- production construction validates the injected sink.
 func NewPasswordService(store idpstore.Store, opts Options) (*PasswordService, error) {
 	if store == nil {
 		return nil, errors.New("store is required")
@@ -326,7 +328,9 @@ func (s *PasswordService) emit(ctx context.Context, name string, meta idp.LoginM
 	if reason != "" {
 		result = "rejected"
 	}
-	_ = s.audit.Emit(ctx, idp.Event{Time: s.clock().UTC(), Name: name, ClientID: meta.ClientID, Subject: subject, Result: result, Reason: reason, Fields: map[string]string{"remote_addr": meta.RemoteAddr}})
+	if err := s.audit.Emit(ctx, idp.Event{Time: s.clock().UTC(), Name: name, ClientID: meta.ClientID, Subject: subject, Result: result, Reason: reason, Fields: map[string]string{"remote_addr": meta.RemoteAddr}}); err != nil {
+		s.auditFailures.Add(1)
+	}
 }
 
 func AuditReason(err error) string {

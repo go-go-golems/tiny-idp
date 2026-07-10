@@ -12,13 +12,16 @@ import (
 const sessionCookieName = "tinyidp_session"
 
 func (p *Provider) createBrowserSession(w http.ResponseWriter, r *http.Request, u idpstore.User, authTime time.Time) error {
-	handle := randomB64(32)
+	handle, err := randomB64(32)
+	if err != nil {
+		return err
+	}
 	hash := idpstore.HashSecret(p.csrfKey, handle)
 	now := time.Now().UTC()
 	if err := p.store.CreateSession(r.Context(), idpstore.Session{IDHash: hash, UserID: u.ID, AuthTime: authTime, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(p.sessionTTL)}); err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: handle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(p.sessionTTL.Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: handle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.sessionTTL.Seconds())})
 	return nil
 }
 

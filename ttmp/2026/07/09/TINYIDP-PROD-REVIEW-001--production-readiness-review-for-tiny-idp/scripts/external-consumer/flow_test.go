@@ -41,7 +41,8 @@ func (a fixedAuthenticator) AuthenticatePassword(_ context.Context, login, passw
 
 func TestExternalProductionAuthorizationCodePKCE(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "external.db")))
+	dir := t.TempDir()
+	store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(dir, "external.db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +60,11 @@ func TestExternalProductionAuthorizationCodePKCE(t *testing.T) {
 	if err := store.CreateSigningKey(ctx, key); err != nil {
 		t.Fatal(err)
 	}
+	audit, err := idp.NewFileAuditSink(filepath.Join(dir, "audit", "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = audit.Close() }()
 
 	provider, err := embeddedidp.New(ctx, embeddedidp.Options{
 		Issuer:        "https://issuer.example.test",
@@ -66,7 +72,7 @@ func TestExternalProductionAuthorizationCodePKCE(t *testing.T) {
 		Store:         store,
 		Cookie:        embeddedidp.CookieConfig{Secure: true},
 		Token:         embeddedidp.TokenConfig{SecretKey: []byte("external-flow-secret-key-32-bytes-minimum")},
-		Audit:         idp.NewMemorySink(),
+		Audit:         audit,
 		RateLimiter:   idp.NewFixedWindowRateLimiter(10_000, time.Minute),
 		ClientAddress: idp.DirectClientAddressResolver{},
 		Authenticator: fixedAuthenticator{user: user},

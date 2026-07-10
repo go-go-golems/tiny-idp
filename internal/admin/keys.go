@@ -34,8 +34,8 @@ func (s *Service) GenerateSigningKey(ctx context.Context, kid string, active boo
 	} else if err := s.Store.CreateSigningKey(ctx, key); err != nil {
 		return idpstore.SigningKey{}, err
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: key.CreatedAt, Name: "admin.key.generated", Result: "accepted", Fields: map[string]string{"kid": key.ID}})
-	return key, nil
+	err = s.auditCommitted(ctx, idp.Event{Time: key.CreatedAt, Name: "admin.key.generated", Result: "accepted", Fields: map[string]string{"kid": key.ID}})
+	return key, err
 }
 
 func (s *Service) RotateSigningKey(ctx context.Context, kid string) (KeyRotationResult, error) {
@@ -43,8 +43,8 @@ func (s *Service) RotateSigningKey(ctx context.Context, kid string) (KeyRotation
 	if err != nil {
 		return KeyRotationResult{}, err
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: s.Clock().UTC(), Name: "admin.key.rotated", Result: "accepted", Fields: map[string]string{"kid": key.ID}})
-	return KeyRotationResult{Active: key, Retired: retired}, nil
+	err = s.auditCommitted(ctx, idp.Event{Time: s.Clock().UTC(), Name: "admin.key.rotated", Result: "accepted", Fields: map[string]string{"kid": key.ID}})
+	return KeyRotationResult{Active: key, Retired: retired}, err
 }
 
 func (s *Service) ListSigningKeys(ctx context.Context) ([]idpstore.SigningKey, error) {
@@ -59,8 +59,7 @@ func (s *Service) RetireSigningKey(ctx context.Context, kid string) error {
 	if err := s.Store.RetireSigningKey(ctx, kid); err != nil {
 		return err
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: s.Clock().UTC(), Name: "admin.key.retired", Result: "accepted", Fields: map[string]string{"kid": kid}})
-	return nil
+	return s.auditCommitted(ctx, idp.Event{Time: s.Clock().UTC(), Name: "admin.key.retired", Result: "accepted", Fields: map[string]string{"kid": kid}})
 }
 
 func RedactSigningKey(key idpstore.SigningKey) idpstore.SigningKey {

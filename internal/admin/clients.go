@@ -72,12 +72,12 @@ func (s *Service) CreateClient(ctx context.Context, req CreateClientRequest) (id
 	if err := s.Store.PutClient(ctx, c); err != nil {
 		return idpstore.Client{}, SecretResult{}, err
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: now, Name: "admin.client.created", ClientID: c.ID, Result: "accepted"})
 	result := SecretResult{Generated: generated}
 	if generated {
 		result.Secret = secret
 	}
-	return c, result, nil
+	err := s.auditCommitted(ctx, idp.Event{Time: now, Name: "admin.client.created", ClientID: c.ID, Result: "accepted"})
+	return c, result, err
 }
 
 func (s *Service) ListClients(ctx context.Context) ([]idpstore.Client, error) {
@@ -102,8 +102,8 @@ func (s *Service) SetClientDisabled(ctx context.Context, id string, disabled boo
 	if disabled {
 		name = "admin.client.disabled"
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: c.UpdatedAt, Name: name, ClientID: c.ID, Result: "accepted"})
-	return c, nil
+	err = s.auditCommitted(ctx, idp.Event{Time: c.UpdatedAt, Name: name, ClientID: c.ID, Result: "accepted"})
+	return c, err
 }
 
 func (s *Service) RotateClientSecret(ctx context.Context, id string) (idpstore.Client, SecretResult, error) {
@@ -130,8 +130,8 @@ func (s *Service) RotateClientSecret(ctx context.Context, id string) (idpstore.C
 	if err := s.Store.PutClient(ctx, c); err != nil {
 		return idpstore.Client{}, SecretResult{}, err
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: c.UpdatedAt, Name: "admin.client.secret_rotated", ClientID: c.ID, Result: "accepted"})
-	return c, SecretResult{Generated: true, Secret: secret}, nil
+	err = s.auditCommitted(ctx, idp.Event{Time: c.UpdatedAt, Name: "admin.client.secret_rotated", ClientID: c.ID, Result: "accepted"})
+	return c, SecretResult{Generated: true, Secret: secret}, err
 }
 
 func randomSecret(n int) (string, error) {

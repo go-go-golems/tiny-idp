@@ -34,6 +34,7 @@ type Store struct {
 }
 
 var _ idpstore.Store = (*Store)(nil)
+var _ idpstore.MaintenanceStore = (*Store)(nil)
 
 func New() *Store {
 	return &Store{

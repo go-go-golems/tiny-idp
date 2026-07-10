@@ -28,6 +28,18 @@ func (s *Service) Doctor(ctx context.Context) DoctorReport {
 		}
 		report.Checks = append(report.Checks, Check{Name: name, Status: status, Message: message})
 	}
+	if schema, ok := s.Store.(idpstore.SchemaReporter); ok {
+		version, err := schema.SchemaVersion(ctx)
+		if err != nil {
+			add("schema.version", "error", err.Error())
+		} else if version != schema.SupportedSchemaVersion() {
+			add("schema.version", "error", fmt.Sprintf("database=%d supported=%d", version, schema.SupportedSchemaVersion()))
+		} else {
+			add("schema.version", "ok", fmt.Sprintf("version %d", version))
+		}
+	} else {
+		add("schema.version", "error", "schema reporting unavailable")
+	}
 	clients, err := s.Store.ListClients(ctx)
 	if err != nil {
 		add("clients.load", "error", err.Error())

@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ory/fosite"
@@ -57,6 +58,7 @@ type Options struct {
 	// production embedded API should prefer BCrypt hashes in idpstore.Client.SecretHash.
 	ClientSecrets  map[string]string
 	CookieSecure   bool
+	CookieSameSite http.SameSite
 	Audit          idp.Sink
 	Consent        idp.ConsentPolicy
 	RateLimiter    idp.RateLimiter
@@ -67,20 +69,22 @@ type Options struct {
 }
 
 type Provider struct {
-	issuer        oidcmeta.Issuer
-	store         idpstore.Store
-	fositeStore   *fositememory.MemoryStore
-	oauth2        fosite.OAuth2Provider
-	config        *fosite.Config
-	mode          idpstore.Mode
-	csrfKey       []byte
-	cookieSecure  bool
-	audit         idp.Sink
-	consent       idp.ConsentPolicy
-	rateLimiter   idp.RateLimiter
-	clientAddress idp.ClientAddressResolver
-	authenticator idp.PasswordAuthenticator
-	sessionTTL    time.Duration
+	issuer         oidcmeta.Issuer
+	store          idpstore.Store
+	fositeStore    *fositememory.MemoryStore
+	oauth2         fosite.OAuth2Provider
+	config         *fosite.Config
+	mode           idpstore.Mode
+	csrfKey        []byte
+	cookieSecure   bool
+	cookieSameSite http.SameSite
+	audit          idp.Sink
+	consent        idp.ConsentPolicy
+	rateLimiter    idp.RateLimiter
+	clientAddress  idp.ClientAddressResolver
+	authenticator  idp.PasswordAuthenticator
+	auditFailures  atomic.Uint64
+	sessionTTL     time.Duration
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -91,6 +95,15 @@ func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
 	return reporter.PasswordWorkStats(), true
 }
 
+func (p *Provider) AuditDeliveryFailures() uint64 { return p.auditFailures.Load() }
+
+func (p *Provider) recordAudit(ctx context.Context, event idp.Event) {
+	if err := p.audit.Emit(ctx, event); err != nil {
+		p.auditFailures.Add(1)
+	}
+}
+
+// tinyidp:development-default -- production mode rejects missing security controls upstream.
 func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("context is required")
@@ -160,6 +173,9 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if opts.SessionTTL == 0 {
 		opts.SessionTTL = 24 * time.Hour
 	}
+	if opts.CookieSameSite == 0 {
+		opts.CookieSameSite = http.SameSiteLaxMode
+	}
 
 	sendDebug := opts.Mode != idpstore.ProductionMode
 	cfg := &fosite.Config{
@@ -185,7 +201,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, audit: opts.Audit, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, audit: opts.Audit, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -246,7 +262,7 @@ func buildFositeStore(ctx context.Context, st idpstore.Store, cfg *fosite.Config
 				fc.Secret = append([]byte(nil), c.SecretHash...)
 			}
 		}
-		fs.Clients[c.ID] = fc
+		fs.Clients[c.ID] = clientWithLifespans(fc, c)
 	}
 	return &composedFositeStore{store: fs, memoryStore: fs}, nil
 }
@@ -266,10 +282,7 @@ func (p *Provider) activePrivateKey(ctx context.Context) (interface{}, error) {
 func (p *Provider) Handler() http.Handler {
 	mux := http.NewServeMux()
 	prefix := strings.TrimRight(p.issuer.URL.EscapedPath(), "/")
-	p.registerAt(mux, "")
-	if prefix != "" && prefix != "/" {
-		p.registerAt(mux, prefix)
-	}
+	p.registerAt(mux, prefix)
 	return p.securityHeaders(mux)
 }
 
@@ -375,12 +388,12 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !p.rateLimiter.Allow(r.Context(), "authorize:"+clientAddress) {
-			_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.rate_limited", Result: "rejected", Reason: "rate_limited"})
+			p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.rate_limited", Result: "rejected", Reason: "rate_limited"})
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return
 		}
 		if !p.validateCSRF(r) {
-			_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.csrf_rejected", Result: "rejected", Reason: "invalid_csrf"})
+			p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.csrf_rejected", Result: "rejected", Reason: "invalid_csrf"})
 			http.Error(w, "invalid csrf token", http.StatusBadRequest)
 			return
 		}
@@ -395,18 +408,18 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
 		if login != "" {
 			if !p.allowLogin(r.Context(), ar.GetClient().GetID(), clientAddress, login) {
-				_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.rate_limited", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "rate_limited"})
+				p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.rate_limited", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "rate_limited"})
 				http.Error(w, "rate limited", http.StatusTooManyRequests)
 				return
 			}
 			result, err := p.authenticator.AuthenticatePassword(r.Context(), login, r.PostForm.Get("password"), idp.LoginMetadata{RemoteAddr: clientAddress, UserAgent: r.UserAgent(), ClientID: ar.GetClient().GetID()})
 			if err != nil {
 				if errors.Is(err, authn.ErrAuthenticationUnavailable) || errors.Is(err, authn.ErrPasswordWorkRejected) {
-					_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.unavailable", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "authentication_unavailable"})
+					p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.unavailable", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "authentication_unavailable"})
 					http.Error(w, "authentication temporarily unavailable", http.StatusServiceUnavailable)
 					return
 				}
-				_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: authn.AuditReason(err)})
+				p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: authn.AuditReason(err)})
 				http.Error(w, "invalid login or password", http.StatusUnauthorized)
 				return
 			}
@@ -416,9 +429,9 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "create session failed", http.StatusInternalServerError)
 				return
 			}
-			_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.success", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
+			p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.success", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
 		} else if !hasSession {
-			_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "missing_login"})
+			p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "missing_login"})
 			http.Error(w, "login is required", http.StatusBadRequest)
 			return
 		}
@@ -449,12 +462,12 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	if r.Method != http.MethodPost {
-		_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", Result: "rejected", Reason: "method_not_allowed"})
+		p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", Result: "rejected", Reason: "method_not_allowed"})
 		tokenError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", Result: "rejected", Reason: "invalid_form"})
+		p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", Result: "rejected", Reason: "invalid_form"})
 		tokenError(w, http.StatusBadRequest, "invalid_request", "invalid form")
 		return
 	}
@@ -464,24 +477,24 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !p.rateLimiter.Allow(r.Context(), "token:"+r.Form.Get("client_id")+":"+clientAddress) {
-		_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: "rate_limited"})
+		p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: "rate_limited"})
 		tokenError(w, http.StatusTooManyRequests, "temporarily_unavailable", "rate limited")
 		return
 	}
 	accessRequest, err := p.oauth2.NewAccessRequest(fosite.NewContext(), r, openid.NewDefaultSession())
 	if err != nil {
-		_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: auditReason(err)})
+		p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: r.Form.Get("client_id"), Result: "rejected", Reason: auditReason(err)})
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
 	p.grantRequestedAccessScopes(accessRequest)
 	response, err := p.oauth2.NewAccessResponse(fosite.NewContext(), accessRequest)
 	if err != nil {
-		_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "rejected", Reason: auditReason(err)})
+		p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.rejected", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "rejected", Reason: auditReason(err)})
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
-	_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.accepted", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "accepted", Fields: map[string]string{"grant_type": strings.Join(accessRequest.GetGrantTypes(), " ")}})
+	p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "token.request.accepted", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "accepted", Fields: map[string]string{"grant_type": strings.Join(accessRequest.GetGrantTypes(), " ")}})
 	p.oauth2.WriteAccessResponse(r.Context(), w, accessRequest, response)
 }
 
@@ -662,10 +675,12 @@ func htmlEscape(s string) string {
 	return r.Replace(s)
 }
 
-func randomB64(n int) string {
+func randomB64(n int) (string, error) {
 	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("read cryptographic randomness: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -689,11 +704,15 @@ func (p *Provider) emit(ctx context.Context, e idp.Event, ar fosite.AuthorizeReq
 			e.RequestID = ar.GetID()
 		}
 	}
-	_ = p.audit.Emit(ctx, e)
+	p.recordAudit(ctx, e)
 }
 
 func (p *Provider) renderInteraction(w http.ResponseWriter, ar fosite.AuthorizeRequester, needLogin, includeConsent bool) {
-	csrf := p.issueCSRF(w)
+	csrf, err := p.issueCSRF(w)
+	if err != nil {
+		http.Error(w, "cryptographic randomness unavailable", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	loginFields := ""
@@ -722,7 +741,7 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 		return
 	}
 	if requireConsent && !consentApproved {
-		_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "consent.required", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "not_approved"})
+		p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "consent.required", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "not_approved"})
 		http.Error(w, "consent required", http.StatusForbidden)
 		return
 	}
@@ -731,7 +750,7 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 			http.Error(w, "record consent failed", http.StatusInternalServerError)
 			return
 		}
-		_ = p.audit.Emit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "consent.granted", ClientID: client.ID, Subject: u.Sub, Result: "accepted"})
+		p.recordAudit(r.Context(), idp.Event{Time: time.Now().UTC(), Name: "consent.granted", ClientID: client.ID, Subject: u.Sub, Result: "accepted"})
 	}
 	p.grantRequestedScopes(ar)
 	p.grantRequestedAudience(ar)

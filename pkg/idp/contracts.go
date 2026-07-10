@@ -181,3 +181,12 @@ type ReadinessReport struct {
 	Ready  bool
 	Checks []ReadinessCheck
 }
+
+// MaintenanceStatus is the host-visible lifecycle state of retention work.
+type MaintenanceStatus struct {
+	LastStartedAt  time.Time
+	LastFinishedAt time.Time
+	LastSuccessAt  time.Time
+	LastError      string
+	LastReport     idpstore.MaintenanceReport
+}

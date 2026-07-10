@@ -42,6 +42,7 @@ type sqlRunner interface {
 }
 
 var _ idpstore.Store = (*Store)(nil)
+var _ idpstore.MaintenanceStore = (*Store)(nil)
 
 // Config defines the SQLite file and durability policy. The supported
 // production envelope uses exactly one open connection on a local filesystem.
@@ -175,6 +176,14 @@ func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
 	return int(version.Int64), nil
 }
 
+func (s *Store) SupportedSchemaVersion() int {
+	names, err := MigrationNames()
+	if err != nil {
+		return 0
+	}
+	return len(names)
+}
+
 // SQLDB exposes the underlying database to adapter packages that need to store
 // protocol-specific state while reusing the same SQLite file and transaction
 // durability. Callers must not close the returned handle.
@@ -221,6 +230,13 @@ func (s *Store) Migrate(ctx context.Context) error {
 	names, err := MigrationNames()
 	if err != nil {
 		return err
+	}
+	var current sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&current); err != nil {
+		return fmt.Errorf("read current schema version: %w", err)
+	}
+	if current.Valid && current.Int64 > int64(len(names)) {
+		return fmt.Errorf("database schema version %d is newer than supported version %d", current.Int64, len(names))
 	}
 	for _, name := range names {
 		version, err := strconv.Atoi(strings.SplitN(name, "_", 2)[0])

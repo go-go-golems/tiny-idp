@@ -167,4 +167,29 @@ type PersistentReporter interface {
 // SchemaReporter exposes the durable schema version for production preflight.
 type SchemaReporter interface {
 	SchemaVersion(ctx context.Context) (int, error)
+	SupportedSchemaVersion() int
+}
+
+// MaintenancePolicy specifies post-expiry retention and conservative protocol
+// and signing-key overlap windows. ProtocolStateRetention is measured from
+// creation because Fosite persists heterogeneous request/session expiries.
+type MaintenancePolicy struct {
+	RetainExpiredFor       time.Duration
+	ProtocolStateRetention time.Duration
+	SigningKeyRetention    time.Duration
+}
+
+// MaintenanceReport counts records removed by one atomic maintenance run.
+type MaintenanceReport struct {
+	StartedAt          time.Time `json:"started_at"`
+	FinishedAt         time.Time `json:"finished_at"`
+	DomainRecords      int64     `json:"domain_records"`
+	ProtocolRecords    int64     `json:"protocol_records"`
+	RetiredSigningKeys int64     `json:"retired_signing_keys"`
+}
+
+// MaintenanceStore deletes expired/revoked state according to a retention
+// policy. Production stores must implement this contract.
+type MaintenanceStore interface {
+	Maintain(ctx context.Context, now time.Time, policy MaintenancePolicy) (MaintenanceReport, error)
 }

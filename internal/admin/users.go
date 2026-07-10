@@ -31,6 +31,7 @@ type Options struct {
 	Audit          idp.Sink
 }
 
+// tinyidp:development-default -- production callers inject the provider audit sink.
 func NewService(store idpstore.Store, opts Options) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("store is required")
@@ -81,7 +82,11 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (idpsto
 	now := s.Clock().UTC()
 	id := strings.TrimSpace(req.ID)
 	if id == "" {
-		id = newID("user")
+		generatedID, err := newID("user")
+		if err != nil {
+			return idpstore.User{}, fmt.Errorf("generate user id: %w", err)
+		}
+		id = generatedID
 	}
 	if _, err := s.Store.GetUser(ctx, id); err == nil {
 		return idpstore.User{}, idpstore.ErrDuplicate
@@ -103,8 +108,8 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (idpsto
 	if err := s.Store.CreateUserWithCredential(ctx, login, u, cred); err != nil {
 		return idpstore.User{}, err
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: now, Name: "admin.user.created", Subject: u.Sub, Result: "accepted"})
-	return u, nil
+	err = s.auditCommitted(ctx, idp.Event{Time: now, Name: "admin.user.created", Subject: u.Sub, Result: "accepted"})
+	return u, err
 }
 
 type SetPasswordRequest struct {
@@ -133,8 +138,7 @@ func (s *Service) SetPassword(ctx context.Context, req SetPasswordRequest) error
 	if err := s.Store.ReplacePasswordAndSecurityState(ctx, cred, state); err != nil {
 		return err
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: now, Name: "admin.user.password_changed", Subject: u.Sub, Result: "accepted"})
-	return nil
+	return s.auditCommitted(ctx, idp.Event{Time: now, Name: "admin.user.password_changed", Subject: u.Sub, Result: "accepted"})
 }
 
 func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bool) (idpstore.User, error) {
@@ -155,18 +159,27 @@ func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bo
 	if disabled {
 		name = "admin.user.disabled"
 	}
-	_ = s.Audit.Emit(ctx, idp.Event{Time: u.UpdatedAt, Name: name, Subject: u.Sub, Result: "accepted"})
-	return u, nil
+	err = s.auditCommitted(ctx, idp.Event{Time: u.UpdatedAt, Name: name, Subject: u.Sub, Result: "accepted"})
+	return u, err
 }
 
 func (s *Service) GetUserByLogin(ctx context.Context, login string) (idpstore.User, error) {
 	return s.Store.GetUserByLogin(ctx, user.Normalize(login))
 }
 
-func newID(prefix string) string {
+func (s *Service) auditCommitted(ctx context.Context, event idp.Event) error {
+	if err := s.Audit.Emit(ctx, event); err != nil {
+		return fmt.Errorf("%w: %v", idp.ErrAuditDelivery, err)
+	}
+	return nil
+}
+
+func newID(prefix string) (string, error) {
 	b := make([]byte, 18)
-	_, _ = rand.Read(b)
-	return prefix + "-" + base64.RawURLEncoding.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return prefix + "-" + base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func cleanList(values []string) []string {

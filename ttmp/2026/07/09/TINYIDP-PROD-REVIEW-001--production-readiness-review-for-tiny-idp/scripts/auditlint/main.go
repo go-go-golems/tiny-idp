@@ -95,7 +95,9 @@ func collectInternalPaths(t types.Type, seen map[types.Type]bool, out map[string
 		collectInternalPaths(value.Elem(), seen, out)
 	case *types.Struct:
 		for i := 0; i < value.NumFields(); i++ {
-			collectInternalPaths(value.Field(i).Type(), seen, out)
+			if value.Field(i).Exported() {
+				collectInternalPaths(value.Field(i).Type(), seen, out)
+			}
 		}
 	case *types.Signature:
 		collectTupleInternalPaths(value.Params(), seen, out)
@@ -162,25 +164,39 @@ var securityDefaultAnalyzer = &analysis.Analyzer{
 	Doc:      "reports silent no-op audit and allow-all rate-limit defaults",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run: func(pass *analysis.Pass) (any, error) {
-		ins := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-		ins.Preorder([]ast.Node{(*ast.CompositeLit)(nil)}, func(node ast.Node) {
-			lit := node.(*ast.CompositeLit)
-			t := pass.TypesInfo.TypeOf(lit)
-			named, _ := types.Unalias(t).(*types.Named)
-			if named == nil || named.Obj() == nil {
-				return
+		for _, file := range pass.Files {
+			if strings.HasSuffix(pass.Fset.Position(file.Pos()).Filename, "_test.go") {
+				continue
 			}
-			path := ""
-			if named.Obj().Pkg() != nil {
-				path = named.Obj().Pkg().Path()
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Body == nil || hasDirective(fn.Doc, "tinyidp:development-default") {
+					continue
+				}
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					lit, ok := node.(*ast.CompositeLit)
+					if !ok {
+						return true
+					}
+					t := pass.TypesInfo.TypeOf(lit)
+					named, _ := types.Unalias(t).(*types.Named)
+					if named == nil || named.Obj() == nil {
+						return true
+					}
+					path := ""
+					if named.Obj().Pkg() != nil {
+						path = named.Obj().Pkg().Path()
+					}
+					switch {
+					case named.Obj().Name() == "NoopSink" && strings.HasSuffix(path, "/pkg/idp"):
+						pass.Reportf(lit.Pos(), "NoopSink silently discards security audit events; production construction should require an explicit durable sink or an explicit tinyidp:development-default directive")
+					case named.Obj().Name() == "AllowAllRateLimiter" && strings.HasSuffix(path, "/internal/fositeadapter"):
+						pass.Reportf(lit.Pos(), "AllowAllRateLimiter silently disables request throttling; production construction should require an explicit limiter or an explicit tinyidp:development-default directive")
+					}
+					return true
+				})
 			}
-			switch {
-			case named.Obj().Name() == "NoopSink" && strings.HasSuffix(path, "/pkg/idp"):
-				pass.Reportf(lit.Pos(), "NoopSink silently discards security audit events; production construction should require an explicit durable sink")
-			case named.Obj().Name() == "AllowAllRateLimiter" && strings.HasSuffix(path, "/internal/fositeadapter"):
-				pass.Reportf(lit.Pos(), "AllowAllRateLimiter silently disables request throttling; production construction should require an explicit limiter")
-			}
-		})
+		}
 		return nil, nil
 	},
 }
@@ -399,6 +415,14 @@ func isCallTo(pass *analysis.Pass, expr ast.Expr, pkgPath, name string) bool {
 	case *ast.Ident:
 		obj = pass.TypesInfo.Uses[fun]
 	case *ast.SelectorExpr:
+		qualifier, ok := fun.X.(*ast.Ident)
+		if !ok {
+			return false
+		}
+		pkg, ok := pass.TypesInfo.Uses[qualifier].(*types.PkgName)
+		if !ok || pkg.Imported().Path() != pkgPath {
+			return false
+		}
 		obj = pass.TypesInfo.Uses[fun.Sel]
 	}
 	fn, ok := obj.(*types.Func)

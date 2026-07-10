@@ -10,11 +10,14 @@ import (
 
 const csrfCookieName = "tinyidp_csrf"
 
-func (p *Provider) issueCSRF(w http.ResponseWriter) string {
-	nonce := randomB64(32)
+func (p *Provider) issueCSRF(w http.ResponseWriter) (string, error) {
+	nonce, err := randomB64(32)
+	if err != nil {
+		return "", err
+	}
 	token := nonce + "." + p.csrfMAC(nonce)
-	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: token, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: 600})
-	return token
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: token, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: 600})
+	return token, nil
 }
 
 func (p *Provider) validateCSRF(r *http.Request) bool {
@@ -41,7 +44,7 @@ func (p *Provider) csrfMAC(nonce string) string {
 }
 
 func (p *Provider) clearCSRF(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: "", Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: "", Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: -1})
 }
 
 func (p *Provider) cookiePath() string {

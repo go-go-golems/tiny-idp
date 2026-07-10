@@ -133,6 +133,25 @@ func TestMigrationChecksumMismatchRefusesOpen(t *testing.T) {
 	}
 }
 
+func TestNewerSchemaVersionRefusesOpen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "future.db")
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := store.SupportedSchemaVersion() + 1
+	if _, err := store.SQLDB().ExecContext(ctx, `INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(?,?,?,?)`, future, "future.sql", "future", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(path)); err == nil {
+		t.Fatal("expected newer schema refusal")
+	}
+}
+
 func TestPasswordReplacementRevokesDomainAndProtocolArtifacts(t *testing.T) {
 	ctx := context.Background()
 	st := openTestStore(t)

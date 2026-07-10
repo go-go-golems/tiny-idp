@@ -2,15 +2,19 @@ package embeddedidp_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func TestProductionValidationRejectsMissingTokenSecret(t *testing.T) {
@@ -71,7 +75,7 @@ func TestProviderReadinessAndIdempotentClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report := p.Readiness(ctx); !report.Ready || len(report.Checks) != 3 {
+	if report := p.Readiness(ctx); !report.Ready || len(report.Checks) < 8 {
 		t.Fatalf("unexpected ready report: %#v", report)
 	}
 	if err := p.Close(ctx); err != nil {
@@ -89,6 +93,83 @@ func TestProviderReadinessAndIdempotentClose(t *testing.T) {
 	p.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("closed handler status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestIssuerPathOwnsOnlyPrefixedRoutesAndHealthIsStructured(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	key, err := keys.GenerateRSA("kid", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := embeddedidp.New(ctx, embeddedidp.Options{Issuer: "http://127.0.0.1:5556/idp", Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]int{"/healthz": http.StatusNotFound, "/idp/healthz": http.StatusOK, "/idp/readyz": http.StatusOK} {
+		recorder := httptest.NewRecorder()
+		provider.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "http://idp.test"+path, nil))
+		if recorder.Code != want {
+			t.Fatalf("%s status = %d, want %d", path, recorder.Code, want)
+		}
+		if want == http.StatusOK {
+			var report idp.ReadinessReport
+			if err := json.Unmarshal(recorder.Body.Bytes(), &report); err != nil {
+				t.Fatalf("%s body: %v", path, err)
+			}
+			if !report.Ready {
+				t.Fatalf("%s report = %#v", path, report)
+			}
+		}
+	}
+}
+
+func TestProductionReadinessTransitionsOnAuditFailure(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(dir, "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}, AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, RefreshTokenTTL: 24 * time.Hour}
+	if err := store.PutClient(ctx, client); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	audit, err := idp.NewFileAuditSink(filepath.Join(dir, "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = audit.Close() })
+	provider, err := embeddedidp.New(ctx, embeddedidp.Options{Issuer: "https://issuer.example.test/idp", Mode: embeddedidp.ProductionMode, Store: store, Cookie: embeddedidp.CookieConfig{Secure: true}, Token: embeddedidp.TokenConfig{SecretKey: []byte("production-token-secret-at-least-32-bytes")}, Audit: audit, RateLimiter: idp.NewFixedWindowRateLimiter(100, time.Minute), ClientAddress: idp.DirectClientAddressResolver{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.RunMaintenance(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if report := provider.Readiness(ctx); !report.Ready {
+		t.Fatalf("initial readiness = %#v", report)
+	}
+	if err := audit.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if report := provider.Readiness(ctx); report.Ready {
+		t.Fatalf("readiness after audit close = %#v", report)
+	}
+	if report := provider.Liveness(ctx); !report.Ready {
+		t.Fatalf("liveness should ignore dependency outage: %#v", report)
 	}
 }
 

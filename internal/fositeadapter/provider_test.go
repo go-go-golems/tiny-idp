@@ -79,7 +79,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey, CookieSameSite: http.SameSiteStrictMode})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +100,9 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		"login":                 {"alice"},
 	}
 	csrfToken, csrfCookie := fetchCSRF(t, ts.URL, form)
+	if csrfCookie.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("CSRF SameSite = %v, want Strict", csrfCookie.SameSite)
+	}
 	form.Set("csrf_token", csrfToken)
 	noRedirect := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 	reqAuth, _ := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
