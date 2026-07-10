@@ -13,20 +13,28 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://.github/workflows/release-gates.yml
+      Note: Exact-hash release and hosted conformance gate
     - Path: repo://internal/admin/backup.go
       Note: Admin wrapper over verified online backup and offline restore
     - Path: repo://internal/authn/password.go
       Note: Password verification and lockout transition behavior
+    - Path: repo://internal/cmds/serve_production.go
+      Note: Production TLS host, limits, proxy trust, maintenance, and graceful shutdown
     - Path: repo://internal/fositeadapter/provider.go
       Note: Strict OAuth and OIDC composition and route ownership
     - Path: repo://pkg/embeddedidp/options.go
       Note: Public context-aware construction and validation boundary
+    - Path: repo://pkg/idp/audit.go
+      Note: Synchronous fsync audit policy and health
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Public durable record and persistence contracts introduced in Phase 1
     - Path: repo://pkg/sqlitestore/backup.go
       Note: Implemented Phase 2 online backup verification atomic publication and offline restore (commit 7cd13b4)
     - Path: repo://pkg/sqlitestore/backup_test.go
       Note: Phase 2 WAL concurrency corruption interruption permission and restore evidence
+    - Path: repo://pkg/sqlitestore/maintenance.go
+      Note: Atomic retention and JWKS overlap cleanup
     - Path: repo://pkg/sqlitestore/store.go
       Note: Public durable SQLite implementation and migrations introduced in Phase 1
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/design-doc/01-tiny-idp-production-readiness-architecture-and-code-review.md
@@ -37,6 +45,7 @@ LastUpdated: 2026-07-09T17:37:01.014365676-04:00
 WhatFor: Guiding implementation and review of the production embedding API and every release-hardening phase.
 WhenToUse: Read before implementing a phase, reviewing a hardening change, onboarding to tiny-idp, or assessing release evidence.
 ---
+
 
 
 
@@ -57,14 +66,22 @@ same review also reproduced reachable dependency vulnerabilities, WAL-unsafe
 backup, non-atomic security transitions, bypassable abuse controls, lost
 concurrent lockout updates, and permissive SQLite file creation.
 
-As of 2026-07-09, Phases 0, 1, and 2 are implemented. The selected dependency
-graph is vulnerability-clean; the public embedding API is consumable from an
-outside module and passes a TLS Authorization Code + S256 PKCE flow; and SQLite
-now has explicit transactions, named invariant operations, checksummed
-migrations, online backup, read-only verification, atomic publication, and
-verified offline restore. Sections labeled “current state” describe the review
-baseline unless an “implemented state” subsection says otherwise. Phases 3–5
-remain release blockers.
+As of 2026-07-09, Phases 0 through 4 are implemented. The selected dependency
+graph has zero reachable known vulnerabilities; the public embedding API is
+consumable from an outside module and passes a TLS Authorization Code + S256
+PKCE flow; SQLite has explicit transactions, named invariant operations,
+checksummed migrations, online backup, read-only verification, atomic
+publication, verified offline restore, and retention maintenance; and
+authentication, audit, key, readiness, and host controls are mandatory and
+observable. Sections labeled “reviewed baseline” describe the original review;
+implementation sections describe current behavior and evidence.
+
+Candidate `2930981` passed the complete local code review, race/static/fuzz
+gates, a production-parameter mixed load, a TLS host smoke, and recovery/key/
+secret drills. It is **not approved for production**: hosted OpenID Foundation
+conformance, actual signed/SBOM/provenance artifacts, license reconciliation,
+target-environment proof, independent review, and release-owner sign-off remain
+open in the evidence ledger.
 
 This guide turns those findings into an ordered implementation program:
 
@@ -359,14 +376,15 @@ Never trust `X-Forwarded-For` merely because it exists. The host and provider
 must share an explicit trusted-proxy policy; otherwise an attacker chooses the
 rate-limit key.
 
-## Proposed Solution
+## Implemented Solution
 
-## Proposed Package Architecture
+## Package Architecture
 
 ```text
 pkg/idp
-  Mode, AuditSink, RateLimiter, ClientAddressResolver,
-  PasswordAuthenticator, ConsentPolicy, readiness and policy types
+  audit Sink/AuditReporter/FileAuditSink, RateLimiter,
+  ClientAddressResolver, PasswordAuthenticator, ConsentPolicy,
+  password-work metrics, readiness and maintenance status
 
 pkg/idpstore
   stable records, sentinel errors, Store/ReadStore/TxStore,
@@ -374,11 +392,12 @@ pkg/idpstore
 
 pkg/sqlitestore
   Open(ctx, Config), migrations, transactions, online backup,
-  read-only verification, restore support, maintenance, diagnostics
+  checksummed migrations, read-only backup verification, restore,
+  atomic maintenance, exact schema reporting, diagnostics
 
 pkg/embeddedidp
-  Options, New(ctx, Options), Provider.Handler,
-  Provider.Readiness, Provider.Close
+  Options, New(ctx, Options), Provider.Handler, Provider.Liveness,
+  Provider.Readiness, Provider.RunMaintenance, Provider.Close
 
 internal/fositeadapter
   maps public contracts to Fosite and HTTP behavior
@@ -404,17 +423,19 @@ authentication.
 package embeddedidp
 
 type Options struct {
-    Issuer        string
-    Mode          idp.Mode
-    Store         idpstore.Store
-    TokenSecret   idp.SecretSource
-    Cookies       idp.CookiePolicy
-    Audit         idp.AuditSink
-    RateLimiter   idp.RateLimiter
-    ClientAddress idp.ClientAddressResolver
-    Authenticator idp.PasswordAuthenticator // optional only if safe default built
-    Consent       idp.ConsentPolicy          // optional only if safe default built
-    Clock         func() time.Time
+    Issuer         string
+    Mode           idpstore.Mode
+    Store          idpstore.Store
+    Cookie         CookieConfig       // Secure + effective SameSite
+    Token          TokenConfig        // host-owned secret bytes
+    Audit          idp.Sink
+    Consent        idp.ConsentPolicy
+    RateLimiter    idp.RateLimiter
+    ClientAddress  idp.ClientAddressResolver
+    Authenticator  idp.PasswordAuthenticator
+    PasswordPolicy idp.PasswordAcceptancePolicy
+    PasswordWork   idp.PasswordWorkConfig
+    Maintenance    MaintenanceConfig
 }
 
 func New(ctx context.Context, opts Options) (*Provider, error)
@@ -422,14 +443,19 @@ func New(ctx context.Context, opts Options) (*Provider, error)
 type Provider struct { /* unexported implementation */ }
 
 func (p *Provider) Handler() http.Handler
+func (p *Provider) Liveness(ctx context.Context) idp.ReadinessReport
 func (p *Provider) Readiness(ctx context.Context) idp.ReadinessReport
+func (p *Provider) RunMaintenance(ctx context.Context) (idpstore.MaintenanceReport, error)
+func (p *Provider) MaintenanceStatus() idp.MaintenanceStatus
+func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool)
 func (p *Provider) Close(ctx context.Context) error
 ```
 
 All methods that perform I/O accept `context.Context`. `New` performs bounded
 startup checks and returns only after the provider is safe to serve. `Close` is
-idempotent, stops internal background work, waits through `errgroup`, and does
-not close externally owned dependencies unless ownership is explicit.
+idempotent and does not close externally owned dependencies. Maintenance is
+host-owned rather than a hidden provider goroutine: the production command runs
+it once before listening and from an `errgroup` ticker thereafter.
 
 ### Ownership table
 
@@ -438,8 +464,9 @@ not close externally owned dependencies unless ownership is explicit.
 | `http.Server` and listener | host | host configures TLS, timeouts, limits, proxy trust, shutdown |
 | `Provider` | host | host calls `Close(ctx)` after server shutdown begins |
 | injected `Store` | host | provider does not close it unless constructor explicitly takes ownership |
-| provider-created background workers | provider | stopped and joined by `Close` using context/errgroup |
-| token/signing secret source | host integration | provider reads through interface and never logs material |
+| maintenance worker | host | calls `RunMaintenance`; joined with HTTP server shutdown |
+| token secret file | host integration | host reads owner-only bytes and zeroes its input slice after construction |
+| signing private keys | store/admin lifecycle | SQLite persists keys; JWKS publishes active plus overlap-retained retired keys |
 | SQLite online backup destination | `sqlitestore` operation | created owner-only, verified, fsynced, atomically published |
 
 ### Production validation
@@ -464,11 +491,11 @@ validate public options without side effects
 inspect store capabilities, schema, configuration and permissions
 load and cryptographically parse active signing key
 validate time window and verification-key publication set
-probe secret source without exposing bytes in diagnostics
-probe audit/limiter/address-policy health
+validate token-secret length without exposing bytes in diagnostics
+probe durable audit, limiter, address-policy and maintenance capability
 construct Fosite adapter
 run structured readiness
-if any required component is not ready: close partial resources and fail
+if any required component is not ready: fail construction
 return provider
 ```
 
@@ -493,6 +520,35 @@ Readiness is operational state, not just “the process started.” Required che
 include store connectivity, schema support, active signing key usability, secret
 source availability, audit health, limiter health, and overdue maintenance.
 `/healthz` remains liveness and should avoid dependent I/O.
+
+The implemented report has eight stable components:
+
+| Component | What it proves | Failure behavior |
+|---|---|---|
+| `lifecycle` | provider is not closed | liveness and readiness 503 |
+| `store` | client-list query completes | readiness 503 |
+| `schema` | database version equals the binary's embedded migration count | readiness 503; startup rejects in production |
+| `signing_key` | one current 2048-bit+ RS256 active key and every published key parses | readiness 503; startup rejects in production |
+| `token_secret` | configured secret meets production size | startup rejects; readiness 503 if unsafe |
+| `audit` | durable sink healthy and no delivery failure observed | readiness 503 |
+| `rate_limiter` | injected limiter declares production readiness | startup rejects or readiness 503 |
+| `maintenance` | store supports cleanup and a success is not overdue | initially degraded; 503 after two missed intervals or any failure |
+
+```text
+                         ┌──────── process/provider closed ────────┐
+request ─► /healthz ────┤                                         ├─► 503
+                         └──────── otherwise ──────────────────────┘
+                                              └──────────────────────► 200
+
+request ─► /readyz ─► lifecycle ─► store/schema ─► key/secret
+                                  └─► audit/limiter ─► maintenance
+                         any required failure ───────────────────────► 503
+                         all required checks ready ──────────────────► 200
+```
+
+This split matters operationally. A load balancer removes an unready instance;
+an orchestrator restarts only an unhealthy process. Restarting repeatedly for a
+full audit disk can erase useful context and amplify the outage.
 
 ## Public Store and Transaction Design
 
@@ -911,28 +967,73 @@ Rotation must create the next key, make it active, retire the old signer, and
 preserve verification publication atomically. Never permit retiring the last
 usable key.
 
+The implementation treats `SigningKey.NotAfter` on an inactive key as its
+retirement time. Normal maintenance keeps that key in `VerificationKeys` until
+`maximum client ID-token TTL + five-minute skew` passes. This gives relying
+parties enough time to verify already issued ID tokens.
+
+```text
+staged key (inactive, no NotAfter; not in JWKS)
+        │ atomic RotateSigningKey
+        ▼
+new active signer ───────────────► JWKS
+old signer: inactive + NotAfter ─► JWKS during overlap
+        │ maintenance after derived retention
+        ▼
+deleted from key store and JWKS
+```
+
+Compromise is a different transition. `keys purge-retired` explicitly removes
+a retired key before overlap ends and is audited as an emergency action. It
+refuses the active key and staged-but-never-retired keys. Operators accept that
+otherwise-valid tokens signed by the purged key stop verifying.
+
 ### Audit
 
 `audit.NoopSink` is acceptable for tests and development but not production.
-The public audit contract needs an explicit policy:
+The implemented `FileAuditSink` policy is deliberately simple:
 
-- delivery deadline;
-- buffering and maximum queue;
-- whether backpressure blocks sensitive operations;
-- behavior when the sink is unavailable;
-- dropped-event counters and readiness degradation;
-- redaction rules for credentials, secrets, codes, tokens, and cookies.
+- JSON Lines, one event per append;
+- synchronous file `fsync` before `Emit` returns success;
+- no memory buffer and therefore no queue limit;
+- caller backpressure while append/fsync is in progress;
+- no intentional drop branch (`Dropped` remains zero);
+- delivered/failed counters and stable health reason codes;
+- owner-only audit file permissions;
+- no credentials, secrets, raw codes/tokens, or cookies in event fields.
+
+An administrative mutation can commit before its audit append fails. Those
+methods return the committed value plus `idp.ErrAuditDelivery`; callers must
+reconcile state instead of blindly retrying. HTTP request-path audit failure
+increments a monotonic provider counter and fails readiness because the OAuth
+response may already be committed and cannot safely be rewritten.
 
 Audit uses stable event and reason codes. It must not include raw library errors
 as externally consumed security taxonomy.
 
 ### Maintenance
 
-Expired sessions, Fosite requests, codes, tokens, consent, and retired keys
-accumulate unless maintenance owns retention. A provider-managed worker may run
-under `errgroup`, but single-active-node ownership must be explicit. Maintenance
-reports last-success time, duration, rows removed, errors, and overdue state to
-readiness/metrics.
+Expired sessions, Fosite requests, codes, tokens, consent, and retired keys are
+deleted by `MaintenanceStore.Maintain` inside one store transaction. Migration
+005 adds indexed creation timestamps to Fosite protocol tables. Domain records
+are decoded so terminal/expiry timestamps are authoritative; protocol rows use
+a conservative creation-age ceiling.
+
+The derived defaults are:
+
+```text
+expired domain retention = 24h
+protocol retention = max configured refresh-token TTL + expired retention
+signing-key retention = max configured ID-token TTL + 5m clock skew
+maintenance interval = 15m
+readiness deadline = 2 × maintenance interval
+```
+
+Production construction rejects configured retention shorter than those
+lifetimes. `RunMaintenance` returns counts for domain records, protocol records,
+and retired signing keys. The provider stores start/finish/success/error state
+under a short mutex; a separate mutex serializes runs so readiness never blocks
+behind a long cleanup.
 
 ## Host Application Contract
 
@@ -965,6 +1066,47 @@ if err := provider.Close(closeCtx); err != nil { /* fail shutdown evidence */ }
 The host contract documents TLS location, trusted proxies, allowed hosts,
 request/body limits, timeouts, graceful shutdown order, readiness exposure, log
 redaction, and secret injection.
+
+The executable implementation is `tinyidp serve-production` in
+`internal/cmds/serve_production.go`. It requires certificate/key paths, an
+owner-only token-secret file, durable SQLite and audit paths, and an HTTPS
+issuer. It applies `http.MaxBytesHandler`, TLS 1.2 minimum, header/read/write/idle
+timeouts, one-megabyte header/body defaults, scheduled maintenance, and
+SIGINT/SIGTERM graceful shutdown. It reads no token secret from an environment
+variable or literal CLI value.
+
+### Effective cookie, route, and TTL contracts
+
+These small configuration contracts are security-critical because a field that
+does not affect runtime behavior misleads operators:
+
+- `CookieConfig.SameSite` defaults to Lax. Production accepts Lax, Strict, or
+  None only with Secure cookies. CSRF and session cookies both consume it.
+- Cookies are HttpOnly, Secure in production, and scoped to the issuer path.
+- An issuer `https://host/idp` registers only `/idp/...`; root aliases are not
+  created. Discovery endpoint URLs and handler routes therefore agree.
+- Access, ID, and refresh TTLs come from each `idpstore.Client`, using Fosite's
+  custom lifespan interface for authorization-code and refresh grants.
+- Persisted Fosite request state includes those TTLs. A refresh after restart
+  cannot silently revert to process-global defaults.
+- User IDs, CSRF nonces, browser-session handles, codes, and tokens fail closed
+  when cryptographic randomness fails. The Go analyzer rejects ignored
+  `crypto/rand.Read` errors.
+
+Request flow with a path issuer:
+
+```text
+https://host/idp/authorize
+      │ Set-Cookie Path=/idp; Secure; HttpOnly; SameSite=Lax
+      ▼
+POST https://host/idp/authorize
+      │ client-specific ID/access/refresh lifespan selected
+      ▼
+https://host/idp/token ─► persisted request restores same client lifespans
+
+https://host/authorize  ─► 404 (not an alias)
+https://host/healthz    ─► 404 (health lives under issuer path)
+```
 
 ## Design Decisions
 
@@ -1171,6 +1313,13 @@ Work:
 Gate: every known unsafe configuration fails startup/readiness, and lifecycle
 failure tests demonstrate correct health transitions and audit signals.
 
+Implemented evidence: startup validates all published keys; normal overlap and
+emergency purge are distinct; the fsync audit policy is mandatory in
+production; liveness/readiness are structured; maintenance is atomic and
+overdue-aware; SameSite, per-client TTL, route, and randomness contracts have
+transition tests. The Phase 4 gate passed after commit `f8c35bb` plus the final
+emergency-purge follow-up in the Phase 5 implementation commit.
+
 ### Phase 5 — Release engineering and deployment proof
 
 Primary files: CI, release configuration, production example, operator docs,
@@ -1188,6 +1337,28 @@ Work:
 
 Gate: a production-like deployment of the signed candidate passes protocol,
 security, recovery, and operations evidence with recorded artifact hashes.
+
+Locally completed Phase 5 evidence includes:
+
+- a TLS production-host tmux smoke with eight green readiness components,
+  synchronous audit output, owner-only files, and graceful SIGINT shutdown;
+- 5,125 mixed HTTP operations comprising 25 password authorization flows, 25
+  exchanges, 25 refreshes, 25 direct userinfo reads, and 5,000 concurrent read
+  requests with zero HTTP errors;
+- Argon2 capacity two, 25 completions, 22 saturation observations, zero
+  admission rejections, 8.00 seconds aggregate wait, and 3.46 seconds aggregate
+  password-work duration;
+- one SQLite connection throughout, with pool wait metrics made explicit;
+- migration/newer-schema refusal, backup, restore, rollback preservation,
+  signing-key rotation, and token-secret invalidation drills;
+- always-on and manual release workflows for AST analysis, vulnerability,
+  race, longer fuzz, faults, recovery, hosted OIDF, artifact hashing, SBOM,
+  license collection, provenance, and keyless signing.
+
+The gate remains open. The hosted OpenID Foundation plan has not been run
+against an externally deployed binary whose SHA-256 matches the workflow input;
+GitHub OIDC signing/provenance has not produced an artifact for this working
+candidate; and no independent reviewer or release owner has signed the ledger.
 
 ### Commit and diary rhythm
 
@@ -1284,49 +1455,70 @@ The final packet should identify:
 - Backup verification is read-only and restore is rehearsed.
 - Readiness fails closed when critical dependencies or invariants fail.
 
-## Open Questions
+## Resolved Decisions and Remaining Questions
 
-These require explicit product/operations decisions before their affected phase
-gate can close:
+Resolved for the first release candidate:
 
-1. Is single-active-node SQLite on local durable storage the accepted v1
-   production topology?
-2. Which proxy/load balancer implementations and forwarded-header conventions
-   must the address resolver support?
-3. What is the required audit durability model: synchronous, bounded buffered,
-   or external transactional outbox?
-4. Where do token secrets and signing keys come from in the first deployment:
-   files, secret manager, KMS/HSM, or encrypted database material?
-5. What maximum concurrent login rate and memory budget should Argon2id support?
-6. Is must-change-password required for v1? If yes, what UX hosts the restricted
-   flow?
-7. Which token/session families must password change revoke?
-8. What schema versions and downgrade paths will be supported after the first
-   release?
-9. What retention periods apply to sessions, token/request records, consent,
-   retired verification keys, and audit buffers?
-10. Which OpenID Foundation conformance profile is the release gate?
-11. Who is the independent security reviewer and final release owner?
+1. Storage is single-active-node SQLite on a local durable filesystem with one
+   open connection. Active/active and network filesystems are unsupported.
+2. Forwarded addresses are accepted only from configured trusted CIDRs; chains
+   are walked right-to-left and bounded by `MaxHops`. Direct peer mode is the
+   default production-ready policy.
+3. Audit is synchronous append+fsync with caller backpressure, no buffer, and no
+   intentional drops. A durable transactional outbox is a future alternative,
+   not an unimplemented claim.
+4. The production host reads the token secret from an owner-only file; signing
+   keys are generated through audited admin commands and persisted in SQLite.
+5. Default Argon2 admission capacity is two at 64 MiB per operation and exports
+   saturation/wait metrics. Deployment owners must validate this against the
+   actual cgroup memory/latency budget.
+6. Unsupported must-change-password state was removed.
+7. Password replacement revokes domain and Fosite grants, codes, access and
+   refresh state, plus browser sessions, in the same SQLite transaction.
+8. Migration ledgers are checksummed and contiguous. Newer schemas fail closed;
+   downgrade means using a compatible binary or restoring a verified
+   pre-upgrade backup, never editing migration history.
+9. Domain expiry retention defaults to 24 hours; protocol and signing-key
+   retention derive from maximum client token lifetimes. The audit file has no
+   in-process retention—external log operations own archival/deletion.
+
+Still required before release approval:
+
+1. Which exact OpenID Foundation conformance plan/profile is the gate, and what
+   plan ID records the run against the deployed candidate hash?
+2. Who is the independent security/code reviewer?
+3. Who is the final release owner authorized to accept residual risk?
+4. What production filesystem, backup target, reverse proxy, resource limits,
+   and audit shipping/retention system will the first deployment use?
 
 ## References
 
 Repository evidence:
 
-- `pkg/embeddedidp/options.go:30-77` — current exported options and validation.
-- `pkg/embeddedidp/provider.go:10-26` — current handler-only wrapper.
-- `internal/fositeadapter/provider.go:34-182` — Fosite composition, defaults,
-  and production protocol configuration.
-- `internal/fositeadapter/provider.go:265-271` — strict route surface.
-- `internal/domain/types.go:14-185` — current durable domain records.
-- `internal/storage/interfaces.go:19-107` — entity-oriented store contract.
-- `internal/store/sqlite/store.go:25-82` — SQLite open and migration behavior.
-- `internal/authn/password.go:95-225` — password, lockout, reset, and audit flow.
-- `internal/admin/backup.go:20-87` — unsafe copy and mutating verification paths.
-- `internal/store/sqlite/migrations/001_schema.sql` and
-  `002_password_credentials.sql` — current schema.
-- `internal/fositeadapter/sqlstore.go` — durable Fosite protocol state.
-- `internal/keys/rotation.go` — current non-atomic key lifecycle.
-- `internal/cmds/serve.go` — development server and current handler mounting.
+- `pkg/embeddedidp/options.go` — public options, production preflight, and
+  client-derived maintenance retention.
+- `pkg/embeddedidp/provider.go` — construction, handler, liveness, structured
+  readiness, maintenance, password metrics, and close.
+- `pkg/idp/audit.go`, `password.go`, `ratelimit.go`, and `contracts.go` — public
+  policy, health, observability, and injected control contracts.
+- `pkg/idpstore/interfaces.go` and `types.go` — stable domain records,
+  transaction/invariant operations, schema, and maintenance contracts.
+- `pkg/sqlitestore/store.go`, `maintenance.go`, and `backup.go` — supported
+  durable implementation, exact migrations, retention, backup, and restore.
+- `pkg/sqlitestore/migrations/004_subject_revocation.sql` and
+  `005_maintenance_timestamps.sql` — revocation indexes and cleanup ages.
+- `internal/authn/password.go` — NIST-aligned acceptance, bounded Argon2id,
+  lockout, fail-closed persistence, and work metrics.
+- `internal/fositeadapter/provider.go`, `sqlstore.go`, `csrf.go`, and
+  `session.go` — Fosite mapping, route ownership, per-client TTL persistence,
+  cookie behavior, and request audit.
+- `internal/admin/{users,clients,keys}.go` — audited post-commit mutation
+  semantics and planned/emergency key lifecycle.
+- `internal/cmds/serve_production.go` — Glazed production host with TLS,
+  limits, proxy trust, maintenance, and graceful shutdown.
+- `.github/workflows/ci.yml`, `release-gates.yml`, and
+  `release-evidence.yml` — always-on, exact-candidate, hosted-conformance, and
+  signed-evidence automation.
 
 Ticket evidence:
 
@@ -1339,6 +1531,13 @@ Ticket evidence:
 - `TINYIDP-PROD-IMPL-001/tasks.md` — authoritative phase ledger.
 - `TINYIDP-PROD-IMPL-001/reference/01-implementation-diary.md` — chronological
   implementation record.
+- `TINYIDP-PROD-IMPL-001/reference/02-phase5-runtime-load-summary.md` — mixed
+  login/token/read runtime, SQLite, audit, and password-work measurements.
+- `TINYIDP-PROD-IMPL-001/playbook/01-production-operations-and-incident-response-runbook.md`
+  — deployment, corruption, compromise, lockout, dependency, and rollback
+  procedures.
+- `TINYIDP-PROD-IMPL-001/reference/03-release-candidate-evidence-packet-and-approval-ledger.md`
+  — authoritative completion and approval boundary.
 
 External API/standards references captured in the source review ticket:
 

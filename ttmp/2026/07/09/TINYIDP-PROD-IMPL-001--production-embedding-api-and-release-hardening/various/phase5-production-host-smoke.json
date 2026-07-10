@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-07-10T00:45:54Z",
+  "candidate": "29309814f1fcdad3a5134674fc27a8938cb39c6a",
+  "transport": {
+    "scheme": "https",
+    "protocol_observed": "HTTP/2",
+    "address": "127.0.0.1:19443",
+    "certificate": "ephemeral self-signed RSA-2048 with IP SAN"
+  },
+  "host": {
+    "command": "go run ./cmd/tinyidp serve-production",
+    "process_supervision": "tmux session tinyidp-prod-smoke",
+    "maintenance_interval": "1m",
+    "shutdown": "SIGINT followed by graceful http.Server.Shutdown; port unreachable afterward"
+  },
+  "liveness": {
+    "http_status": 200,
+    "ready": true,
+    "checks": ["lifecycle"]
+  },
+  "readiness": {
+    "http_status": 200,
+    "ready": true,
+    "checks": [
+      "lifecycle",
+      "store",
+      "schema",
+      "signing_key",
+      "token_secret",
+      "audit",
+      "rate_limiter",
+      "maintenance"
+    ],
+    "degraded_checks": []
+  },
+  "audit": {
+    "events_after_startup": 1,
+    "startup_event": "maintenance.completed",
+    "policy": "synchronous-fsync"
+  },
+  "permissions": {
+    "sqlite": "0600",
+    "audit_jsonl": "0600",
+    "token_secret": "0600"
+  },
+  "result": "PASS"
+}

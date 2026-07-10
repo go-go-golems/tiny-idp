@@ -84,36 +84,36 @@ tasks so partial implementation never looks like phase completion.
 
 ## Phase 4 — keys, audit, readiness, and maintenance
 
-- [ ] Validate signing-key algorithm, size, parseability, not-before, expiry, and active uniqueness at startup.
-- [ ] Prevent retiring the final usable signing key.
-- [ ] Define rotation overlap and published-JWKS retention for still-valid tokens.
-- [ ] Require a production audit sink and define delivery, buffering, dropping, backpressure, and health semantics.
-- [ ] Propagate or surface audit delivery failures according to the accepted policy.
-- [ ] Add structured readiness checks for store, schema, signing keys, secret sources, audit, limiter, and maintenance state.
-- [ ] Separate liveness from readiness and document orchestration behavior.
-- [ ] Implement retention/maintenance for expired sessions, codes, tokens, requests, and audit buffers.
-- [ ] Resolve effective `SameSite`, per-client TTL, issuer/path, RNG-error, and route-registration contracts.
-- [ ] Add key-expiry, rotation, audit-failure, maintenance, and readiness transition tests.
-- [ ] Phase 4 gate: unsafe configuration cannot report ready and critical lifecycle operations have observable health.
+- [x] Validate signing-key algorithm, size, parseability, not-before, expiry, and active uniqueness at startup.
+- [x] Prevent retiring the final usable signing key.
+- [x] Define rotation overlap and published-JWKS retention for still-valid tokens.
+- [x] Require a production audit sink and define delivery, buffering, dropping, backpressure, and health semantics.
+- [x] Propagate or surface audit delivery failures according to the accepted policy.
+- [x] Add structured readiness checks for store, schema, signing keys, secret sources, audit, limiter, and maintenance state.
+- [x] Separate liveness from readiness and document orchestration behavior.
+- [x] Implement retention/maintenance for expired sessions, codes, tokens, requests, and audit buffers.
+- [x] Resolve effective `SameSite`, per-client TTL, issuer/path, RNG-error, and route-registration contracts.
+- [x] Add key-expiry, rotation, audit-failure, maintenance, and readiness transition tests.
+- [x] Phase 4 gate: unsafe configuration cannot report ready and critical lifecycle operations have observable health.
 
 ## Phase 5 — release engineering and deployment proof
 
-- [ ] Add always-on CI for build, unit, vet, lint, custom analyzers, `govulncheck`, fuzz seeds, external consumer, and backup/restore.
-- [ ] Add release CI for race, longer fuzzing, concurrency/fault injection, hosted conformance, and restore drills.
-- [ ] Build a production host example with TLS expectations, HTTP timeouts, request limits, proxy trust, and graceful shutdown.
-- [ ] Document the single-active-node SQLite deployment envelope and unsupported topologies.
-- [ ] Run sustained login/token/read load with production Argon2id settings and capture runtime/DB/audit metrics.
+- [x] Add always-on CI for build, unit, vet, lint, custom analyzers, `govulncheck`, fuzz seeds, external consumer, and backup/restore.
+- [x] Add release CI for race, longer fuzzing, concurrency/fault injection, hosted conformance, and restore drills.
+- [x] Build a production host example with TLS expectations, HTTP timeouts, request limits, proxy trust, and graceful shutdown.
+- [x] Document the single-active-node SQLite deployment envelope and unsupported topologies.
+- [x] Run sustained login/token/read load with production Argon2id settings and capture runtime/DB/audit metrics.
 - [ ] Run OpenID Foundation conformance against the exact release candidate artifact.
-- [ ] Perform backup restore, migration, signing-key rotation, token-secret rotation, downgrade, and rollback drills.
-- [ ] Write operator runbooks for corruption, key compromise, dependency emergencies, and administrative lockout.
+- [x] Perform backup restore, migration, signing-key rotation, token-secret rotation, downgrade, and rollback drills.
+- [x] Write operator runbooks for corruption, key compromise, dependency emergencies, and administrative lockout.
 - [ ] Produce signed artifacts, checksums, SBOM, provenance, toolchain manifest, and dependency licenses.
-- [ ] Assemble a release evidence packet with artifact hashes and links to every gate result.
+- [x] Assemble a release evidence packet with artifact hashes and links to every gate result.
 - [ ] Obtain independent security/code review and explicit release-owner sign-off.
 - [ ] Phase 5 gate: production-like deployment and incident drills pass on the exact signed release candidate.
 
 ## Final production decision
 
-- [ ] Re-run the full production review against the release candidate.
+- [x] Re-run the full production review against the release candidate.
 - [ ] Confirm no P0 or unaccepted P1 findings remain.
-- [ ] Record residual risks, owners, expiry dates, and rollback criteria.
+- [x] Record residual risks, owners, expiry dates, and rollback criteria.
 - [ ] Mark the release candidate approved only after every phase gate is checked.

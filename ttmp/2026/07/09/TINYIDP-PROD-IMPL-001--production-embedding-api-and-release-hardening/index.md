@@ -49,11 +49,18 @@ Current status: **active**
 
 Completed gates: **Phase 0 — dependency baseline; Phase 1 — consumable public
 embedding API; Phase 2 — transactional persistence, backup, and restore; Phase
-3 — mandatory authentication and abuse controls**
+3 — mandatory authentication and abuse controls; Phase 4 — keys, audit,
+readiness, and maintenance**
 
-Current phase: **Phase 4 — keys, audit, readiness, and maintenance**
+Current phase: **Phase 5 — external conformance, signed evidence, independent
+review, and release-owner approval**
 
-Release status: **blocked until all phase gates pass**
+Candidate: **source `2930981`; local linux/amd64 SHA-256
+`1df7b90b9365fb8ad0b55473db93a050a71e86c11b3156616f1f9388b102f2ae`**
+
+Release status: **NOT APPROVED**. Hosted OpenID Foundation conformance, actual
+signed/SBOM/provenance artifacts, license reconciliation, independent review,
+no-unaccepted-P1 confirmation, and release-owner sign-off remain open.
 
 ## Topics
 

@@ -1877,3 +1877,424 @@ external OIDC flow: PASS
 positive invariant probe: PASS
 production Argon2 load: PASS
 ```
+
+## Step 14: Make key, audit, readiness, and retention lifecycles observable
+
+This step implemented the Phase 4 lifecycle boundary. The important design
+choice was to avoid pretending that audit, maintenance, and readiness are
+independent utilities: a production provider is ready only while its durable
+store/schema, active signing key, token-secret policy, audit delivery, rate
+limiter, and maintenance schedule are all safe.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue with all the phases"
+
+**Assistant interpretation:** Complete every locally actionable Phase 4 and
+Phase 5 task, retain exact evidence, and leave external/human gates open unless
+they actually run.
+
+**Inferred user intent:** Reach a professional release-candidate boundary with
+failure semantics an operator can trust, not merely a larger unit-test count.
+
+**Commit (code):** `f8c35bb` — "feat: harden provider lifecycle and maintenance"
+
+### What I did
+
+- Added `FileAuditSink`, which serializes one JSON event, appends it, calls
+  `fsync`, and only then returns success. It has no memory queue and no drop
+  policy: callers provide backpressure. Health reports delivered, failed, and
+  dropped counters plus the stable `synchronous-fsync` policy name.
+- Added `ErrAuditDelivery`. Administrative methods now return their committed
+  result plus this typed error when mutation succeeds but the audit record does
+  not. The error explicitly warns callers not to retry a non-idempotent
+  mutation blindly.
+- Replaced every ignored adapter audit emission with a checked recorder.
+  Request-path failures increment a monotonic counter and make production
+  readiness fail; they do not attempt to rewrite an OAuth response that may
+  already have been sent.
+- Made the admin CLI open `<database>.audit.jsonl` as a durable audit sink so
+  production mutations no longer use the library's development fallback.
+- Added explicit `CookieConfig.SameSite`; Lax is the documented default and
+  Lax, Strict, or Secure+None are the production-supported policies. CSRF and
+  browser-session cookies consume the effective setting.
+- Removed duplicate root route registration for path-based issuers. An issuer
+  at `/idp` now owns `/idp/...` only; `/authorize` and `/healthz` at the host
+  root are not accidental aliases.
+- Applied each client's access, ID, and refresh token TTL through Fosite's
+  `DefaultClientWithCustomTokenLifespans`. Persisted request state now retains
+  those values so refresh grants do not silently fall back to global TTLs after
+  database restoration.
+- Propagated cryptographic randomness failures from user-ID, CSRF-token, and
+  browser-session handle generation. The repository Go AST analyzer verifies
+  that `crypto/rand.Read` errors are not assigned to `_`.
+- Added schema migration 005 with creation timestamps for Fosite protocol rows.
+  Added atomic maintenance for expired/terminal domain records, old protocol
+  state, expired JTIs, and signing keys whose verification overlap elapsed.
+- Derived default protocol retention from the maximum configured refresh-token
+  TTL plus post-expiry retention. Derived signing-key overlap from the maximum
+  ID-token TTL plus five minutes of skew. Production rejects shorter values.
+- Added host-owned `RunMaintenance(ctx)`, `MaintenanceStatus`, and an overdue
+  schedule rule. Maintenance is synchronous and serialized, but readiness reads
+  its status without blocking behind a running pass.
+- Expanded readiness to stable checks for lifecycle, store, exact supported
+  schema, parsed/current 2048-bit+ RS256 key and active uniqueness, token
+  secret, audit health/failure counters, production limiter, and maintenance.
+  Added liveness that depends only on process/provider lifecycle.
+- Made `/healthz` and `/readyz` return structured JSON and distinct HTTP status
+  codes. A transient dependency outage makes readiness 503 without making
+  liveness fail.
+- Made SQLite refuse a database whose migration ledger is newer than the
+  binary's embedded schema. This is the fail-closed downgrade contract.
+- Tightened the Go analyzer: it now examines only exported struct fields when
+  judging public API leaks, distinguishes package functions from methods, and
+  uses explicit `tinyidp:development-default` and
+  `tinyidp:transaction-scoped` directives instead of permanent false-positive
+  allowlists.
+
+### Why
+
+- Security audit evidence is useful only if “delivered” has a durable meaning.
+  A hidden lossy buffer or ignored `Emit` error creates false confidence.
+- A key removed from JWKS before the longest ID token expires breaks valid
+  relying-party verification. Keeping every retired key forever creates
+  unbounded sensitive state. A derived overlap window resolves both risks.
+- Protocol tables contain heterogeneous state. Creation-time retention bounded
+  by the longest possible refresh lifetime is conservative and inspectable;
+  deleting solely by an authorization-code TTL would destroy valid refresh
+  state.
+- Liveness and readiness serve different orchestration decisions. Restarting a
+  healthy process because SQLite is briefly locked usually worsens an outage.
+- Configuration fields that are accepted but ineffective are worse than absent
+  fields because operators believe they changed security behavior.
+
+### What worked
+
+- Targeted audit, admin, Fosite, embedded-provider, SQLite, and memory-store
+  suites pass.
+- Audit tests prove the file contains a decodable event before success is
+  reported, closure transitions health to failed, and canceled contexts write
+  nothing.
+- Maintenance tests delete only records beyond post-expiry retention, keep
+  recent retired signing keys published, and remove keys only after overlap.
+- A production provider becomes unready when its audit sink closes while its
+  liveness remains healthy.
+- Issuer-path tests prove the root aliases are gone and both health endpoints
+  return structured reports.
+- Client contract tests prove per-client TTLs survive Fosite request
+  serialization/restoration.
+- The refined repository analyzer completes with no finding across
+  `./pkg/... ./internal/...`.
+
+### What didn't work
+
+- The first compile after changing `newID` to return an error failed because a
+  previously block-scoped `err` variable was reused outside its scope:
+
+  ```text
+  internal/admin/users.go:84:7: undefined: err
+  internal/admin/users.go:85:6: undefined: err
+  internal/admin/users.go:86:63: undefined: err
+  ```
+
+  A local `generatedID, err := newID(...)` fixed the scope; the next targeted
+  suite passed.
+- The first provider suite correctly failed its old exact-three-readiness-check
+  expectation after readiness grew to eight dependency checks. The assertion
+  now checks the expanded contract and dedicated transition tests inspect its
+  semantics.
+- The first analyzer run reported deliberate development fallbacks, private
+  fields on public structs, a transaction-scoped generic helper, and
+  `httpServer.ListenAndServe()` as if it were package-level
+  `http.ListenAndServe`. These were analyzer defects, not suppressions:
+  exported-field traversal, explicit directives, and package-qualifier type
+  checks removed them. The real zero-value server finding in the development
+  CLI was fixed with timeouts and graceful shutdown.
+
+### What I learned
+
+- Fosite's per-client lifespan interface must survive serialized request state;
+  wrapping only `GetClient` fixes authorization-code issuance but not refresh
+  issuance after persistence.
+- A production readiness check must verify the exact supported schema version,
+  not merely `version > 0`; otherwise an old binary can report ready on a newer
+  database.
+- Holding the maintenance status mutex for an entire cleanup would make
+  readiness itself hang. Separate run serialization and short status locks are
+  necessary.
+- A useful project analyzer needs explicit, reviewable exception semantics.
+  Reporting every intentional development fallback makes the tool easy to
+  ignore.
+
+### What was tricky to build
+
+- Maintenance must read candidate JSON rows before deleting them, then perform
+  all deletes in the same SQLite transaction. Rows are closed before mutation
+  because the production store deliberately uses one connection.
+- Audit failures after a committed mutation cannot be rolled back generically.
+  Returning the committed value and a typed post-commit error makes the
+  ambiguity explicit without claiming transactional coupling that does not
+  exist.
+- A recent retired key has `NotAfter` set to retirement time, but remains in
+  `VerificationKeys` until the separately derived overlap passes and
+  maintenance removes it.
+
+### What warrants a second pair of eyes
+
+- Review whether synchronous `fsync` latency is acceptable for the target
+  audit volume or whether a future durable outbox is needed. Do not replace it
+  with an in-memory queue without a new loss/backpressure design.
+- Review whether five minutes is sufficient clock skew for all relying parties.
+- Review the protocol-state retention derivation whenever new Fosite grant
+  types or token types are enabled.
+- Review post-commit audit errors in every external admin caller so callers
+  reconcile rather than blindly retry.
+
+### Code review instructions
+
+- Start with `pkg/idp/audit.go`, then trace failures through `internal/admin`,
+  `internal/authn`, `internal/fositeadapter`, and `Provider.Readiness`.
+- Review `pkg/sqlitestore/maintenance.go` together with migration 005 and the
+  retention derivation in `pkg/embeddedidp/options.go`.
+- Review cookie/route/TTL contracts in `internal/fositeadapter/{csrf,session,sqlstore,provider}.go`.
+- Run the targeted suites and repository analyzer recorded above, then run the
+  full Phase 4 gate from a clean committed tree.
+
+### Technical details
+
+```text
+audit: synchronous append + fsync; no buffer; no intentional drops; caller backpressure
+maintenance default: every 15m; unready after >2 intervals without success
+protocol retention: max refresh TTL + expired retention (default expired retention 24h)
+JWKS overlap: max ID token TTL + 5m skew
+health: liveness=lifecycle only; readiness=store/schema/key/secret/audit/limiter/maintenance
+targeted tests: PASS
+custom Go analysis gate: PASS
+full clean-tree Phase 4 gate: PASS as part of candidate 2930981
+```
+
+## Step 15: Build and review the production candidate without claiming external approval
+
+This step implemented every locally actionable Phase 5 task and assembled the
+release boundary. The outcome is intentionally not “shipped”: candidate
+`2930981` has strong local evidence, but hosted conformance, signed CI artifacts,
+license reconciliation, target-environment proof, independent review, and
+release-owner sign-off remain blocking.
+
+### Prompt Context
+
+**User prompts (verbatim):**
+
+- "continue with all the phases"
+- "write static analysis tools with go ast/analysis since you have high quality tooling, might as well use it."
+- "also you should now be able to operate with go.work normally, no need to make your own cache"
+- "you can of course also write instrumentation code (or even ebpf hooks or stuff like that) to get runtime metrics and logs out of tiny-idp and then write tooling to analyze the results too, to see what's going on"
+- "keep a frequent and detailed diary, btw. Backfill all that is necessary (read the skill for how to format it)"
+
+**Assistant interpretation:** Finish the local implementation and evidence for
+all remaining phases, use Go-native static/runtime tooling, keep normal workspace
+behavior, and maintain an exact chronological record. Do not self-attest hosted
+or human gates.
+
+**Inferred user intent:** Produce something a professional release team can
+review and continue over time, with a hard distinction between technical work
+the agent can prove and organizational/external evidence it cannot fabricate.
+
+**Commits:**
+
+- `2a0b287` — "feat: add production host and release gates"
+- `5e23978` — "ci: make release candidate builds reproducible"
+- `2930981` — "fix: collect release dependency licenses"
+
+### What I did
+
+- Used the Glazed command-authoring workflow to implement
+  `tinyidp serve-production` with decoded typed fields, long help, existing root
+  logging/help integration, and no token-secret literal/environment value.
+- Added TLS 1.2 minimum, certificate/key requirements, `http.MaxBytesHandler`,
+  read-header/read/write/idle timeouts, header limits, direct or trusted-proxy
+  address policy, fixed-window login limiting, initial/scheduled maintenance,
+  signal cancellation, `errgroup`, and graceful `http.Server.Shutdown`.
+- Updated the development server to use a configured `http.Server` and graceful
+  shutdown, removing the analyzer's real zero-value server finding.
+- Made the admin CLI open a synchronous `<db>.audit.jsonl` sink. Schema
+  migrations, backup creation, restore, user/client/password/key mutation, and
+  emergency key purge now emit durable admin records.
+- Added normal key overlap and a separate emergency `keys purge-retired`
+  command. It refuses active and never-retired staged keys, but lets compromise
+  response remove old trust immediately after atomic rotation.
+- Added future-schema refusal to SQLite so an older binary cannot silently open
+  a newer database. Doctor reports exact schema support.
+- Added token-secret rotation evidence: a second provider with a new secret
+  rejects opaque access and refresh tokens minted with the old secret.
+- Added a scripted release drill for migration, doctor, online backup,
+  verification, signing rotation, post-backup mutation, offline restore,
+  rollback preservation, downgrade refusal, and token-secret invalidation.
+- Extended runtime instrumentation with configurable concurrent full password
+  login/token/refresh flows. The analyzer now includes password-work capacity,
+  completions, saturation, rejections, total wait, and Argon duration.
+- Ran the exact-candidate mixed load: 5,125 HTTP operations, 129 durable audit
+  events, zero HTTP errors, 25 bounded password operations, capacity two, 22
+  saturations, zero rejections, 8.00 seconds aggregate admission wait, and 3.46
+  seconds aggregate Argon work.
+- Captured CPU/heap profiles, runtime deltas, DB pool snapshots, NDJSON request
+  events, and a generated Markdown analysis under the ticket.
+- Ran the actual production host in tmux with an ephemeral RSA certificate and
+  owner-only token secret/SQLite/audit files. Candidate `2930981` served HTTPS
+  (HTTP/2), returned green structured liveness and eight-component readiness,
+  wrote the maintenance audit event, and stopped cleanly on SIGINT. The port
+  was checked unreachable afterward.
+- Added always-on CI for build, tests, vet, CLI, AST analysis, fuzz seeds,
+  external-module OIDC, backup/restore, lint, and vulnerabilities.
+- Added a manual release workflow that binds the build to an expected SHA-256,
+  runs race/longer fuzz/fault/recovery drills, and then runs the hosted OIDF
+  plan using GitHub environment secrets.
+- Added release evidence automation for binary/checksum, toolchain data, SPDX
+  SBOM, module graph, dependency notices, GitHub provenance, and Sigstore
+  keyless signatures.
+- Verified the current official setup-go/setup-python/cosign-installer action
+  lines using their primary GitHub repositories and saved Defuddle extracts in
+  `sources/`.
+- Created the production incident/recovery playbook and the explicit
+  not-approved evidence/approval ledger.
+
+### Why
+
+- A library cannot configure the host's listener, TLS, request limits, signal
+  handling, or proxy deployment. A production-shaped executable makes that
+  ownership executable and reviewable.
+- The exact binary used for conformance must be the binary signed and deployed.
+  The manual workflow therefore requires the expected candidate hash and fails
+  on mismatch.
+- Planned signing rotation and compromise response have opposite availability
+  goals. Planned overlap preserves valid tokens; emergency purge revokes trust
+  immediately.
+- Release evidence without explicit missing rows invites social pressure to
+  reinterpret “mostly passed” as approved. The ledger makes that impossible.
+- Instrumentation is more useful than an eBPF hook here: public password-work
+  counters, Go runtime metrics, HTTP timing, SQLite pool stats, and durable
+  audit counts observe the application invariants directly and are portable in
+  CI. Kernel hooks would add privilege/platform complexity without answering
+  the key policy questions more precisely.
+
+### What worked
+
+- Full tests passed from the working tree and again from a clean archive of the
+  code candidate.
+- Build, vet, custom AST analysis, and whitespace checks passed.
+- Pinned golangci-lint v2.12.2 reported zero issues; Glazed lint passed.
+- Govulncheck v1.5.0 found zero reachable vulnerabilities. It reported two
+  vulnerabilities in imported packages and fourteen in required modules that
+  current code does not call.
+- Full `go test -race ./... -count=1` passed.
+- Ten-second native fuzz campaigns passed: issuer 474,734 executions, redirect
+  514,796, and Argon parser 442,681.
+- The external-module production flow compiled and completed Authorization Code
+  plus S256 PKCE.
+- The release drill passed twice, including after durable admin auditing.
+- A clean archive of `2930981` built twice with
+  `-trimpath -buildvcs=false` to the same linux/amd64 SHA-256:
+  `1df7b90b9365fb8ad0b55473db93a050a71e86c11b3156616f1f9388b102f2ae`.
+- The corrected license collector found top-level notices for 354 module
+  directories and explicitly listed eight unresolved module-cache entries.
+
+### What didn't work
+
+- The first clean-archive command set its working directory to a path that the
+  same command was supposed to create. Process creation failed before the shell
+  ran:
+
+  ```text
+  CreateProcess: No such file or directory
+  ```
+
+  Running from the repository, creating/extracting the archive, then `cd`-ing
+  inside fixed the procedure. The next clean candidate gate passed.
+- The first license collection produced zero directories. The Go template text
+  used literal `\t` characters, so the tab-delimited reader never split fields.
+  Replacing it with `{{printf "%s\t%s\t%s" ...}}` emitted real tabs; the second
+  run collected 354 directories and eight explicit missing rows.
+- The first candidate hash exposed a reproducibility mismatch: archive builds
+  lack `.git`, while Actions checkouts embed VCS build metadata by default.
+  Adding `-buildvcs=false` to both release workflows made two archive builds
+  match while provenance retains the commit identity.
+- The exact-candidate TLS smoke's first curl connection occurred before the Go
+  process finished compiling and printed one retryable connection refusal. The
+  configured retry then received green liveness/readiness; this was startup
+  timing, not a server failure.
+- The first task-ledger loop passed each numeric ID as a positional argument.
+  This docmgr version requires `--id`, so every call returned `Too many
+  arguments` and no task changed. One command with
+  `--id 64,65,...,89` applied the reviewed set; tasks 80, 83, 85, 86, 88, and
+  90 remained open by design.
+
+### What I learned
+
+- “Reproducible build” includes Go's VCS metadata policy, not just `-trimpath`.
+- License collection must treat a missing conventional file as an explicit
+  review item, not silently omit the module or declare it unlicensed.
+- A one-connection SQLite design remains coherent under mixed load but exposes
+  queueing directly: the exact run recorded 8,847 waits. That supports the
+  single-node contract but must be compared with production SLOs and disks.
+- Readiness should degrade for audit/maintenance failures while liveness stays
+  green. The tmux smoke and transition tests demonstrated that distinction.
+- Running every local test cannot replace hosted protocol conformance or an
+  independent reviewer. Those are different evidence sources, not extra unit
+  tests.
+
+### What warrants a second pair of eyes
+
+- Review `serve_production.go` secret lifetime, TLS/proxy defaults, shutdown
+  ordering, and maintenance error policy.
+- Review the emergency key purge runbook and whether all relying parties can
+  react quickly enough to a compromised `kid`.
+- Review the synchronous audit post-commit gap. A durable outbox could couple
+  DB mutation and audit intent in a future design.
+- Review the eight license follow-ups against authoritative upstream sources.
+- Run the target filesystem/proxy/cgroup load and restore drill.
+- Run hosted OIDF on the deployed `1df7...f2ae` binary and retain every test ID.
+
+### What should be done next
+
+1. Configure required branch checks for the always-on workflow.
+2. Deploy the exact candidate hash to a production-like reachable environment.
+3. Run `release-gates` with the matching hash and hosted plan ID. The workflow
+   reads GitHub secrets; no local environment values were inspected.
+4. Run `release-evidence` to create actual signatures, SBOM, provenance, module
+   graph, and license bundle.
+5. Reconcile the eight license rows.
+6. Obtain independent security/code review and disposition every finding.
+7. Record deployment owners, resource budgets, audit shipping, RTO/RPO, and
+   residual-risk expiry dates.
+8. Obtain release-owner signature. Only then check Phase 5 and task 90.
+
+### Code review instructions
+
+- Begin with the public lifecycle in `pkg/embeddedidp`, then the production host
+  and public/store contracts.
+- Follow signing transitions through admin, both stores, maintenance, JWKS, and
+  the compromise runbook.
+- Follow audit from every admin/auth/request operation to FileAuditSink and
+  readiness.
+- Inspect CI expressions and exact build commands; confirm hosted plan config
+  points to the same hash.
+- Use the evidence packet as the release checklist; blank signatures and
+  blocked rows are intentional stop signs.
+
+### Technical details
+
+```text
+candidate source: 29309814f1fcdad3a5134674fc27a8938cb39c6a
+linux/amd64 sha256: 1df7b90b9365fb8ad0b55473db93a050a71e86c11b3156616f1f9388b102f2ae
+toolchain: go1.26.5, CGO_ENABLED=1
+full test/build/vet/race/lint/analyzer/vulnerability: PASS
+three 10s fuzz campaigns: PASS
+external production OIDC: PASS
+TLS production host: PASS locally on exact candidate
+mixed load and profiles: PASS locally on exact candidate
+recovery/rotation drills: PASS locally
+hosted OIDF: NOT RUN
+signed artifact/SBOM/provenance: WORKFLOW READY, NOT PRODUCED
+independent review/release approval: NOT OBTAINED
+release decision: NOT APPROVED
+```

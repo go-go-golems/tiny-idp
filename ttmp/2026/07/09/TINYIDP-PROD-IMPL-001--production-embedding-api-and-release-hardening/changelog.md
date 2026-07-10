@@ -99,3 +99,23 @@ Step 13: closed Phase 3 with NIST-aligned password policy, bounded observable Ar
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/authn/password.go — Bounded fail-closed password authentication
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md — Checked Phase 3 gate
+
+## 2026-07-09
+
+Step 14: closed Phase 4 with validated/JWKS-retained signing keys, synchronous durable audit, structured liveness/readiness, atomic retention maintenance, effective cookie/TTL/route contracts, and transition tests (commit f8c35bb)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Structured lifecycle and maintenance health
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idp/audit.go — Synchronous durable audit contract
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/maintenance.go — Atomic retention implementation
+
+## 2026-07-09
+
+Step 15: implemented the production TLS host, emergency key purge, release/recovery workflows, exact-candidate load and drill evidence, operator runbook, and explicit not-approved release ledger (commits 2a0b287, 5e23978, 2930981)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Production host implementation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/release-gates.yml — Exact-hash race/fuzz/fault/recovery/hosted gate
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/reference/03-release-candidate-evidence-packet-and-approval-ledger.md — Release decision and blockers
