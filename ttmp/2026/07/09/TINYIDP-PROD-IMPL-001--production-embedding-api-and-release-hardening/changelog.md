@@ -128,3 +128,19 @@ Step 16: dry-ran and uploaded the committed guide, runbook, evidence ledger, run
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/01-production-embedding-api-and-release-implementation-guide.md — Primary uploaded guide
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/reference/03-release-candidate-evidence-packet-and-approval-ledger.md — Uploaded not-approved decision ledger
+
+## 2026-07-10
+
+Step 18: researched CS foundations and designed layered static analysis, model-based testing, fuzzing, deterministic concurrency, fault injection, trace monitoring, and isolated scripting verification architecture
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/02-security-invariant-assurance-architecture-static-analysis-runtime-verification-and-stateful-testing.md — Primary intern-ready assurance guide
+
+## 2026-07-10
+
+Step 18 delivery: doctor passed for both assurance tickets and the five-document research bundle was rendered and uploaded to reMarkable at /ai/2026/07/10/TINYIDP-PROD-IMPL-001
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/02-security-invariant-assurance-architecture-static-analysis-runtime-verification-and-stateful-testing.md — Uploaded primary assurance guide

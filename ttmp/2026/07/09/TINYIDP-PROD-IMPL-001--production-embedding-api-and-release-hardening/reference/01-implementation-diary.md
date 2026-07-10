@@ -43,6 +43,8 @@ RelatedFiles:
       Note: Public SQLite implementation (commit 24c9a92)
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/01-production-embedding-api-and-release-implementation-guide.md
       Note: Implementation design this diary tracks
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/02-security-invariant-assurance-architecture-static-analysis-runtime-verification-and-stateful-testing.md
+      Note: Step 18 research and assurance architecture deliverable
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md
       Note: Durable 90-task phase ledger
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/various/phase3-password-load.json
@@ -53,6 +55,7 @@ LastUpdated: 2026-07-09T17:37:01.160328301-04:00
 WhatFor: Preserving decisions, exact commands, failures, commits, verification, and continuation instructions across the multi-phase hardening effort.
 WhenToUse: Read before resuming work, reviewing a phase, investigating a regression, or assembling release evidence.
 ---
+
 
 
 
@@ -2317,3 +2320,466 @@ No account query or post-upload cloud listing was performed. The uploader's
 success response is the delivery evidence. This publication does not alter the
 release decision; the PDF prominently records the candidate as not approved
 and leaves the external/human gates unchecked.
+
+## Step 17: Audit authorization interaction and protocol continuation paths
+
+This step reopened the strict authorization path after an older code-review
+comment showed that `prompt=login` and expired `max_age` were enforced while
+rendering GET but not while consuming POST. The review deliberately expanded
+from that branch to the entire browser interaction boundary, token and UserInfo
+request identity, session error classification, unsupported request objects,
+and Fosite's multi-handler persistence ordering.
+
+The principal conclusion is architectural: the browser currently carries an
+incomplete mutable reconstruction of the authorization request. Fixing only
+the empty-login condition would leave parameter loss, mutation, replay,
+concurrent-tab, and future required-action regressions. The focused review
+therefore recommends an opaque, expiring, one-time, server-side interaction
+record and adds eight unchecked tasks before Phase 5 can close.
+
+**Commit (code):** N/A; this was a read-only code review plus ticket research
+and planning update.
+
+### Prompt Context
+
+**User prompts (verbatim):**
+
+> Did you address these older code review comments: [forced re-auth POST and
+> forced password-change findings]
+
+> Ok, can you think of similar issues / paths that we need to test and
+> robustify, and how to best test them?
+
+> save useful resources with defuddle into the sources/ folder of the ticket,
+> so that we can retrace your steps.
+
+**Assistant interpretation:** Verify both old comments against current source,
+then conduct a broader invariant review around the same class of lost or
+fail-open state. Persist authoritative sources, findings, tests, and follow-up
+tasks in `TINYIDP-PROD-IMPL-001` without changing production code.
+
+**Inferred user intent:** Avoid closing the release on isolated point fixes;
+build a systematic adversarial test plan that catches equivalent control-flow,
+browser-continuation, and partial-persistence defects.
+
+### What I did
+
+- Traced current GET and POST authorization logic, hidden form generation,
+  session reads, CSRF, consent, token, UserInfo, request-object rejection, and
+  Fosite SQL persistence.
+- Used `git log`, `git show`, `git blame`, and `git -S` searches to determine
+  that the forced password-change finding was resolved by removal in commit
+  `7022e7d`, while the forced-reauthentication POST finding remains open.
+- Inspected strict test names and bodies. Existing tests prove that GET renders
+  a form for `prompt=login` and stale `max_age`, but no test submits a crafted
+  empty-login POST with a valid session.
+- Inspected Fosite v0.49.0 source under the selected module cache. Its prompt
+  validator maps invalid `max_age` parsing to zero, while the tiny-idp helper
+  also treats invalid/negative values as session-satisfying. Its authorize
+  response handlers persist code, PKCE, and OIDC state sequentially.
+- Verified that Fosite's `AccessTokenFromRequest` accepts query parameters,
+  while tiny-idp's UserInfo handler does not define a method/cache/challenge
+  contract.
+- Used official web results to verify exact OIDC Core, RFC 6749, RFC 9700, and
+  RFC 6750 requirements before capturing them locally.
+- Saved four clean Defuddle extracts under this ticket's `sources/` directory.
+- Created `reference/04-authorization-interaction-and-protocol-robustness-review.md`
+  with nine prioritized findings, state-machine/property/fuzz/concurrency/fault
+  tests, implementation ordering, and release implications.
+- Added eight unchecked docmgr tasks for regression characterization,
+  server-side interactions, consent semantics, deterministic state testing,
+  token/UserInfo hardening, Fosite fault injection, exact-artifact reruns, and
+  the new interaction gate.
+
+Key inspection commands included:
+
+```bash
+rg -n -C 12 'reauth|prompt=login|max_age|AuthenticatePassword|finishAuthorize' internal/fositeadapter/provider.go internal/fositeadapter/*.go
+git log --all -S'MustChangePassword' --oneline -- internal/fositeadapter/provider.go internal/authn/password.go pkg internal
+git show e8253b1 -- internal/fositeadapter/provider.go internal/fositeadapter/provider_test.go
+git blame -L 400,438 internal/fositeadapter/provider.go
+rg -n -i -C 10 'empty login|missing_login|forced reauth|prompt.*post|max_age.*post' internal/fositeadapter/*_test.go
+rg -n 'func AccessTokenFromRequest|max_age|prompt.*none|CreateAuthorizeCodeSession' /home/manuel/go/pkg/mod/github.com/ory/fosite@v0.49.0
+```
+
+Defuddle captures:
+
+```bash
+defuddle parse https://openid.net/specs/openid-connect-core-1_0.html --md -o sources/openid-connect-core-1.0-errata2.md
+defuddle parse https://www.rfc-editor.org/rfc/rfc9700.html --md -o sources/rfc9700-oauth-security-bcp.md
+defuddle parse https://datatracker.ietf.org/doc/html/rfc6749 --md -o sources/rfc6749-oauth2-authorization-framework.md
+defuddle parse https://datatracker.ietf.org/doc/html/rfc6750 --md -o sources/rfc6750-bearer-token-usage.md
+```
+
+### Why
+
+- OpenID Core requires `prompt=login` and exceeded `max_age` to cause active
+  reauthentication; displaying a form without enforcing the action on POST is
+  insufficient.
+- Authorization validation, authentication, and consent form one state
+  machine. Hidden-field reconstruction spreads the state across two requests
+  without a durable invariant.
+- Negative protocol paths need artifact assertions. A response status alone
+  does not prove that no code, PKCE, OIDC, consent, session, access, or refresh
+  row was partially created.
+- The release is already not approved. Newly confirmed control-flow findings
+  must become explicit tasks rather than informal notes that can disappear
+  during final sign-off.
+
+### What worked
+
+- The code and history clearly distinguished the two old findings: forced
+  password change was removed end-to-end, while forced reauthentication was
+  not patched or covered by a POST regression.
+- Defuddle produced complete, multi-line extracts for OpenID Core and RFC 9700.
+- The IETF Datatracker HTML representations produced complete RFC 6749 and RFC
+  6750 extracts after the RFC Editor pages failed extraction.
+- The focused report links every finding to concrete functions and gives
+  executable test names, state dimensions, properties, and artifact checks.
+- Docmgr accepted the focused reference and eight new durable tasks.
+
+### What didn't work
+
+- Defuddle could not extract the RFC Editor HTML representations for RFC 6749
+  and RFC 6750:
+
+  ```text
+  Error: No content could be extracted from https://www.rfc-editor.org/rfc/rfc6749.html
+  Error: No content could be extracted from https://www.rfc-editor.org/rfc/rfc6750.html
+  ```
+
+  Retrying the authoritative IETF Datatracker HTML URLs succeeded. The stored
+  files contain 3,776 lines/163,391 bytes and 891 lines/38,919 bytes,
+  respectively.
+- The first `apply_patch` for the focused review used a ticket path relative to
+  the workspace root rather than the `tiny-idp/` repository subdirectory:
+
+  ```text
+  apply_patch verification failed: Failed to read file to update
+  /home/manuel/workspaces/2026-07-07/prod-tiny-idp/ttmp/.../04-authorization-interaction-and-protocol-robustness-review.md
+  ```
+
+  No file was changed. Prefixing the path with `tiny-idp/` applied the review
+  successfully on the next attempt.
+
+### What I learned
+
+- The `hidden(ar)` helper does not merely omit `prompt` and `max_age`; it drops
+  every authorization parameter not in its eight-field allowlist, including
+  ID-token hints, locales, claims, ACR, response mode, audience/resource, and
+  extension parameters.
+- `sessionSatisfiesMaxAge` and Fosite both treat parse failure as effectively
+  zero/no restriction. Security-policy parsing needs an application-level
+  strict contract and overflow-safe time arithmetic.
+- `NewAuthorizeResponse` calls separate handlers. Atomic entity methods in the
+  SQL adapter do not prove atomicity across code, PKCE, and OIDC handler writes.
+- The token endpoint's pre-authentication limiter uses an attacker-controlled
+  client ID in the only bucket key, unlike the login path's account/client/
+  address layers.
+- UserInfo inherits Fosite's query-token acceptance unless tiny-idp explicitly
+  rejects it.
+
+### What was tricky to build
+
+- Severity needs to separate confirmed control flow from consequences that
+  require a reproduction. The report labels invalid-client/redirect plus
+  `max_age` and partial Fosite storage consequences as tests to confirm rather
+  than overstating them.
+- A server-side interaction must still revalidate mutable security state—client
+  disablement, user disablement, session revocation—without trusting browser
+  fields or silently changing the original client request.
+- Consent denial, session establishment, and OAuth error delivery require an
+  explicit product decision. Their current ordering is observable behavior but
+  was never documented as policy.
+
+### What warrants a second pair of eyes
+
+- Review whether pending interactions should bind to a browser session hash or
+  only to their own random handle and CSRF proof; account switching and
+  pre-login flows need deliberate semantics.
+- Review how to make Fosite's multi-handler writes atomic without forking
+  Fosite or leaking raw transactions through public store contracts.
+- Review supported UserInfo body transport against the exact conformance
+  profile before rejecting query transport and unsupported methods.
+- Reproduce invalid client/redirect/scope plus `max_age` before assigning final
+  severity to credential-form rendering.
+- Review every authorization parameter and explicitly classify it as
+  supported, ignored without semantic effect, rejected, or preserved.
+
+### What should be done in the future
+
+1. Implement the first three failing regressions before production changes.
+2. Replace hidden continuation directly with the server-side interaction; add
+   no backwards-compatibility fallback.
+3. Run the complete state, mutation, replay, concurrency, fuzz, and failpoint
+   program from the focused reference.
+4. Replace candidate identity and rerun all release evidence after behavior
+   changes.
+
+### Code review instructions
+
+- Start with `reference/04-authorization-interaction-and-protocol-robustness-review.md`.
+- Trace `Provider.authorize`, `hidden`, `renderInteraction`, and
+  `finishAuthorize` together rather than reviewing branches independently.
+- Read `sessionSatisfiesMaxAge`, `readBrowserSession`, and `validateCSRF` as the
+  browser-state boundary.
+- Follow Fosite handler ordering into `sqlFositeStore` create/delete methods.
+- Run targeted tests from the review, then full race/fuzz/external/hosted gates.
+
+### Technical details
+
+```text
+confirmed high-leverage families: interaction required-action loss, max_age fail-open parsing/error recovery, mutable incomplete continuation, token limiter sharding
+confirmed secondary families: consent denial semantics, implicit UserInfo transport, unverified request-object error claims, session/store error collapse
+fault investigation: authorize code -> PKCE -> OIDC writes are separate handler calls
+stored sources: OIDC Core, RFC 6749, RFC 9700, RFC 6750
+production code changes: none
+release status: NOT APPROVED; eight new tasks remain unchecked
+```
+
+## Step 18: Design a research-backed security assurance architecture
+
+This step turned the interaction findings into a complete assurance program. I
+researched formal OAuth/OIDC analysis, security automata, runtime verification,
+typestate, interprocedural dataflow, model-based security testing, stateful and
+coverage-guided fuzzing, deterministic concurrency, fault injection, and dynamic
+invariant discovery. I then mapped each research technique to concrete tiny-idp
+invariants and implementation entry points.
+
+The resulting guide does not propose one universal scanner. It defines a shared
+typed model and event vocabulary, then assigns static analyzers, generated tests,
+fuzzers, failpoints, concurrent-history checkers, runtime monitors, and external
+conformance tests to the properties each can actually evaluate. It also records
+the Goja verification-plane boundary developed in the companion scripting ticket.
+
+### Prompt Context
+
+**User prompt (verbatim):** "what would be useful static analysis or test harnesses or fuzz harnesses or audit logs that would make it effective to approach such invariants and security relevant issues from a static analysis / high quality professional point of view, and are there existing tools out there that could assist this work?"
+
+**User prompt (verbatim):** "Also, take a loook at tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md which is an idea we are looking at, could the addition of language hooks and such allow loading for example \"validation plugins\" that could assert invariants and then run different scenarios? Maybe bye xtending or modifying the scope of the proposed scripting layer, or adding a separate scripting layer that is focused on security and verification?"
+
+**User prompt (verbatim):** "also look at CS research for these topics, and the kind of static + runtime analysis assisted by instrumentation and such. We are doing some serious research here.
+
+Create  a detailed analysis / design / implementation guide that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and the nupload to remarkable."
+
+**User prompt (verbatim):** "are there papers you want me to look for? you can btw use `surf kagi search --query ...` and `surf kagi assistant ...` to do additional research."
+
+**User prompt (verbatim):** "can you give me the links for the papers you need, and i'll downlaod them for you. Feel free to download the pdfs when needed to, no need to do everything through defuddle either."
+
+**Assistant interpretation:** Research the CS foundations of static and dynamic
+security assurance, inspect the Goja proposal, design an intern-ready layered
+architecture with concrete APIs and phases, preserve reproducible sources, and
+publish the result through the ticket workflow.
+
+**Inferred user intent:** Build a professional, long-lived verification program
+that can discover entire defect families, explain its scientific basis, and make
+future release decisions depend on reproducible evidence rather than ad hoc code
+review.
+
+### What I did
+
+- Read the complete ticket research, textbook-authoring, diary, Defuddle, and
+  reMarkable workflow instructions relevant to this delivery.
+- Re-read the production authorization code and the Goja design's trust boundary,
+  graph, runtime ownership, challenge state, test, and decision sections with
+  line-numbered evidence.
+- Inspected the earlier production-review `auditlint` multichecker and runtime
+  analysis tools instead of designing a duplicate static-analysis foundation.
+- Used primary-source web search and these additional commands:
+
+  ```bash
+  surf kagi search --query "stateful security protocol fuzzing instrumentation runtime verification authentication authorization OAuth OpenID Connect papers"
+  surf kagi search --query "static dynamic hybrid invariant inference runtime traces security protocol implementation testing research"
+  surf kagi assistant "For a Go OpenID Connect identity provider, identify ..."
+  ```
+
+- Captured Defuddle Markdown for protocol-state fuzzing, stateful greybox
+  fuzzing, model-based security testing, security automata, typestate, IFDS,
+  runtime verification, monitoring-oriented programming, metamorphic security
+  testing, Daikon, CHESS, and related tool documentation.
+- Downloaded and verified 11 primary PDFs, totaling approximately 7.6 MiB, into
+  the implementation ticket's `sources/` directory.
+- Created
+  `design-doc/02-security-invariant-assurance-architecture-static-analysis-runtime-verification-and-stateful-testing.md`.
+- Created a companion Goja assessment and four implementation tasks in
+  `TINYIDP-GOJA-001`.
+
+### Why
+
+- The forced-reauthentication defect is a trace property spanning two HTTP
+  requests, browser state, time, and artifact issuance. A handler-only test or
+  AST rule cannot establish it alone.
+- Static analysis is still valuable for recurring source shapes such as
+  fail-open parsing, browser-owned continuations, implicit bearer extraction,
+  unstable limiter identities, and bypassed atomic store APIs.
+- Structured events create a common observation contract for deterministic
+  tests, fuzzing, fault injection, runtime monitoring, and incident analysis.
+- Verification scripts need capabilities such as fake time and failpoints that
+  must never be available to production policy callbacks.
+
+### What worked
+
+- Kagi Search found current protocol-fuzzing surveys and reinforced the value of
+  state-transition feedback rather than raw message coverage alone.
+- All 11 downloaded files were identified as PDFs. `pdftotext` made the primary
+  research searchable for safety-prefix, session-integrity, instrumentation,
+  concurrency, lineage, and state-feedback claims.
+- The existing `auditlint` already provides high-quality `analysis.Analyzer`,
+  `inspect`, typed-object, `analysistest`, and `multichecker` patterns.
+- The new guide is 1,446 lines and 8,553 words, with an invariant catalog,
+  architecture diagram, analyzer algorithms, Go/JS API sketches, pseudocode,
+  instrumentation schema, tool matrix, eight phases, release gate, decisions,
+  risks, and file references.
+- `docmgr doctor` reported `✅ All checks passed` for both
+  `TINYIDP-PROD-IMPL-001` and `TINYIDP-GOJA-001`.
+- The required reMarkable dry-run enumerated all five bundle inputs. After the
+  Markdown repair below, the real command reported:
+
+  ```text
+  OK: uploaded TINYIDP Security Invariant Assurance Research.pdf -> /ai/2026/07/10/TINYIDP-PROD-IMPL-001
+  ```
+
+### What didn't work
+
+- Defuddle could not extract the Lübeck runtime-verification page because its
+  metadata contained an invalid relative URL:
+
+  ```text
+  Failed to parse URL: TypeError: Invalid URL
+  input: '/research/publications/brief-account-runtime-verification'
+  ```
+
+- Defuddle could not fetch the ACM DOI for coverage-guided property testing:
+
+  ```text
+  Error: Failed to fetch: 403 Forbidden
+  ```
+
+- Defuddle correctly rejected direct PDF input:
+
+  ```text
+  Error: Not an HTML page (content-type: application/pdf)
+  ```
+
+  The full PDF was downloaded after the user explicitly allowed PDF collection.
+
+- The CMU dynamic-taint landing page produced:
+
+  ```text
+  Error: No content could be extracted from https://kilthub.cmu.edu/articles/journal_contribution/All_You_Ever_Wanted_to_Know_About_Dynamic_Taint_Analysis_and_Forward_Symbolic_Execution_but_might_have_been_afraid_to_ask_/6468308
+  ```
+
+- `surf kagi assistant` failed twice with the same browser readiness error:
+
+  ```text
+  Error: tab 441399001 not ready: href="https://assistant.kagi.com/" title="Kagi Assistant" readyState="complete"
+  Error: tab 441399002 not ready: href="https://assistant.kagi.com/" title="Kagi Assistant" readyState="complete"
+  ```
+
+  I stopped retrying after the second failure. Kagi Search, primary web sources,
+  and the downloaded papers supplied the needed evidence.
+
+- My first combined validation command contained literal Markdown fences inside
+  the JavaScript orchestration string and failed before the shell ran:
+
+  ```text
+  Script error:
+  SyntaxError: Invalid or unexpected token
+  ```
+
+  I rebuilt the command from ordinary string elements, after which both doctor
+  checks and the fence counts completed.
+
+- The reMarkable dry-run does not invoke Pandoc. The first real upload found a
+  literal `\n\n` inside the diary's verbatim multi-paragraph prompt:
+
+  ```text
+  Error: pandoc failed: Error producing PDF.
+  ! Undefined control sequence.
+  l.7865 here.\n
+  ```
+
+  I rendered each input independently, isolated the failure to this diary,
+  inspected Pandoc's generated LaTeX, replaced the escaped characters with the
+  prompt's actual blank line, rerendered successfully, and retried the bundle
+  once. The second upload succeeded.
+
+### What I learned
+
+- Runtime enforcement is appropriate for finite bad prefixes only when the
+  monitor observes a complete event stream and controls the transition before
+  the irreversible effect. This supports native issuance guards plus offline
+  trace monitors, not script-controlled authorization monitors.
+- Formal OAuth/OIDC work makes session integrity a first-class property. The
+  concurrent-tab and mutable-continuation cases belong in that category.
+- Typestate provides the right API vocabulary for pending/consumed/denied/
+  expired interactions even when persistent state cannot be encoded entirely in
+  Go's type system.
+- Coverage-guided property testing and stateful fuzzing address the sparse-
+  precondition problem: arbitrary bytes rarely reach deep valid OIDC states.
+- Dynamic invariant discovery should propose candidate properties; reviewed
+  native tests/static checks must establish them more strongly.
+- eBPF can corroborate host file/network/scheduler behavior but cannot infer
+  required login, consent, request binding, or one-time consumption.
+
+### What was tricky to build
+
+- The architecture had to distinguish observation, detection, and enforcement.
+  Calling every assertion a "runtime invariant" would hide whether it runs before
+  or after a security effect and whether missing instrumentation invalidates it.
+- The static-analysis plan had to stay precise enough for CI. The guide uses
+  local AST/typed rules for exact source patterns, SSA/dataflow only where values
+  cross helpers, and dynamic tests for properties that source inspection cannot
+  prove.
+- The Goja proposal needed to offer useful language-level scenarios without
+  exposing fake clocks, failpoints, or store snapshots to a reusable production
+  runtime. The solution compiles symbolic steps to pure Go data, closes Goja, and
+  lets a native runner execute and judge the plan.
+
+### What warrants a second pair of eyes
+
+- Review the invariant catalog for missing authentication, authorization,
+  session-integrity, and availability properties before API names are frozen.
+- Review which store transition groups need one transaction versus explicit
+  compensation, especially response-delivery failure after commit.
+- Review production audit completeness and sampling: a sampled trace cannot prove
+  exactly-once properties without a separate completeness signal.
+- Review whether verification tooling ships in production binaries or only a
+  dedicated generated test command.
+- Review analyzer false-positive contracts before making new rules blocking CI.
+
+### What should be done in the future
+
+1. Complete Phase 0 vocabulary decisions.
+2. Repair the server-owned one-time authorization interaction before freezing the
+   verification DSL.
+3. Implement the first three static rules: strict security parsing, explicit
+   bearer transport, and injected security clock.
+4. Build the typed interaction model and trace schema, then feed example, Rapid,
+   fuzz, failpoint, and concurrent tests through the same monitor.
+5. Implement the Goja verification plan only after native semantics are stable.
+
+### Code review instructions
+
+- Start with the new design's Executive Summary, Sections 5-11, implementation
+  phases, and decision records.
+- Cross-check every observed code claim against
+  `internal/fositeadapter/provider.go` and `session.go`.
+- Review the existing earlier ticket's `scripts/auditlint/main.go` before adding a
+  new analyzer.
+- Inspect all `sources/paper-*.md` and `.pdf` files to retrace research.
+- Run frontmatter/doctor checks, then render the Markdown before reMarkable upload.
+
+### Technical details
+
+```text
+assurance layers: typed model, custom static analysis, generated/stateful tests, controlled time/concurrency/faults, structured trace monitors, isolated Goja verification authoring
+authoritative verdict owner: Go
+production script authority: bounded allow/deny and protected custom claims only
+verification script output: immutable VerificationPlan
+source packet: Defuddle Markdown plus 11 primary PDFs
+doctor: both tickets passed
+remarkable: /ai/2026/07/10/TINYIDP-PROD-IMPL-001/TINYIDP Security Invariant Assurance Research.pdf
+production code changes: none
+release status: NOT APPROVED
+```
