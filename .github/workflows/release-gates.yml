@@ -32,7 +32,7 @@ jobs:
       - name: Build exact candidate and bind the workflow to its hash
         run: |
           mkdir -p dist
-          go build -trimpath -o dist/tinyidp-linux-amd64 ./cmd/tinyidp
+          go build -trimpath -buildvcs=false -o dist/tinyidp-linux-amd64 ./cmd/tinyidp
           actual="$(sha256sum dist/tinyidp-linux-amd64 | cut -d' ' -f1)"
           test "$actual" = "${{ inputs.candidate_sha256 }}"
       - name: Race detector
