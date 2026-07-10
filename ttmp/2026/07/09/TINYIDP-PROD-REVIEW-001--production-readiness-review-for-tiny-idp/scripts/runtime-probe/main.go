@@ -35,6 +35,8 @@ import (
 type config struct {
 	requests     int
 	concurrency  int
+	loginFlows   int
+	loginWorkers int
 	output       string
 	cpuProfile   string
 	heapProfile  string
@@ -43,19 +45,20 @@ type config struct {
 }
 
 type event struct {
-	Type       string             `json:"type"`
-	At         time.Time          `json:"at"`
-	Phase      string             `json:"phase,omitempty"`
-	Name       string             `json:"name,omitempty"`
-	Method     string             `json:"method,omitempty"`
-	Path       string             `json:"path,omitempty"`
-	Status     int                `json:"status,omitempty"`
-	Bytes      int                `json:"bytes,omitempty"`
-	DurationUS int64              `json:"duration_us,omitempty"`
-	Metrics    map[string]float64 `json:"metrics,omitempty"`
-	DB         *dbSnapshot        `json:"db,omitempty"`
-	AuditCount int                `json:"audit_count,omitempty"`
-	Error      string             `json:"error,omitempty"`
+	Type         string                 `json:"type"`
+	At           time.Time              `json:"at"`
+	Phase        string                 `json:"phase,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	Method       string                 `json:"method,omitempty"`
+	Path         string                 `json:"path,omitempty"`
+	Status       int                    `json:"status,omitempty"`
+	Bytes        int                    `json:"bytes,omitempty"`
+	DurationUS   int64                  `json:"duration_us,omitempty"`
+	Metrics      map[string]float64     `json:"metrics,omitempty"`
+	DB           *dbSnapshot            `json:"db,omitempty"`
+	AuditCount   int                    `json:"audit_count,omitempty"`
+	PasswordWork *idp.PasswordWorkStats `json:"password_work,omitempty"`
+	Error        string                 `json:"error,omitempty"`
 }
 
 type dbSnapshot struct {
@@ -90,6 +93,8 @@ func main() {
 	cfg := config{}
 	flag.IntVar(&cfg.requests, "requests", 40, "number of bounded concurrent read requests")
 	flag.IntVar(&cfg.concurrency, "concurrency", 4, "number of request workers")
+	flag.IntVar(&cfg.loginFlows, "login-flows", 8, "number of full password login/token/refresh flows")
+	flag.IntVar(&cfg.loginWorkers, "login-workers", 4, "number of concurrent login-flow workers")
 	flag.StringVar(&cfg.output, "output", "-", "NDJSON output path or - for stdout")
 	flag.StringVar(&cfg.cpuProfile, "cpu-profile", "", "optional CPU profile path")
 	flag.StringVar(&cfg.heapProfile, "heap-profile", "", "optional heap profile path")
@@ -105,8 +110,8 @@ func main() {
 	zerolog.SetGlobalLevel(level)
 	log.Logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
 
-	if cfg.requests < 0 || cfg.concurrency < 1 {
-		log.Fatal().Msg("--requests must be non-negative and --concurrency must be positive")
+	if cfg.requests < 0 || cfg.concurrency < 1 || cfg.loginFlows < 0 || cfg.loginWorkers < 1 {
+		log.Fatal().Msg("request/login counts must be non-negative and worker counts must be positive")
 	}
 	if err := run(context.Background(), cfg); err != nil {
 		log.Fatal().Err(err).Msg("runtime probe failed")
@@ -140,13 +145,13 @@ func run(ctx context.Context, cfg config) error {
 	if err != nil {
 		return fmt.Errorf("open SQLite: %w", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	auditSink, err := idp.NewFileAuditSink(filepath.Join(dir, "audit", "events.jsonl"))
 	if err != nil {
 		return fmt.Errorf("create audit sink: %w", err)
 	}
-	defer auditSink.Close()
+	defer func() { _ = auditSink.Close() }()
 	adminService, err := admin.NewService(store, admin.Options{Audit: auditSink})
 	if err != nil {
 		return fmt.Errorf("create admin service: %w", err)
@@ -204,18 +209,52 @@ func run(ctx context.Context, cfg config) error {
 	if err := runLoad(ctx, emit, client, server.URL, tokens.accessToken, cfg.requests, cfg.concurrency); err != nil {
 		return err
 	}
+	if err := runLoginLoad(ctx, emit, client, server.URL, cfg.loginFlows, cfg.loginWorkers); err != nil {
+		return err
+	}
 	client.CloseIdleConnections()
 	time.Sleep(25 * time.Millisecond)
 	emitSnapshot(emit, "after", store.SQLDB())
 	auditCount := int(auditSink.AuditHealth(ctx).Delivered)
-	if err := emit.emit(event{Type: "summary", At: time.Now().UTC(), AuditCount: auditCount}); err != nil {
+	passwordWork, _ := provider.PasswordWorkStats()
+	if err := emit.emit(event{Type: "summary", At: time.Now().UTC(), AuditCount: auditCount, PasswordWork: &passwordWork}); err != nil {
 		return err
 	}
 	if err := writeHeapProfile(cfg.heapProfile); err != nil {
 		return err
 	}
-	log.Info().Int("requests", cfg.requests).Int("concurrency", cfg.concurrency).Int("audit_events", auditCount).Msg("runtime probe complete")
+	log.Info().Int("requests", cfg.requests).Int("concurrency", cfg.concurrency).Int("login_flows", cfg.loginFlows).Int("login_workers", cfg.loginWorkers).Int("audit_events", auditCount).Uint64("password_saturations", passwordWork.Saturations).Msg("runtime probe complete")
 	return nil
+}
+
+func runLoginLoad(ctx context.Context, emit *emitter, client *http.Client, baseURL string, flows, workers int) error {
+	if flows == 0 {
+		return nil
+	}
+	jobs := make(chan struct{})
+	group, groupCtx := errgroup.WithContext(ctx)
+	for worker := 0; worker < workers; worker++ {
+		group.Go(func() error {
+			for range jobs {
+				if _, err := runAuthorizationCodeFlow(groupCtx, emit, client, baseURL); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	group.Go(func() error {
+		defer close(jobs)
+		for index := 0; index < flows; index++ {
+			select {
+			case jobs <- struct{}{}:
+			case <-groupCtx.Done():
+				return groupCtx.Err()
+			}
+		}
+		return nil
+	})
+	return group.Wait()
 }
 
 type flowTokens struct {

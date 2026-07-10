@@ -12,6 +12,25 @@ func newAdminKeysCommand(dbPath *string) *cobra.Command {
 	cmd.AddCommand(newAdminKeysRotateCommand(dbPath))
 	cmd.AddCommand(newAdminKeysListCommand(dbPath))
 	cmd.AddCommand(newAdminKeysRetireCommand(dbPath))
+	cmd.AddCommand(newAdminKeysPurgeRetiredCommand(dbPath))
+	return cmd
+}
+
+func newAdminKeysPurgeRetiredCommand(dbPath *string) *cobra.Command {
+	var kid string
+	cmd := &cobra.Command{Use: "purge-retired", Short: "Emergency-remove a retired key from JWKS trust", Long: "Permanently remove a retired signing key before its normal verification overlap expires. Use only for confirmed or suspected private-key compromise; still-valid tokens signed by this key will stop verifying.", RunE: func(cmd *cobra.Command, _ []string) error {
+		svc, closeFn, err := openAdminService(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer closeFn()
+		if err := svc.PurgeRetiredSigningKey(cmd.Context(), kid); err != nil {
+			return err
+		}
+		return writeJSONLine(cmd.OutOrStdout(), map[string]any{"status": "retired-key-purged", "kid": kid})
+	}}
+	cmd.Flags().StringVar(&kid, "kid", "", "Retired key ID")
+	_ = cmd.MarkFlagRequired("kid")
 	return cmd
 }
 

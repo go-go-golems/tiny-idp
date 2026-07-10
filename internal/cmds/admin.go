@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/manuel/tinyidp/internal/admin"
+	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
@@ -173,12 +174,31 @@ func openAdminService(dbPath string) (*admin.Service, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	svc, err := admin.NewService(st, admin.Options{})
+	audit, err := idp.NewFileAuditSink(dbPath + ".audit.jsonl")
 	if err != nil {
 		_ = st.Close()
 		return nil, nil, err
 	}
-	return svc, func() { _ = st.Close() }, nil
+	svc, err := admin.NewService(st, admin.Options{Audit: audit})
+	if err != nil {
+		_ = audit.Close()
+		_ = st.Close()
+		return nil, nil, err
+	}
+	return svc, func() { _ = audit.Close(); _ = st.Close() }, nil
+}
+
+func emitAdminAudit(ctx context.Context, dbPath string, event idp.Event) error {
+	sink, err := idp.NewFileAuditSink(dbPath + ".audit.jsonl")
+	if err != nil {
+		return err
+	}
+	emitErr := sink.Emit(ctx, event)
+	closeErr := sink.Close()
+	if emitErr != nil {
+		return fmt.Errorf("%w: %v", idp.ErrAuditDelivery, emitErr)
+	}
+	return closeErr
 }
 
 func readAdminPassword(flagValue string, fromStdin bool, r io.Reader) ([]byte, error) {

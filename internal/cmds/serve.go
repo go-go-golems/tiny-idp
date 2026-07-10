@@ -15,6 +15,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cli"
 	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/client"
@@ -129,20 +130,33 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 		Int("clients", clientCount).
 		Msg("tinyidp listening")
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- http.ListenAndServe(cfg.Addr, server.WithCORS(mux))
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-errCh:
-		if err != nil {
+	httpServer := &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           server.WithCORS(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		err := httpServer.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
 			return fmt.Errorf("listen and serve: %w", err)
 		}
-	}
-	return nil
+		return nil
+	})
+	group.Go(func() error {
+		<-groupCtx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown HTTP server: %w", err)
+		}
+		return nil
+	})
+	return group.Wait()
 }
 
 // buildClientRegistry returns a client registry seeded with the built-in

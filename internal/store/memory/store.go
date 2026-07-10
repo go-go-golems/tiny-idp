@@ -494,6 +494,23 @@ func (s *Store) RetireSigningKey(_ context.Context, kid string) error {
 	return nil
 }
 
+func (s *Store) DeleteRetiredSigningKey(_ context.Context, kid string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key, ok := s.keys[kid]
+	if !ok {
+		return idpstore.ErrNotFound
+	}
+	if key.Active {
+		return idpstore.ErrActiveSigningKey
+	}
+	if key.NotAfter.IsZero() {
+		return idpstore.ErrSigningKeyNotRetired
+	}
+	delete(s.keys, kid)
+	return nil
+}
+
 func (s *Store) View(ctx context.Context, fn func(idpstore.ReadStore) error) error {
 	if fn == nil {
 		return errors.New("view callback is required")

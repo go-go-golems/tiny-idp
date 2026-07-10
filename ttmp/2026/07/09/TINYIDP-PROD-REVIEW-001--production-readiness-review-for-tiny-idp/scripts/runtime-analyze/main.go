@@ -14,21 +14,24 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	"github.com/manuel/tinyidp/pkg/idp"
 )
 
 type event struct {
-	Type       string             `json:"type"`
-	Phase      string             `json:"phase"`
-	Name       string             `json:"name"`
-	Method     string             `json:"method"`
-	Path       string             `json:"path"`
-	Status     int                `json:"status"`
-	Bytes      int                `json:"bytes"`
-	DurationUS int64              `json:"duration_us"`
-	Metrics    map[string]float64 `json:"metrics"`
-	DB         *dbSnapshot        `json:"db"`
-	AuditCount int                `json:"audit_count"`
-	Error      string             `json:"error"`
+	Type         string                 `json:"type"`
+	Phase        string                 `json:"phase"`
+	Name         string                 `json:"name"`
+	Method       string                 `json:"method"`
+	Path         string                 `json:"path"`
+	Status       int                    `json:"status"`
+	Bytes        int                    `json:"bytes"`
+	DurationUS   int64                  `json:"duration_us"`
+	Metrics      map[string]float64     `json:"metrics"`
+	DB           *dbSnapshot            `json:"db"`
+	AuditCount   int                    `json:"audit_count"`
+	Error        string                 `json:"error"`
+	PasswordWork *idp.PasswordWorkStats `json:"password_work"`
 }
 
 type dbSnapshot struct {
@@ -52,6 +55,7 @@ func main() {
 	input := flag.String("input", "", "runtime NDJSON input")
 	output := flag.String("output", "-", "Markdown output or - for stdout")
 	logLevel := flag.String("log-level", "info", "zerolog level")
+	ticket := flag.String("ticket", "TINYIDP-PROD-REVIEW-001", "docmgr ticket identifier for output frontmatter")
 	flag.Parse()
 	level, err := zerolog.ParseLevel(*logLevel)
 	if err != nil {
@@ -63,12 +67,12 @@ func main() {
 	if *input == "" {
 		log.Fatal().Msg("--input is required")
 	}
-	if err := run(*input, *output); err != nil {
+	if err := run(*input, *output, *ticket); err != nil {
 		log.Fatal().Err(err).Msg("runtime analysis failed")
 	}
 }
 
-func run(input, output string) error {
+func run(input, output, ticket string) error {
 	file, err := os.Open(input)
 	if err != nil {
 		return err
@@ -79,6 +83,7 @@ func run(input, output string) error {
 	runtimeSamples := map[string]map[string]float64{}
 	databaseSamples := map[string]*dbSnapshot{}
 	auditCount := 0
+	var passwordWork *idp.PasswordWorkStats
 	line := 0
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -107,6 +112,7 @@ func run(input, output string) error {
 			databaseSamples[value.Phase] = value.DB
 		case "summary":
 			auditCount = value.AuditCount
+			passwordWork = value.PasswordWork
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -118,10 +124,10 @@ func run(input, output string) error {
 		return err
 	}
 	defer closeWriter()
-	return writeSummary(writer, input, routes, runtimeSamples, databaseSamples, auditCount)
+	return writeSummary(writer, input, ticket, routes, runtimeSamples, databaseSamples, auditCount, passwordWork)
 }
 
-func writeSummary(w io.Writer, input string, routes map[string]*routeStats, runtimeSamples map[string]map[string]float64, databaseSamples map[string]*dbSnapshot, auditCount int) error {
+func writeSummary(w io.Writer, input, ticket string, routes map[string]*routeStats, runtimeSamples map[string]map[string]float64, databaseSamples map[string]*dbSnapshot, auditCount int, passwordWork *idp.PasswordWorkStats) error {
 	keys := make([]string, 0, len(routes))
 	for key := range routes {
 		keys = append(keys, key)
@@ -133,7 +139,7 @@ func writeSummary(w io.Writer, input string, routes map[string]*routeStats, runt
 	}
 	_, err := fmt.Fprintf(w, `---
 Title: tiny-idp runtime probe summary
-Ticket: TINYIDP-PROD-REVIEW-001
+Ticket: %s
 Status: active
 Topics:
     - oidc
@@ -162,7 +168,7 @@ Requests observed: **%d**. Audit events emitted: **%d**.
 
 | Operation | Count | Statuses | p50 | p95 | p99 | Mean bytes | Errors |
 |---|---:|---|---:|---:|---:|---:|---:|
-`, time.Now().UTC().Format(time.RFC3339), input, requestCount, auditCount)
+`, ticket, time.Now().UTC().Format(time.RFC3339), input, requestCount, auditCount)
 	if err != nil {
 		return err
 	}
@@ -212,6 +218,17 @@ Requests observed: **%d**. Audit events emitted: **%d**.
 			continue
 		}
 		if _, err := fmt.Fprintf(w, "| %s | %d | %d | %d | %d | %s | %d | %d |\n", phase, stats.OpenConnections, stats.InUse, stats.Idle, stats.WaitCount, formatDuration(stats.WaitDurationUS), stats.MaxIdleClosed, stats.MaxLifetimeDone); err != nil {
+			return err
+		}
+	}
+	if passwordWork != nil {
+		if _, err := fmt.Fprintf(w, `
+## Password-work admission
+
+| Capacity | Completed | Saturations | Rejected | Total wait | Total Argon2 duration |
+|---:|---:|---:|---:|---:|---:|
+| %d | %d | %d | %d | %s | %s |
+`, passwordWork.Capacity, passwordWork.Completed, passwordWork.Saturations, passwordWork.Rejected, formatDuration(passwordWork.TotalWait/1_000), formatDuration(passwordWork.TotalDuration/1_000)); err != nil {
 			return err
 		}
 	}

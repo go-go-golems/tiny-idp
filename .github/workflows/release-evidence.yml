@@ -44,6 +44,20 @@ jobs:
           format: spdx-json
           output-file: dist/tinyidp-linux-amd64.spdx.json
 
+      - name: Collect dependency license notices and module graph
+        run: |
+          go list -m -json all > dist/module-graph.json
+          go mod graph > dist/go-mod-graph.txt
+          bash ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/scripts/03-collect-licenses.sh dist/licenses
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Keyless-sign candidate and checksum manifest
+        run: |
+          cosign sign-blob --yes --bundle dist/tinyidp-linux-amd64.sigstore.json dist/tinyidp-linux-amd64
+          cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v3
         with:

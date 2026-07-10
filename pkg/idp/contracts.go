@@ -169,24 +169,24 @@ type PasswordAuthenticator interface {
 
 // ReadinessCheck is one stable, non-secret provider preflight result.
 type ReadinessCheck struct {
-	Name      string
-	Ready     bool
-	Degraded  bool
-	Reason    string
-	CheckedAt time.Time
+	Name      string    `json:"name"`
+	Ready     bool      `json:"ready"`
+	Degraded  bool      `json:"degraded"`
+	Reason    string    `json:"reason,omitempty"`
+	CheckedAt time.Time `json:"checked_at"`
 }
 
 // ReadinessReport aggregates provider preflight checks.
 type ReadinessReport struct {
-	Ready  bool
-	Checks []ReadinessCheck
+	Ready  bool             `json:"ready"`
+	Checks []ReadinessCheck `json:"checks"`
 }
 
 // MaintenanceStatus is the host-visible lifecycle state of retention work.
 type MaintenanceStatus struct {
-	LastStartedAt  time.Time
-	LastFinishedAt time.Time
-	LastSuccessAt  time.Time
-	LastError      string
-	LastReport     idpstore.MaintenanceReport
+	LastStartedAt  time.Time                  `json:"last_started_at"`
+	LastFinishedAt time.Time                  `json:"last_finished_at"`
+	LastSuccessAt  time.Time                  `json:"last_success_at"`
+	LastError      string                     `json:"last_error,omitempty"`
+	LastReport     idpstore.MaintenanceReport `json:"last_report"`
 }

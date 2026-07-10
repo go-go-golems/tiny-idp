@@ -62,6 +62,17 @@ func (s *Service) RetireSigningKey(ctx context.Context, kid string) error {
 	return s.auditCommitted(ctx, idp.Event{Time: s.Clock().UTC(), Name: "admin.key.retired", Result: "accepted", Fields: map[string]string{"kid": kid}})
 }
 
+func (s *Service) PurgeRetiredSigningKey(ctx context.Context, kid string) error {
+	kid = strings.TrimSpace(kid)
+	if kid == "" {
+		return fmt.Errorf("kid is required")
+	}
+	if err := s.Store.DeleteRetiredSigningKey(ctx, kid); err != nil {
+		return err
+	}
+	return s.auditCommitted(ctx, idp.Event{Time: s.Clock().UTC(), Name: "admin.key.retired_purged", Result: "accepted", Fields: map[string]string{"kid": kid, "emergency": "true"}})
+}
+
 func RedactSigningKey(key idpstore.SigningKey) idpstore.SigningKey {
 	key.PrivateKeyPEM = nil
 	return key

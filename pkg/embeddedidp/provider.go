@@ -142,13 +142,7 @@ func (p *Provider) Readiness(ctx context.Context) idp.ReadinessReport {
 	keyReady := keyErr == nil && signingKeyReady(key, now)
 	if keyReady {
 		verification, verifyErr := p.store.VerificationKeys(ctx)
-		active := 0
-		for _, candidate := range verification {
-			if candidate.Active {
-				active++
-			}
-		}
-		keyReady = verifyErr == nil && active == 1
+		keyReady = verifyErr == nil && verificationKeysReady(verification)
 	}
 	add("signing_key", keyReady, false, reasonIfCondition(keyReady, "signing_key_unavailable_or_invalid"))
 	add("token_secret", p.tokenSecretReady || p.mode != idpstore.ProductionMode, !p.tokenSecretReady && p.mode != idpstore.ProductionMode, reasonIfCondition(p.tokenSecretReady, "ephemeral_or_short_token_secret"))
@@ -257,6 +251,25 @@ func signingKeyReady(key idpstore.SigningKey, now time.Time) bool {
 	}
 	privateKey, err := keys.ParseRSAPrivateKey(key)
 	return err == nil && privateKey.N.BitLen() >= 2048
+}
+
+func verificationKeysReady(values []idpstore.SigningKey) bool {
+	active := 0
+	for _, value := range values {
+		if value.Active {
+			active++
+		} else if value.NotAfter.IsZero() {
+			return false
+		}
+		if value.ID == "" || value.Algorithm != "RS256" {
+			return false
+		}
+		privateKey, err := keys.ParseRSAPrivateKey(value)
+		if err != nil || privateKey.N.BitLen() < 2048 {
+			return false
+		}
+	}
+	return active == 1
 }
 
 func reasonIf(err error, reason string) string {

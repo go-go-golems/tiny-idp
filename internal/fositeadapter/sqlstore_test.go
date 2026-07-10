@@ -219,6 +219,66 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 	}
 }
 
+func TestTokenSecretRotationInvalidatesPriorOpaqueTokens(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}, AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, RefreshTokenTTL: 24 * time.Hour}
+	if err := store.PutClient(ctx, client); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: []byte("first-token-secret-is-at-least-32-bytes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstServer := httptest.NewServer(first.Handler())
+	verifier := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	tokens := exchangeCode(t, firstServer.URL, authorizeForCode(t, firstServer.URL, verifier), verifier)
+	firstServer.Close()
+
+	second, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: []byte("second-token-secret-is-at-least-32-byte")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondServer := httptest.NewServer(second.Handler())
+	defer secondServer.Close()
+	req, err := http.NewRequest(http.MethodGet, secondServer.URL+"/userinfo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tokens["access_token"].(string))
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("old access token status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+	}
+	refreshResponse, err := http.PostForm(secondServer.URL+"/token", url.Values{"grant_type": {"refresh_token"}, "client_id": {"spa"}, "refresh_token": {tokens["refresh_token"].(string)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer refreshResponse.Body.Close()
+	if refreshResponse.StatusCode == http.StatusOK {
+		t.Fatal("old refresh token survived token-secret rotation")
+	}
+}
+
 func authorizeForCode(t *testing.T, baseURL, verifier string) string {
 	t.Helper()
 	form := url.Values{

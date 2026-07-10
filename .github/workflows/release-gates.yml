@@ -1,0 +1,78 @@
+name: Release gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      plan_id:
+        description: Hosted OpenID Foundation conformance plan ID for the deployed candidate
+        required: true
+        type: string
+      candidate_sha256:
+        description: SHA-256 of the exact deployed linux-amd64 release candidate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+  GOWORK: "off"
+
+jobs:
+  local-release-gates:
+    name: Race, fuzz, faults, and recovery drills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+          cache: true
+      - name: Build exact candidate and bind the workflow to its hash
+        run: |
+          mkdir -p dist
+          go build -trimpath -o dist/tinyidp-linux-amd64 ./cmd/tinyidp
+          actual="$(sha256sum dist/tinyidp-linux-amd64 | cut -d' ' -f1)"
+          test "$actual" = "${{ inputs.candidate_sha256 }}"
+      - name: Race detector
+        run: go test -race ./... -count=1
+      - name: Issuer parser fuzz campaign
+        run: go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts -run '^$' -fuzz '^FuzzIssuerParsing$' -fuzztime 30s
+      - name: Redirect parser fuzz campaign
+        run: go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts -run '^$' -fuzz '^FuzzProductionRedirectURI$' -fuzztime 30s
+      - name: Argon2 parser fuzz campaign
+        run: go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts -run '^$' -fuzz '^FuzzArgon2idHashParsing$' -fuzztime 30s
+      - name: Concurrency and injected-fault suites
+        run: go test ./pkg/sqlitestore -run 'TestConcurrentFailedLoginsLoseNoUpdates|TestFailedMigrationIsNotRecorded|TestMigrationChecksumMismatchRefusesOpen|TestCanceledBackupLeavesPublishedFileUntouched|TestBusyConnectionHonorsContextDeadline|TestBackupDuringConcurrentWritesIsSelfConsistent|TestBackupDiskFullLeavesPublishedFileUntouched' -count=1
+      - name: Migration, rotation, backup, restore, downgrade, and rollback drills
+        run: bash ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/scripts/02-release-drills.sh
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-gate-candidate-${{ github.sha }}
+          path: dist/tinyidp-linux-amd64
+          if-no-files-found: error
+
+  hosted-conformance:
+    name: Hosted OIDF conformance
+    needs: local-release-gates
+    runs-on: ubuntu-latest
+    environment: release-conformance
+    env:
+      OIDF_API_TOKEN: ${{ secrets.OIDF_API_TOKEN }}
+      OIDF_JSESSIONID: ${{ secrets.OIDF_JSESSIONID }}
+      TINYIDP_LOGIN: ${{ secrets.TINYIDP_LOGIN }}
+      TINYIDP_PASSWORD: ${{ secrets.TINYIDP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --disable-pip-version-check requests
+      - name: Run exact-candidate hosted conformance plan
+        run: python scripts/oidf_hosted_runner.py --plan '${{ inputs.plan_id }}' --artifacts oidf-evidence
+      - uses: actions/upload-artifact@v6
+        with:
+          name: oidf-conformance-${{ inputs.plan_id }}-${{ github.sha }}
+          path: oidf-evidence/
+          if-no-files-found: error

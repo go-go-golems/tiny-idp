@@ -178,6 +178,16 @@ func (o Options) Validate(ctx context.Context) error {
 			if verificationKey.Active {
 				active++
 			}
+			if verificationKey.ID == "" || verificationKey.Algorithm != "RS256" {
+				return fmt.Errorf("production verification key metadata is invalid")
+			}
+			parsed, err := keys.ParseRSAPrivateKey(verificationKey)
+			if err != nil || parsed.N.BitLen() < 2048 {
+				return fmt.Errorf("production verification key %q is invalid", verificationKey.ID)
+			}
+			if !verificationKey.Active && verificationKey.NotAfter.IsZero() {
+				return fmt.Errorf("retired verification key %q has no retirement time", verificationKey.ID)
+			}
 		}
 		if active != 1 {
 			return fmt.Errorf("production mode requires exactly one active signing key")

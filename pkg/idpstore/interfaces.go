@@ -13,6 +13,8 @@ var (
 	ErrRefreshReuseDetected = errors.New("refresh token reuse detected")
 	ErrDuplicate            = errors.New("duplicate")
 	ErrLastSigningKey       = errors.New("cannot retire the final active signing key")
+	ErrActiveSigningKey     = errors.New("cannot purge an active signing key")
+	ErrSigningKeyNotRetired = errors.New("cannot purge a signing key that has not been retired")
 	ErrNestedTransaction    = errors.New("nested store transactions are not supported")
 )
 
@@ -83,6 +85,7 @@ type KeyStore interface {
 	CreateSigningKey(ctx context.Context, key SigningKey) error
 	ActivateSigningKey(ctx context.Context, kid string) error
 	RetireSigningKey(ctx context.Context, kid string) error
+	DeleteRetiredSigningKey(ctx context.Context, kid string) error
 }
 
 type StoreOperations interface {

@@ -3,10 +3,12 @@ package cmds
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/manuel/tinyidp/internal/admin"
+	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
@@ -57,6 +59,9 @@ func newAdminMigrateCommand(dbPath *string) *cobra.Command {
 			}
 			defer closeFn()
 			if err := st.Migrate(cmd.Context()); err != nil {
+				return err
+			}
+			if err := emitAdminAudit(cmd.Context(), *dbPath, idp.Event{Time: time.Now().UTC(), Name: "admin.schema.migrated", Result: "accepted", Fields: map[string]string{"migration_count": fmt.Sprint(len(names))}}); err != nil {
 				return err
 			}
 			return writeJSONLine(cmd.OutOrStdout(), map[string]any{"status": "migrated", "migrations": names})

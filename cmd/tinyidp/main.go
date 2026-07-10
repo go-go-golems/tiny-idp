@@ -10,11 +10,15 @@
 package main
 
 import (
+	"context"
 	"github.com/go-go-golems/glazed/pkg/cli"
 	"github.com/go-go-golems/glazed/pkg/cmds/logging"
 	"github.com/go-go-golems/glazed/pkg/help"
 	help_cmd "github.com/go-go-golems/glazed/pkg/help/cmd"
 	"github.com/spf13/cobra"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/manuel/tinyidp/cmd/tinyidp/doc"
 	"github.com/manuel/tinyidp/internal/cmds"
@@ -69,6 +73,12 @@ func main() {
 	cobra.CheckErr(err)
 	rootCmd.AddCommand(serveCobraCmd)
 
+	productionCmd, err := cmds.NewServeProductionCommand()
+	cobra.CheckErr(err)
+	productionCobraCmd, err := cli.BuildCobraCommand(productionCmd)
+	cobra.CheckErr(err)
+	rootCmd.AddCommand(productionCobraCmd)
+
 	// `tinyidp print-config` — print the resolved OIDC configuration. Composes
 	// the same reusable oidc section as serve, so it is both a debugging tool
 	// and the second consumer that proves the section is reusable.
@@ -88,5 +98,7 @@ func main() {
 	// `tinyidp admin` — operational user/password administration commands.
 	rootCmd.AddCommand(cmds.NewAdminCommand())
 
-	cobra.CheckErr(rootCmd.Execute())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	cobra.CheckErr(rootCmd.ExecuteContext(ctx))
 }

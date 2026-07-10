@@ -1,9 +1,12 @@
 package cmds
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/manuel/tinyidp/internal/admin"
+	"github.com/manuel/tinyidp/pkg/idp"
 )
 
 func newAdminBackupCommand(dbPath *string) *cobra.Command {
@@ -21,6 +24,9 @@ func newAdminBackupRestoreCommand(dbPath *string) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := emitAdminAudit(cmd.Context(), *dbPath, idp.Event{Time: time.Now().UTC(), Name: "admin.backup.restored", Result: "accepted", Fields: map[string]string{"backup_path": path, "rollback_path": result.RollbackPath}}); err != nil {
+			return err
+		}
 		return writeJSONLine(cmd.OutOrStdout(), map[string]any{"status": "restored", "restore": result})
 	}}
 	cmd.Flags().StringVar(&path, "path", "", "Verified backup database path")
@@ -33,6 +39,9 @@ func newAdminBackupCreateCommand(dbPath *string) *cobra.Command {
 	cmd := &cobra.Command{Use: "create", Short: "Create and atomically publish a verified SQLite online backup", RunE: func(cmd *cobra.Command, _ []string) error {
 		result, err := admin.CreateSQLiteBackup(cmd.Context(), *dbPath, out)
 		if err != nil {
+			return err
+		}
+		if err := emitAdminAudit(cmd.Context(), *dbPath, idp.Event{Time: time.Now().UTC(), Name: "admin.backup.created", Result: "accepted", Fields: map[string]string{"backup_path": result.Path}}); err != nil {
 			return err
 		}
 		return writeJSONLine(cmd.OutOrStdout(), map[string]any{"status": "created", "backup": result})

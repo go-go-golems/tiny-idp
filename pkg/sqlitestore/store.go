@@ -788,6 +788,29 @@ func (s *Store) RetireSigningKey(ctx context.Context, kid string) error {
 	_, err = s.conn().ExecContext(ctx, `UPDATE signing_keys SET active=0,data=? WHERE id=?`, b, kid)
 	return err
 }
+func (s *Store) DeleteRetiredSigningKey(ctx context.Context, kid string) error {
+	if s.runner == nil {
+		return s.Update(ctx, func(tx idpstore.TxStore) error { return tx.DeleteRetiredSigningKey(ctx, kid) })
+	}
+	key, err := s.getSigningKey(ctx, kid)
+	if err != nil {
+		return err
+	}
+	if key.Active {
+		return idpstore.ErrActiveSigningKey
+	}
+	if key.NotAfter.IsZero() {
+		return idpstore.ErrSigningKeyNotRetired
+	}
+	result, err := s.conn().ExecContext(ctx, `DELETE FROM signing_keys WHERE id=? AND active=0`, kid)
+	if err != nil {
+		return err
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return idpstore.ErrNotFound
+	}
+	return nil
+}
 func (s *Store) getSigningKey(ctx context.Context, kid string) (idpstore.SigningKey, error) {
 	var b []byte
 	err := s.conn().QueryRowContext(ctx, `SELECT data FROM signing_keys WHERE id=?`, kid).Scan(&b)

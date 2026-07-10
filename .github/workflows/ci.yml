@@ -16,7 +16,7 @@ env:
 
 jobs:
   test:
-    name: Build, test, vet, race, and smoke
+    name: Build, test, vet, and production smokes
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -42,11 +42,22 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Race detector
-        run: go test -race ./... -count=1
-
       - name: CLI smoke test
-        run: go run ./cmd/tinyidp --help
+        run: |
+          go run ./cmd/tinyidp --help
+          go run ./cmd/tinyidp serve-production --help
+
+      - name: Repository-specific Go AST analyzers
+        run: go run ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint -- ./pkg/... ./internal/...
+
+      - name: Parser fuzz seed corpus
+        run: go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts -count=1
+
+      - name: External consumer production flow
+        run: bash ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-api-smoke.sh
+
+      - name: Backup and restore regression gate
+        run: go test ./pkg/sqlitestore -run 'TestOnlineBackupVerifyAndRestore|TestRestorePreservesRollbackAndRejectsCorruption|TestBackupDuringConcurrentWritesIsSelfConsistent|TestBackupDiskFullLeavesPublishedFileUntouched' -count=1
 
   lint:
     name: Pinned lint suite

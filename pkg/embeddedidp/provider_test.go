@@ -173,6 +173,40 @@ func TestProductionReadinessTransitionsOnAuditFailure(t *testing.T) {
 	}
 }
 
+func TestProductionStartupRejectsCorruptPublishedVerificationKey(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(dir, "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}, AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, RefreshTokenTTL: 24 * time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := keys.GenerateRSA("active", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, active); err != nil {
+		t.Fatal(err)
+	}
+	retiredAt := time.Now().Add(-time.Minute)
+	corrupt := idpstore.SigningKey{ID: "corrupt-retired", Algorithm: "RS256", PrivateKeyPEM: []byte("not a key"), CreatedAt: retiredAt.Add(-time.Hour), NotBefore: retiredAt.Add(-time.Hour), NotAfter: retiredAt}
+	if err := store.CreateSigningKey(ctx, corrupt); err != nil {
+		t.Fatal(err)
+	}
+	audit, err := idp.NewFileAuditSink(filepath.Join(dir, "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = audit.Close() })
+	_, err = embeddedidp.New(ctx, embeddedidp.Options{Issuer: "https://issuer.example.test", Mode: embeddedidp.ProductionMode, Store: store, Cookie: embeddedidp.CookieConfig{Secure: true}, Token: embeddedidp.TokenConfig{SecretKey: []byte("production-token-secret-at-least-32-bytes")}, Audit: audit, RateLimiter: idp.NewFixedWindowRateLimiter(100, time.Minute), ClientAddress: idp.DirectClientAddressResolver{}})
+	if err == nil {
+		t.Fatal("expected corrupt published verification key rejection")
+	}
+}
+
 func TestNewRejectsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

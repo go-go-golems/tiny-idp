@@ -260,5 +260,17 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		if len(keys) != 1 || keys[0].ID != "k2" {
 			t.Fatalf("verification keys = %#v", keys)
 		}
+		if err := st.DeleteRetiredSigningKey(ctx, "k2"); !errors.Is(err, ErrActiveSigningKey) {
+			t.Fatalf("purge active key error = %v", err)
+		}
+		if err := st.RetireSigningKey(ctx, "k1"); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.DeleteRetiredSigningKey(ctx, "k1"); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.ActivateSigningKey(ctx, "k1"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("activate purged key error = %v", err)
+		}
 	})
 }
