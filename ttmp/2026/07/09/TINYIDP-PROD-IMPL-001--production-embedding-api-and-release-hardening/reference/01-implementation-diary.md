@@ -45,6 +45,8 @@ RelatedFiles:
       Note: Implementation design this diary tracks
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/02-security-invariant-assurance-architecture-static-analysis-runtime-verification-and-stateful-testing.md
       Note: Step 18 research and assurance architecture deliverable
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/reference/05-authorization-interaction-hardening-implementation-ledger.md
+      Note: Step 19 detailed phase and task plan
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/tasks.md
       Note: Durable 90-task phase ledger
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/various/phase3-password-load.json
@@ -55,6 +57,7 @@ LastUpdated: 2026-07-09T17:37:01.160328301-04:00
 WhatFor: Preserving decisions, exact commands, failures, commits, verification, and continuation instructions across the multi-phase hardening effort.
 WhenToUse: Read before resuming work, reviewing a phase, investigating a regression, or assembling release evidence.
 ---
+
 
 
 
@@ -2782,4 +2785,124 @@ doctor: both tickets passed
 remarkable: /ai/2026/07/10/TINYIDP-PROD-IMPL-001/TINYIDP Security Invariant Assurance Research.pdf
 production code changes: none
 release status: NOT APPROVED
+```
+
+## Step 19: Freeze the authorization-hardening phase and task ledger
+
+This step converted the broad assurance phases into 31 small implementation
+tasks with stable docmgr IDs, explicit exit criteria, and five commit boundaries.
+It also established the pre-change test baseline and accepted the product
+semantics that the tests and implementation will enforce.
+
+The ledger deliberately requires removal of the browser-hidden continuation with
+no compatibility fallback. Fresh authentication, consent, one-time consumption,
+mutable-state revalidation, UserInfo transport, limiter identity, and Fosite
+persistence are tracked as separate review units so progress remains auditable
+while the implementation spans multiple commits.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Create a detailed set of phases each with detailed tasks (so we can keep precise track of where we are in the implementation work), and then implement them task by task, keeping a detailed diary as you work. I am going on a run, and I want you to do all of 1. - 5. at the very least."
+
+**Assistant interpretation:** Expand the existing production assurance plan into
+precise tasks, then implement the previously listed regression, interaction,
+provider migration, mutable-state, and adjacent hardening work autonomously with
+frequent diary and commit checkpoints.
+
+**Inferred user intent:** Return from the run to a substantial, reviewable
+security-hardening implementation whose decisions, failures, tests, and remaining
+work can be followed without reconstructing the session.
+
+### What I did
+
+- Read the docmgr and diary workflows before changing the ticket.
+- Inspected the existing task ledger, recent commit history, working tree, focused
+  robustness review, assurance design, and Step 18 diary entry.
+- Created
+  `reference/05-authorization-interaction-hardening-implementation-ledger.md`.
+- Added tasks `omhr` through `ah32`, organized into Phases 0 through 5.
+- Defined the non-negotiable behavior contract and commit boundaries.
+- Ran the baseline commands:
+
+  ```bash
+  go test ./internal/fositeadapter -count=1
+  go test ./pkg/idpstore ./internal/store/memory ./pkg/sqlitestore -count=1
+  git status --short
+  ```
+
+### Why
+
+- The earlier phase tasks described outcomes but were too coarse to identify
+  whether persistence, handler migration, consent, replay, or adjacent endpoints
+  were actually complete.
+- Stable IDs let diary and changelog entries refer to exact review units.
+- Accepted semantics must precede tests; otherwise tests would merely codify the
+  current implementation.
+
+### What worked
+
+- The focused Fosite adapter baseline passed in 3.937 seconds.
+- The public store, memory store, and SQLite store baselines all passed.
+- The new ledger names every requested item 1 through 5 and assigns an explicit
+  exit condition.
+- Existing unrelated untracked hosted-conformance directories remained untouched.
+
+### What didn't work
+
+- N/A. Ticket creation, task expansion, and baseline tests completed on the first
+  attempt.
+
+### What I learned
+
+- The repository already has individually atomic domain operations and a general
+  `Update` transaction boundary, but no interaction record.
+- The current production consent form represents approval as an optional checkbox;
+  absence falls into a raw HTTP 403 rather than a typed denial action.
+- The existing memory store transaction implementation clones every map, so the
+  new interaction map must be added to both clone and replace paths.
+- The current migration ledger is embedded and checksummed, making a new
+  interaction table a normal versioned migration rather than ad hoc startup SQL.
+
+### What was tricky to build
+
+- "All of 1-5" spans behavior, persistence, HTTP, and Fosite internals. The ledger
+  had to split work finely enough for precise tracking without creating tasks that
+  could pass while the end-to-end invariant remained broken. Each phase therefore
+  has both component tasks and a behavioral exit condition.
+
+### What warrants a second pair of eyes
+
+- Review the choice to accept GET and POST UserInfo methods but require the
+  Authorization header for both.
+- Review interaction consumption timing relative to Fosite artifact persistence;
+  Phase 5 must ensure a consumed interaction cannot leave misleading partial
+  protocol state.
+- Review browser binding semantics for pre-login versus existing-session flows.
+
+### What should be done in the future
+
+1. Implement Phase 1 failing regressions before changing provider behavior.
+2. Add interaction contracts and both store implementations.
+3. Migrate the provider without retaining the hidden-field path.
+4. Complete adjacent endpoint and lifecycle atomicity tasks before candidate
+   approval.
+
+### Code review instructions
+
+- Start with `reference/05-authorization-interaction-hardening-implementation-ledger.md`.
+- Compare its task IDs with `tasks.md`.
+- Verify the baseline with the commands above.
+- Confirm `git status --short` lists only ticket changes plus the two pre-existing
+  unrelated hosted-conformance directories.
+
+### Technical details
+
+```text
+phase count: 6 (Phase 0 through Phase 5)
+detailed task count: 31
+first code target: internal/fositeadapter interaction regressions
+accepted UserInfo transport: Authorization header only
+accepted consent denial: OAuth access_denied
+compatibility fallback: prohibited
+baseline result: PASS
 ```

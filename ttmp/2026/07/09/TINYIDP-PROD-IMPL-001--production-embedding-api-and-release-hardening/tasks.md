@@ -139,3 +139,34 @@ tasks so partial implementation never looks like phase completion.
 - [ ] Assurance Phase 6: integrate the isolated tinyidp/verify VerificationPlan runner after native interaction semantics stabilize <!-- t:1qfc -->
 - [ ] Assurance Phase 7: run exact-candidate static, race, fuzz, failpoint, local and hosted OIDF, reverse-proxy, and generic web gates <!-- t:13it -->
 - [ ] Assurance Phase 8: canary with native guards, shadow monitors, audit delivery verification, rollback drills, and signed residual-risk approval <!-- t:bwsn -->
+- [x] AH Phase 0.1: capture baseline tests, current branch status, and confirmed interaction defects in the diary <!-- t:omhr -->
+- [x] AH Phase 0.2: define accepted semantics for fresh login, max_age, prompt none, consent denial, UserInfo transport, and terminal outcomes <!-- t:lrt0 -->
+- [ ] AH Phase 1.1: add a reusable strict-provider browser test harness that preserves cookies and parses opaque interactions <!-- t:40vm -->
+- [ ] AH Phase 1.2: add forced prompt login blank and crafted POST regressions with an existing browser session <!-- t:yo4c -->
+- [ ] AH Phase 1.3: add expired max_age blank POST and invalid negative overflow max_age regressions <!-- t:b7h5 -->
+- [ ] AH Phase 1.4: add prompt none login and consent required non-interaction regressions <!-- t:go72 -->
+- [ ] AH Phase 1.5: add explicit consent denial and omitted decision regressions <!-- t:gm7y -->
+- [ ] AH Phase 1.6: add continuation mutation replay concurrent duplicate and concurrent-tab regressions <!-- t:cnzp -->
+- [ ] AH Phase 2.1: define InteractionRecord required-action terminal-state and canonical-request public types <!-- t:bn89 -->
+- [ ] AH Phase 2.2: add InteractionStore create get and atomic consume contracts to Store ReadStore and TxStore <!-- t:zaw5 -->
+- [ ] AH Phase 2.3: implement memory interaction persistence with copy isolation expiry and exactly-once consume <!-- t:sidg -->
+- [ ] AH Phase 2.4: add SQLite interaction migration indexes retention metadata and checksum <!-- t:k8e6 -->
+- [ ] AH Phase 2.5: implement SQLite create get consume and concurrent consume tests <!-- t:ce20 -->
+- [ ] AH Phase 2.6: include expired interactions in maintenance and backup restore validation <!-- t:ebk2 -->
+- [ ] AH Phase 3.1: canonicalize validated Fosite authorization forms and compute a stable server-side request digest <!-- t:qt3o -->
+- [ ] AH Phase 3.2: create interactions on GET and render only opaque handle plus CSRF and explicit action fields <!-- t:60z0 -->
+- [ ] AH Phase 3.3: load the stored interaction on POST and reconstruct Fosite input only from server-owned canonical values <!-- t:gaax -->
+- [ ] AH Phase 3.4: enforce required fresh login after interaction creation and preserve authoritative auth_time <!-- t:vi2k -->
+- [ ] AH Phase 3.5: implement explicit consent approve deny and OAuth access_denied response semantics <!-- t:14do -->
+- [ ] AH Phase 3.6: revalidate client redirect user session signing readiness and generation before terminal consume <!-- t:jres -->
+- [ ] AH Phase 3.7: atomically consume the interaction before artifact issuance and reject replay expiry or browser mismatch <!-- t:n0ua -->
+- [ ] AH Phase 3.8: remove hidden authorization continuation with no compatibility fallback <!-- t:l8kv -->
+- [ ] AH Phase 4.1: replace max_age boolean helper with strict parsed policy and overflow-safe comparison <!-- t:mpvu -->
+- [ ] AH Phase 4.2: make token pre-authentication rate limiting use stable address and authenticated client dimensions <!-- t:bhl2 -->
+- [ ] AH Phase 4.3: enforce UserInfo GET POST policy explicit Authorization header bearer extraction no-store and RFC challenge responses <!-- t:4156 -->
+- [ ] AH Phase 4.4: classify session store absence expiry revocation disabled user and infrastructure failure without fail-open collapse <!-- t:6qtj -->
+- [ ] AH Phase 5.1: identify the exact Fosite authorization response mutation sequence and transaction key propagation options <!-- t:altv -->
+- [ ] AH Phase 5.2: implement atomic authorization code PKCE and OIDC persistence or explicit compensation without public raw SQL <!-- t:exej -->
+- [ ] AH Phase 5.3: add named before after and commit failure injection across authorization persistence <!-- t:ds0r -->
+- [ ] AH Phase 5.4: prove all-or-none durable state and one terminal outcome under every injected failure <!-- t:f69o -->
+- [ ] AH Phase 5.5: run targeted full race shuffle and external consumer validation and update candidate evidence <!-- t:ah32 -->

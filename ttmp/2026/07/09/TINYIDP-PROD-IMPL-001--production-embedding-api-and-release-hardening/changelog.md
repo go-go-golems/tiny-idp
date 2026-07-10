@@ -144,3 +144,11 @@ Step 18 delivery: doctor passed for both assurance tickets and the five-document
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/02-security-invariant-assurance-architecture-static-analysis-runtime-verification-and-stateful-testing.md — Uploaded primary assurance guide
+
+## 2026-07-10
+
+Step 19: expanded authorization hardening into 31 detailed tasks with accepted semantics, phase exits, validation commands, and commit boundaries
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/reference/05-authorization-interaction-hardening-implementation-ledger.md — Task-by-task implementation ledger
