@@ -25,6 +25,8 @@ topics:
       description: Topic used by TINYIDP-JITSI-001 research and design.
     - slug: research
       description: Topic used by TINYIDP-JITSI-001 research and design.
+    - slug: security
+      description: Security architecture, analysis, verification, controls, and assurance evidence
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
