@@ -186,3 +186,93 @@ existing direct analysistest functions: 11
 existing analyzer implementation: 772 lines
 production code changes: none
 ```
+
+## Step 2: Validate and commit the ticket baseline
+
+This step made the research/design package a reproducible repository artifact.
+It resolved the only docmgr vocabulary warning, checked Markdown hygiene, and
+committed only the ticket plus its required vocabulary entry.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Validate and preserve the completed ticket baseline
+without claiming that implementation phases are complete.
+
+**Inferred user intent:** Make the design durable and ready for long-term
+implementation tracking.
+
+### What I did
+
+- Ran frontmatter validation on the primary design document.
+- Ran `docmgr doctor --ticket TINYIDP-STATIC-001 --stale-after 30`.
+- Added the missing `security` topic to `ttmp/vocabulary.yaml` after doctor
+  reported it as unknown on three documents.
+- Reran doctor successfully and ran `git diff --check`.
+- Confirmed four tasks checked and ninety-seven tasks open.
+- Staged only the new ticket and vocabulary entry.
+- Committed as `d8e9ef4` with message
+  `Docs: design tiny-idp static analysis program`.
+
+### Why
+
+The ticket must be searchable, warning-free, and independently reviewable before
+implementation begins. Open task state is part of the evidence boundary.
+
+### What worked
+
+`docmgr doctor` passed after registering the legitimate topic. The commit
+contains 9,073 inserted lines across the design, diary, task ledger, source
+packet, index, changelog, README, and vocabulary.
+
+### What didn't work
+
+The first doctor run reported:
+
+```text
+[WARNING] unknown_topics — unknown topics value(s): security (3 docs)
+```
+
+The documented fix succeeded:
+
+```text
+docmgr vocab add --category topics --slug security --description "Security architecture, analysis, verification, controls, and assurance evidence"
+```
+
+### What I learned
+
+The repository vocabulary had security-adjacent topics but no general `security`
+slug. Registering it is preferable to weakening the ticket metadata.
+
+### What was tricky to build
+
+The commit had to include the vocabulary change while excluding unrelated
+untracked OIDF source trees elsewhere in `ttmp`.
+
+### What warrants a second pair of eyes
+
+Confirm that adding the general `security` topic is consistent with repository
+taxonomy rather than preferring only `auth` and `oidc`.
+
+### What should be done in the future
+
+Begin Phase 0 and Phase 1. No production analyzer should be moved until the rule
+catalog, evidence semantics, and migration decision are accepted.
+
+### Code review instructions
+
+- Review commit `d8e9ef4`.
+- Run `docmgr doctor --ticket TINYIDP-STATIC-001 --stale-after 30`.
+- Confirm `docmgr task list --ticket TINYIDP-STATIC-001` shows only baseline
+  work complete.
+
+### Technical details
+
+```text
+commit: d8e9ef4
+doctor: all checks passed
+checked tasks: 4
+open tasks: 97
+production code changes: none
+```
