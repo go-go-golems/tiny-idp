@@ -2798,6 +2798,121 @@ production code changes: none
 release status: NOT APPROVED
 ```
 
+## Step 33: Publish the model-checking and executable-state project report
+
+This interval converted the model-checking inventory into a standalone project
+report. It distinguishes actual finite-history model checking from generated
+model-based testing and runtime verification, documents every current state-
+oriented artifact, and proposes three bounded formal specifications that build
+directly on the implemented vocabulary and historical counterexamples.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, write a similar project report about the above extensively, explaining the tools and research and resources and approaches you used, and store  them as a Report, not research"
+
+**Assistant interpretation:** Write a full textbook project report about tiny-
+idp's current and proposed model-checking program and store the vault copy under
+Projects as a project report rather than under Research.
+
+**Inferred user intent:** Preserve a precise account of formal-method maturity
+and an actionable path from existing executable models to exhaustive state-space
+checking.
+
+### What I did
+
+- Inventoried model-related code, dependencies, tests, file formats, tasks, and
+  documentation.
+- Confirmed the repository contains no TLA+, Alloy, Promela, SMV, Ivy, or SMT
+  specification files.
+- Quantified the existing Rapid interaction model, Porcupine histories, security
+  trace monitor, and typed VerificationPlan driver.
+- Ran Kagi searches for primary TLA+/PlusCal/TLC, Apalache, Alloy, and Porcupine
+  resources.
+- Reused the completed temporal-invariants textbook as a foundation and added a
+  model-checking-specific executive summary, terminology boundary, capability
+  map, and professional maturity assessment.
+- Explained Rapid sampling, shrinking, committed replay histories, Porcupine's
+  finite-history search, parametric runtime monitoring, and data-only scenario
+  execution separately.
+- Designed bounded formal models for authorization interactions, code redemption
+  across commit/crash/response boundaries, and refresh-family rotation/reuse.
+- Defined state variables, actions, safety invariants, behaviors, exclusions, and
+  trace-to-Go-test integration for each model.
+- Compared TLC, Apalache, Alloy, SPIN, Murphi, and Ivy by the questions they
+  would answer for tiny-idp.
+- Added a five-phase implementation and CI/evidence plan.
+- Wrote design doc 12 at 1,536 lines and 64,490 bytes.
+- Copied the complete report to the Obsidian `Projects/2026/07/11` hierarchy with
+  `type: project-report` metadata.
+
+### Why
+
+- “Model checking” was being used near several adjacent techniques. A release
+  reviewer needs to know which state spaces are actually searched and which
+  executions are merely sampled or observed.
+- The existing action, observation, event, failpoint, and counterexample
+  vocabulary makes small formal models practical now.
+- A project report records current implementation maturity and planned work;
+  it should not be filed as detached research.
+
+### What worked
+
+- The current temporal chapter supplied a detailed state/invariant atlas, so the
+  new report could focus on checker semantics and implementation planning.
+- The historical forced-login defect and concurrent refresh result give the
+  first models concrete counterexamples to reproduce.
+- The final report falls within the 50–80 KB long-form report target.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+- Porcupine is real model checking, but only over possible serializations of a
+  finite observed history.
+- Rapid and fuzzing already provide counterexample and shrink pipelines that can
+  consume formal-model traces later.
+- The first useful formal boundary is tiny-idp-owned state, not a complete model
+  of OAuth, browsers, cryptography, Fosite, Go, and SQLite.
+
+### What warrants a second pair of eyes
+
+- Review the exact Fosite assumptions excluded from each proposed model.
+- Review whether the authorization model should use direct TLA+ actions or
+  PlusCal for the first contributor-facing version.
+- Review the post-commit/pre-response code-redemption ambiguity as a product and
+  operations decision, not only a formal property.
+
+### What should be done in the future
+
+1. Implement Phase 0 stable model/action/invariant IDs.
+2. Write the authorization interaction PlusCal/TLA+ model and reproduce the old
+   forced-login counterexample intentionally.
+3. Convert the first TLC trace into a committed VerificationPlan scenario.
+
+### Code review instructions
+
+- Compare the report's current inventory with `state_model_test.go`,
+  `linearizability_test.go`, `trace.go`, and `verification_scenario_test.go`.
+- Check every proposed invariant against the current temporal property catalog.
+- Confirm the report never treats model checking as an implementation refinement
+  proof or a production approval.
+
+### Technical details
+
+```text
+ticket report: design-doc/12-model-checking-and-executable-state-assurance-project-report.md
+report lines: 1536
+report bytes: 64490
+current general exhaustive specifications: 0
+current Porcupine model-checked history families: 2
+proposed first formal models: 3
+vault report: Projects/2026/07/11/PROJECT REPORT - tiny-idp - Model Checking and Executable State Assurance.md
+production code changes: none
+release status: NOT APPROVED
+```
+
 ## Step 32: Publish the static-analysis program as a full Obsidian textbook report
 
 This interval extracted the static-analysis story from the broader 7,126-line

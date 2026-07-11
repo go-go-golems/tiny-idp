@@ -276,3 +276,12 @@ Authored a 1,516-line textbook project report on all fifteen tiny-idp static ana
 
 - /home/manuel/code/wesen/go-go-golems/go-go-parc/Research/2026/07/11/ARTICLE - Static Analysis for tiny-idp Security Engineering.md — Full Obsidian article
 - design-doc/11-static-analysis-for-tiny-idp-security-engineering-project-report.md — Primary exhaustive report
+
+## 2026-07-11
+
+Authored a 1,536-line project report distinguishing current Rapid model-based testing, Porcupine linearizability model checking, runtime verification, and scenario plans from future exhaustive model checking; designed concrete TLA+/PlusCal models for authorization, code redemption, and refresh families and copied the full report to the Obsidian Projects vault.
+
+### Related Files
+
+- /home/manuel/code/wesen/go-go-golems/go-go-parc/Projects/2026/07/11/PROJECT REPORT - tiny-idp - Model Checking and Executable State Assurance.md — Full Obsidian project report
+- design-doc/12-model-checking-and-executable-state-assurance-project-report.md — Primary project report
