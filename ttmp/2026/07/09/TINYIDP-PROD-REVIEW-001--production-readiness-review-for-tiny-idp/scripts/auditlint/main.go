@@ -29,6 +29,9 @@ func main() {
 		auditDeliveryAnalyzer,
 		atomicityAnalyzer,
 		backupCopyAnalyzer,
+		bearerTransportAnalyzer,
+		securityClockAnalyzer,
+		strictSecurityParseAnalyzer,
 	)
 }
 
@@ -398,6 +401,151 @@ var backupCopyAnalyzer = &analysis.Analyzer{
 		}
 		return nil, nil
 	},
+}
+
+var bearerTransportAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpbearertransport",
+	Doc:      "reports permissive bearer extraction that accepts query or form access tokens",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		inspectCalls(pass, func(call *ast.CallExpr) {
+			if isCallTo(pass, call, "github.com/ory/fosite", "AccessTokenFromRequest") {
+				pass.Reportf(call.Pos(), "fosite.AccessTokenFromRequest accepts query and form bearer tokens; security endpoints must parse the Authorization header explicitly")
+			}
+		})
+		return nil, nil
+	},
+}
+
+var securityClockAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpsecurityclock",
+	Doc:      "reports direct wall-clock reads in authorization and browser-session state transitions",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		securityFunctions := map[string]struct{}{
+			"authorize":              {},
+			"beginAuthorize":         {},
+			"resumeAuthorize":        {},
+			"finishAuthorize":        {},
+			"newOIDCSession":         {},
+			"createBrowserSession":   {},
+			"readBrowserSession":     {},
+			"sessionSatisfiesMaxAge": {},
+		}
+		for _, file := range pass.Files {
+			if strings.HasSuffix(pass.Fset.Position(file.Pos()).Filename, "_test.go") {
+				continue
+			}
+			for _, declaration := range file.Decls {
+				fn, ok := declaration.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				if _, securityRelevant := securityFunctions[fn.Name.Name]; !securityRelevant {
+					continue
+				}
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					call, ok := node.(*ast.CallExpr)
+					if ok && isCallTo(pass, call, "time", "Now") {
+						pass.Reportf(call.Pos(), "security state transition %s reads time.Now directly; use the provider's injected clock", fn.Name.Name)
+					}
+					return true
+				})
+			}
+		}
+		return nil, nil
+	},
+}
+
+var strictSecurityParseAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpstrictparse",
+	Doc:      "reports fail-open branches after parsing security-sensitive numeric parameters",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		for _, file := range pass.Files {
+			if strings.HasSuffix(pass.Fset.Position(file.Pos()).Filename, "_test.go") {
+				continue
+			}
+			for _, declaration := range file.Decls {
+				fn, ok := declaration.(*ast.FuncDecl)
+				if !ok || fn.Body == nil || !returnsOnlyBool(pass, fn) {
+					continue
+				}
+				parseErrors := map[string]struct{}{}
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					assignment, ok := node.(*ast.AssignStmt)
+					if !ok || len(assignment.Rhs) != 1 || len(assignment.Lhs) < 2 {
+						return true
+					}
+					call, ok := assignment.Rhs[0].(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					selector, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok || (selector.Sel.Name != "ParseInt" && selector.Sel.Name != "Atoi") {
+						return true
+					}
+					if id, ok := assignment.Lhs[1].(*ast.Ident); ok {
+						parseErrors[id.Name] = struct{}{}
+					}
+					return true
+				})
+				if len(parseErrors) == 0 {
+					continue
+				}
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					branch, ok := node.(*ast.IfStmt)
+					if !ok || !expressionUsesAny(pass, branch.Cond, parseErrors) {
+						return true
+					}
+					for _, statement := range branch.Body.List {
+						ret, ok := statement.(*ast.ReturnStmt)
+						if !ok {
+							continue
+						}
+						for _, result := range ret.Results {
+							if id, ok := result.(*ast.Ident); ok && id.Name == "true" {
+								pass.Reportf(ret.Pos(), "numeric parse failure returns true in %s; security-sensitive parsing must fail closed", fn.Name.Name)
+							}
+						}
+					}
+					return true
+				})
+			}
+		}
+		return nil, nil
+	},
+}
+
+func returnsOnlyBool(pass *analysis.Pass, fn *ast.FuncDecl) bool {
+	object := pass.TypesInfo.Defs[fn.Name]
+	if object == nil {
+		return false
+	}
+	signature, ok := object.Type().(*types.Signature)
+	if !ok || signature.Results() == nil || signature.Results().Len() != 1 {
+		return false
+	}
+	basic, ok := signature.Results().At(0).Type().(*types.Basic)
+	return ok && basic.Kind() == types.Bool
+}
+
+func expressionUsesAny(_ *analysis.Pass, expression ast.Expr, names map[string]struct{}) bool {
+	found := false
+	ast.Inspect(expression, func(node ast.Node) bool {
+		if found {
+			return false
+		}
+		id, ok := node.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if _, matches := names[id.Name]; matches {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 func inspectCalls(pass *analysis.Pass, fn func(*ast.CallExpr)) {

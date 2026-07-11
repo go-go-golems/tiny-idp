@@ -25,3 +25,15 @@ func TestUnusedConfigAnalyzer(t *testing.T) {
 func TestAtomicityAnalyzer(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), atomicityAnalyzer, "fixture/internal/admin")
 }
+
+func TestBearerTransportAnalyzer(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), bearerTransportAnalyzer, "fixture/checks/bearercheck")
+}
+
+func TestSecurityClockAnalyzer(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), securityClockAnalyzer, "fixture/checks/clockcheck")
+}
+
+func TestStrictSecurityParseAnalyzer(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), strictSecurityParseAnalyzer, "fixture/checks/strictparsecheck")
+}
