@@ -1,0 +1,80 @@
+schema: xgoja/v2
+name: durableobjects-counter
+
+app:
+  name: durableobjects-counter
+  envPrefix: DO_COUNTER
+
+go:
+  version: "1.26"
+  module: example.com/durableobjects-counter
+
+workspace:
+  mode: auto
+
+providers:
+  - id: go-go-objects-durableobjects
+    import: github.com/go-go-golems/go-go-objects/pkg/xgoja/providers/durableobjects
+    register: Register
+  - id: go-go-goja-http
+    import: github.com/go-go-golems/go-go-goja/pkg/xgoja/providers/http
+    register: Register
+
+runtime:
+  modules:
+    - provider: go-go-objects-durableobjects
+      name: durableobjects
+      as: durableobjects
+      config:
+        storageRoot: ./var/durable-objects
+        bundleAsset: counter-bundle
+        bundleAssetPath: objects.js
+        alarmInterval: 1s
+        idleInterval: 1m
+    - provider: go-go-goja-http
+      name: express
+      as: express
+
+sources:
+  - id: site
+    kind: jsverbs
+    from:
+      dir: ./verbs
+  - id: counter-bundle
+    kind: assets
+    from:
+      dir: .
+    include: [objects.js]
+
+commands:
+  # Composable v2 HTTP path: JS mounts durableobjects.gateway() into Express,
+  # and the HTTP provider owns the long-running server command.
+  - id: serve
+    type: provider.command-set
+    provider: go-go-goja-http
+    name: serve
+    mount: serve
+    sources: [site]
+
+  # Direct Durable Objects gateway command remains available for apps that do
+  # not need JS/Express composition.
+  - id: durableobjects-serve
+    type: provider.command-set
+    provider: go-go-objects-durableobjects
+    name: serve
+    mount: durableobjects
+    config:
+      storageRoot: ./var/durable-objects
+      bundleAsset: counter-bundle
+      bundleAssetPath: objects.js
+      alarmInterval: 1s
+      idleInterval: 1m
+
+artifacts:
+  - id: binary
+    type: binary
+    output: dist/durableobjects-counter
+    sources: [site]
+  - id: counter-assets
+    type: embedded-assets
+    sources: [counter-bundle]
