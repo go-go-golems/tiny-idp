@@ -2798,6 +2798,130 @@ production code changes: none
 release status: NOT APPROVED
 ```
 
+## Step 29: Expand the intern textbook from outlines into code-led research chapters
+
+This interval began the requested textbook-scale rewrite. It treated line count
+as a consequence of substantive coverage rather than padding: the temporal and
+durable-state chapters now trace research concepts through concrete types,
+symbols, regressions, failpoints, histories, observed failures, and remaining
+claim boundaries in the current tree.
+
+### Prompt Context
+
+**User prompt (verbatim):** "these chapters should be really worked out and put into context the tools and analysis we built, and the research you did and papers you downloaded. Use your diary to trace back your steps and see which sources influenced what, including the design docs you wrote, etc...
+
+I expect an easy 1000 lines per doc, there is so much to show. You are welcome to use `surf kagi search --query ...` for additional resources (texxtbooks, etc...)"
+
+**Additional user prompt (verbatim):** "analyze the code you wrote and the current project too, to tie the textbook to this concrete project"
+
+**Assistant interpretation:** Replace the concise onboarding chapters with
+roughly 1,000-line textbook chapters grounded simultaneously in primary
+research, the implementation diary, current source symbols, executable tools,
+test evidence, and corrected assumptions.
+
+**Inferred user intent:** Preserve the intellectual history and engineering
+content of the production review in a form that teaches a new contributor how
+the theory actually changed this codebase.
+
+### What I did
+
+- Measured the initial chapters: 128–343 lines each, confirming they were
+  outlines rather than the requested full treatment.
+- Re-read the full research/design workflow and established a provenance chain
+  for every major section: question, source, inference, code, test/tool, result,
+  and evidence limit.
+- Used Kagi to search for additional OAuth attacker-model, runtime-verification,
+  model-based security testing, linearizability, supply-chain, and capability
+  security teaching sources.
+- Captured the final FAPI 2.0 attacker model and an introductory runtime-
+  verification chapter with Defuddle.
+- Attempted to capture a recent property-based security protocol paper; the
+  publisher returned `403 Forbidden`, so no empty source artifact was kept.
+- Inventoried current public store types, interaction fields, provider symbols,
+  Fosite transaction methods, event schema, state-model actions, typed scenario
+  driver, and all custom analyzers.
+- Extracted diary Steps 17, 18, 23, 24, and 26 as the main provenance spine for
+  protocol findings, research selection, transactional repair, assurance tools,
+  and exact-candidate evidence.
+- Expanded the temporal chapter from 165 to 711 lines with field-by-field state
+  semantics, begin/resume control flow, eleven case files, monitor internals,
+  event timing, generated traces, typed verification, decisions, and review
+  exercises.
+- Expanded the durable-state chapter from 148 to 730 lines with capability-row
+  semantics, contract layering, both Fosite lifecycles, complete failpoint
+  matrices, concurrency histories, backup/restore, migrations, lockout, keys,
+  ambiguity, decisions, and exercises.
+
+### Why
+
+- The intern needs to see why a paper or standard changed a type or transaction,
+  not merely find both in a bibliography.
+- The diary contains failed assumptions—especially refresh winner revocation and
+  the distinction between entity and protocol atomicity—that polished design
+  summaries alone would hide.
+- Current symbol inventories prevent the textbook from drifting into a generic
+  OAuth architecture unrelated to the repository.
+
+### What worked
+
+- The saved research packet already covered the central academic areas; new
+  sources sharpened attacker vocabulary and runtime-verification pedagogy.
+- The original defects provided compact counterexamples around which formal
+  concepts could be taught precisely.
+- Field-by-field and failpoint-by-failpoint treatment produced substantial depth
+  without duplicating the existing implementation ledger.
+
+### What didn't work
+
+- Defuddle could not fetch the MDPI property-testing paper:
+
+  ```text
+  Error: Failed to fetch: 403 Forbidden
+  ```
+
+  The existing model-based security testing, coverage-guided property testing,
+  and stateful fuzzing papers remain sufficient primary context.
+- The expanded chapters are not yet at the final 1,000-line target. They are
+  intentionally checkpointed at 711 and 730 lines while remaining chapters are
+  developed; each will receive a final completeness pass.
+
+### What I learned
+
+- The most valuable retrospective link is often a corrected model, not a
+  successful implementation. The refresh history taught that rotation and reuse
+  are distinct operations.
+- `InteractionRecord` and `storage.Transactional` are effective textbook anchors
+  because they materialize otherwise abstract temporal and atomic properties.
+- An evidence limitation should appear beside the mechanism it limits, not only
+  in a final caveats section.
+
+### What warrants a second pair of eyes
+
+- Review whether the FAPI attacker model is clearly labeled as additional
+  attacker vocabulary rather than a claim that tiny-idp implements FAPI.
+- Review every source-to-code inference for accidental normative overstatement.
+- Review the refresh concurrency explanation against Fosite's exact reuse path.
+
+### What should be done in the future
+
+1. Expand assurance, production, curriculum, protocol, and lab chapters at the
+   same code-led depth.
+2. Add a per-chapter provenance matrix and glossary.
+3. Top every document past 1,000 substantive lines and run structural checks.
+4. Re-render the complete reMarkable bundle only after the final pass.
+
+### Technical details
+
+```text
+initial curriculum corpus: 1,300 lines across 7 docs
+temporal chapter checkpoint: 711 lines
+durable-state chapter checkpoint: 730 lines
+new Defuddle captures: 2
+failed captures: 1 (HTTP 403)
+production code changes: none
+textbook expansion status: IN PROGRESS
+```
+
 ## Step 26: Run and freeze the post-assurance exact-candidate evidence
 
 This interval ran the complete locally executable release matrix against the

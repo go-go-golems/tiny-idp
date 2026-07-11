@@ -224,3 +224,14 @@ Backfilled a seven-document intern curriculum connecting OAuth/OIDC theory, temp
 - design-doc/09-assurance-methods-and-evidence-interpretation.md — Evidence epistemology
 - design-doc/10-production-trust-boundaries-and-release-security.md — Operational and release security
 - reference/07-intern-security-review-labs.md — Executable onboarding labs
+
+## 2026-07-10
+
+Expanded temporal-invariant and durable-security-state intern chapters into code-led research treatments; captured FAPI attacker-model and runtime-verification teaching sources; recorded the in-progress textbook provenance pass.
+
+### Related Files
+
+- design-doc/07-security-state-machines-and-temporal-invariants.md — Current interaction state, monitor, model, analyzer, and case-study analysis
+- design-doc/08-durable-security-state-transactions-and-concurrency.md — Current Fosite transactions, failpoints, linearizability, and recovery analysis
+- sources/fapi-2-attacker-model-final.md — Additional explicit attacker vocabulary
+- sources/introduction-to-runtime-verification.md — Runtime verification teaching context
