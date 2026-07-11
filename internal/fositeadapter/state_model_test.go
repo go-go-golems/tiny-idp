@@ -17,6 +17,61 @@ type interactionReferenceState struct {
 	expired  bool
 }
 
+type interactionModelAction uint8
+
+const (
+	modelCreate interactionModelAction = iota
+	modelGet
+	modelApprove
+	modelDeny
+	modelAdvancePastExpiry
+	modelMutateReturnedCopy
+)
+
+type interactionModelObservation struct {
+	Action   interactionModelAction
+	Accepted bool
+	Reason   string
+}
+
+func (s *interactionReferenceState) Apply(action interactionModelAction) interactionModelObservation {
+	observation := interactionModelObservation{Action: action}
+	switch action {
+	case modelCreate:
+		if s.created {
+			observation.Reason = "duplicate"
+			return observation
+		}
+		s.created = true
+		observation.Accepted = true
+	case modelGet, modelMutateReturnedCopy:
+		observation.Accepted = s.created
+		if !s.created {
+			observation.Reason = "not_found"
+		}
+	case modelApprove, modelDeny:
+		switch {
+		case !s.created:
+			observation.Reason = "not_found"
+		case s.consumed:
+			observation.Reason = "already_consumed"
+		case s.expired:
+			observation.Reason = "expired"
+		default:
+			s.consumed = true
+			observation.Accepted = true
+		}
+	case modelAdvancePastExpiry:
+		if s.created {
+			s.expired = true
+		}
+		observation.Accepted = true
+	default:
+		observation.Reason = "unknown_action"
+	}
+	return observation
+}
+
 func TestInteractionStoreStateMachine(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		store := memory.New()
@@ -98,6 +153,60 @@ func TestInteractionStoreStateMachine(t *testing.T) {
 				if again.CanonicalRequest["state"][0] != "original" {
 					t.Fatal("read result mutated stored canonical request")
 				}
+			}
+		}
+	})
+}
+
+func TestInteractionModelReplaysShrunkRegressionSequences(t *testing.T) {
+	tests := []struct {
+		name              string
+		actions           []interactionModelAction
+		acceptedTerminals int
+	}{
+		{name: "sequential replay", actions: []interactionModelAction{modelCreate, modelApprove, modelApprove}, acceptedTerminals: 1},
+		{name: "deny then approve", actions: []interactionModelAction{modelCreate, modelDeny, modelApprove}, acceptedTerminals: 1},
+		{name: "expired interaction", actions: []interactionModelAction{modelCreate, modelAdvancePastExpiry, modelApprove}, acceptedTerminals: 0},
+		{name: "consume absent", actions: []interactionModelAction{modelApprove}, acceptedTerminals: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state := interactionReferenceState{}
+			acceptedTerminals := 0
+			for _, action := range test.actions {
+				observation := state.Apply(action)
+				if observation.Accepted && (action == modelApprove || action == modelDeny) {
+					acceptedTerminals++
+				}
+			}
+			if acceptedTerminals != test.acceptedTerminals {
+				t.Fatalf("accepted terminals=%d, want %d", acceptedTerminals, test.acceptedTerminals)
+			}
+		})
+	}
+}
+
+func FuzzInteractionModelActionSequences(f *testing.F) {
+	// These committed seeds are minimized replays for duplicate terminal,
+	// denial/approval competition, expiry, and absent-consume histories.
+	f.Add([]byte{byte(modelCreate), byte(modelApprove), byte(modelApprove)})
+	f.Add([]byte{byte(modelCreate), byte(modelDeny), byte(modelApprove)})
+	f.Add([]byte{byte(modelCreate), byte(modelAdvancePastExpiry), byte(modelApprove)})
+	f.Add([]byte{byte(modelApprove)})
+	f.Fuzz(func(t *testing.T, encoded []byte) {
+		if len(encoded) > 256 {
+			encoded = encoded[:256]
+		}
+		state := interactionReferenceState{}
+		acceptedTerminals := 0
+		for _, value := range encoded {
+			action := interactionModelAction(value % byte(modelMutateReturnedCopy+1))
+			observation := state.Apply(action)
+			if observation.Accepted && (action == modelApprove || action == modelDeny) {
+				acceptedTerminals++
+			}
+			if acceptedTerminals > 1 {
+				t.Fatalf("more than one accepted terminal in %v", encoded)
 			}
 		}
 	})
