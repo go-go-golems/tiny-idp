@@ -210,3 +210,17 @@ Rendered and uploaded the complete assurance, research, diary, operations, and e
 ### Related Files
 
 - reference/01-implementation-diary.md — Render repair and upload record
+
+## 2026-07-10
+
+Backfilled a seven-document intern curriculum connecting OAuth/OIDC theory, temporal invariants, durable/concurrent security state, assurance science, production trust, and executable labs to the implemented code and saved research.
+
+### Related Files
+
+- design-doc/05-intern-accelerated-curriculum-and-code-reading-map.md — Ordered onboarding path and competence criteria
+- design-doc/06-oauth-oidc-protocol-security-foundations.md — Protocol and attacker-model foundations
+- design-doc/07-security-state-machines-and-temporal-invariants.md — Temporal reasoning
+- design-doc/08-durable-security-state-transactions-and-concurrency.md — Atomicity and concurrency
+- design-doc/09-assurance-methods-and-evidence-interpretation.md — Evidence epistemology
+- design-doc/10-production-trust-boundaries-and-release-security.md — Operational and release security
+- reference/07-intern-security-review-labs.md — Executable onboarding labs

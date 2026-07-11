@@ -4297,3 +4297,128 @@ upload: PASS
 overwrite: no
 release status: NOT APPROVED
 ```
+
+## Step 28: Backfill an intern theory-to-code security curriculum
+
+This interval reorganized the accumulated protocol research, implementation
+experience, counterexamples, and release evidence into a first-week curriculum
+for a new intern. The existing documents remain the detailed design and history;
+seven new chapters provide the prerequisite conceptual sequence, direct code
+maps, exercises, and explicit evidence boundaries needed to use them effectively.
+
+### Prompt Context
+
+**User prompt (verbatim):** "do it retroactively. What documents would you write for the intern who joins us tomorrow to get them turbocharged on necessary theoretical and security knowledge"
+
+**Assistant interpretation:** Create the missing retrospective educational
+documents now, using textbook structure and direct links from theory and research
+to tiny-idp code, tests, traces, and release decisions.
+
+**Inferred user intent:** Let a capable new contributor become productive quickly
+without learning security assumptions accidentally through code review failures.
+
+### What I did
+
+- Audited all existing ticket documents by heading and purpose to avoid rewriting
+  the implementation guide, assurance architecture, research map, or ledgers.
+- Defined a textbook writing contract: foundational model first, no analogies,
+  normative/observed/inferred/open claim labels, concrete code and traces,
+  falsifiable exercises, and explicit evidence limitations.
+- Wrote an accelerated curriculum and code-reading map with a five-module order,
+  first-day symbol trace, competence criteria, and mentor review assignment.
+- Wrote a protocol-security chapter covering principals, channels,
+  Authorization Code + S256 PKCE, canonical interaction state, authentication
+  freshness, typed authentication outcomes, consent, codes/tokens, UserInfo, and
+  safe error redirects.
+- Wrote a temporal-invariant chapter covering safety/liveness, required-action
+  obligations, parametric monitoring, reference models, shrinking, replay, and
+  metamorphic relations.
+- Wrote a durable-state chapter covering capability rows, transaction ownership,
+  Fosite transaction propagation, failpoint evidence, linearizability, refresh
+  family revocation, SQLite topology, backup, and restore.
+- Wrote an assurance-methods chapter comparing AST analysis, examples, Rapid,
+  fuzzing, metamorphic testing, failpoints, race detection, Porcupine, monitors,
+  conformance, scripting, and human review by supported claim and limitation.
+- Wrote a production-security chapter covering host ownership, proxy trust,
+  audit versus trace/log/metrics, readiness, key rotation, recovery, artifact
+  provenance, hosted evidence, and release authority.
+- Wrote eight executable intern labs tied to real tests, analyzers, failpoints,
+  concurrent histories, the Goja boundary, and the release ledger.
+- Related each focused document to four concrete implementation files using
+  docmgr.
+
+### Why
+
+- The existing corpus is extensive but organized around implementation phases
+  and investigations. A new contributor needs prerequisite ordering and explicit
+  learning outcomes before navigating that detail.
+- OAuth tutorials commonly explain messages but omit temporal obligations,
+  transaction ownership, concurrent semantics, and evidence epistemology. Those
+  omissions correspond directly to the defects found during this review.
+- Exercises require the intern to produce models and bounded claims, preventing
+  passive familiarity from being mistaken for review competence.
+
+### What worked
+
+- Existing sources and code were sufficient; no speculative external material
+  was needed.
+- The chapters reuse primary-source captures already stored in `sources/` and
+  distinguish research conclusions from local mechanisms.
+- The code-reading path now progresses from public ownership through one success,
+  one rejection, one persistence failure, and one concurrent history.
+
+### What didn't work
+
+- The first docmgr validation found two references to a nonexistent
+  `pkg/idpstore/contracts.go`. The actual contracts are split between
+  `interfaces.go` and `types.go`. The links and reading text were corrected
+  before commit.
+
+### What I learned
+
+- The missing onboarding layer was not more implementation detail. It was a
+  structured bridge from protocol semantics to temporal logic, durable
+  authority, evidence interpretation, and production ownership.
+- “What does this test not prove?” is a useful recurring exercise because it
+  teaches both security reasoning and scientific restraint.
+- The original forced-login and token-atomicity defects form effective teaching
+  cases because each connects an abstract property to a minimal counterexample
+  and a concrete repair.
+
+### What warrants a second pair of eyes
+
+- Review the one-week competence criteria against the actual first assignment we
+  intend to give the intern.
+- Review whether WebAuthn, federation, logout, DPoP, and device authorization
+  need a second curriculum after the strict core is mastered.
+- Verify that mentor answers for every lab are recorded without turning the labs
+  into rote checklists.
+
+### What should be done in the future
+
+1. Have the first intern complete the labs and record confusing or missing
+   prerequisites.
+2. Add short captured traces to labs where reading test assertions is
+   insufficient.
+3. Revise the curriculum from observed onboarding outcomes rather than adding
+   speculative breadth.
+
+### Code review instructions
+
+- Begin with design 05 and confirm its reading order matches package ownership.
+- Review design 06 against RFC/OIDC source captures and provider symbols.
+- Review designs 07–09 against the executable models and tool limitations.
+- Review design 10 against the production host, playbook, and release ledger.
+- Execute the commands in reference 07 from a clean tree.
+
+### Technical details
+
+```text
+new onboarding documents: 7
+curriculum modules: 5
+guided labs: 8
+claim labels: normative, observed, inferred, open
+writing style: foundational prose, direct models, no analogies
+production code changes: none
+release status: NOT APPROVED
+```
