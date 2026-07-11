@@ -764,6 +764,225 @@ build claims. Review and owner approval add authority.
 - Can the reader trace every implemented assurance layer to saved research and
   current code?
 
+## Analyzer fixture workbook
+
+Use this workbook when changing auditlint. Each rule should have at least one
+fixture for every row that applies.
+
+| Fixture class | Purpose |
+|---|---|
+| direct positive | simplest prohibited/required shape |
+| nested positive | shape inside branches/closures where supported |
+| legal near miss | similar syntax with different semantics |
+| typed near miss | same names but different package/type |
+| directive | documented intentional exception |
+| regression | minimized source from real finding |
+| unsupported | documented false-negative boundary |
+
+### Public API fixture questions
+
+- Is the declaration exported?
+- Does a nested type mention an internal package?
+- Are aliases, slices, maps, functions, and interfaces traversed?
+- Does an unexported declaration remain legal?
+- Does a same-named external package avoid false report?
+
+### Randomness fixture questions
+
+- Is `crypto/rand` error ignored directly?
+- Is result assigned but error discarded?
+- Is a non-cryptographic reader correctly out of scope?
+- Is a wrapper function intentionally unsupported/documented?
+
+### HTTP server fixture questions
+
+- Is a zero-value `http.Server` started?
+- Is convenience `ListenAndServe` used in production code?
+- Are explicit timeout fields recognized?
+- Is development-only construction documented?
+
+### Security-default fixture questions
+
+- Is no-op audit installed silently?
+- Is allow-all limiter installed silently?
+- Does production validation precede the default?
+- Is the development directive attached to the exact declaration?
+
+### Limiter identity fixture questions
+
+- Is raw `RemoteAddr` used including port?
+- Is claimed client ID used before authentication?
+- Is normalized resolver output used?
+- Is verified client identity used after authentication?
+- Which interprocedural taint path remains unsupported?
+
+### Configuration-use fixture questions
+
+- Is a public field never read?
+- Is it read only in tests?
+- Is it passed to runtime construction?
+- Does a similarly named local variable avoid confusion?
+
+### Audit-delivery fixture questions
+
+- Is `Emit` error assigned to blank?
+- Is it returned, wrapped, counted, or deliberately reconciled?
+- Is a no-op sink method incorrectly reported?
+- Is post-commit ambiguity explicit?
+
+### Atomicity fixture questions
+
+- Does a function perform multiple mutations?
+- Is transaction begin visible locally?
+- Is transaction inherited through documented context?
+- Is the function read-only despite multiple calls?
+- Does a directive hide a real unsafe direct write?
+
+### Backup-copy fixture questions
+
+- Is SQLite file copied with `io.Copy`, read/write, or filesystem copy?
+- Is the file unrelated to SQLite?
+- Is the online backup API used?
+- Does publication preserve a prior file on failure?
+
+### Bearer-transport fixture questions
+
+- Is generic query-accepting extraction used?
+- Are query/form/mixed values rejected before introspection?
+- Are duplicate Authorization headers handled?
+- Is a non-UserInfo endpoint intentionally different?
+
+### Clock fixture questions
+
+- Is direct `time.Now` inside a named security transition?
+- Is injected clock called?
+- Is wall time used only for logging/build metadata?
+- Is UTC normalization preserved?
+
+### Strict-parse fixture questions
+
+- Does parser error lead to `true` acceptance?
+- Is function a single-boolean predicate?
+- Is a multi-result parser presence boolean excluded?
+- Are compound conditions walked monotonically?
+
+### Continuation fixture questions
+
+- Does resume read a forbidden POST protocol field directly?
+- Are interaction/CSRF/login/password/action permitted?
+- Does a helper hide the read and remain documented unsupported?
+- Does a same field name occur outside resume?
+
+### Protocol-lifecycle fixture questions
+
+- Does authorization creation call `authorizeExec`?
+- Does token issuance call `tokenExec`?
+- Is direct cleanup intentionally permitted?
+- Does a new Fosite persistence method need classification?
+
+### Ignored-security-error fixture questions
+
+- Is a named transition error discarded?
+- Is it returned/wrapped/handled?
+- Is a same-named method on another type excluded?
+- Has the security method allowlist changed?
+
+## Evidence envelope draft
+
+A future machine-readable evidence envelope should contain:
+
+```text
+schema_version
+source_commit
+working_tree_policy
+go_version
+module_graph_digest
+binary_digest
+plan_schema
+plan_source_hash
+driver_version
+assertion_ids_versions
+random_seed
+shrunk_actions
+wall_start_end
+test_command
+host_platform
+observations
+security_event_schema
+security_events_digest
+monitor_violations
+database_snapshot_digest_or_counts
+tool_name_version
+result
+coverage_boundary
+artifact_locations
+reviewer_adjudication
+```
+
+The envelope should not contain passwords, raw handles, codes, access tokens,
+refresh tokens, private keys, token secrets, or full sensitive audit content.
+
+Source hash is provenance identity, not authentication. Binary signature and
+build provenance belong in separate linked artifacts. Human review attaches an
+adjudication, not a rewritten automated verdict.
+
+## Assurance plan template
+
+For a new invariant, complete:
+
+1. Plain-language property.
+2. Formal/temporal form where useful.
+3. Principal and attacker model.
+4. Authoritative state and transition.
+5. Static source pattern.
+6. Deterministic success/rejection examples.
+7. Generated action model.
+8. Fuzz input and oracle.
+9. Metamorphic relations.
+10. Failure points and rollback oracle.
+11. Concurrent object and history model.
+12. Event instrumentation and monitor.
+13. Runtime/load observation.
+14. External conformance/deployment gate.
+15. Evidence limits and human review.
+
+Not every property needs every method. The template forces an explicit reason
+for inclusion or omission.
+
+## Final assurance competence test
+
+The reader passes when they can take a proposed claim, choose the minimum useful
+method portfolio, implement or review its oracles, reproduce the result, and
+write a limitation that would prevent a release reviewer from overgeneralizing
+it.
+
+## Final evidence prompts
+
+Write one sentence for each:
+
+- A claim supported by `tinyidpinteractioncontinuation`.
+- Its most important false negative.
+- A claim supported by the Rapid interaction model.
+- A provider behavior outside that model.
+- A claim supported by monitor fuzzing.
+- A trace defect fuzzing cannot identify without an oracle.
+- A claim supported by Porcupine.
+- A token-family operation omitted by its minimal model.
+- A claim supported by hosted OIDF.
+- A local production property OIDF does not test.
+- A claim supported by an artifact signature.
+- An approval only a human owner can grant.
+
+For each sentence, cite the relevant current file or saved source.
+
+The final review should also identify one tempting but invalid substitution—for
+example, using race success as a linearizability claim or using conformance as an
+audit-durability claim. Explain the different observations and oracles that make
+the substitution invalid. This is the minimum evidence-literacy standard for
+changing a release gate.
+
+Record that explanation in the review artifact.
+
 ## Exercises
 
 1. Choose a technique for “browser fields cannot replace canonical state” and

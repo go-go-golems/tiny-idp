@@ -699,6 +699,296 @@ instrumentation can make the trace incomplete.
 - Can the reader design a new action without exposing provider authority to JS?
 - Can the reader identify the remaining token-family monitoring gap?
 
+## Temporal property catalog for the current tree
+
+This catalog is a review index. Each entry names the property, authoritative
+state, enforcement point, evidence, and known gap.
+
+### Property T-01: validation precedes credentials
+
+- **Statement:** invalid authorization requests never render login/password.
+- **State:** no interaction record exists before Fosite validation.
+- **Enforcement:** `beginAuthorize` returns protocol/local error first.
+- **Evidence:** invalid client/redirect/scope/max-age tests.
+- **Gap:** every newly supported early parameter needs the same review.
+
+### Property T-02: canonical request is server-owned
+
+- **Statement:** resume uses the validated stored request, not POST protocol data.
+- **State:** `InteractionRecord.CanonicalRequest` and digest.
+- **Enforcement:** `reconstructAuthorizeRequest` plus analyzer.
+- **Evidence:** form absence and state mutation tests.
+- **Gap:** analyzer is intraprocedural.
+
+### Property T-03: client generation remains valid
+
+- **Statement:** pending interaction cannot survive security-relevant client
+  mutation.
+- **State:** `GenerationHash` plus current client.
+- **Enforcement:** resume comparison and scope/redirect checks.
+- **Evidence:** disabled/mutated client regression.
+- **Gap:** generation field set must evolve with client policy.
+
+### Property T-04: required login persists
+
+- **Statement:** an unauthenticated interaction cannot skip login on submit.
+- **State:** `InteractionRequireLogin`.
+- **Enforcement:** stored `requiresLogin` check.
+- **Evidence:** blank submit and no-session tests.
+- **Gap:** future authentication methods need a generalized satisfaction event.
+
+### Property T-05: required fresh login persists
+
+- **Statement:** old session cannot satisfy prompt login or exceeded max age.
+- **State:** `InteractionRequireFreshLogin` and session auth time.
+- **Enforcement:** post-creation authenticator success required.
+- **Evidence:** forced prompt/max-age tests and verification plan.
+- **Gap:** ACR/step-up semantics not implemented.
+
+### Property T-06: prompt none excludes interaction
+
+- **Statement:** no interactive UI when client requests no prompt.
+- **State:** validated prompt plus derived obligations.
+- **Enforcement:** authorization error before render.
+- **Evidence:** login/consent required prompt-none regressions.
+- **Gap:** other prompt combinations require explicit semantics.
+
+### Property T-07: malformed age is not absence
+
+- **Statement:** invalid `max_age` fails request.
+- **State:** parser value/presence/error.
+- **Enforcement:** strict parse branch before session decision.
+- **Evidence:** examples, fuzz, analyzer.
+- **Gap:** duplicate scalar semantics need continued audit.
+
+### Property T-08: storage error is not missing session
+
+- **Statement:** session-store failure does not collect credentials or authorize.
+- **State:** explicit browser-session state and error.
+- **Enforcement:** service unavailable branch.
+- **Evidence:** injected fault store.
+- **Gap:** audit/readiness policy for transient errors can be refined.
+
+### Property T-09: current user remains enabled
+
+- **Statement:** disabled user cannot complete pending or use session for issue.
+- **State:** current `User.Disabled`.
+- **Enforcement:** reload before issuance/UserInfo.
+- **Evidence:** mutation tests.
+- **Gap:** group/role changes and token claims have policy-specific semantics.
+
+### Property T-10: active signing capability exists
+
+- **Statement:** authorization does not complete without active signing key.
+- **State:** current key store.
+- **Enforcement:** `ActiveSigningKey` before terminal progress.
+- **Evidence:** missing-key failure tests/readiness.
+- **Gap:** key change between check and signing is store/adapter review surface.
+
+### Property T-11: explicit consent satisfies obligation
+
+- **Statement:** required consent needs explicit approval or valid prior policy.
+- **State:** required bit, action, consent store.
+- **Enforcement:** consent policy and action check.
+- **Evidence:** approve/deny/omit/prompt-none tests.
+- **Gap:** consent persistence transaction coupling remains open.
+
+### Property T-12: denial is terminal
+
+- **Statement:** denied interaction cannot later approve or issue artifacts.
+- **State:** `OutcomeDenied` and consumed timestamp.
+- **Enforcement:** atomic consume.
+- **Evidence:** denial and replay histories, monitor.
+- **Gap:** delivery failure of access-denied response is an availability issue.
+
+### Property T-13: approval is terminal once
+
+- **Statement:** at most one approved consume for one handle.
+- **State:** pending/consumed row.
+- **Enforcement:** memory lock or conditional SQL transition.
+- **Evidence:** sequential/concurrent replay and Porcupine.
+- **Gap:** model covers one object, bounded histories.
+
+### Property T-14: expiry excludes completion
+
+- **Statement:** expired interaction cannot transition to approved/denied
+  success.
+- **State:** expiry time and explicit transition time.
+- **Enforcement:** consume compares `now` atomically.
+- **Evidence:** injected-clock and model tests.
+- **Gap:** clock rollback/skew policy remains host assumption.
+
+### Property T-15: browser tabs are isolated
+
+- **Statement:** one tab's events do not consume/satisfy another interaction.
+- **State:** distinct random handle/hash and monitor partition.
+- **Enforcement:** per-record store key.
+- **Evidence:** concurrent tabs test.
+- **Gap:** browser cookie policy still applies shared session semantics.
+
+### Property T-16: authentication precedes approved terminal
+
+- **Statement:** required authentication event occurs before approval.
+- **State:** monitor `authed` flag per interaction.
+- **Enforcement:** provider plus offline verdict.
+- **Evidence:** real trace, generated traces, negative monitor tests.
+- **Gap:** missing event instrumentation can hide facts.
+
+### Property T-17: consent precedes approved terminal
+
+- **Statement:** required explicit consent event occurs before approval.
+- **State:** monitor consent flag.
+- **Enforcement:** provider plus monitor.
+- **Evidence:** generated/negative traces.
+- **Gap:** prior stored-consent skip is represented by absent obligation, not
+  event.
+
+### Property T-18: approval precedes artifacts
+
+- **Statement:** committed artifacts never precede approved terminal outcome.
+- **State:** monitor terminal/artifact flags and SQL transaction.
+- **Enforcement:** lifecycle completion ordering.
+- **Evidence:** failpoints and monitor.
+- **Gap:** memory development path is separate.
+
+### Property T-19: artifacts commit once
+
+- **Statement:** one interaction emits at most one artifact commit.
+- **State:** monitor artifact flag and one-time terminal store.
+- **Enforcement:** transaction and monitor diagnostic.
+- **Evidence:** duplicate-event negative test.
+- **Gap:** monitor is offline and does not block production.
+
+### Property T-20: token lifecycle event follows commit
+
+- **Statement:** rollback never claims token commit.
+- **State:** Fosite transaction outcome.
+- **Enforcement:** event emitted after token response construction/commit.
+- **Evidence:** code/refresh failpoint event counts.
+- **Gap:** token-family temporal monitor is future work.
+
+## Security-event review table
+
+| Event | Producer point | Required predecessor | Sensitive data excluded |
+|---|---|---|---|
+| interaction.created | after durable create | validated request | raw handle/request |
+| authentication.satisfied | after auth/session success | created interaction | login/password/hash |
+| consent.approved | after explicit decision | created interaction | raw form/scopes copy |
+| consent.denied | after denied consume path | created interaction | raw form |
+| interaction.terminal | after atomic consume | obligations satisfied or denial | handle/token |
+| authorization.artifacts_committed | after SQL lifecycle commit | approved terminal | code/nonce/token |
+| token.lifecycle_committed | after Fosite token commit | valid grant | code/access/refresh |
+
+## Model-review worksheet
+
+When comparing model and implementation, fill these rows:
+
+```text
+Abstract state:
+Concrete state fields:
+Action precondition:
+Implementation call:
+Expected observation:
+Concrete error mapping:
+Transition time source:
+Copy/isolation rule:
+Concurrent linearization point:
+Emitted event:
+Model omission:
+```
+
+For interaction consume, the largest deliberate omissions are browser binding,
+Fosite request reconstruction, client/user mutation, CSRF, and SQL artifact
+transaction. Those belong to higher harness layers.
+
+## Future temporal extensions
+
+### Password change
+
+A password-authenticated result can enter `PasswordChangeRequired` rather than
+`AuthenticationSatisfied`. The continuation must be server-owned, one-time,
+short-lived, and bound to subject/session/request. Only successful change may
+satisfy the original authentication obligation.
+
+### Step-up authentication
+
+Required ACR/AMR becomes an obligation with a minimum accepted context. A session
+can be active yet insufficient. Events must include a non-secret method/context
+identifier and auth time.
+
+### Logout and session revocation
+
+Revocation introduces terminal session state and token implications. Pending
+interactions bound to the session require explicit invalidation semantics.
+
+### Token-family monitor
+
+Events need stable secret-free family and generation identifiers. Properties
+include one active generation, rotation predecessor, reuse-driven revocation,
+and no commit event on rollback.
+
+### Administrative mutation
+
+Client/user/key changes can be represented as external state changes observed at
+resume. A unified trace could explain rejection, but administrative audit and
+protocol monitor must remain separate privacy schemas.
+
+## Final temporal competence test
+
+The reader passes this chapter when given a new multi-request feature and can:
+
+1. define durable state and obligations;
+2. enumerate legal/illegal histories;
+3. choose one-time/idempotent semantics;
+4. define expiry and clock source;
+5. define concurrent winner;
+6. identify mutable revalidation;
+7. place event after authoritative mutation;
+8. build example/model/fuzz/monitor evidence;
+9. state observability and liveness gaps;
+10. connect the design to a saved research concept without overstating it.
+
+## Compact temporal glossary
+
+- **State:** information needed to decide which future operations are legal.
+- **Transition:** one atomic change from a legal predecessor to successor.
+- **Guard:** predicate that must hold before transition.
+- **Obligation:** event that must occur before a later transition is legal.
+- **Terminal:** state with no later successful consume transition.
+- **Replay:** repeated presentation of a previously used message/capability.
+- **Freshness:** bound on age or requirement for a new event.
+- **Safety:** bad event never occurs; finite counterexample can falsify it.
+- **Liveness:** desired event eventually occurs under stated progress assumptions.
+- **Trace:** ordered observation sequence from one or more executions.
+- **Partition:** events grouped by the object whose property is checked.
+- **Monitor:** executable consumer that maps traces to verdicts/violations.
+- **Instrumentation:** code that emits facts; it is not the property itself.
+- **Bad prefix:** finite trace after which a safety property is already violated.
+- **Typestate:** operation legality depends on current state.
+- **Model:** smaller transition system used as an oracle for implementation.
+- **Action:** generated/requested operation applied to model and system.
+- **Observation:** redacted result compared with expected behavior.
+- **Shrink:** reduction of a failing generated sequence to a smaller case.
+- **Metamorphic relation:** expected relationship between transformed executions.
+
+The intern should be able to define every term using a tiny-idp example and name
+one limitation of the corresponding evidence.
+
+## Final reading prompts
+
+Before leaving this chapter, answer in writing:
+
+1. Which temporal fact did the original forced-login POST lose?
+2. Which field now preserves that fact?
+3. Which event demonstrates satisfaction?
+4. Which atomic operation establishes terminal state?
+5. Which monitor rule rejects artifact-before-approval?
+6. Which test demonstrates independent partitions?
+7. Which property remains unmonitored for token families?
+8. Which liveness question is intentionally outside the current monitor?
+
+Answers must cite a current symbol and one supporting test or trace.
+
 ## Research map
 
 - Security automata motivate explicit permitted transition histories.

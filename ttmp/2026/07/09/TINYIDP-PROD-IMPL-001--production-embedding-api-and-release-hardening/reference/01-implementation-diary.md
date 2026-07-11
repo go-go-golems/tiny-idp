@@ -2922,6 +2922,134 @@ production code changes: none
 textbook expansion status: IN PROGRESS
 ```
 
+## Step 31: Complete and validate the 7,123-line intern textbook
+
+This interval completed the scale and depth requested for tomorrow's intern.
+Every curriculum document now exceeds 1,000 lines and ties research concepts to
+the current project through exact package responsibilities, symbols, state
+fields, SQL lifecycles, analyzer rules, tests, traces, observed failures,
+production gates, and evidence limitations. A ticket script enforces the corpus
+shape and minimum depth mechanically.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 29)
+
+**Assistant interpretation:** Finish all seven documents at textbook scale,
+analyze the current code in each, preserve paper/design/diary provenance, and add
+reproducible quality checks rather than relying on claimed completeness.
+
+**Inferred user intent:** Give the intern a serious technical education and
+review workbook that captures the value of the research and implementation, not
+an oversized outline.
+
+### What I did
+
+- Expanded the curriculum map to 1,002 lines with day-by-day work, package,
+  symbol, test, and source atlases, vocabulary, mentor questions, assessment
+  rubrics, first-contribution constraints, and diary provenance.
+- Expanded the OAuth/OIDC chapter to 1,097 lines with attacker model, exact
+  Fosite composition, endpoint/parameter authority, canonicalization, sessions,
+  auth time, typed authentication, consent, persisted requester, code/access/
+  refresh/UserInfo, errors, events, formal properties, test map, and decisions.
+- Expanded the temporal chapter to 1,001 lines with the originating defect,
+  record field semantics, begin/resume transitions, case files, monitor/model/
+  driver analysis, twenty-property catalog, event table, future transitions, and
+  competence tests.
+- Expanded the durable/concurrent chapter to 1,020 lines with store layering,
+  Fosite SQL method catalog, transaction threat model, all failpoints, failure
+  states, Porcupine histories, recovery faults, research provenance, and review
+  worksheets.
+- Expanded the assurance chapter to 1,001 lines with claim taxonomy, all custom
+  analyzers and fixture questions, every generated/runtime/external tool,
+  paper-to-tool matrix, evidence envelope, and method-selection template.
+- Expanded the production chapter to 1,001 lines with public host contract,
+  preflight, TLS/HTTP/proxy/password/audit/readiness/keys/recovery, workflows,
+  exact-candidate observations, configuration/deployment/incident worksheets,
+  and gate-failure interpretation.
+- Expanded the lab workbook to 1,001 lines with twenty detailed protocols,
+  expected evidence, limits, mentor acceptance, design/oral assignments,
+  commands, scoring, submission examples, diagrams, source expectations, and
+  first-contribution gate.
+- Added `scripts/04-validate-intern-textbook.sh` to enforce the seven-document
+  set, 1,000-line minimum, research/code/exercise content markers, whitespace,
+  and docmgr health.
+- Ran the validation script successfully: 7,123 total lines and all docmgr
+  checks passed.
+
+### Why
+
+- The arbitrary-looking line target exposed a real shortcoming: the first
+  version named topics but did not fully teach how research changed concrete
+  code and evidence.
+- Mechanical validation makes the requested corpus size reproducible while
+  substantive section requirements discourage blank-line padding.
+- A lab workbook measures reasoning through artifacts and counterexamples, which
+  is more useful than passive reading completion.
+
+### What worked
+
+- Current code symbols and diary failures supplied enough concrete material to
+  exceed the target without generic filler.
+- The same concepts recur across distinct representations—record, transaction,
+  analyzer, test, event, host, release ledger—which made cross-layer teaching
+  possible.
+- All seven documents passed the line floor and docmgr validation.
+
+### What didn't work
+
+- The first multi-location workbook patch failed because an expected wrapped
+  sentence did not match the file exactly. No edit was applied. The workbook was
+  then expanded with one append-only detailed protocol section before its
+  completion artifact.
+- Three documents initially stopped at 999 lines after substantive appendices.
+  Each received a final short, meaningful review requirement rather than blank
+  padding.
+
+### What I learned
+
+- The diary's failed assumptions are essential textbook content: they teach how
+  models and oracles are corrected, not just how final code works.
+- A 1,000-line chapter remains navigable when organized around claims, current
+  symbols, case files, evidence boundaries, and exercises.
+- Corpus validation should check pedagogical signals as well as raw length.
+
+### What warrants a second pair of eyes
+
+- Review the textbook for accidental duplication or claims whose normative/
+  inferred label is unclear.
+- Have the intern report sections that remain difficult despite the added depth.
+- Review commands before each cohort because test names and package paths evolve.
+
+### What should be done in the future
+
+1. Render and upload the expanded bundle.
+2. Run the first onboarding cohort and capture observed learning failures.
+3. Add mentor answer notes only where evaluation is ambiguous.
+
+### Code review instructions
+
+- Run `scripts/04-validate-intern-textbook.sh`.
+- Read design 05 for sequence, then 06–10, then reference 07.
+- For any questioned claim, follow its code/test/source/diary references.
+- Confirm the current release decision remains NOT APPROVED.
+
+### Technical details
+
+```text
+curriculum: 1002 lines
+protocol: 1097 lines
+temporal: 1001 lines
+durable/concurrent: 1020 lines
+assurance: 1001 lines
+production: 1001 lines
+labs: 1001 lines
+total: 7123 lines
+validation script: PASS
+docmgr doctor: PASS
+production code changes: none
+```
+
 ## Step 30: Ground assurance and production chapters in every built tool and gate
 
 This interval expanded the assurance and production chapters from short surveys

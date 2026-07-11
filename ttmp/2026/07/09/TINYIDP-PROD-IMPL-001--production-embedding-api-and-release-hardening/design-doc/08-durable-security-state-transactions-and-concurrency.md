@@ -720,6 +720,296 @@ and verify the published result.
 - Can the reader explain WAL-safe backup and offline restore?
 - Can the reader identify post-commit ambiguity and remaining consent risk?
 
+## Fosite SQL method lifecycle catalog
+
+This catalog prevents review from treating all adapter methods as equivalent.
+
+### Authorization-code session methods
+
+`CreateAuthorizeCodeSession` persists requester state through `authorizeExec` and
+therefore requires the authorization lifecycle. `GetAuthorizeCodeSession` reads
+and restores active requester state. `InvalidateAuthorizeCodeSession` mutates
+through `tokenExec` during code redemption.
+
+The same logical code participates in two transactions at different times:
+creation joins authorization issuance; invalidation joins token issuance.
+
+### PKCE session methods
+
+`CreatePKCERequestSession` joins authorization lifecycle. Get restores the
+request for verifier validation. Delete participates in cleanup according to
+Fosite sequencing. PKCE state must remain consistent with code state.
+
+### OpenID Connect session methods
+
+Create joins authorization lifecycle. Get restores ID-token claims/headers and
+request state. Delete follows code lifecycle cleanup. OIDC state must not survive
+as an independently usable capability when code creation rolls back.
+
+### Access-token session methods
+
+Create joins token lifecycle and records requester by signature. Get supports
+introspection/UserInfo. Delete may join token rotation or direct revocation
+depending on Fosite context.
+
+### Refresh-token session methods
+
+Create joins token lifecycle and records associated access signature. Get
+requires active state. Delete/revoke may execute in transaction or direct reuse
+cleanup. Rotate requires active lifecycle and conditional exact-row update.
+
+### JWT replay methods
+
+Client assertion and JTI methods enforce one-time JWT identifiers when those
+features are used internally. They need their own expiry/cleanup and atomicity
+review if public assertion profiles are enabled.
+
+### Client authentication
+
+`GetClient` loads public client metadata and confidential secret hashes.
+`Authenticate` behavior is constrained by Fosite client handling. Persisted
+client TTLs influence token lifetimes and maintenance derivation.
+
+## Transaction-context threat model
+
+The context value is an unexported typed key, so ordinary callers cannot collide
+by string. The contained transaction is available only to code receiving the
+derived context.
+
+Threats and controls:
+
+- **missing context:** lifecycle-required helper returns error;
+- **nested begin:** `ErrNestedTransaction`/explicit rejection;
+- **wrong helper:** lifecycle analyzer and tests;
+- **commit ignored:** ignored-security-error analyzer;
+- **rollback failure:** returned/recorded error path requires review;
+- **context cancellation:** database call observes context and lifecycle rolls
+  back;
+- **reuse of committed transaction:** SQL driver returns error; lifecycle scope
+  remains one request;
+- **direct base DB access:** code review/analyzer search for mutation methods.
+
+## Failure-state ledger
+
+### Before begin
+
+No transaction exists and no mutation occurs. The original credential and
+interaction remain unchanged. Retry is safe subject to ordinary expiry/race.
+
+### After first mutation
+
+The SQL transaction contains a real intermediate state invisible after rollback.
+This proves participating helper uses the transaction rather than base DB.
+
+### Before commit
+
+All intended writes may exist inside the transaction. Injected failure and
+rollback must restore the complete baseline. This is the strongest named
+rollback point.
+
+### Commit failure
+
+Database commit error is returned. Depending on driver failure, outcome can be
+ambiguous; callers must not claim success. Tests cover controlled errors, while
+platform recovery remains operational evidence.
+
+### After commit, before event
+
+Durable authority exists. Event delivery failure cannot roll it back. Delivery
+counter and audit/reconciliation apply.
+
+### After event, before HTTP write
+
+Durable state and evidence exist; client may not receive artifact. One-time state
+prevents blind retry from duplicating authority.
+
+### Partial HTTP write
+
+Client may receive incomplete or complete secret. Server must assume exposure.
+Database compensation cannot retract possession.
+
+## SQL invariant worksheet
+
+For each capability table record:
+
+```text
+primary/signature key
+request/family key
+active predicate
+subject/client binding
+scope binding
+expiry
+creation transaction
+consumption/revocation transaction
+retention/deletion policy
+secret or signature storage
+indexes supporting conditional transition
+backup manifest count
+restart restoration test
+```
+
+An intern should complete this for authorize codes, PKCE, OIDC sessions, access
+tokens, refresh tokens, interactions, browser sessions, consents, signing keys,
+credentials, and account-security state.
+
+## Concurrency history worksheet
+
+```text
+Object key:
+Initial abstract state:
+Operation input:
+Operation output:
+Legal transition:
+Invocation timestamp:
+Return timestamp:
+Real-time constraints:
+Linearization point:
+Final concrete state:
+Operations outside model:
+Checker result:
+Repeated-run result:
+```
+
+The refresh worksheet must list reuse revocation under operations outside the
+minimal rotate model.
+
+## Isolation scenarios
+
+### Two different interactions
+
+Operations should proceed independently and may commit concurrently subject to
+SQLite serialization. One cannot consume the other because keys differ.
+
+### Same interaction
+
+Conditional terminal transition yields one winner. Every loser observes terminal
+state or serialization result.
+
+### Two different refresh families
+
+Families should rotate independently. A broader request-ID revocation query must
+not cross client/subject family boundaries.
+
+### Same refresh generation
+
+One rotation wins. Other uses become failures/reuse and may revoke family.
+
+### Backup during writes
+
+Online backup captures one consistent snapshot. It may represent state before or
+after a concurrent transaction, never a torn mix.
+
+### Maintenance during protocol operations
+
+Retention predicates must not delete active/unexpired state. Transaction/locking
+behavior should preserve current operations. Current scheduling and tests provide
+bounded evidence.
+
+## Recovery failure catalog
+
+### Backup destination exists
+
+Write to temporary file, verify, then atomically publish according to overwrite
+policy. Do not truncate known-good backup first.
+
+### Disk full
+
+Temporary publication fails and known-good destination remains. Test injects
+write failure.
+
+### Context cancellation
+
+Backup aborts, cleans temporary state, and preserves publication.
+
+### Corrupt backup
+
+Verification rejects before restore. Manifest/database mismatch is evidence of
+invalid artifact.
+
+### Migration checksum mismatch
+
+Open rejects historical schema whose recorded content differs from binary.
+
+### Future schema
+
+Older binary refuses database version above supported migration.
+
+### Restore publication failure
+
+Rollback copy must remain. Operator follows runbook and does not start provider
+on unverified state.
+
+### Doctor failure after restore
+
+Service remains stopped. Preserve evidence and either repair under reviewed
+procedure or restore rollback copy.
+
+## Research-to-implementation provenance
+
+### Database transaction theory
+
+Atomicity and isolation motivated grouping complete capability transitions.
+The local inference was to use the protocol orchestrator's transaction extension
+rather than entity-local transactions.
+
+### Fosite source/API
+
+Observed `MaybeBeginTx` calls proved upstream already offered the correct token
+lifecycle hook. The implementation gap was adapter conformance.
+
+### Lineage-driven fault injection
+
+Motivated mutation-dependency enumeration and before/after hooks. The project
+implements a manual named matrix, not automatic lineage discovery.
+
+### Linearizability
+
+Provided the correctness criterion for one-time concurrent objects. Porcupine
+checks bounded recorded histories against project models.
+
+### CHESS
+
+Motivated schedule control and repeated overlap. The project does not implement
+systematic preemption-bounded exploration.
+
+### Model-based testing
+
+Motivated separating compact abstract state from memory/SQLite behavior. The
+model is reviewed as part of evidence.
+
+## Store-change review questions
+
+1. Does the change create, transfer, rotate, revoke, or delete authority?
+2. Which rows collectively represent the fact?
+3. Which coordinator knows the full set?
+4. Does context carry the correct transaction?
+5. Which direct-execution path exists and why?
+6. What conditional predicate chooses a winner?
+7. What does zero affected rows mean?
+8. What are all pre/post mutation failpoints?
+9. What remains retryable after rollback?
+10. What is ambiguous after commit?
+11. Which event follows commit?
+12. Which concurrent history model changes?
+13. Which migration/index/retention changes?
+14. Which backup/restore evidence changes?
+15. Which analyzer fixture should change?
+
+## Final durable-state competence test
+
+The reader passes when given a new multi-row security transition and can produce:
+
+- complete mutation set;
+- transaction owner and context path;
+- conditional winner predicate;
+- typed error mapping;
+- pre/post failpoint matrix;
+- row/event/retry oracle;
+- concurrent abstract model;
+- post-commit ambiguity analysis;
+- migration and recovery impact;
+- supported topology and residual gap.
+
 ## Research map
 
 - Linearizability supplies the concurrent correctness definition; see

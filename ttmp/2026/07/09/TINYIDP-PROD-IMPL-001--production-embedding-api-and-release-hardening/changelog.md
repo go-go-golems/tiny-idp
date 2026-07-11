@@ -244,3 +244,18 @@ Expanded assurance-method and production-security intern chapters into concrete 
 
 - design-doc/09-assurance-methods-and-evidence-interpretation.md — Tool-by-tool assurance and paper provenance
 - design-doc/10-production-trust-boundaries-and-release-security.md — Code-led production and release trust analysis
+
+## 2026-07-10
+
+Completed the code-led intern textbook: seven documents, each at least 1,000 lines, 7,123 lines total, with research/diary provenance, current symbol and tool analysis, expected evidence, limitations, and twenty executable labs; added a validation script.
+
+### Related Files
+
+- design-doc/05-intern-accelerated-curriculum-and-code-reading-map.md — 1002-line curriculum
+- design-doc/06-oauth-oidc-protocol-security-foundations.md — 1097-line protocol chapter
+- design-doc/07-security-state-machines-and-temporal-invariants.md — 1001-line temporal chapter
+- design-doc/08-durable-security-state-transactions-and-concurrency.md — 1020-line durable state chapter
+- design-doc/09-assurance-methods-and-evidence-interpretation.md — 1001-line assurance chapter
+- design-doc/10-production-trust-boundaries-and-release-security.md — 1001-line production chapter
+- reference/07-intern-security-review-labs.md — 1001-line lab workbook
+- scripts/04-validate-intern-textbook.sh — Corpus validation

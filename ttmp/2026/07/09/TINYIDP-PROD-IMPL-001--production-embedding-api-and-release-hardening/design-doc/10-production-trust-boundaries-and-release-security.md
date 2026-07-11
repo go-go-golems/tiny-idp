@@ -803,6 +803,195 @@ Conformance, signature, and deployed digest must refer to the same bytes.
 - Can the reader bind evidence to exact bytes?
 - Can the reader identify human authority that automation cannot provide?
 
+## Production configuration review table
+
+| Control | Configuration | Validation | Runtime owner | Readiness/evidence |
+|---|---|---|---|---|
+| issuer | `Options.Issuer` / CLI | production HTTPS parser | provider/host | discovery + host smoke |
+| store | `Options.Store` / DB path | non-nil, persistent/schema | SQLite | store/schema checks |
+| cookie secure | `Cookie.Secure` | required production | adapter/browser | session tests |
+| SameSite | `Cookie.SameSite` | supported explicit mode | adapter/browser | cookie tests |
+| token secret | protected file -> `Token.SecretKey` | length + file mode | host/Fosite | token-secret check/rotation |
+| audit | path + sink | production-ready + health | host/sink | audit readiness/counter |
+| consent | policy | production default/explicit | adapter/policy | consent tests |
+| limiter | rate/window | production-ready | host/provider | limiter readiness/tests |
+| client address | direct or trusted CIDRs | production-ready | resolver | proxy tests |
+| authenticator | native/custom | production-ready/reporting | authn | password stats/readiness |
+| password policy | min/max/blocklist | NIST-aligned bounds | admin/authn | acceptance tests |
+| password work | max concurrent | positive bounded | authn | stats/load probe |
+| maintenance | interval/retentions | derived lifetime minima | provider/host | recency readiness |
+| signing key | DB active key | current/supported/overlap | store/adapter | signing readiness/JWKS |
+| TLS cert/key | CLI paths | required/readable | HTTP host | TLS/HTTP2 smoke |
+| request bounds | CLI sizes/timeouts | positive parse | HTTP server | manual/load probes |
+| shutdown | duration/signals | positive duration | host errgroup | tmux graceful stop |
+
+## Target deployment evidence worksheet
+
+Record values rather than checking generic boxes.
+
+```text
+environment/region
+deployment owner
+source commit
+binary SHA-256
+signature/provenance locations
+issuer and DNS
+certificate issuer/SAN/expiry/renewal owner
+proxy product/config revision
+trusted proxy CIDRs and max hops
+upstream link protection
+listener/network policy
+CPU/memory/process/file limits
+SQLite filesystem and mount options
+single-writer enforcement
+database/audit/secret/key modes and owners
+backup destination/encryption/retention
+last restore drill and result
+last key rotation drill
+last token-secret rotation drill
+audit shipping/retention/alert
+password-work capacity evidence
+rate-limit policy and alert
+maintenance interval/last success
+readiness/liveness routing policy
+hosted OIDF plan/result
+generic scanner/result/adjudication
+on-call and rollback owner
+independent reviewer
+release owner
+```
+
+## Incident evidence worksheet
+
+For suspected compromise preserve:
+
+- detection timestamp and source;
+- exact deployed artifact identity;
+- configuration revision;
+- audit segment and integrity metadata;
+- security-event segment/schema;
+- relevant application/proxy/system logs;
+- database and verified backup identity;
+- active/verification key IDs;
+- token-secret generation identifier without secret bytes;
+- affected clients/users/scopes/time window;
+- rotation/revocation commands and results;
+- readiness changes;
+- restore/rollback decisions;
+- external notifications and owner approvals.
+
+Do not collect raw passwords or bearer tokens merely because an incident is in
+progress. Evidence handling remains least-privilege.
+
+## Release-gate failure interpretation
+
+### Build hash mismatch
+
+Stop. The workflow is not testing the artifact proposed for deployment. Rebuild
+or correct expected identity; do not update expected hash without explaining the
+source change.
+
+### Race/lint/analyzer failure
+
+Treat as code/evidence defect. Fix, commit, and restart exact-candidate identity.
+
+### Fuzz counterexample
+
+Preserve seed/corpus and shrunk input. Convert to deterministic regression before
+fix. Rerun affected and full gates.
+
+### Failpoint/recovery failure
+
+Assume authority or backup integrity risk. Do not release under a generic flaky
+test exception without root cause.
+
+### Hosted conformance warning
+
+Preserve logs and adjudicate against plan/spec. Warning is not automatically pass
+or fail; decision needs named reviewer.
+
+### Scanner finding
+
+Reproduce through actual topology, classify context, fix or document explicit
+risk. Do not disable scanner rule globally to produce green output.
+
+### Signature/provenance failure
+
+Artifact origin is unestablished. Do not distribute as approved release.
+
+### Missing reviewer/owner
+
+Technical work may be complete; authorization is not. Keep NOT APPROVED.
+
+## Production change review questions
+
+1. Does the change alter public host contract?
+2. Does it add a secret or protected file?
+3. Does it alter issuer, endpoint, redirect, or cookie behavior?
+4. Does it change proxy/address/limiter trust?
+5. Does it change password CPU/memory capacity?
+6. Does it add/alter audit or security events?
+7. Does it affect readiness/liveness/maintenance?
+8. Does it affect key or token-secret rotation?
+9. Does it change schema, backup, restore, or rollback?
+10. Does it add a dependency or raise Go/toolchain minimum?
+11. Does it change reproducible build bytes?
+12. Which local and external gates must be repeated?
+13. Which runbook/residual risk changes?
+14. Who reviews and who approves?
+
+## Final production competence test
+
+The reader passes when they can review a concrete deployment and release packet,
+identify missing controls without confusing them with code defects, bind every
+piece of evidence to exact bytes and environment, and preserve NOT APPROVED until
+the required technical, external, and human authority classes are present.
+
+## Final production scenario
+
+Assume a deployment has:
+
+- green local tests and race;
+- correct binary SHA-256;
+- valid public certificate;
+- a reverse proxy whose CIDR was not configured;
+- healthy SQLite and signing key;
+- audit disk at capacity;
+- no hosted OIDF for the current bytes;
+- a signed checksum;
+- no independent reviewer.
+
+The deployment is not ready and the release is not approved.
+
+Required analysis:
+
+1. Forwarded addresses are untrusted or misresolved until proxy CIDR and
+   sanitation are verified.
+2. Audit health failure should make production readiness false and requires
+   capacity/retention response.
+3. The signed checksum authenticates bytes but does not supply hosted protocol
+   evidence.
+4. Earlier OIDF results cannot bind changed bytes.
+5. Independent review and owner authority remain missing.
+
+Write the stop, remediation, evidence-preservation, retest, and approval sequence
+without changing any control to make the dashboard green.
+
+## Final source trace
+
+For the scenario above cite `TrustedProxyResolver`, audit readiness, release-gate
+workflow, exact-candidate ledger, incident runbook, RFC 9700 proxy guidance, and
+the approval algorithm. This exercise confirms that production reasoning spans
+code, deployment, standards, operations, artifacts, and human authority.
+
+The reviewer must finish by naming the first safe reversible action and the
+actions that require new authority. In this scenario, preserving evidence,
+stopping traffic, restoring audit capacity, and correcting proxy trust are
+operational remediation; accepting missing hosted review or approving release
+requires designated owners and cannot be inferred by the software.
+
+Record the owner and expiry of every exception.
+
 ## References
 
 - `playbook/01-production-operations-and-incident-response-runbook.md`
