@@ -151,7 +151,7 @@ func (s *sqlFositeStore) Rollback(ctx context.Context) error {
 func tokenLifecycleFromContext(ctx context.Context) (*tokenLifecycle, error) {
 	lifecycle, ok := ctx.Value(tokenLifecycleContextKey{}).(*tokenLifecycle)
 	if !ok || lifecycle == nil || lifecycle.tx == nil {
-		return nil, fmt.Errorf("Fosite token persistence requires an active transaction")
+		return nil, fmt.Errorf("fosite token persistence requires an active transaction")
 	}
 	return lifecycle, nil
 }

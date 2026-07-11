@@ -110,7 +110,7 @@ func (m *Monitor) Observe(event Event) {
 			m.violate(event, "event occurred before interaction creation")
 			return
 		}
-	default:
+	case TokenLifecycleDone:
 		return
 	}
 
@@ -143,6 +143,8 @@ func (m *Monitor) Observe(event Event) {
 			m.violate(event, "authorization artifacts committed more than once")
 		}
 		state.artifact = true
+	case InteractionCreated, TokenLifecycleDone:
+		return
 	}
 }
 
