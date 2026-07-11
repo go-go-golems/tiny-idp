@@ -273,3 +273,62 @@ tracked tasks: 84
 related product files on primary design: 7
 production code changes: none
 ```
+
+## Step 3: Validate, commit, and publish the research/design bundle
+
+### What I did
+
+- Ran frontmatter validation on the primary design document.
+- Ran `docmgr doctor --ticket TINYIDP-MODEL-001 --stale-after 30`; all checks
+  passed.
+- Ran `git diff --check` and staged only the new ticket, leaving unrelated OIDF
+  source directories untouched.
+- Committed the ticket as `87c8123` with message
+  `Docs: design serious tiny-idp model checking program`.
+- Dry-ran a six-document reMarkable bundle containing the index, system design,
+  theory reader, diary, task ledger, and changelog.
+- Uploaded the rendered bundle successfully.
+
+### What worked
+
+The dry run resolved all six inputs and the real command returned:
+
+```text
+OK: uploaded TINYIDP-MODEL-001 Serious Model Checking 87c8123.pdf -> /ai/2026/07/11/TINYIDP-MODEL-001
+```
+
+### What didn't work
+
+N/A.
+
+### What was tricky to build
+
+The publication had to preserve both kinds of document without presenting them
+as alternatives. The primary system design now appears before the companion
+theory reader in the bundle.
+
+### What warrants a second pair of eyes
+
+Review the rendered diagrams and tables on the reMarkable, especially the wide
+phase and gap-analysis tables.
+
+### What should be done in the future
+
+Begin with Phase 0 evidence semantics and Phase 1 qualification. Do not mark a
+production model task complete merely because a tutorial checker run succeeds.
+
+### Code review instructions
+
+Review commit `87c8123`, starting with the ticket index and primary system
+design. Confirm the open task state accurately distinguishes design completion
+from formal-model implementation.
+
+### Technical details
+
+```text
+docmgr doctor: all checks passed
+git commit: 87c8123
+bundle inputs: 6 Markdown documents
+reMarkable destination: /ai/2026/07/11/TINYIDP-MODEL-001
+bundle name: TINYIDP-MODEL-001 Serious Model Checking 87c8123.pdf
+```
