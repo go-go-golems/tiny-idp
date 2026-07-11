@@ -4018,3 +4018,134 @@ coarse token lifecycle task 3uhz: OPEN
 hosted OIDC exact-candidate gate: OPEN
 release status: NOT APPROVED
 ```
+
+## Step 25: Execute typed verification plans against the strict provider
+
+This interval connected the data-only verification compiler to the actual
+Fosite-backed HTTP provider without exposing a live provider object to
+JavaScript. A native test driver owns browser state, opaque interaction forms,
+the injected clock, requests, and observations. A compiled plan can select
+actions and assertions, but Go decodes every action and owns every verdict.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead. do it all, i'm going running."
+
+**Assistant interpretation:** Continue through every locally executable
+assurance phase, using commits and detailed diary intervals rather than stopping
+after the generic scripting substrate.
+
+**Commit:** `ef50a86` — "Add typed strict provider verification scenarios"
+
+### What I did
+
+- Added a mutex-protected deterministic `securityClock` and injected its `Now`
+  method into the real strict provider fixture.
+- Added a `verifyplan.Driver` implementation in the adapter's external test
+  package.
+- Defined native parameter types for authorization begin, interaction submit,
+  and time advance.
+- Rejected unknown JSON action fields and trailing JSON before any provider
+  effect.
+- Kept the current opaque interaction form in native driver state.
+- Emitted typed observations describing status, credential-form presence,
+  interaction opacity, code presence, OAuth error, and returned state without
+  exposing code values.
+- Compiled a JavaScript plan that establishes a session, requests forced login,
+  and submits the interaction without credentials.
+- Ran that plan against the real HTTP provider with native assertions proving a
+  credential form was displayed and no authorization code was issued.
+- Added negative driver tests for an unknown action and an unknown field.
+- Added a real-provider metamorphic test proving `ui_locales` changes do not
+  change code issuance or the server-owned returned state.
+- Added a pure typed interaction action/observation model.
+- Added four explicit minimized replay histories for duplicate approval,
+  deny/approve competition, expiration, and absent consumption.
+- Added those minimized histories as committed fuzz seeds and fuzzed arbitrary
+  bounded action sequences while checking terminal uniqueness.
+- Updated the focused research document to distinguish implemented driver
+  actions from future token and UserInfo actions.
+- Checked Assurance Phase 2 tasks `qru9` and `tlmk` only after the full repository
+  suite passed.
+
+### Why
+
+- A generic runner does not prove that its boundary survives contact with the
+  real provider. The integration test demonstrates that JavaScript selects data
+  while native Go retains HTTP and security authority.
+- Strict decoding makes the action schema an allowlist. Silently ignored fields
+  would make misspelled or future security parameters appear tested when they
+  were not.
+- Metamorphic testing checks relations between executions when a complete output
+  oracle would be costly. `ui_locales` is presentation metadata and must not
+  change the authorization state binding.
+- Committed minimized histories turn discovered or anticipated state-machine
+  counterexamples into stable reviewable regression inputs.
+
+### What worked
+
+- The compiled forced-login scenario passed against the real strict provider.
+- Unknown actions and fields failed before provider execution.
+- All three `ui_locales` variants preserved the expected authorization relation.
+- The action-model fuzz target completed 8,560 executions in two seconds with
+  four committed minimized seeds and no invariant violation.
+- The complete repository suite passed after the driver and model were added.
+
+### What didn't work
+
+- The first build found `cloneValues` already declared in another external
+  adapter test file:
+
+  ```text
+  cloneValues redeclared in this block
+  ```
+
+  Renaming the helper to `cloneScenarioValues` resolved the expected package-wide
+  test helper collision. No production behavior changed.
+
+### What I learned
+
+- An external test package is the right initial location for the strict driver:
+  it exercises public HTTP behavior and avoids creating a privileged production
+  testing endpoint.
+- Typed observations should report capability presence, such as whether a code
+  was issued, rather than storing credential values in evidence.
+- The compile-only boundary remains intact even when plans control realistic
+  multi-request browser sequences.
+- A minimized seed needs a named replay test as well as a fuzz corpus entry so a
+  reviewer can understand the security history without decoding bytes.
+
+### What warrants a second pair of eyes
+
+- Review whether `ui_locales` is the best first metamorphic transform and add
+  duplicate-parameter relations with explicit fail-closed expectations.
+- Review the observation schema before persisting it as a compatibility promise.
+- Review whether scenario driver code should become a reusable internal package
+  after token and UserInfo actions are added.
+- Review the pure model against the durable SQLite interaction semantics; the
+  current strict driver uses the memory store.
+
+### What should be done in the future
+
+1. Add typed consent, token exchange, refresh, UserInfo, and store-fault actions.
+2. Run store-independent plans against both memory and SQLite.
+3. Add a versioned evidence envelope for commit, plan hash, seed, observations,
+   security events, and native assertion versions.
+4. Begin the exact-candidate static, race, fuzz, recovery, proxy, and hosted OIDC
+   verification matrix.
+
+### Technical details
+
+```text
+strict driver action kinds: 4
+strict driver live script capabilities: 0
+native forced-login plan: PASS
+unknown action/field rejection: PASS
+metamorphic ui_locales variants: 3/3 PASS
+committed minimized histories: 4
+action fuzz executions: 8,560
+full repository suite: PASS
+Assurance Phase 2 qru9: COMPLETE
+Assurance Phase 2 tlmk: COMPLETE
+release status: NOT APPROVED
+```

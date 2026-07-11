@@ -128,8 +128,8 @@ tasks so partial implementation never looks like phase completion.
 - [ ] Assurance Phase 0: review and accept the invariant catalog, threat model, event schema, consent semantics, UserInfo transport, and release profile <!-- t:uum1 -->
 - [x] Assurance Phase 1: implement a server-owned hashed one-time authorization InteractionRecord with canonical request digest, required actions, expiry, generation, and atomic terminal transitions <!-- t:iosc -->
 - [x] Assurance Phase 1: replace browser hidden continuation without a compatibility fallback and add forced-login, max_age, prompt-none, consent, mutation, and replay regressions <!-- t:2cd9 -->
-- [ ] Assurance Phase 2: add an injected security Clock, pure Go interaction model, strict-provider scenario driver, typed actions, and observations <!-- t:qru9 -->
-- [ ] Assurance Phase 2: add Rapid state-machine properties, metamorphic relations, native fuzz action sequences, seed persistence, and shrunk replay tests <!-- t:tlmk -->
+- [x] Assurance Phase 2: add an injected security Clock, pure Go interaction model, strict-provider scenario driver, typed actions, and observations <!-- t:qru9 -->
+- [x] Assurance Phase 2: add Rapid state-machine properties, metamorphic relations, native fuzz action sequences, seed persistence, and shrunk replay tests <!-- t:tlmk -->
 - [x] Assurance Phase 3: extend auditlint with strict security parsing, explicit bearer transport, and injected-clock analyzers plus analysistest fixtures <!-- t:j7dm -->
 - [x] Assurance Phase 3: add interaction-continuation, limiter-identity taint, ignored-security-error, and protocol-lifecycle analyzers with documented precision limits <!-- t:mo8x -->
 - [x] Assurance Phase 4: implement versioned secret-free SecurityEvent instrumentation for interaction, authentication, consent, protocol mutation, and terminal boundaries <!-- t:6ruz -->

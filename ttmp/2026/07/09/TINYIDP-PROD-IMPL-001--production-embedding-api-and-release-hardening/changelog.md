@@ -184,3 +184,12 @@ Completed protocol invariant analyzers, multi-source security monitor feeds, and
 - design-doc/04-programmable-verification-plans-research-boundary-and-implementation.md — Academic and implementation traceability
 - internal/gojaverify/compiler.go — Isolated plan compilation
 - pkg/verifyplan/plan.go — Native plan runner
+
+## 2026-07-10
+
+Added the native strict-provider VerificationPlan driver, typed action observations, deterministic clock, metamorphic relation, minimized replay histories, and action-sequence fuzzing.
+
+### Related Files
+
+- internal/fositeadapter/state_model_test.go — Pure model, replay histories, and fuzz seeds
+- internal/fositeadapter/verification_scenario_test.go — Strict HTTP scenario driver and native assertions

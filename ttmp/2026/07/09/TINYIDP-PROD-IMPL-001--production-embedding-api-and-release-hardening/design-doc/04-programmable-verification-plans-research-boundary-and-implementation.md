@@ -35,7 +35,7 @@ ExternalSources:
     - https://www.usenix.org/legacy/events/sec2000/full_papers/evans/evans.pdf
     - https://www.cs.utexas.edu/~isil/cs389L/monitoring.pdf
 Summary: Research-to-code decision record for using Goja as a bounded verification-plan authoring language while keeping scenario effects, observations, and security verdicts native in Go.
-LastUpdated: 2026-07-10T20:49:15-04:00
+LastUpdated: 2026-07-10T21:08:00-04:00
 WhatFor: Reviewing or extending programmable tiny-idp security scenarios without turning JavaScript into protocol or invariant authority.
 WhenToUse: Before adding verification steps, assertion types, JavaScript modules, live capabilities, scenario drivers, or production monitor hooks.
 ---
@@ -219,6 +219,32 @@ the tested loop case. Package tests run with the repository workspace and with
 `GOWORK=off`, proving that the tagged go-go-goja dependency is sufficient and
 the sibling checkout is not accidentally required.
 
+### Strict-provider executable driver
+
+`internal/fositeadapter/verification_scenario_test.go` now supplies the first
+native strict-provider driver. It deliberately lives in the adapter's external
+test package: it can exercise the public handler like a browser without adding a
+scenario-control API to production code.
+
+Its initial typed action alphabet is:
+
+- `session.login`;
+- `authorize.begin` with `prompt`, `maxAge`, and `state` parameters;
+- `interaction.submit` with login, decision, and adversarial POST mutations;
+- `clock.advance` with a non-negative Go duration.
+
+Every parameter object is decoded by Go with unknown fields rejected. The
+driver retains the opaque form handle internally and emits observations for
+status, credential-form presence, interaction opacity, code presence, OAuth
+error, and returned state. The example compiled plan establishes a browser
+session, requests `prompt=login`, submits no login, and uses native assertions to
+prove that credentials were requested and no code was issued.
+
+The same interval added a metamorphic relation: adding or changing `ui_locales`
+must preserve successful code issuance and the server-owned `state` value. It
+also added a pure action model, four committed minimized regression sequences,
+and a fuzz target whose core invariant is at most one accepted terminal outcome.
+
 ## What is proved and what is not
 
 The current tests establish:
@@ -289,28 +315,28 @@ cancellation, secret exposure, persistence effects, and failure behavior.
 
 ## Next implementation phases
 
-1. Define typed strict-provider actions for authorization begin, interaction
-   submit, consent decision, token exchange, refresh, UserInfo, and time advance.
-2. Define observations that retain HTTP/protocol semantics without credentials
-   or token values.
-3. Build a native driver around an in-memory strict provider and injected clock.
-4. Register native assertions for fresh authentication, consent before issuance,
+1. Extend typed strict-provider actions from authorization interaction and time
+   advance to consent decision, token exchange, refresh, and UserInfo.
+2. Extend observations while retaining HTTP/protocol semantics without
+   credentials or token values.
+3. Register native assertions for fresh authentication, consent before issuance,
    terminal uniqueness, continuation opacity, and token-family rotation.
-5. Add metamorphic transforms such as query ordering, unrelated parameters, and
+4. Add metamorphic transforms such as query ordering, unrelated parameters, and
    duplicate security parameters with explicit expected relations.
-6. Persist plan hash, commit, seed, shrunk action sequence, observations, trace
+5. Persist plan hash, commit, seed, shrunk action sequence, observations, trace
    schema, and assertion versions in an evidence envelope.
-7. Run the same accepted plans against memory and SQLite stores and compare only
+6. Run the same accepted plans against memory and SQLite stores and compare only
    store-independent observations.
-8. Keep production shadow monitoring native; do not load verification scripts in
+7. Keep production shadow monitoring native; do not load verification scripts in
    the request-serving process.
 
 ## Decision record PV-1
 
 - **Decision:** JavaScript compiles data-only verification plans; native Go owns
   actions, observations, and verdicts.
-- **Status:** implemented for the generic compiler and runner; strict-provider
-  driver remains open.
+- **Status:** implemented for the generic compiler, runner, and initial
+  authorization-interaction strict-provider driver; token and UserInfo actions
+  remain open.
 - **Rationale:** preserves an auditable capability boundary and keeps the
   reference monitor independent of tested scripts.
 - **Consequence:** adding new behaviors requires native driver and assertion
