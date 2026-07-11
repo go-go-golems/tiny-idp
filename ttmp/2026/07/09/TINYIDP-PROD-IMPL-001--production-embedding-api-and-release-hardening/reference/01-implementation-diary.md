@@ -2798,6 +2798,106 @@ production code changes: none
 release status: NOT APPROVED
 ```
 
+## Step 26: Run and freeze the post-assurance exact-candidate evidence
+
+This interval ran the complete locally executable release matrix against the
+post-assurance code and froze code commit `5bb4dae` with deterministic binary
+SHA-256 `cf43cae64de3c1ac9610eb2bd723eb09189df751a6da422b2f8b80dbf86f43dd`.
+It corrected two test-gate defects discovered by the matrix, but it does not
+claim hosted OIDF, generic scanner, signed artifact, independent review, or
+release-owner approval.
+
+### What I did
+
+- Ran `GOWORK=off go test -race ./... -count=1` successfully.
+- Ran vet and every custom AST analyzer successfully.
+- Built the deterministic candidate and recorded commit and SHA-256.
+- Ran pinned golangci-lint and Glazed lint.
+- Fixed explicit exhaustive handling for the new security event and one error
+  string; repeated lint reported zero issues.
+- Ran govulncheck and observed zero reachable vulnerabilities.
+- Ran three 30-second parser fuzz campaigns and three 10-second invariant fuzz
+  campaigns.
+- Ran authorization, code-redemption, and refresh-rotation failpoint suites.
+- Ran SQLite concurrency, migration, checksum, cancellation, busy, backup, and
+  disk-full fault tests.
+- Ran the complete migration/backup/restore/downgrade/key/token rotation drill.
+- Diagnosed the external-consumer gate's hidden output and stale Go version,
+  improved failure reporting, raised the generated consumer minimum to 1.26.1,
+  and reran the complete external OIDC flow successfully.
+- Ran `scripts/run-conformance.sh` successfully.
+- Ran the production host in tmux with TLS, HTTP/2, eight readiness checks,
+  owner-only secret files, trusted-proxy configuration, body bounds, generic
+  method/transport probes, and graceful shutdown.
+- Verified the trusted-proxy resolver's trusted, untrusted, and malformed cases.
+- Wrote `reference/06-exact-candidate-assurance-evidence-5bb4dae.md` with an
+  evidence hierarchy, commands, counts, failures, fixes, and missing rows.
+- Left prior untracked hosted evidence directories untouched.
+
+### What worked
+
+- Full race, vet, AST analysis, repeated lint, vulnerability scan, all fuzz
+  campaigns, failpoints, recovery, external module, local conformance, proxy
+  resolver, and production-host smoke passed.
+- The deterministic binary hash was reproducible after the final code/tooling
+  commit.
+- The production host served HTTP/2 discovery, liveness, and readiness and
+  stopped cleanly under tmux.
+
+### What didn't work
+
+- Initial lint found missing exhaustive cases and a capitalized error. Commit
+  `68945c7` fixed all three, and the repeated gate was green.
+- Two fuzz targets from the same package were launched concurrently and stalled;
+  they exited and were rerun sequentially. Only sequential results are evidence.
+- The external probe hid its error and declared Go 1.25.11. Commit `5bb4dae`
+  prints failures and declares the actual 1.26.1 minimum.
+- The first oversized-body probe exceeded the shell argument limit. Streaming
+  the same size through stdin exercised the host bound.
+- Hosted OIDF could not be run without an exact deployed issuer, plan, and suite
+  authority. No environment credentials were read.
+- No installed generic web scanner was available. Manual probes were recorded
+  without claiming scanner equivalence.
+
+### What I learned
+
+- Release gates test the test harness as well as the product. Silent captured
+  output and stale consumer toolchain declarations were evidence-quality bugs.
+- Exhaustive event switches are useful schema-evolution alarms even when a
+  default return would have the same current runtime behavior.
+- Fuzz targets in one Go package should run sequentially in the local evidence
+  runner.
+- A local HTTP smoke, a generic web scan, and hosted OIDC conformance are
+  complementary and must remain separate ledger rows.
+
+### What warrants a second pair of eyes
+
+- Review the Go 1.26.1 minimum as an intentional release change caused by the
+  go-go-goja dependency.
+- Review whether a 400 response for an oversized parsed form is acceptable or
+  whether the host should normalize it to 413.
+- Review the exact generic scanner selection and false-positive adjudication
+  process before making it mandatory.
+- Review and authorize the hosted OIDF plan against the exact deployed hash.
+
+### Technical details
+
+```text
+code candidate: 5bb4dae6961b23c5bb9e40678316cf15dd3d07b7
+binary SHA-256: cf43cae64de3c1ac9610eb2bd723eb09189df751a6da422b2f8b80dbf86f43dd
+full race: PASS
+vet/custom analysis/pinned lint: PASS
+reachable vulnerabilities: 0
+parser fuzz executions: 892448 + 860573 + 685423
+invariant fuzz executions: 44544 + 44309 + 5021
+fault and recovery drills: PASS
+external module/local conformance: PASS
+production TLS host/manual HTTP probes: PASS
+hosted OIDF: NOT RUN
+generic scanner: NOT RUN
+release status: NOT APPROVED
+```
+
 ## Step 24: Close the analyzer and monitor loops, then isolate programmable verification
 
 This interval completed three previously separate assurance layers. First, the

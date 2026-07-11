@@ -193,3 +193,12 @@ Added the native strict-provider VerificationPlan driver, typed action observati
 
 - internal/fositeadapter/state_model_test.go — Pure model, replay histories, and fuzz seeds
 - internal/fositeadapter/verification_scenario_test.go — Strict HTTP scenario driver and native assertions
+
+## 2026-07-10
+
+Froze local exact-candidate evidence for code commit 5bb4dae and binary cf43cae...f43dd: race, static, lint, vuln, fuzz, failpoint, recovery, external-module, local conformance, proxy, and production-host gates passed; hosted OIDF and generic scanner remain explicit gaps.
+
+### Related Files
+
+- reference/06-exact-candidate-assurance-evidence-5bb4dae.md — Exact command/results ledger and release blockers
+- ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-api-smoke.sh — Failure visibility and Go 1.26.1 consumer probe
