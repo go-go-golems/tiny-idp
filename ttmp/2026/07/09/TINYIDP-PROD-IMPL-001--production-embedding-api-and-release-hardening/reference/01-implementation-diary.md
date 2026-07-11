@@ -2922,6 +2922,92 @@ production code changes: none
 textbook expansion status: IN PROGRESS
 ```
 
+## Step 30: Ground assurance and production chapters in every built tool and gate
+
+This interval expanded the assurance and production chapters from short surveys
+into repository-specific analyses. Each tool and release control is now tied to
+the defect or research question that motivated it, the current symbol or
+workflow that implements it, the evidence it produced, and the claim it cannot
+support.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 29)
+
+**Assistant interpretation:** Continue the 1,000-line-per-document expansion by
+analyzing the current analyzer suite, testing/instrumentation stack, production
+host, and release workflows in concrete detail.
+
+**Inferred user intent:** Make an intern capable of interpreting evidence and
+production readiness, not only understanding OAuth messages.
+
+### What I did
+
+- Expanded the assurance chapter from 128 to 782 lines.
+- Classified structural, functional, relational, temporal, concurrent,
+  failure-atomicity, and operational claims.
+- Documented all fourteen custom analyzer families with originating issue,
+  source technique, supported claim, and precision boundary.
+- Traced deterministic tests, Rapid, fuzzing, metamorphic testing, stateful
+  protocol fuzzing, failpoints, race detection, Porcupine, runtime monitoring,
+  eBPF assessment, runtime probes, Goja plans, conformance, vulnerability scans,
+  supply-chain evidence, and human review to current artifacts.
+- Added a paper-to-tool provenance matrix and evidence-review method.
+- Expanded the production chapter from 128 to 812 lines.
+- Traced public package ownership, preflight checks, lifecycle, issuer/TLS/HTTP,
+  proxy resolution, limiting, password work, audit, readiness, maintenance,
+  keys, secrets, filesystem, recovery, admin audit, production command, tmux
+  smoke, runtime load, CI/release workflows, hosted OIDF, scanning, incidents,
+  residual risk, and approval to current code and exact-candidate observations.
+
+### What worked
+
+- The analyzer suite formed a natural chronology of the review: public API,
+  randomness, HTTP host, defaults, limiter identity, config use, audit,
+  atomicity, backup, bearer transport, clocks, parsing, continuation,
+  lifecycle, and ignored security errors.
+- The exact-candidate evidence provided concrete counts and failures that keep
+  the chapters from presenting idealized workflows.
+- Separating claim classes made the role of each paper and tool precise.
+
+### What didn't work
+
+- These chapters are not yet at their final line target. Assurance is at 782 and
+  production at 812 lines; both require final appendices and guided traces.
+
+### What I learned
+
+- The custom analyzers are most teachable when ordered by the defect classes
+  discovered over time rather than by AST implementation detail.
+- The production release ledger is an epistemic model: each row represents a
+  distinct authority or observation that cannot be substituted by another.
+- Packaging failures, fuzz orchestration stalls, and missing scanner/hosted rows
+  belong in the textbook because they teach evidence quality.
+
+### What warrants a second pair of eyes
+
+- Review every analyzer count/name against the current multichecker registration.
+- Review supply-chain language to ensure it does not claim a formal SLSA level.
+- Review host smoke observations against the exact evidence ledger.
+
+### What should be done in the future
+
+1. Add detailed analyzer fixture labs and expected diagnostics.
+2. Add a complete production configuration walkthrough.
+3. Complete protocol, curriculum, and lab chapters, then top off every chapter.
+
+### Technical details
+
+```text
+assurance chapter: 782 lines
+production chapter: 812 lines
+custom analyzer families discussed: 14
+evidence layers discussed: static, examples, properties, fuzz, metamorphic,
+failpoints, race, linearizability, monitor, scripting, conformance, supply chain,
+human review
+textbook expansion status: IN PROGRESS
+```
+
 ## Step 26: Run and freeze the post-assurance exact-candidate evidence
 
 This interval ran the complete locally executable release matrix against the

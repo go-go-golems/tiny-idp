@@ -235,3 +235,12 @@ Expanded temporal-invariant and durable-security-state intern chapters into code
 - design-doc/08-durable-security-state-transactions-and-concurrency.md — Current Fosite transactions, failpoints, linearizability, and recovery analysis
 - sources/fapi-2-attacker-model-final.md — Additional explicit attacker vocabulary
 - sources/introduction-to-runtime-verification.md — Runtime verification teaching context
+
+## 2026-07-10
+
+Expanded assurance-method and production-security intern chapters into concrete analyses of every current analyzer, test/instrumentation layer, host control, workflow, exact-candidate result, and research influence.
+
+### Related Files
+
+- design-doc/09-assurance-methods-and-evidence-interpretation.md — Tool-by-tool assurance and paper provenance
+- design-doc/10-production-trust-boundaries-and-release-security.md — Code-led production and release trust analysis
