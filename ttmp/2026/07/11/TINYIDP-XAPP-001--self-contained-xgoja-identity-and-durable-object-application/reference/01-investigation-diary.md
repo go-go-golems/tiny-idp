@@ -427,3 +427,75 @@ TINYIDP-XAPP-001 Self Contained Identity Objects e93d304.pdf
 ```
 
 The uploader returned `OK: uploaded`; no redundant cloud listing was performed.
+
+## Step 18 — Create and generate the product skeleton
+
+Created `cmd/tinyidp-xapp` inside the existing top-level tiny-idp module. No nested `go.mod` or private module cache was introduced.
+
+The product source now contains:
+
+```text
+cmd/tinyidp-xapp/
+  main.go                         Glazed/Cobra root with shared logging/help
+  doctor.go                       source-layout diagnostic command
+  xgoja.yaml                      runtime-package specification
+  app/routes/site.js              trusted Express planned routes
+  app/objects/objects.js          USER_STATE Durable Object bundle
+  app/frontend/                   pnpm + pinned Bootstrap minimal shell
+  app/types/xgoja-modules.d.ts    generated declarations
+  internal/xgojaruntime/          generated importable runtime and assets
+```
+
+The route script serves the index explicitly at `/`, static assets only under `/static`, session identity at `/api/me`, and actor-bound reads/writes at `/api/object`. Writes require host CSRF enforcement. The script calls `fetchForActor("USER_STATE", ...)` and contains no actor-ID or object-name parameter.
+
+The object bundle validates documents before SQLite persistence with explicit encoded-size, total-key, and nesting bounds. The UI is intentionally the permitted initial minimal shell rather than a premature React application. It uses pnpm to pin Bootstrap and copies the minified CSS into the embedded public tree; `node_modules` is ignored.
+
+The first `gen-dts` invocation failed with the expected actionable message:
+
+```text
+Error: --out is required unless the v2 spec has a dts artifact with output
+```
+
+Added an explicit strict `dts` artifact. The first successful generation wrote artifacts relative to the process working directory, which put them at root-level `app/` and `internal/xgojaruntime/`. Deleted those generated files, changed outputs to repository-root-qualified `cmd/tinyidp-xapp/...` paths, and regenerated.
+
+The initial runtime-package artifact did not embed the `application-routes` jsverbs source. Added all three source IDs to the runtime-package artifact. The regenerated runtime plan now uses:
+
+```text
+xgoja_embed/jsverbs/application_routes
+xgoja_embed/assets/frontend_assets
+xgoja_embed/assets/object_bundle
+```
+
+Added `go:generate` directives that deliberately change to the repository root before invoking the sibling xgoja command, preserving the root-relative artifact contract.
+
+Validation:
+
+```text
+pnpm install && pnpm run build
+ok
+
+go run ../go-go-goja/cmd/xgoja doctor -f cmd/tinyidp-xapp/xgoja.yaml
+schema, module resolution, and all three source plans: ok
+
+go generate ./cmd/tinyidp-xapp
+ok
+
+go test ./cmd/tinyidp-xapp/... -count=1
+ok
+
+go run ./cmd/tinyidp-xapp doctor --output json
+all ten required source/generated files: ok
+
+go test ./... -count=1
+ok
+```
+
+The generated bundle test verifies that provider registration succeeds, declarations contain `express`, `fs:assets`, `rpcForActor`, and `fetchForActor`, and the embedded plan contains the four selected runtime modules.
+
+Committed in tiny-idp:
+
+```text
+5176052 App: scaffold generated identity object runtime
+```
+
+This completes the generation seam, not the product lifecycle. The next open task is the custom host that owns persistent tiny-idp, application auth/session stores, the binding key and manager, HostServices injection, route loading, listener, readiness, maintenance, and shutdown.

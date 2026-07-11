@@ -7,8 +7,8 @@
 - [x] Run all three repositories' complete Go test suites successfully under the shared go.work. <!-- t:bg14 -->
 - [x] Preserve nine primary local guides and working xgoja specifications in the ticket source packet. <!-- t:0qp4 -->
 - [x] Freeze v1 product story, URL layout, single-node deployment class, and non-goals. <!-- t:i785 -->
-- [ ] Create product directory, xgoja runtime-package specification, route/object/frontend skeletons, and Glazed command root. <!-- t:21x5 -->
-- [ ] Generate runtime package and TypeScript declarations from a clean workspace. <!-- t:18w8 -->
+- [x] Create product directory, xgoja runtime-package specification, route/object/frontend skeletons, and Glazed command root. <!-- t:21x5 -->
+- [x] Generate runtime package and TypeScript declarations from a clean workspace. <!-- t:18w8 -->
 - [ ] Build a minimal custom Go host with development tiny-idp, Express, assets, and durable objects. <!-- t:w8ei -->
 - [ ] Complete one login-to-private-object read/write vertical smoke test. <!-- t:m7ar -->
 - [ ] Obtain architecture and threat-model approval before persistence/product work. <!-- t:vzqy -->
@@ -49,7 +49,7 @@
 
 ## Phase 4 — Custom host and generated runtime composition
 
-- [ ] Implement generated runtime-package xgoja.yaml with Express, assets, and durableobjects providers. <!-- t:6irf -->
+- [x] Implement generated runtime-package xgoja.yaml with Express, assets, and durableobjects providers. <!-- t:6irf -->
 - [ ] Inject Go-owned HTTP host, auth services, object dispatcher, and asset resolver through HostServices. <!-- t:57m6 -->
 - [ ] Load route JS before accepting traffic and fail on partial registration. <!-- t:omdh -->
 - [ ] Build outer ServeMux with duplicate-safe native mount contributions. <!-- t:gdgh -->

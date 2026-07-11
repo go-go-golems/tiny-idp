@@ -15,6 +15,16 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/app/objects/objects.js
+      Note: Bounded USER_STATE Durable Object implementation
+    - Path: repo://cmd/tinyidp-xapp/app/routes/site.js
+      Note: Trusted planned routes for static frontend session identity and actor-bound object access
+    - Path: repo://cmd/tinyidp-xapp/internal/xgojaruntime/xgoja_runtime.gen.go
+      Note: Generated importable runtime package and HostServices injection seam
+    - Path: repo://cmd/tinyidp-xapp/main.go
+      Note: Glazed lifecycle-host command root and structured logging boundary
+    - Path: repo://cmd/tinyidp-xapp/xgoja.yaml
+      Note: Generated runtime package providers sources commands declarations and embedded assets
     - Path: repo://pkg/embeddedidp/options.go
       Note: Defines the embedded identity provider configuration boundary used by the custom host
     - Path: repo://pkg/embeddedidp/provider.go
@@ -37,6 +47,7 @@ LastUpdated: 2026-07-12T02:45:00Z
 WhatFor: Defines whether the current components are usable, how they should be composed, which APIs must change across tiny-idp/go-go-goja/go-go-objects, and how an intern can implement and validate the complete browser login-to-durable-state product.
 WhenToUse: Read before implementing the self-contained app, adding a tiny-idp xgoja provider, changing OIDC hostauth, exposing durable objects to authenticated routes, or generating the product binary.
 ---
+
 
 
 # Self-Contained xgoja Identity and Durable Object Application
