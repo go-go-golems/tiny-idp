@@ -202,3 +202,11 @@ Froze local exact-candidate evidence for code commit 5bb4dae and binary cf43cae.
 
 - reference/06-exact-candidate-assurance-evidence-5bb4dae.md — Exact command/results ledger and release blockers
 - ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-api-smoke.sh — Failure visibility and Go 1.26.1 consumer probe
+
+## 2026-07-10
+
+Rendered and uploaded the complete assurance, research, diary, operations, and exact-candidate reading bundle to reMarkable without overwriting the earlier packet.
+
+### Related Files
+
+- reference/01-implementation-diary.md — Render repair and upload record

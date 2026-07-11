@@ -3920,7 +3920,13 @@ the browser POST.
 
 ### Prompt Context
 
-**User prompt (verbatim):** "write a detailed diary of your work so far, then continue. You only should touch grass when you don't know how to continue, errors you kind of expect or know how to fix are exempt.\n\nContinue"
+**User prompt (verbatim):**
+
+```text
+write a detailed diary of your work so far, then continue. You only should touch grass when you don't know how to continue, errors you kind of expect or know how to fix are exempt.
+
+Continue
+```
 
 **Assistant interpretation:** Backfill the missing diary immediately, then
 continue through expected implementation and test failures until the phase work
@@ -4247,5 +4253,47 @@ action fuzz executions: 8,560
 full repository suite: PASS
 Assurance Phase 2 qru9: COMPLETE
 Assurance Phase 2 tlmk: COMPLETE
+release status: NOT APPROVED
+```
+
+## Step 27: Render and publish the complete assurance reading bundle
+
+This interval published the current ticket deliverables to reMarkable as one
+table-of-contents PDF. The bundle includes the implementation guide, all four
+design/research documents, the full diary, runtime and release references, the
+authorization review/ledger, the new exact-candidate evidence, the operations
+runbook, tasks, and changelog. Research source captures remain in the ticket and
+were not duplicated into the reading bundle.
+
+### What I did
+
+- Used the ticket-aware reMarkable bundle workflow with ToC depth two.
+- Selected a new document name so an older annotated packet would not be
+  overwritten.
+- Attempted the complete render and captured the Pandoc/LaTeX failure.
+- Located a literal `backslash-n` sequence in a verbatim diary prompt.
+- Converted only that prompt to a fenced text block with real line breaks,
+  retaining its wording while making it render-safe.
+- Repeated the same bundle command successfully.
+
+### What didn't work
+
+The first render failed before upload:
+
+```text
+Undefined control sequence ... exempt.\n
+```
+
+Pandoc treated the literal prompt escape as LaTeX input. The fenced text form
+removed the ambiguity. This was a documentation rendering defect; no code,
+evidence result, or prompt meaning changed.
+
+### Result
+
+```text
+document: TINYIDP Assurance Research and Exact Candidate 5bb4dae.pdf
+destination: /ai/2026/07/10/TINYIDP-PROD-IMPL-001
+upload: PASS
+overwrite: no
 release status: NOT APPROVED
 ```
