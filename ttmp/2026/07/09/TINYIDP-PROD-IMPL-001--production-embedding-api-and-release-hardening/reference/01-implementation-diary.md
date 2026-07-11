@@ -25,6 +25,14 @@ RelatedFiles:
         Phase 0 Go toolchain and go-jose dependency baseline (commit a2c86a9)
     - Path: repo://internal/authn/password.go
       Note: Step 13 bounded fail-closed authentication (commit 7022e7d)
+    - Path: repo://internal/fositeadapter/interaction.go
+      Note: Server-owned canonical interaction implementation (commit aedff3c)
+    - Path: repo://internal/fositeadapter/interaction_hardening_test.go
+      Note: Mutation, replay, concurrency, consent, and revalidation evidence
+    - Path: repo://internal/fositeadapter/provider.go
+      Note: Steps 21-22 authorization state machine, endpoint hardening, and lifecycle coordination (commits aedff3c and 27c339e)
+    - Path: repo://internal/fositeadapter/sqlstore.go
+      Note: Atomic SQLite Fosite authorization lifecycle and failpoints (commit aedff3c)
     - Path: repo://pkg/embeddedidp/options.go
       Note: First production API implementation target
     - Path: repo://pkg/embeddedidp/provider.go
@@ -51,12 +59,15 @@ RelatedFiles:
       Note: Durable 90-task phase ledger
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/various/phase3-password-load.json
       Note: Production Argon2 load evidence
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint/main.go
+      Note: Strict parse, bearer transport, and injected clock analyzers (commit 34580db)
 ExternalSources: []
 Summary: Chronological implementation record for the production embedding API and release-hardening program.
 LastUpdated: 2026-07-09T17:37:01.160328301-04:00
 WhatFor: Preserving decisions, exact commands, failures, commits, verification, and continuation instructions across the multi-phase hardening effort.
 WhenToUse: Read before resuming work, reviewing a phase, investigating a regression, or assembling release evidence.
 ---
+
 
 
 
@@ -3044,4 +3055,537 @@ memory concurrent winners: 1/16
 sqlite concurrent winners: 1/16
 focused store suites: PASS
 provider regressions before migration: FAIL as expected
+```
+
+## Step 21: Replace browser continuation, harden adjacent endpoints, and make SQLite issuance atomic
+
+This step implemented the complete authorization-interaction hardening path built
+on the persistence substrate from Step 20. The provider now treats the browser as
+an untrusted transport: the initial validated authorization request becomes a
+server-owned record, the browser receives only a random opaque handle and an
+interaction-bound CSRF token, and the POST reconstructs Fosite input exclusively
+from stored canonical values. Required fresh authentication, explicit consent,
+expiry, browser/session binding, mutable-state revalidation, and exactly-once
+terminal transitions are enforced before a code can be issued.
+
+The step also hardened the neighboring token and UserInfo endpoints, added an
+injected provider clock, and introduced an explicit SQLite authorization
+lifecycle transaction. Fosite's authorization-code, PKCE, and OIDC writes now
+share one SQL transaction with interaction consumption. Seven named failpoints
+prove that every pre-write, post-write, and pre-commit failure rolls back all
+protocol artifacts and leaves the interaction pending for a safe retry.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 19)
+
+**Assistant interpretation:** Complete phases 1 through 5 of the detailed
+authorization-hardening ledger, preserve a detailed chronological record, and
+verify the implementation in proportion to production security risk.
+
+**Inferred user intent:** Replace the two reported authorization defects with a
+systematic state-machine repair that resists the adjacent mutation, replay,
+concurrency, parsing, transport, and partial-persistence failure classes.
+
+### What I did
+
+- Added `internal/fositeadapter/interaction_hardening_test.go` with a reusable
+  cookie-jar browser harness that parses only hidden opaque interaction fields.
+- Preserved failing-first evidence for:
+  - blank forced-reauthentication POSTs issuing codes;
+  - `max_age=0` reusing an existing session;
+  - invalid, negative, and overflowing `max_age` rendering credentials;
+  - browser mutation of `state` changing the callback;
+  - two concurrent submissions issuing two codes.
+- Added `internal/fositeadapter/interaction.go` with:
+  - canonical Fosite request copying;
+  - a stable SHA-256 request digest;
+  - current-client generation hashing;
+  - hashed opaque interaction handles;
+  - browser and existing-session bindings;
+  - reconstruction of a fresh HTTP/Fosite request from stored values only.
+- Replaced the old CSRF double-submit value with a stable HttpOnly browser nonce
+  and an HMAC over both the nonce and opaque interaction handle. This permits
+  independent concurrent tabs without one form invalidating another.
+- Rewrote `/authorize` into explicit `beginAuthorize` and `resumeAuthorize`
+  state transitions.
+- Removed all browser-hidden OAuth/OIDC continuation fields. There is no legacy
+  fallback accepting `client_id`, `redirect_uri`, `scope`, `state`, nonce, or
+  PKCE values from the resumed POST.
+- Implemented strict decimal `max_age` parsing and an overflow-free duration
+  comparison, including exact-boundary and subsecond behavior.
+- Added an injected `Clock` and `InteractionTTL` to the internal provider
+  options. Authorization, session, audit, and OIDC claim times on the changed
+  path use `p.now()`.
+- Added explicit consent `approve` and `deny` actions. Denial atomically consumes
+  the interaction with a denied outcome and returns OAuth `access_denied`.
+  Omitted consent decisions fail without terminal consumption.
+- Revalidated current client enablement, redirect URI, scopes, client generation,
+  user enablement, browser session binding, and active signing-key readiness.
+- Classified browser session results as absent, active, not found, expired,
+  revoked, disabled-user, or storage-unavailable. Infrastructure failures now
+  return 503 instead of collapsing into an anonymous session.
+- Changed token rate limiting to use:
+  - a normalized address bucket;
+  - a claimed-client-plus-address pre-authentication bucket;
+  - an authenticated-client post-authentication bucket.
+- Hardened UserInfo to:
+  - allow only GET and POST;
+  - accept bearer tokens only from the `Authorization` header;
+  - reject query and form bearer transport;
+  - emit `Cache-Control: no-store`, `Pragma: no-cache`, and an RFC bearer
+    `WWW-Authenticate` challenge on 401.
+- Added a SQLite authorization lifecycle context in
+  `internal/fositeadapter/sqlstore.go`. The provider starts the transaction,
+  Fosite's code/PKCE/OIDC storage methods discover the transaction through the
+  supplied context, and the provider commits only after response construction
+  succeeds.
+- Added failpoints:
+  - `before_authorize_code` and `after_authorize_code`;
+  - `before_pkce` and `after_pkce`;
+  - `before_oidc` and `after_oidc`;
+  - `before_commit`.
+- Migrated the CLI serve test, external-consumer test, and runtime probe to the
+  opaque interaction protocol. The provider intentionally has no compatibility
+  adapter for their former hidden-field POST shape.
+- Added regression coverage for:
+  - opaque-form field minimization;
+  - mutated and duplicate resumed parameters;
+  - sequential replay;
+  - concurrent replay;
+  - independent concurrent tabs;
+  - client mutation and disablement;
+  - disabled session users;
+  - interaction expiry under an injected clock;
+  - strict `max_age` boundaries and a native fuzz target;
+  - valid GET and POST UserInfo plus rejected query/form bearer transport;
+  - SQLite all-or-none failpoint behavior.
+- Extended the existing Go `analysis` multichecker with working analyzers for:
+  - permissive `fosite.AccessTokenFromRequest` bearer extraction;
+  - direct `time.Now` calls in named authorization/session transitions.
+- Began a third analyzer for fail-open numeric parsing and recorded its current
+  failing fixture below instead of hiding the incomplete state.
+
+### Why
+
+- A valid request on GET does not make browser-returned hidden fields trustworthy
+  on POST. Only a server-owned canonical record preserves the validated request.
+- Fresh-authentication requirements are properties of the interaction, not of
+  whether the POST happened to include a login field.
+- Replay prevention needs one atomic terminal transition shared by every storage
+  backend; a handler-level read followed by write is insufficient.
+- Fosite creates three related durable objects through separate storage calls.
+  Without an outer transaction, an error after the first or second write leaves
+  inconsistent protocol state.
+- Query/form access tokens leak through URLs, logs, history, and referrers. The
+  UserInfo contract intentionally accepts only the Authorization header.
+- Security-time boundary tests require a deterministic clock; wall-clock sleeps
+  are slow and cannot prove exact `max_age` semantics.
+- Repository-specific analyzers make these contracts reviewable in CI instead of
+  depending only on reviewer memory.
+
+### What worked
+
+- The original focused regression command failed before implementation and
+  passed after migration:
+
+  ```bash
+  go test ./internal/fositeadapter -run 'TestForcedPromptLogin|TestExpiredMaxAge|TestMalformedMaxAge|TestConsentDenial|TestAuthorizationState|TestAuthorizationInteraction' -count=1
+  ```
+
+- The full adapter suite passed after updating old form drivers:
+
+  ```text
+  ok github.com/manuel/tinyidp/internal/fositeadapter 12.536s
+  ```
+
+- The first repository-wide run correctly identified two remaining old clients:
+  `internal/cmds/serve_test.go` and the external-consumer test. After migrating
+  them, `go test ./... -count=1` passed across the repository.
+- Focused race validation passed:
+
+  ```text
+  ok github.com/manuel/tinyidp/internal/fositeadapter 13.367s
+  ok github.com/manuel/tinyidp/pkg/idpstore 1.011s
+  ok github.com/manuel/tinyidp/internal/store/memory 1.013s
+  ok github.com/manuel/tinyidp/pkg/sqlitestore 2.586s
+  ```
+
+- All seven SQL failpoint cases left zero rows in
+  `fosite_authorize_codes`, `fosite_pkces`, and `fosite_oidc_sessions`, and left
+  zero consumed interactions.
+- The max-age fuzz target completed 2,912 executions in one second with 14 seed
+  cases and no failure.
+- The bearer-transport and injected-clock `analysis.Analyzer` fixtures passed,
+  and the multichecker reported no findings over `./pkg/... ./internal/...`.
+
+### What didn't work
+
+- The initial interaction HTML parser accidentally collected the visible consent
+  checkbox because it matched every `<input>`. That made the first denial result
+  invalid. Restricting it to `type="hidden"` corrected the test harness before
+  provider changes.
+- The first full adapter run failed because the shared `fetchCSRF` helper copied
+  only the CSRF token and omitted the new interaction handle. Updating the helper
+  to mutate the submitted form with `interaction` fixed all older adapter tests.
+- The first concurrent-tab test used `state=tab-one` and `state=tab-two`. Fosite's
+  minimum entropy policy rejected both with 303 responses. Longer state values
+  corrected the fixture; this was a test-data failure, not a provider failure.
+- The first repository-wide run produced these expected migration failures:
+
+  ```text
+  internal/cmds: expected 401, actual 400
+  external-consumer: authorization response status=400 location=""
+  ```
+
+  Both callers were still posting the old browser-controlled continuation. They
+  now parse the opaque handle and use explicit `action=approve`.
+- The initial fail-open parsing analyzer fixture did not receive its expected
+  diagnostic:
+
+  ```text
+  --- FAIL: TestStrictSecurityParseAnalyzer
+      analysistest.go:713: fixture/checks/strictparsecheck/strictparse.go:8:
+      no diagnostic was reported matching `numeric parse failure returns true in unsafeMaxAge`
+  ```
+
+  A second attempt replacing object identity with lexical identifier matching
+  produced the same error. Work stopped at that point under the then-understood
+  debugging limit; the user subsequently clarified that expected, diagnosable
+  failures are exempt.
+
+### What I learned
+
+- The correct browser concurrency model is a stable browser nonce plus a form MAC
+  bound to each independent interaction, not one CSRF cookie value per form.
+- Fosite passes the same context through its authorization response handlers. A
+  transaction pointer in that context lets the existing storage interface join
+  code, PKCE, and OIDC writes without a fork or public raw-SQL API.
+- SQLite's configured single-connection envelope makes it essential to complete
+  all project-store reads before opening the Fosite lifecycle transaction. A
+  project-store lookup while the transaction holds the sole connection could
+  deadlock.
+- `time.Duration(maxAge) * time.Second` can overflow before comparison. Comparing
+  integer seconds and the subsecond remainder avoids multiplication entirely.
+- A form-driver failure returning 400 is positive evidence that the removed
+  hidden-field protocol has no accidental compatibility path.
+- Rollback-only fault tests are necessary but not sufficient; the successful
+  commit path should also assert one row in each protocol table and one consumed
+  interaction.
+
+### What was tricky to build
+
+- Consumption must happen before response exposure but share fate with Fosite's
+  durable artifacts. On SQLite, the interaction update is executed inside the
+  same transaction before Fosite writes; rollback restores it to pending. On the
+  development memory backend, atomic interaction consume is still guaranteed,
+  but there is no injected persistent-write failure surface equivalent to SQL.
+- The POST needs login and password fields from the user while refusing every
+  browser-returned protocol parameter. Reconstruction therefore creates a new
+  internal POST body from the canonical record and passes that request—not the
+  browser request—to `NewAuthorizeRequest`.
+- Current mutable state is checked twice: once explicitly before consumption and
+  again in `finishAuthorize` where relevant. The checks must occur before opening
+  the single-connection SQL transaction.
+- Consent recording is supplied by an arbitrary policy interface and is not part
+  of the SQL/Fosite transaction. The current ordering records consent before code
+  issuance; a protocol rollback may therefore leave an idempotent consent grant
+  while the interaction remains retryable. This needs explicit review and
+  documentation rather than being mistaken for full cross-policy atomicity.
+- The unfinished strict-parsing analyzer is attempting to connect a `strconv`
+  parse assignment with an error-dependent branch that returns `true`. The absent
+  fixture diagnostic indicates the call or assignment discovery stage is not
+  populating the tracked parse-error set; the next step is to test those stages
+  independently instead of modifying both simultaneously.
+
+### What warrants a second pair of eyes
+
+- Review whether explicit denial should consume before or after any additional
+  audit delivery boundary; it currently consumes then writes OAuth
+  `access_denied`.
+- Review client generation hashing. It includes identity, redirects, scopes,
+  PKCE requirement, disabled state, and `UpdatedAt`; slice order changes are
+  deliberately considered a generation change.
+- Review the browser/session binding rule when a fresh login replaces the session
+  cookie. The original session is verified before authentication; the new cookie
+  is issued only after successful credential verification.
+- Review the SQLite lifecycle context and verify Fosite cannot perform an
+  unexpected project-store read after the transaction starts.
+- Review consent persistence as the remaining non-transactional policy side
+  effect.
+- Review whether production should expose the failpoint hook through any public
+  embedding option. It is currently confined to the internal adapter options.
+- Review exact OAuth error choices for expired/replayed opaque interactions;
+  current responses intentionally avoid redirecting an untrusted reconstruction.
+
+### What should be done in the future
+
+1. Repair or remove the incomplete strict-parsing analyzer; do not leave a broken
+   fixture in the committed tree.
+2. Add the successful SQL lifecycle assertion complementing rollback tests.
+3. Re-run full, race, shuffle, fuzz, vet, multichecker, and external-consumer
+   validation after the analyzer is stable.
+4. Reconcile Phase 1 through Phase 5 task IDs and coarse parent tasks.
+5. Commit handler/endpoint changes, lifecycle transaction changes, and analyzer
+   changes as coherent review units.
+6. Run docmgr doctor and record exact commit hashes in the next diary step.
+
+### Code review instructions
+
+- Start with `internal/fositeadapter/interaction.go`, then read
+  `beginAuthorize`, `resumeAuthorize`, and `finishAuthorize` in `provider.go` as
+  one state machine.
+- Review `csrf.go` together with the concurrent-tab test.
+- Review `sqlFositeStore.beginAuthorizeLifecycle` and the three
+  `Create*Session` methods together with
+  `TestSQLiteAuthorizePersistenceFailpointsAreAtomic`.
+- Inspect the old-client migrations in `internal/cmds/serve_test.go`,
+  `scripts/external-consumer/flow_test.go`, and `scripts/runtime-probe/main.go` to
+  confirm they carry only interaction/CSRF plus native user actions.
+- Run:
+
+  ```bash
+  go test ./internal/fositeadapter -count=1
+  go test ./... -count=1
+  go test -race ./internal/fositeadapter ./pkg/idpstore ./internal/store/memory ./pkg/sqlitestore -count=1
+  go test ./internal/fositeadapter -run '^$' -fuzz=FuzzParseMaxAgeAcceptsOnlyBoundedDecimal -fuzztime=1s -parallel=1
+  go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint -count=1
+  ```
+
+### Technical details
+
+```text
+browser POST protocol authority: none
+browser POST native fields: interaction, csrf_token, login, password, action
+interaction storage key: HMAC-derived hash of 32-byte random handle
+browser binding: HMAC-derived hash of stable CSRF browser nonce
+CSRF form token: HMAC(browser nonce || opaque interaction handle)
+interaction default TTL: 10 minutes
+required-action bits: login, fresh_login, consent, step_up
+terminal outcomes: approved, denied, rejected
+SQLite lifecycle transaction: interaction + authorization code + PKCE + OIDC
+SQL failpoint cases: 7/7 rollback cleanly
+UserInfo methods: GET, POST
+UserInfo bearer source: Authorization header only
+max_age fuzz executions: 2912 in 1 second
+working new analyzers: bearer transport, injected security clock
+incomplete analyzer: fail-open strict numeric parsing
+last green full-suite state before incomplete analyzer: PASS
+```
+
+## Step 22: Repair analyzer precision, close verification, and land Phases 1–5
+
+This step resumed from the recorded analyzer failure, corrected the AST walk,
+completed positive and negative lifecycle proofs, and performed a line-by-line
+security review before committing the work. The detailed authorization-hardening
+tasks for Phases 1 through 5 are complete. Broader assurance tasks requiring a
+Rapid model, trace monitor, Porcupine history, token-endpoint failpoints, hosted
+conformance, or release-owner approval remain open.
+
+The final review tightened three behaviors beyond the first green version: the
+CSRF browser cookie lifetime is refreshed for each new interaction, stale session
+cookies are not bound when GET had no active session, and SQL authorization
+writes refuse to execute without the outer transaction. Consent now displays the
+exact bound client ID and requested scopes while keeping protocol fields out of
+the browser POST.
+
+### Prompt Context
+
+**User prompt (verbatim):** "write a detailed diary of your work so far, then continue. You only should touch grass when you don't know how to continue, errors you kind of expect or know how to fix are exempt.\n\nContinue"
+
+**Assistant interpretation:** Backfill the missing diary immediately, then
+continue through expected implementation and test failures until the phase work
+is verified, documented, and committed.
+
+**Inferred user intent:** Preserve the debugging rule for genuine rabbit holes
+without allowing routine, understood failures to interrupt autonomous production
+hardening work.
+
+**Commit (code):** `aedff3c6d5a83007ef78a7c38ae8b5c6b5143193` — "Harden authorization interaction lifecycle"
+
+**Commit (tooling):** `34580db400ed5e36b3798ccac0c54bcf661cdfc2` — "Add authorization security analyzers"
+
+**Commit (consent disclosure):** `27c339e13d8a8181b24c1f8a7c48e56e0e926a58` — "Display bound authorization consent details"
+
+### What I did
+
+- Added the complete Step 21 backfill before resuming code changes.
+- Diagnosed the strict-parsing analyzer in independent stages:
+  - confirmed parse-assignment discovery;
+  - found that the condition walker matched `err` and then overwrote the match
+    when visiting `value` later in the expression;
+  - made the match monotonic;
+  - restricted the rule to predicates whose sole result is `bool`.
+- Verified three new analyzer rules for fail-open parsing, permissive bearer
+  transport, and direct wall-clock reads in named security transitions.
+- Added `TestSQLiteAuthorizePersistenceCommitsAllArtifactsAndInteraction` to
+  complement the rollback matrix with a successful-commit proof.
+- Corrected the success test's 31-byte HMAC secret after Fosite rejected it; the
+  test now uses a known valid key.
+- Removed the claimed-client pre-authentication rate-limit bucket. The token path
+  now uses a normalized address before authentication and verified client ID
+  afterward, avoiding attacker-controlled limiter-key cardinality.
+- Strengthened UserInfo against mixed transports and duplicate credentials:
+  - duplicate Authorization headers return `invalid_request`;
+  - query/form bearer values return `invalid_request`, including when mixed with
+    a valid Authorization header;
+  - missing/malformed header credentials return `invalid_token`.
+- Added tests for valid POST UserInfo, mixed query/header, mixed form/header,
+  duplicate Authorization headers, cache headers, challenges, and methods.
+- Added `TestBrowserSessionStorageFailureDoesNotRenderLogin` with an
+  interface-asserted fault store. It proves a 503 response without credentials.
+- Added `TestSQLAuthorizeWritesRequireLifecycleTransaction` so a future direct
+  storage call cannot silently reintroduce partial writes.
+- Refreshed the stable CSRF nonce cookie on every interaction render while
+  retaining the nonce, aligning lifetimes and preserving concurrent tabs.
+- Bound `SessionIDHash` only when the initial request had an active session.
+- Changed `authorizeExec` to require a lifecycle transaction instead of falling
+  back to direct database execution.
+- Added interaction TTL validation and removed unused CSRF clearing.
+- Added an escaped consent disclosure of the validated client and each requested
+  scope while retaining only opaque/native POST fields.
+- Reconciled detailed AH Phase 1–5 tasks and demonstrated parent tasks.
+- Reopened coarse task `3uhz` because it also requires token-endpoint lifecycle
+  fault injection, which this implementation did not add.
+- Committed implementation, analyzer, and consent-disclosure changes separately,
+  leaving unrelated hosted-conformance directories untouched.
+
+### Why
+
+- An analyzer that reports typed parser tuples as fail-open policy decisions
+  would create false positives and train maintainers to ignore it.
+- Rollback tests alone cannot show that the normal transaction commits every
+  required record; positive and negative proofs are both necessary.
+- Pre-authentication client IDs are attacker-controlled and unsuitable as
+  unbounded limiter storage keys.
+- Mixed bearer transports should be rejected rather than resolved by precedence.
+- Optional SQL transaction fallback would allow a future caller to bypass the
+  all-or-none invariant accidentally.
+- Consent is meaningful only when the user sees the client and scopes bound to
+  the decision.
+
+### What worked
+
+- Analyzer fixtures and the repository scan passed after the monotonic walker and
+  boolean-predicate restriction.
+- The successful SQLite test observed one consumed interaction and one row in
+  each authorization-code, PKCE, and OIDC table.
+- All seven failure injections observed zero consumed interactions and zero rows
+  across the three protocol tables.
+- The full repository suite passed after all refinements.
+- Focused race tests passed for adapter, store contract, memory, and SQLite.
+- A randomized adapter run passed in 22.639 seconds.
+- The final fuzz run completed 1,988 executions in one second without failure.
+- `go vet ./...` and the custom analyzer scan passed without diagnostics.
+- Consent tests prove client/scope text is displayed while hidden protocol field
+  names remain absent.
+
+### What didn't work
+
+- The first analyzer repair still produced the missing-diagnostic error because
+  assignment recognition was not the root cause.
+- Once condition recognition was fixed, the repository scan produced:
+
+  ```text
+  internal/fositeadapter/session.go:90:3: numeric parse failure returns true in
+  parseMaxAge; security-sensitive parsing must fail closed
+  ```
+
+  Here `true` meant parameter presence in `(int64, bool, error)`, not acceptance.
+  Restricting the rule to single-boolean predicates fixed the precision error.
+- The first positive transaction test failed with:
+
+  ```text
+  secret for signing HMAC-SHA512/256 is expected to be 32 byte long, got 31 byte
+  ```
+
+  Reusing a validated SQLite test key corrected the fixture.
+- Initial shuffled commands appeared to complete without a final exit record. A
+  20-second verbose timeout showed tests still progressing and exited 124. A
+  90-second run completed in 22.639 seconds, proving randomized RSA-heavy test
+  order rather than deadlock.
+
+### What I learned
+
+- AST search state must be monotonic when walking compound expressions.
+- Function result shape is a useful analyzer precision boundary: a boolean
+  predicate expresses a decision, while a parser tuple does not.
+- Fosite enforces the HMAC key size during code generation in development mode,
+  so success fixtures need production-valid secrets even if construction passes.
+- Random order can group RSA generation and make this suite several times slower;
+  timeout diagnostics must show the active test before classifying a hang.
+- Task reconciliation is a review method: "displayed scopes" exposed a missing
+  consent disclosure, and "authorize/token lifecycle" prevented overclaiming.
+
+### What was tricky to build
+
+- The parser analyzer needed useful semantic detection without becoming an
+  interprocedural dataflow engine. Its single-boolean-predicate boundary is
+  explainable and covered by fixtures.
+- UserInfo must distinguish missing credentials (`invalid_token`) from multiple
+  transport methods (`invalid_request`) while protecting every response cache.
+- Consent must display configured strings without returning them as authoritative
+  form inputs. Escaped text is rendered, but POST authority remains server-side.
+- Shuffled verification required distinguishing orchestration output loss from a
+  Go test hang using bounded verbose and longer non-verbose executions.
+
+### What warrants a second pair of eyes
+
+- Review the strict-parser analyzer's deliberate lack of interprocedural taint
+  analysis and multi-result parser reasoning.
+- Review bearer challenges on UserInfo `invalid_request` responses.
+- Review whether client/scopes require richer human-readable labels before UX
+  sign-off; the current disclosure is technically exact.
+- Review consent persistence relative to protocol rollback; it remains an
+  idempotent policy side effect outside the Fosite SQL transaction.
+- Review development-memory behavior under hypothetical Fosite storage failure;
+  production SQLite has the proved all-or-none path.
+
+### What should be done in the future
+
+1. Implement token-endpoint storage failpoints before checking `3uhz`.
+2. Build the Rapid state machine, trace monitor, and Porcupine history tracked by
+   the remaining assurance tasks.
+3. Run hosted OIDC conformance against the exact later candidate hash.
+4. Obtain independent security review and release-owner approval.
+5. Re-run the complete evidence workflow after those changes.
+
+### Code review instructions
+
+- Review commits in order: `aedff3c`, `34580db`, then `27c339e`.
+- Start with `beginAuthorize`/`resumeAuthorize`, then `interaction.go`, `csrf.go`,
+  and `session.go`.
+- For atomicity, trace `finishAuthorize` into `beginAuthorizeLifecycle` and
+  `authorizeExec`, then read both lifecycle tests.
+- Read each analyzer beside its one-purpose fixture.
+- Confirm coarse task `3uhz` remains open.
+- Validate with:
+
+  ```bash
+  go test ./... -count=1
+  go test -race ./internal/fositeadapter ./pkg/idpstore ./internal/store/memory ./pkg/sqlitestore -count=1
+  timeout 90s go test ./internal/fositeadapter -shuffle=on -count=1
+  go test ./internal/fositeadapter -run '^$' -fuzz=FuzzParseMaxAgeAcceptsOnlyBoundedDecimal -fuzztime=1s -parallel=1
+  go vet ./...
+  go run ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint -- ./pkg/... ./internal/...
+  ```
+
+### Technical details
+
+```text
+implementation commit: aedff3c6d5a83007ef78a7c38ae8b5c6b5143193
+analyzer commit: 34580db400ed5e36b3798ccac0c54bcf661cdfc2
+consent disclosure commit: 27c339e13d8a8181b24c1f8a7c48e56e0e926a58
+detailed AH phases complete: 1, 2, 3, 4, 5
+SQL rollback failpoints passing: 7/7
+SQL successful commit counts: interaction=1, code=1, pkce=1, oidc=1
+final full suite: PASS
+focused race: PASS
+shuffle: PASS (22.639s)
+fuzz: PASS (1988 executions, 14 seeds)
+go vet: PASS
+custom analyzers: PASS
+coarse token lifecycle task 3uhz: OPEN
+hosted OIDC exact-candidate gate: OPEN
+release status: NOT APPROVED
 ```

@@ -156,3 +156,12 @@ Step 19: expanded authorization hardening into 31 detailed tasks with accepted s
 ## 2026-07-10
 
 Added red authorization-interaction regressions and implemented server-owned interaction persistence with atomic one-time consume in memory and SQLite.
+
+## 2026-07-10
+
+Steps 21-22: completed detailed authorization hardening Phases 1-5 with opaque interactions, strict reauthentication and consent, adjacent endpoint hardening, atomic SQLite issuance, failpoints, AST analyzers, and full verification (commits aedff3c, 34580db, 27c339e).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Authorization hardening implementation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore.go — Atomic protocol persistence

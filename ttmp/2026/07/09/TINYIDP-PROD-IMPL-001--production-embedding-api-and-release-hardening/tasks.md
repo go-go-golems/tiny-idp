@@ -117,20 +117,20 @@ tasks so partial implementation never looks like phase completion.
 - [ ] Confirm no P0 or unaccepted P1 findings remain.
 - [x] Record residual risks, owners, expiry dates, and rollback criteria.
 - [ ] Mark the release candidate approved only after every phase gate is checked.
-- [ ] Add failing regressions for forced reauthentication POST bypass, invalid/negative/overflow max_age, and invalid request plus max_age credential-form behavior. <!-- t:dcd5 -->
-- [ ] Replace browser-hidden authorization continuation with an opaque expiring one-time server-side interaction record; add no compatibility fallback. <!-- t:1y0n -->
-- [ ] Implement explicit approve/deny consent bound to the validated client and displayed scopes, with OAuth access_denied semantics. <!-- t:dfg5 -->
+- [x] Add failing regressions for forced reauthentication POST bypass, invalid/negative/overflow max_age, and invalid request plus max_age credential-form behavior. <!-- t:dcd5 -->
+- [x] Replace browser-hidden authorization continuation with an opaque expiring one-time server-side interaction record; add no compatibility fallback. <!-- t:1y0n -->
+- [x] Implement explicit approve/deny consent bound to the validated client and displayed scopes, with OAuth access_denied semantics. <!-- t:dfg5 -->
 - [ ] Add deterministic-clock authorization state-machine, mutation, replay, concurrent-tab, duplicate-parameter, property, and fuzz tests. <!-- t:zg5j -->
-- [ ] Harden token endpoint rate-limit identities and UserInfo method, bearer transport, cache, and challenge contracts. <!-- t:scll -->
+- [x] Harden token endpoint rate-limit identities and UserInfo method, bearer transport, cache, and challenge contracts. <!-- t:scll -->
 - [ ] Add Fosite authorize/token lifecycle fault injection and prove or enforce atomic/compensated protocol persistence across handler boundaries. <!-- t:3uhz -->
 - [ ] Rerun external-module flows, race, analyzers, fuzzing, recovery, and hosted OIDF against the new exact artifact hash. <!-- t:9ajq -->
-- [ ] Authorization interaction hardening gate: no invalid request collects credentials, required actions cannot disappear, and one interaction has at most one terminal outcome. <!-- t:3ufn -->
+- [x] Authorization interaction hardening gate: no invalid request collects credentials, required actions cannot disappear, and one interaction has at most one terminal outcome. <!-- t:3ufn -->
 - [ ] Assurance Phase 0: review and accept the invariant catalog, threat model, event schema, consent semantics, UserInfo transport, and release profile <!-- t:uum1 -->
-- [ ] Assurance Phase 1: implement a server-owned hashed one-time authorization InteractionRecord with canonical request digest, required actions, expiry, generation, and atomic terminal transitions <!-- t:iosc -->
-- [ ] Assurance Phase 1: replace browser hidden continuation without a compatibility fallback and add forced-login, max_age, prompt-none, consent, mutation, and replay regressions <!-- t:2cd9 -->
+- [x] Assurance Phase 1: implement a server-owned hashed one-time authorization InteractionRecord with canonical request digest, required actions, expiry, generation, and atomic terminal transitions <!-- t:iosc -->
+- [x] Assurance Phase 1: replace browser hidden continuation without a compatibility fallback and add forced-login, max_age, prompt-none, consent, mutation, and replay regressions <!-- t:2cd9 -->
 - [ ] Assurance Phase 2: add an injected security Clock, pure Go interaction model, strict-provider scenario driver, typed actions, and observations <!-- t:qru9 -->
 - [ ] Assurance Phase 2: add Rapid state-machine properties, metamorphic relations, native fuzz action sequences, seed persistence, and shrunk replay tests <!-- t:tlmk -->
-- [ ] Assurance Phase 3: extend auditlint with strict security parsing, explicit bearer transport, and injected-clock analyzers plus analysistest fixtures <!-- t:j7dm -->
+- [x] Assurance Phase 3: extend auditlint with strict security parsing, explicit bearer transport, and injected-clock analyzers plus analysistest fixtures <!-- t:j7dm -->
 - [ ] Assurance Phase 3: add interaction-continuation, limiter-identity taint, ignored-security-error, and protocol-lifecycle analyzers with documented precision limits <!-- t:mo8x -->
 - [ ] Assurance Phase 4: implement versioned secret-free SecurityEvent instrumentation for interaction, authentication, consent, protocol mutation, and terminal boundaries <!-- t:6ruz -->
 - [ ] Assurance Phase 4: build a typed parametric offline trace monitor and feed deterministic, property, fuzz, and failpoint executions through it <!-- t:671q -->
@@ -144,7 +144,7 @@ tasks so partial implementation never looks like phase completion.
 - [x] AH Phase 1.1: add a reusable strict-provider browser test harness that preserves cookies and parses opaque interactions <!-- t:40vm -->
 - [x] AH Phase 1.2: add forced prompt login blank and crafted POST regressions with an existing browser session <!-- t:yo4c -->
 - [x] AH Phase 1.3: add expired max_age blank POST and invalid negative overflow max_age regressions <!-- t:b7h5 -->
-- [ ] AH Phase 1.4: add prompt none login and consent required non-interaction regressions <!-- t:go72 -->
+- [x] AH Phase 1.4: add prompt none login and consent required non-interaction regressions <!-- t:go72 -->
 - [x] AH Phase 1.5: add explicit consent denial and omitted decision regressions <!-- t:gm7y -->
 - [x] AH Phase 1.6: add continuation mutation replay concurrent duplicate and concurrent-tab regressions <!-- t:cnzp -->
 - [x] AH Phase 2.1: define InteractionRecord required-action terminal-state and canonical-request public types <!-- t:bn89 -->
@@ -153,20 +153,20 @@ tasks so partial implementation never looks like phase completion.
 - [x] AH Phase 2.4: add SQLite interaction migration indexes retention metadata and checksum <!-- t:k8e6 -->
 - [x] AH Phase 2.5: implement SQLite create get consume and concurrent consume tests <!-- t:ce20 -->
 - [x] AH Phase 2.6: include expired interactions in maintenance and backup restore validation <!-- t:ebk2 -->
-- [ ] AH Phase 3.1: canonicalize validated Fosite authorization forms and compute a stable server-side request digest <!-- t:qt3o -->
-- [ ] AH Phase 3.2: create interactions on GET and render only opaque handle plus CSRF and explicit action fields <!-- t:60z0 -->
-- [ ] AH Phase 3.3: load the stored interaction on POST and reconstruct Fosite input only from server-owned canonical values <!-- t:gaax -->
-- [ ] AH Phase 3.4: enforce required fresh login after interaction creation and preserve authoritative auth_time <!-- t:vi2k -->
-- [ ] AH Phase 3.5: implement explicit consent approve deny and OAuth access_denied response semantics <!-- t:14do -->
-- [ ] AH Phase 3.6: revalidate client redirect user session signing readiness and generation before terminal consume <!-- t:jres -->
-- [ ] AH Phase 3.7: atomically consume the interaction before artifact issuance and reject replay expiry or browser mismatch <!-- t:n0ua -->
-- [ ] AH Phase 3.8: remove hidden authorization continuation with no compatibility fallback <!-- t:l8kv -->
-- [ ] AH Phase 4.1: replace max_age boolean helper with strict parsed policy and overflow-safe comparison <!-- t:mpvu -->
-- [ ] AH Phase 4.2: make token pre-authentication rate limiting use stable address and authenticated client dimensions <!-- t:bhl2 -->
-- [ ] AH Phase 4.3: enforce UserInfo GET POST policy explicit Authorization header bearer extraction no-store and RFC challenge responses <!-- t:4156 -->
-- [ ] AH Phase 4.4: classify session store absence expiry revocation disabled user and infrastructure failure without fail-open collapse <!-- t:6qtj -->
-- [ ] AH Phase 5.1: identify the exact Fosite authorization response mutation sequence and transaction key propagation options <!-- t:altv -->
-- [ ] AH Phase 5.2: implement atomic authorization code PKCE and OIDC persistence or explicit compensation without public raw SQL <!-- t:exej -->
-- [ ] AH Phase 5.3: add named before after and commit failure injection across authorization persistence <!-- t:ds0r -->
-- [ ] AH Phase 5.4: prove all-or-none durable state and one terminal outcome under every injected failure <!-- t:f69o -->
-- [ ] AH Phase 5.5: run targeted full race shuffle and external consumer validation and update candidate evidence <!-- t:ah32 -->
+- [x] AH Phase 3.1: canonicalize validated Fosite authorization forms and compute a stable server-side request digest <!-- t:qt3o -->
+- [x] AH Phase 3.2: create interactions on GET and render only opaque handle plus CSRF and explicit action fields <!-- t:60z0 -->
+- [x] AH Phase 3.3: load the stored interaction on POST and reconstruct Fosite input only from server-owned canonical values <!-- t:gaax -->
+- [x] AH Phase 3.4: enforce required fresh login after interaction creation and preserve authoritative auth_time <!-- t:vi2k -->
+- [x] AH Phase 3.5: implement explicit consent approve deny and OAuth access_denied response semantics <!-- t:14do -->
+- [x] AH Phase 3.6: revalidate client redirect user session signing readiness and generation before terminal consume <!-- t:jres -->
+- [x] AH Phase 3.7: atomically consume the interaction before artifact issuance and reject replay expiry or browser mismatch <!-- t:n0ua -->
+- [x] AH Phase 3.8: remove hidden authorization continuation with no compatibility fallback <!-- t:l8kv -->
+- [x] AH Phase 4.1: replace max_age boolean helper with strict parsed policy and overflow-safe comparison <!-- t:mpvu -->
+- [x] AH Phase 4.2: make token pre-authentication rate limiting use stable address and authenticated client dimensions <!-- t:bhl2 -->
+- [x] AH Phase 4.3: enforce UserInfo GET POST policy explicit Authorization header bearer extraction no-store and RFC challenge responses <!-- t:4156 -->
+- [x] AH Phase 4.4: classify session store absence expiry revocation disabled user and infrastructure failure without fail-open collapse <!-- t:6qtj -->
+- [x] AH Phase 5.1: identify the exact Fosite authorization response mutation sequence and transaction key propagation options <!-- t:altv -->
+- [x] AH Phase 5.2: implement atomic authorization code PKCE and OIDC persistence or explicit compensation without public raw SQL <!-- t:exej -->
+- [x] AH Phase 5.3: add named before after and commit failure injection across authorization persistence <!-- t:ds0r -->
+- [x] AH Phase 5.4: prove all-or-none durable state and one terminal outcome under every injected failure <!-- t:f69o -->
+- [x] AH Phase 5.5: run targeted full race shuffle and external consumer validation and update candidate evidence <!-- t:ah32 -->
