@@ -1,0 +1,12 @@
+{
+  "name": "tinyidp-xapp-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "cp node_modules/bootstrap/dist/css/bootstrap.min.css public/bootstrap.min.css"
+  },
+  "dependencies": {
+    "bootstrap": "5.3.7"
+  },
+  "packageManager": "pnpm@10.13.1"
+}
