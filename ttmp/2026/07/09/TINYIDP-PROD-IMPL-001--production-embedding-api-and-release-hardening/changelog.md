@@ -174,3 +174,13 @@ Step 23: implemented atomic token lifecycles, 18 token failpoints, Rapid state-m
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore.go — Token lifecycle transaction implementation
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/design-doc/03-research-foundations-for-identity-protocol-invariants-atomicity-and-runtime-verification.md — Academic and standards context
+
+## 2026-07-10
+
+Completed protocol invariant analyzers, multi-source security monitor feeds, and the data-only Goja VerificationPlan compiler; added a research boundary decision record and detailed diary.
+
+### Related Files
+
+- design-doc/04-programmable-verification-plans-research-boundary-and-implementation.md — Academic and implementation traceability
+- internal/gojaverify/compiler.go — Isolated plan compilation
+- pkg/verifyplan/plan.go — Native plan runner

@@ -27,7 +27,7 @@ RelatedFiles:
       Note: Upstream transaction contract captured with Defuddle
 ExternalSources: []
 Summary: Research-to-code map connecting OAuth/OIDC standards, formal protocol analysis, model-based testing, fault injection, runtime verification, and linearizability checking to tiny-idp's concrete security invariants and evidence.
-LastUpdated: 2026-07-10T20:25:01.747476086-04:00
+LastUpdated: 2026-07-10T20:49:15-04:00
 WhatFor: Understanding why the authorization and token lifecycle implementation has its current structure, which claims are standards-derived, which are engineering inferences, and how tests support those claims.
 WhenToUse: Before reviewing or changing authorization interactions, token persistence, refresh rotation, trace instrumentation, state-machine tests, or release assurance gates.
 ---
@@ -287,6 +287,12 @@ This is executable specification, not a formal proof. It provides reproducible
 counterexamples and makes the monitored invariant explicit enough for review.
 
 ## Design Decisions
+
+The programmable-verification boundary is developed separately in
+`design-doc/04-programmable-verification-plans-research-boundary-and-implementation.md`.
+That document connects runtime-verification monitor authority and capability
+discipline to the data-only Goja compiler, native scenario runner, and explicit
+in-process isolation limits.
 
 ### Decision RF-1: server-owned interaction instead of hidden continuation
 

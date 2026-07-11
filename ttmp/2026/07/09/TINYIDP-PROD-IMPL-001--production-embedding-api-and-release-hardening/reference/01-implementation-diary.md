@@ -2798,6 +2798,219 @@ production code changes: none
 release status: NOT APPROVED
 ```
 
+## Step 24: Close the analyzer and monitor loops, then isolate programmable verification
+
+This interval completed three previously separate assurance layers. First, the
+custom `go/analysis` suite now checks browser continuation authority, ignored
+security-transition errors, and required protocol lifecycle helpers. Second,
+generated and fuzzed event sequences plus persistence failpoint executions now
+feed the same offline security monitor. Third, the first Goja verification
+surface compiles scripts into immutable data-only plans that are executed and
+judged entirely by native Go.
+
+The corresponding academic record is
+`design-doc/04-programmable-verification-plans-research-boundary-and-implementation.md`.
+It explains why a scenario authoring language must not become a reference
+monitor, maps capability discipline and runtime-verification separation to the
+code, and states the unresolved in-process memory isolation limit explicitly.
+
+### Prompt Context
+
+**User prompt (verbatim):** "also, as you go, write documents that tie the research to the work you did, at appropriate \"intervals\" / topics. Do it retroactively too if appropriate, I basically want to be able to tie back some of the code you wrote to its underlying research, and what you inferred from it. This is valuable work that needs to be properly put into academic context."
+
+**Assistant interpretation:** Treat every coherent assurance mechanism as both
+an implementation interval and a research-accountability interval. Record which
+claims came from standards or research, which facts were observed in code, and
+which mechanisms were local design inferences.
+
+**Inferred user intent:** Make the security engineering independently reviewable
+and reproducible by future maintainers, rather than leaving the rationale in an
+agent transcript or commit message.
+
+**Commit (static analysis):** `9bfa7584621c2869f750e6dcddfbd8f3963f02e3` — "Add protocol invariant analyzers"
+
+**Commit (monitor feeds):** `333d21f` — "Test security monitor across persistence failures"
+
+**Commit (verification compiler):** `f4298f6` — "Add isolated verification plan compiler"
+
+### What I did
+
+- Added `tinyidpinteractioncontinuation`, which reports browser POST protocol
+  parameters read by `resumeAuthorize` instead of server-owned interaction data.
+- Added `tinyidpprotocollifecycle`, which checks that concrete SQL Fosite
+  persistence methods use the required authorization or token lifecycle helper.
+- Added `tinyidpignoredsecurityerror`, which reports discarded errors from
+  interaction consumption, browser-session creation, consent recording, active
+  signing-key selection, and transaction commit.
+- Added positive and negative `analysistest` fixtures and ran the analyzers over
+  repository production packages.
+- Added generated valid trace properties to the security monitor.
+- Added a native fuzz target that sends arbitrary, bounded, version-varying event
+  sequences through the monitor and verifies total handling without panic.
+- Fed all code-redemption and refresh-rotation failure points through a recorder
+  and monitor.
+- Asserted that failed code redemption emits no committed token lifecycle and a
+  failed refresh rotation emits no lifecycle beyond the baseline successful
+  code exchange.
+- Added `pkg/verifyplan`, a Goja-independent package containing the versioned
+  plan schema, limits, source binding, driver contract, native assertion
+  registry, and scenario runner.
+- Added the compile-only `tinyidp/verify` CommonJS module. It converts
+  lower-camel plain JavaScript data into a validated normalized plan and exposes
+  no provider or ambient capability.
+- Added an isolated compiler with a 64 KiB default source bound, 250 ms default
+  deadline, rejecting fallback module loader, JSON/output limits, and SHA-256
+  source provenance.
+- Added negative tests for ambient `fs` loading and unbounded loops.
+- Added an integration test that compiles a JavaScript plan, executes its step
+  through a native driver, and resolves its assertion through a native
+  `(id,version)` registry.
+- Verified the module both with the normal parent `go.work` and `GOWORK=off`.
+- Wrote a module README with the JavaScript and Go ownership boundary.
+- Wrote the focused research-to-implementation document and linked it from the
+  broader research foundations.
+- Preserved the two unrelated untracked hosted-conformance source directories.
+
+### Why
+
+- The earlier defects were not isolated syntax mistakes; they were authority and
+  temporal-order failures. The analyzers encode local structural rules that
+  make those defect classes harder to reintroduce during ordinary refactoring.
+- A trace monitor tested only with hand-authored examples can contain blind spots
+  in malformed or unexpected event order. Generated valid traces test
+  acceptance, while fuzz sequences test total failure handling.
+- Persistence fault tests become stronger when they check both database state
+  and emitted transition evidence. A transaction rollback must not claim a
+  committed token lifecycle.
+- Loading JavaScript directly into provider execution would enlarge the trusted
+  computing base. Compiling into plain data permits expressive scenario
+  authoring while native code retains effects and verdict authority.
+- A source digest makes evidence refer back to the exact scenario source, but it
+  is intentionally documented as provenance rather than authentication.
+
+### What worked
+
+- All analyzer fixtures, analyzer repository scans, and `go vet ./...` passed.
+- Both persistence failpoint tables produced monitor-valid traces with the exact
+  expected committed-token counts.
+- The monitor fuzz target passed 9,057 executions and added 37 interesting
+  corpus inputs during the bounded local run.
+- The Goja loop was interrupted by the configured deadline.
+- The rejecting loader returned an explicit ambient-module error for `fs`.
+- The compiled plan ran successfully through only native driver and assertion
+  functions.
+- Targeted Goja/plan tests passed under normal workspace resolution and with
+  `GOWORK=off`.
+- The complete repository suite and `go vet ./...` passed after dependency
+  integration.
+
+### What didn't work
+
+- No unexpected implementation failure occurred in this interval. Dependency
+  resolution updated direct and indirect Goja-related entries in `go.mod` and
+  `go.sum`; the resulting module graph was validated both with and without the
+  workspace.
+- The current compiler deadline is not a heap quota. This is not treated as a
+  fixed sandbox property: hostile in-process scripts remain outside the accepted
+  threat model.
+
+### What I learned
+
+- The same native monitor can consume deterministic, property-generated, fuzzed,
+  real-provider, and failpoint traces when instrumentation uses one versioned
+  event alphabet.
+- Static analysis is most credible when each rule states its syntactic boundary.
+  The new lifecycle rule inspects concrete adapter methods; it is not a whole
+  program proof that every future implementation is transactional.
+- The useful Goja boundary is stronger than “scripts should not call dangerous
+  methods.” The runtime receives no references to those methods at all.
+- A programmable validator that authors, executes, and judges its own scenarios
+  cannot supply independent assurance. Script-selected plans plus native
+  execution and verdicts preserve reviewable role separation.
+- Normal `go.work` support and standalone module support test different packaging
+  claims; both matter for an embeddable library.
+
+### What was tricky to build
+
+- The lifecycle analyzer needed to recognize transaction-scoped helper calls
+  without reporting legitimate cleanup methods that Fosite invokes outside an
+  issuance transaction.
+- Monitor assertions had to distinguish baseline successful code exchange from
+  the subsequent failed refresh attempt.
+- CommonJS module registration had to use the go-go-goja native module registry
+  while rejecting every source-loaded fallback module.
+- Goja interruption limits execution time but cannot promise hard memory
+  isolation. The design document therefore separates implemented controls from
+  requirements that would need a subprocess boundary.
+
+### What warrants a second pair of eyes
+
+- Review each analyzer's documented false-negative boundary before making it a
+  mandatory release gate.
+- Review whether failed security-event delivery should make production readiness
+  false rather than only increment a counter.
+- Review plan limit defaults and whether nested parameter objects require an
+  independent depth limit beyond total serialized size.
+- Review Goja built-ins such as time and randomness if deterministic compilation
+  becomes a signed-build requirement.
+- Review the strict-provider driver design before any live provider capability is
+  exposed; the current compiler intentionally has none.
+
+### What should be done in the future
+
+1. Implement the typed strict-provider action and observation algebra with an
+   injected clock.
+2. Add native assertion packages for fresh authentication, consent-before-
+   issuance, terminal uniqueness, continuation opacity, and refresh families.
+3. Persist Rapid seeds, shrunk actions, plan hash, commit, driver version, and
+   assertion versions in one evidence envelope.
+4. Add metamorphic relations over query ordering, irrelevant parameters,
+   duplicates, and memory-versus-SQLite behavior.
+5. Run the exact-candidate race, fuzz, recovery, external consumer, proxy, and
+   hosted conformance matrix before release approval.
+
+### Code review instructions
+
+- Read `design-doc/04-programmable-verification-plans-research-boundary-and-implementation.md`
+  before reviewing the Goja packages.
+- Review `pkg/verifyplan` first; it defines the trusted native execution model
+  without JavaScript dependencies.
+- Review the module exports and rejecting loader together to enumerate the
+  reachable JavaScript object graph.
+- Confirm the integration test's driver and assertion functions are native Go.
+- Read each new analyzer beside its fixture and its precision statement.
+- Compare failpoint database assertions with the corresponding security-event
+  counts.
+- Validate with:
+
+  ```bash
+  go test ./...
+  go vet ./...
+  GOWORK=off go test ./pkg/verifyplan ./internal/gojamodules/verify ./internal/gojaverify
+  go run ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint -- ./pkg/... ./internal/...
+  ```
+
+### Technical details
+
+```text
+new analyzer families: 3
+monitor fuzz executions: 9,057
+new interesting monitor inputs: 37
+verification plan schema: tinyidp.verify/v1
+default compiler source bound: 65,536 bytes
+default compiler deadline: 250 ms
+JavaScript-visible modules: tinyidp/verify only
+live JavaScript capabilities: none
+native driver integration: PASS
+normal go.work tests: PASS
+GOWORK=off verifier tests: PASS
+full repository suite: PASS
+go vet: PASS
+strict-provider verification driver: OPEN
+hard hostile-script memory isolation: NOT PROVIDED
+release status: NOT APPROVED
+```
+
 ## Step 23: Make token lifecycles atomic and add executable assurance layers
 
 This step extended the authorization work into code redemption and refresh-token

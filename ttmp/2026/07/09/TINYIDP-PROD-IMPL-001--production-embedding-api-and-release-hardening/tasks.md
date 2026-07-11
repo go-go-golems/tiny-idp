@@ -131,12 +131,12 @@ tasks so partial implementation never looks like phase completion.
 - [ ] Assurance Phase 2: add an injected security Clock, pure Go interaction model, strict-provider scenario driver, typed actions, and observations <!-- t:qru9 -->
 - [ ] Assurance Phase 2: add Rapid state-machine properties, metamorphic relations, native fuzz action sequences, seed persistence, and shrunk replay tests <!-- t:tlmk -->
 - [x] Assurance Phase 3: extend auditlint with strict security parsing, explicit bearer transport, and injected-clock analyzers plus analysistest fixtures <!-- t:j7dm -->
-- [ ] Assurance Phase 3: add interaction-continuation, limiter-identity taint, ignored-security-error, and protocol-lifecycle analyzers with documented precision limits <!-- t:mo8x -->
+- [x] Assurance Phase 3: add interaction-continuation, limiter-identity taint, ignored-security-error, and protocol-lifecycle analyzers with documented precision limits <!-- t:mo8x -->
 - [x] Assurance Phase 4: implement versioned secret-free SecurityEvent instrumentation for interaction, authentication, consent, protocol mutation, and terminal boundaries <!-- t:6ruz -->
-- [ ] Assurance Phase 4: build a typed parametric offline trace monitor and feed deterministic, property, fuzz, and failpoint executions through it <!-- t:671q -->
+- [x] Assurance Phase 4: build a typed parametric offline trace monitor and feed deterministic, property, fuzz, and failpoint executions through it <!-- t:671q -->
 - [x] Assurance Phase 5: add test scheduling probes and Porcupine linearizability histories for interaction consumption and refresh rotation <!-- t:zbyl -->
 - [x] Assurance Phase 5: enumerate Fosite authorization lifecycle failpoints and verify all-or-none code, PKCE, OIDC, audit, and terminal state <!-- t:nvcc -->
-- [ ] Assurance Phase 6: integrate the isolated tinyidp/verify VerificationPlan runner after native interaction semantics stabilize <!-- t:1qfc -->
+- [x] Assurance Phase 6: integrate the isolated tinyidp/verify VerificationPlan runner after native interaction semantics stabilize <!-- t:1qfc -->
 - [ ] Assurance Phase 7: run exact-candidate static, race, fuzz, failpoint, local and hosted OIDF, reverse-proxy, and generic web gates <!-- t:13it -->
 - [ ] Assurance Phase 8: canary with native guards, shadow monitors, audit delivery verification, rollback drills, and signed residual-risk approval <!-- t:bwsn -->
 - [x] AH Phase 0.1: capture baseline tests, current branch status, and confirmed interaction defects in the diary <!-- t:omhr -->
