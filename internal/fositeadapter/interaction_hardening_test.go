@@ -348,6 +348,9 @@ func TestInteractionFormContainsNoProtocolContinuation(t *testing.T) {
 	if status != http.StatusOK || form.Get("interaction") == "" || form.Get("csrf_token") == "" {
 		t.Fatalf("interaction form status=%d values=%v body=%s", status, form, body)
 	}
+	if !strings.Contains(body, "Client: <strong>spa</strong>") || !strings.Contains(body, "<code>openid</code>") {
+		t.Fatalf("interaction form does not disclose bound client and scopes: %s", body)
+	}
 	for _, forbidden := range []string{`name="client_id"`, `name="redirect_uri"`, `name="state"`, `name="scope"`, `name="code_challenge"`} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("browser form contains protocol continuation %s: %s", forbidden, body)

@@ -432,7 +432,7 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create authorization interaction failed", http.StatusInternalServerError)
 		return
 	}
-	p.renderInteraction(w, handle, csrfToken, needLogin, true)
+	p.renderInteraction(w, handle, csrfToken, needLogin, true, client.ID, []string(ar.GetRequestedScopes()))
 }
 
 func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
@@ -882,7 +882,7 @@ func (p *Provider) emit(ctx context.Context, e idp.Event, ar fosite.AuthorizeReq
 	p.recordAudit(ctx, e)
 }
 
-func (p *Provider) renderInteraction(w http.ResponseWriter, interactionHandle, csrfToken string, needLogin, includeConsent bool) {
+func (p *Provider) renderInteraction(w http.ResponseWriter, interactionHandle, csrfToken string, needLogin, includeConsent bool, clientID string, scopes []string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	loginFields := ""
@@ -890,10 +890,16 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, interactionHandle, c
 		loginFields = `<input name="login" autocomplete="username"><input name="password" type="password" autocomplete="current-password">`
 	}
 	actions := `<button type="submit" name="action" value="continue">Continue</button>`
+	disclosure := ""
 	if includeConsent {
+		var scopeList strings.Builder
+		for _, scope := range scopes {
+			_, _ = fmt.Fprintf(&scopeList, `<li><code>%s</code></li>`, htmlEscape(scope))
+		}
+		disclosure = fmt.Sprintf(`<section aria-label="Requested access"><p>Client: <strong>%s</strong></p><p>Requested scopes:</p><ul>%s</ul></section>`, htmlEscape(clientID), scopeList.String())
 		actions = `<button type="submit" name="action" value="approve">Approve</button><button type="submit" name="action" value="deny">Deny</button>`
 	}
-	_, _ = fmt.Fprintf(w, `<html><body><form method="post" action="%s">%s<input type="hidden" name="%s" value="%s"><input type="hidden" name="csrf_token" value="%s">%s</form></body></html>`, htmlEscape(p.issuer.Endpoint("/authorize")), loginFields, interactionFieldName, htmlEscape(interactionHandle), htmlEscape(csrfToken), actions)
+	_, _ = fmt.Fprintf(w, `<html><body><form method="post" action="%s">%s%s<input type="hidden" name="%s" value="%s"><input type="hidden" name="csrf_token" value="%s">%s</form></body></html>`, htmlEscape(p.issuer.Endpoint("/authorize")), disclosure, loginFields, interactionFieldName, htmlEscape(interactionHandle), htmlEscape(csrfToken), actions)
 }
 
 func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, u idpstore.User, authTime time.Time, consentApproved bool, interaction *idpstore.InteractionRecord) {
