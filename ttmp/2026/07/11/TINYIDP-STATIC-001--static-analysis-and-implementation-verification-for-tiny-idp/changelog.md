@@ -23,3 +23,12 @@ Validated the ticket, registered the security topic, confirmed 4 completed and 9
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/11/TINYIDP-STATIC-001--static-analysis-and-implementation-verification-for-tiny-idp/reference/01-investigation-diary.md — Records validation findings, vocabulary fix, task state, and commit evidence
 
+
+## 2026-07-11
+
+Uploaded the five-document bundle TINYIDP-STATIC-001 Static Analysis Design a2ea2e6.pdf to /ai/2026/07/11/TINYIDP-STATIC-001 on reMarkable.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/11/TINYIDP-STATIC-001--static-analysis-and-implementation-verification-for-tiny-idp/reference/01-investigation-diary.md — Records dry-run and successful reMarkable publication
+

@@ -276,3 +276,70 @@ checked tasks: 4
 open tasks: 97
 production code changes: none
 ```
+
+## Step 3: Publish the design bundle to reMarkable
+
+This step rendered the committed ticket baseline as one navigable PDF and
+uploaded it to the dated ticket folder on reMarkable. The bundle places the
+index first, followed by the primary design, diary, tasks, and changelog.
+
+### Prompt Context
+
+**User prompt (verbatim):** "upload"
+
+**Assistant interpretation:** Upload the newly created static-analysis ticket to
+reMarkable as a bundled document.
+
+**Inferred user intent:** Make the complete design and implementation plan
+available for offline reading and annotation.
+
+### What I did
+
+- Dry-ran the five-document bundle with ToC depth 2.
+- Uploaded the same inputs using the committed revision in the bundle name.
+
+### Why
+
+The commit identifier makes the published PDF traceable to repository state.
+
+### What worked
+
+```text
+OK: uploaded TINYIDP-STATIC-001 Static Analysis Design a2ea2e6.pdf -> /ai/2026/07/11/TINYIDP-STATIC-001
+```
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+The complete design package renders successfully without requiring source-file
+or PDF-paper inclusion in the reading bundle.
+
+### What was tricky to build
+
+N/A; the dry run resolved all inputs and the upload completed normally.
+
+### What warrants a second pair of eyes
+
+Review wide architecture and phase tables on the physical device for legibility.
+
+### What should be done in the future
+
+Upload a new uniquely named bundle after material design revisions rather than
+overwriting annotated copies.
+
+### Code review instructions
+
+Compare the bundle suffix `a2ea2e6` with the committed ticket baseline and start
+reading from the ticket index.
+
+### Technical details
+
+```text
+bundle inputs: 5 Markdown documents
+bundle name: TINYIDP-STATIC-001 Static Analysis Design a2ea2e6.pdf
+remote destination: /ai/2026/07/11/TINYIDP-STATIC-001
+upload result: success
+```
