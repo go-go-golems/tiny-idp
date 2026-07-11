@@ -15,6 +15,7 @@ import (
 
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
+	"github.com/manuel/tinyidp/internal/securitytrace"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
@@ -206,12 +207,13 @@ func TestSQLiteAuthorizationCodeRedemptionFailpointsAreAtomic(t *testing.T) {
 	for _, point := range points {
 		t.Run(point, func(t *testing.T) {
 			armed := false
-			store, server, verifier := newSQLiteTokenFixture(t, func(candidate string) error {
+			recorder := &securitytrace.Recorder{}
+			store, server, verifier := newSQLiteTokenFixtureWithSecurityEvents(t, func(candidate string) error {
 				if armed && candidate == point {
 					return errors.New("injected token persistence failure")
 				}
 				return nil
-			})
+			}, recorder)
 			code := authorizeForCode(t, server.URL, verifier)
 			armed = true
 			status, _ := postTokenForm(t, server.URL, url.Values{
@@ -227,6 +229,7 @@ func TestSQLiteAuthorizationCodeRedemptionFailpointsAreAtomic(t *testing.T) {
 			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_authorize_codes WHERE active=1`, 1)
 			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_access_tokens`, 0)
 			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens`, 0)
+			assertSecurityTrace(t, recorder.Events(), 0)
 		})
 	}
 }
@@ -247,12 +250,13 @@ func TestSQLiteRefreshRotationFailpointsAreAtomicAndRetryable(t *testing.T) {
 	for _, point := range points {
 		t.Run(point, func(t *testing.T) {
 			armed := false
-			store, server, verifier := newSQLiteTokenFixture(t, func(candidate string) error {
+			recorder := &securitytrace.Recorder{}
+			store, server, verifier := newSQLiteTokenFixtureWithSecurityEvents(t, func(candidate string) error {
 				if armed && candidate == point {
 					return errors.New("injected refresh persistence failure")
 				}
 				return nil
-			})
+			}, recorder)
 			code := authorizeForCode(t, server.URL, verifier)
 			tokens := exchangeCode(t, server.URL, code, verifier)
 			oldRefresh := tokens["refresh_token"].(string)
@@ -268,6 +272,7 @@ func TestSQLiteRefreshRotationFailpointsAreAtomicAndRetryable(t *testing.T) {
 			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens WHERE active=1`, 1)
 			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens`, 1)
 			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_access_tokens`, 1)
+			assertSecurityTrace(t, recorder.Events(), 1)
 			armed = false
 			retried := refreshToken(t, server.URL, oldRefresh)
 			if retried["access_token"] == "" || retried["refresh_token"] == "" {
@@ -278,6 +283,10 @@ func TestSQLiteRefreshRotationFailpointsAreAtomicAndRetryable(t *testing.T) {
 }
 
 func newSQLiteTokenFixture(t *testing.T, hook func(string) error) (*sqlitestore.Store, *httptest.Server, string) {
+	return newSQLiteTokenFixtureWithSecurityEvents(t, hook, nil)
+}
+
+func newSQLiteTokenFixtureWithSecurityEvents(t *testing.T, hook func(string) error, securityEvents securitytrace.Sink) (*sqlitestore.Store, *httptest.Server, string) {
 	t.Helper()
 	ctx := context.Background()
 	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
@@ -303,6 +312,7 @@ func newSQLiteTokenFixture(t *testing.T, hook func(string) error) (*sqlitestore.
 		Store:                store,
 		SecretKey:            []byte("sqlite-fosite-secret-key-32-bytes"),
 		TokenPersistenceHook: hook,
+		SecurityEvents:       securityEvents,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -310,6 +320,24 @@ func newSQLiteTokenFixture(t *testing.T, hook func(string) error) (*sqlitestore.
 	server := httptest.NewServer(provider.Handler())
 	t.Cleanup(server.Close)
 	return store, server, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+}
+
+func assertSecurityTrace(t *testing.T, events []securitytrace.Event, wantTokenCommits int) {
+	t.Helper()
+	monitor := securitytrace.NewMonitor()
+	tokenCommits := 0
+	for _, event := range events {
+		monitor.Observe(event)
+		if event.Kind == securitytrace.TokenLifecycleDone {
+			tokenCommits++
+		}
+	}
+	if violations := monitor.Violations(); len(violations) != 0 {
+		t.Fatalf("security trace violations=%v events=%#v", violations, events)
+	}
+	if tokenCommits != wantTokenCommits {
+		t.Fatalf("token lifecycle commits=%d, want %d", tokenCommits, wantTokenCommits)
+	}
 }
 
 func postTokenForm(t *testing.T, baseURL string, form url.Values) (int, []byte) {
