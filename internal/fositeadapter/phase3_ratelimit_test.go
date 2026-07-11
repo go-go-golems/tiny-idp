@@ -35,3 +35,20 @@ func TestLoginRateLimitUsesAccountClientAndAddressWithoutLoginDisclosure(t *test
 		}
 	}
 }
+
+func TestTokenPreAuthenticationRateLimitUsesOnlyStableAddress(t *testing.T) {
+	limiter := &recordingLimiter{}
+	provider := &Provider{rateLimiter: limiter}
+	if !provider.allowTokenPreAuthentication(context.Background(), "192.0.2.10") {
+		t.Fatal("pre-authentication limiter unexpectedly rejected request")
+	}
+	want := []string{"token:address:192.0.2.10"}
+	if len(limiter.keys) != len(want) {
+		t.Fatalf("rate-limit keys = %#v", limiter.keys)
+	}
+	for i := range want {
+		if limiter.keys[i] != want[i] {
+			t.Fatalf("key[%d] = %q, want %q", i, limiter.keys[i], want[i])
+		}
+	}
+}

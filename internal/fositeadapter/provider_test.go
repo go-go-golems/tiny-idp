@@ -167,6 +167,64 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	if claims["sub"] != "user-alice" || claims["email"] != "alice@example.test" {
 		t.Fatalf("bad userinfo: %#v", claims)
 	}
+	if uiResp.Header.Get("Cache-Control") != "no-store" || uiResp.Header.Get("Pragma") != "no-cache" {
+		t.Fatalf("userinfo cache headers = %q, %q", uiResp.Header.Get("Cache-Control"), uiResp.Header.Get("Pragma"))
+	}
+	postUserInfo, _ := http.NewRequest(http.MethodPost, ts.URL+"/userinfo", nil)
+	postUserInfo.Header.Set("Authorization", "Bearer "+body["access_token"].(string))
+	postUserInfoResponse, err := http.DefaultClient.Do(postUserInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = postUserInfoResponse.Body.Close()
+	if postUserInfoResponse.StatusCode != http.StatusOK {
+		t.Fatalf("POST userinfo status=%d, want 200", postUserInfoResponse.StatusCode)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		target string
+		body   string
+		status int
+		auth   bool
+		dup    bool
+	}{
+		{name: "query bearer rejected", method: http.MethodGet, target: ts.URL + "/userinfo?access_token=" + url.QueryEscape(body["access_token"].(string)), status: http.StatusBadRequest},
+		{name: "form bearer rejected", method: http.MethodPost, target: ts.URL + "/userinfo", body: "access_token=" + url.QueryEscape(body["access_token"].(string)), status: http.StatusBadRequest},
+		{name: "mixed query and header rejected", method: http.MethodGet, target: ts.URL + "/userinfo?access_token=" + url.QueryEscape(body["access_token"].(string)), status: http.StatusBadRequest, auth: true},
+		{name: "mixed form and header rejected", method: http.MethodPost, target: ts.URL + "/userinfo", body: "access_token=" + url.QueryEscape(body["access_token"].(string)), status: http.StatusBadRequest, auth: true},
+		{name: "duplicate authorization headers rejected", method: http.MethodGet, target: ts.URL + "/userinfo", status: http.StatusBadRequest, dup: true},
+		{name: "unsupported method", method: http.MethodPut, target: ts.URL + "/userinfo", status: http.StatusMethodNotAllowed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest(tc.method, tc.target, strings.NewReader(tc.body))
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+			if tc.auth {
+				req.Header.Set("Authorization", "Bearer "+body["access_token"].(string))
+			}
+			if tc.dup {
+				req.Header.Add("Authorization", "Bearer "+body["access_token"].(string))
+				req.Header.Add("Authorization", "Bearer "+body["access_token"].(string))
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tc.status {
+				t.Fatalf("status=%d, want %d", resp.StatusCode, tc.status)
+			}
+			if tc.status == http.StatusUnauthorized && !strings.HasPrefix(resp.Header.Get("WWW-Authenticate"), "Bearer ") {
+				t.Fatalf("missing bearer challenge: %q", resp.Header.Get("WWW-Authenticate"))
+			}
+			if resp.Header.Get("Cache-Control") != "no-store" {
+				t.Fatalf("Cache-Control=%q, want no-store", resp.Header.Get("Cache-Control"))
+			}
+		})
+	}
 
 	refreshResp, err := http.PostForm(ts.URL+"/token", url.Values{
 		"grant_type":    {"refresh_token"},
@@ -236,6 +294,12 @@ func fetchCSRF(t *testing.T, baseURL string, form url.Values) (string, *http.Coo
 	if len(m) != 2 {
 		t.Fatalf("csrf token not found in %s", body)
 	}
+	interactionRE := regexp.MustCompile(`name="interaction" value="([^"]+)"`)
+	interaction := interactionRE.FindStringSubmatch(string(body))
+	if len(interaction) != 2 {
+		t.Fatalf("interaction handle not found in %s", body)
+	}
+	form.Set("interaction", interaction[1])
 	for _, c := range resp.Cookies() {
 		if c.Name == "tinyidp_csrf" {
 			return m[1], c

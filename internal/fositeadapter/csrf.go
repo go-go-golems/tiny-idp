@@ -5,46 +5,45 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"net/http"
-	"strings"
+
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 const csrfCookieName = "tinyidp_csrf"
 
-func (p *Provider) issueCSRF(w http.ResponseWriter) (string, error) {
-	nonce, err := randomB64(32)
-	if err != nil {
-		return "", err
+func (p *Provider) issueCSRF(w http.ResponseWriter, r *http.Request, interactionHandle string) (string, []byte, error) {
+	nonce := ""
+	if cookie, err := r.Cookie(csrfCookieName); err == nil {
+		nonce = cookie.Value
 	}
-	token := nonce + "." + p.csrfMAC(nonce)
-	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: token, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: 600})
-	return token, nil
+	if nonce == "" {
+		var err error
+		nonce, err = randomB64(32)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: nonce, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.interactionTTL.Seconds())})
+	return p.csrfMAC(nonce, interactionHandle), idpstore.HashSecret(p.csrfKey, nonce), nil
 }
 
-func (p *Provider) validateCSRF(r *http.Request) bool {
+func (p *Provider) validateCSRF(r *http.Request, interactionHandle string) bool {
 	cookie, err := r.Cookie(csrfCookieName)
 	if err != nil || cookie.Value == "" {
 		return false
 	}
 	formToken := r.PostForm.Get("csrf_token")
-	if formToken == "" || !hmac.Equal([]byte(cookie.Value), []byte(formToken)) {
+	if formToken == "" || interactionHandle == "" {
 		return false
 	}
-	parts := strings.Split(formToken, ".")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return false
-	}
-	want := p.csrfMAC(parts[0])
-	return hmac.Equal([]byte(want), []byte(parts[1]))
+	want := p.csrfMAC(cookie.Value, interactionHandle)
+	return hmac.Equal([]byte(want), []byte(formToken))
 }
 
-func (p *Provider) csrfMAC(nonce string) string {
+func (p *Provider) csrfMAC(nonce, interactionHandle string) string {
 	mac := hmac.New(sha256.New, p.csrfKey)
-	_, _ = mac.Write([]byte("tinyidp-csrf:" + nonce))
+	_, _ = mac.Write([]byte("tinyidp-csrf:" + nonce + ":" + interactionHandle))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-func (p *Provider) clearCSRF(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: "", Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: -1})
 }
 
 func (p *Provider) cookiePath() string {

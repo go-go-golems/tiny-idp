@@ -3,6 +3,7 @@ package fositeadapter_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -56,6 +57,139 @@ func TestFositeSQLiteRefreshTokenReuseIsRejected(t *testing.T) {
 		t.Fatalf("refresh token was not rotated: %#v", firstRefresh)
 	}
 	refreshTokenMustFail(t, ts.URL, oldRefresh)
+}
+
+func TestSQLiteAuthorizePersistenceFailpointsAreAtomic(t *testing.T) {
+	points := []string{
+		"before_authorize_code",
+		"after_authorize_code",
+		"before_pkce",
+		"after_pkce",
+		"before_oidc",
+		"after_oidc",
+		"before_commit",
+	}
+	for _, point := range points {
+		t.Run(point, func(t *testing.T) {
+			ctx := context.Background()
+			st, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
+				t.Fatal(err)
+			}
+			key, err := keys.GenerateRSA("kid-failpoint", time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.CreateSigningKey(ctx, key); err != nil {
+				t.Fatal(err)
+			}
+			provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+				Issuer:    "http://127.0.0.1:5556",
+				Store:     st,
+				SecretKey: []byte("sqlite-failpoint-secret-key-32"),
+				AuthorizePersistenceHook: func(candidate string) error {
+					if candidate == point {
+						return errors.New("injected authorize persistence failure")
+					}
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(provider.Handler())
+			defer server.Close()
+
+			form := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+			csrf, cookie := fetchCSRF(t, server.URL, form)
+			form.Set("csrf_token", csrf)
+			req, _ := http.NewRequest(http.MethodPost, server.URL+"/authorize", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.AddCookie(cookie)
+			client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			location, _ := url.Parse(resp.Header.Get("Location"))
+			if location.Query().Get("code") != "" {
+				t.Fatalf("failpoint %s issued code: %s", point, location)
+			}
+			for _, table := range []string{"fosite_authorize_codes", "fosite_pkces", "fosite_oidc_sessions"} {
+				var count int
+				if err := st.SQLDB().QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+					t.Fatal(err)
+				}
+				if count != 0 {
+					t.Fatalf("failpoint %s left %d rows in %s", point, count, table)
+				}
+			}
+			var consumed int
+			if err := st.SQLDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM authorization_interactions WHERE consumed_at IS NOT NULL`).Scan(&consumed); err != nil {
+				t.Fatal(err)
+			}
+			if consumed != 0 {
+				t.Fatalf("failpoint %s consumed %d interactions", point, consumed)
+			}
+		})
+	}
+}
+
+func TestSQLiteAuthorizePersistenceCommitsAllArtifactsAndInteraction(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-atomic-success", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("sqlite-fosite-secret-key-32-bytes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+
+	verifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	if code := authorizeForCode(t, server.URL, verifier); code == "" {
+		t.Fatal("authorization code missing")
+	}
+	for _, table := range []string{"fosite_authorize_codes", "fosite_pkces", "fosite_oidc_sessions"} {
+		var count int
+		if err := st.SQLDB().QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("successful authorization left %d rows in %s, want 1", count, table)
+		}
+	}
+	var consumed int
+	if err := st.SQLDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM authorization_interactions WHERE consumed_at IS NOT NULL`).Scan(&consumed); err != nil {
+		t.Fatal(err)
+	}
+	if consumed != 1 {
+		t.Fatalf("successful authorization consumed %d interactions, want 1", consumed)
+	}
 }
 
 func TestFositeSQLiteClientWithEmptyScopesRejectsRequestedScope(t *testing.T) {

@@ -3,6 +3,7 @@ package fositeadapter
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -21,14 +22,86 @@ type sqlFositeStore struct {
 	project idpstore.Store
 	config  *fosite.Config
 	secrets map[string]string
+	hook    func(string) error
 }
 
 type sqlDBProvider interface {
 	SQLDB() *sql.DB
 }
 
-func newSQLFositeStore(db *sql.DB, project idpstore.Store, config *fosite.Config, secrets map[string]string) (*sqlFositeStore, error) {
-	return &sqlFositeStore{db: db, project: project, config: config, secrets: secrets}, nil
+func newSQLFositeStore(db *sql.DB, project idpstore.Store, config *fosite.Config, secrets map[string]string, hook func(string) error) (*sqlFositeStore, error) {
+	return &sqlFositeStore{db: db, project: project, config: config, secrets: secrets, hook: hook}, nil
+}
+
+type authorizeLifecycleContextKey struct{}
+
+type authorizeLifecycle struct {
+	tx *sql.Tx
+}
+
+func (s *sqlFositeStore) beginAuthorizeLifecycle(ctx context.Context, interaction *idpstore.InteractionRecord, now time.Time) (context.Context, func(bool) error, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ctx, nil, err
+	}
+	rollback := func(cause error) (context.Context, func(bool) error, error) {
+		_ = tx.Rollback()
+		return ctx, nil, cause
+	}
+	if interaction != nil {
+		terminal := *interaction
+		now = now.UTC()
+		terminal.ConsumedAt = &now
+		terminal.Outcome = idpstore.InteractionOutcomeApproved
+		data, err := json.Marshal(terminal)
+		if err != nil {
+			return rollback(err)
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE authorization_interactions SET consumed_at=?,data=? WHERE hash=? AND consumed_at IS NULL AND expires_at>?`, now, data, hex.EncodeToString(interaction.IDHash), now)
+		if err != nil {
+			return rollback(err)
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return rollback(err)
+		}
+		if count != 1 {
+			return rollback(idpstore.ErrAlreadyConsumed)
+		}
+	}
+	lifecycleContext := context.WithValue(ctx, authorizeLifecycleContextKey{}, &authorizeLifecycle{tx: tx})
+	finish := func(commit bool) error {
+		if !commit {
+			return tx.Rollback()
+		}
+		if err := s.runAuthorizeHook("before_commit"); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		return tx.Commit()
+	}
+	return lifecycleContext, finish, nil
+}
+
+func (s *sqlFositeStore) runAuthorizeHook(point string) error {
+	if s.hook == nil {
+		return nil
+	}
+	return s.hook(point)
+}
+
+func (s *sqlFositeStore) authorizeExec(ctx context.Context, name, query string, args ...any) error {
+	lifecycle, ok := ctx.Value(authorizeLifecycleContextKey{}).(*authorizeLifecycle)
+	if !ok || lifecycle == nil || lifecycle.tx == nil {
+		return fmt.Errorf("authorization persistence %s requires an active lifecycle transaction", name)
+	}
+	if err := s.runAuthorizeHook("before_" + name); err != nil {
+		return err
+	}
+	if _, err := lifecycle.tx.ExecContext(ctx, query, args...); err != nil {
+		return err
+	}
+	return s.runAuthorizeHook("after_" + name)
 }
 
 func (s *sqlFositeStore) GetClient(ctx context.Context, id string) (fosite.Client, error) {
@@ -180,8 +253,7 @@ func (s *sqlFositeStore) CreateAuthorizeCodeSession(ctx context.Context, code st
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_authorize_codes(signature,active,subject,request_json) VALUES(?,?,?,?)`, code, 1, requesterSubject(req), b)
-	return err
+	return s.authorizeExec(ctx, "authorize_code", `INSERT INTO fosite_authorize_codes(signature,active,subject,request_json) VALUES(?,?,?,?)`, code, 1, requesterSubject(req), b)
 }
 func (s *sqlFositeStore) GetAuthorizeCodeSession(ctx context.Context, code string, _ fosite.Session) (fosite.Requester, error) {
 	var active int
@@ -215,8 +287,7 @@ func (s *sqlFositeStore) CreatePKCERequestSession(ctx context.Context, code stri
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_pkces(signature,subject,request_json) VALUES(?,?,?)`, code, requesterSubject(req), b)
-	return err
+	return s.authorizeExec(ctx, "pkce", `INSERT INTO fosite_pkces(signature,subject,request_json) VALUES(?,?,?)`, code, requesterSubject(req), b)
 }
 func (s *sqlFositeStore) GetPKCERequestSession(ctx context.Context, code string, _ fosite.Session) (fosite.Requester, error) {
 	return s.getRequester(ctx, `SELECT request_json FROM fosite_pkces WHERE signature=?`, code)
@@ -231,8 +302,7 @@ func (s *sqlFositeStore) CreateOpenIDConnectSession(ctx context.Context, authori
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_oidc_sessions(signature,subject,request_json) VALUES(?,?,?)`, authorizeCode, requesterSubject(req), b)
-	return err
+	return s.authorizeExec(ctx, "oidc", `INSERT INTO fosite_oidc_sessions(signature,subject,request_json) VALUES(?,?,?)`, authorizeCode, requesterSubject(req), b)
 }
 func (s *sqlFositeStore) GetOpenIDConnectSession(ctx context.Context, authorizeCode string, requester fosite.Requester) (fosite.Requester, error) {
 	return s.getRequester(ctx, `SELECT request_json FROM fosite_oidc_sessions WHERE signature=?`, authorizeCode)

@@ -76,7 +76,7 @@ func TestPromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent(t *testing.T) 
 	verifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	form := authorizeForm(verifier)
 	form.Set("scope", "openid")
-	form.Set("consent_approved", "true")
+	form.Set("action", "approve")
 	csrf, csrfCookie := fetchCSRF(t, ts.URL, form)
 	form.Set("csrf_token", csrf)
 	noRedirect := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
@@ -166,7 +166,7 @@ func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("authorize without consent status=%d, want 403", resp.StatusCode)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("authorize without explicit consent status=%d, want 400", resp.StatusCode)
 	}
 }

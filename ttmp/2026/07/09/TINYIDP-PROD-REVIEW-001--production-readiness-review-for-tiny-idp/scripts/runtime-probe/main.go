@@ -285,8 +285,9 @@ func runAuthorizationCodeFlow(ctx context.Context, emit *emitter, client *http.C
 		return flowTokens{}, fmt.Errorf("authorize GET status %d: %s", interaction.status, interaction.body)
 	}
 	csrf := regexp.MustCompile(`name="csrf_token" value="([^"]+)"`).FindSubmatch(interaction.body)
-	if len(csrf) != 2 {
-		return flowTokens{}, fmt.Errorf("csrf token not found")
+	interactionHandle := regexp.MustCompile(`name="interaction" value="([^"]+)"`).FindSubmatch(interaction.body)
+	if len(csrf) != 2 || len(interactionHandle) != 2 {
+		return flowTokens{}, fmt.Errorf("csrf token or interaction handle not found")
 	}
 	var csrfCookie *http.Cookie
 	for _, cookie := range interaction.cookie {
@@ -298,9 +299,10 @@ func runAuthorizationCodeFlow(ctx context.Context, emit *emitter, client *http.C
 		return flowTokens{}, fmt.Errorf("csrf cookie not found")
 	}
 	form.Set("csrf_token", string(csrf[1]))
+	form.Set("interaction", string(interactionHandle[1]))
 	form.Set("login", "alice")
 	form.Set("password", "correct horse battery staple")
-	form.Set("consent_approved", "true")
+	form.Set("action", "approve")
 	authorized, err := doRequest(ctx, emit, client, "authorize_post", http.MethodPost, baseURL+"/authorize", form.Encode(), []*http.Cookie{csrfCookie})
 	if err != nil {
 		return flowTokens{}, err

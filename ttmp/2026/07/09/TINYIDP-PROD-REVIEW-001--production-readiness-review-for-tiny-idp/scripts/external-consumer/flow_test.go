@@ -108,7 +108,8 @@ func TestExternalProductionAuthorizationCodePKCE(t *testing.T) {
 	}
 	body := readBody(t, interaction)
 	csrf := regexp.MustCompile(`name="csrf_token" value="([^"]+)"`).FindSubmatch(body)
-	if interaction.StatusCode != http.StatusOK || len(csrf) != 2 {
+	interactionHandle := regexp.MustCompile(`name="interaction" value="([^"]+)"`).FindSubmatch(body)
+	if interaction.StatusCode != http.StatusOK || len(csrf) != 2 || len(interactionHandle) != 2 {
 		t.Fatalf("interaction status=%d body=%s", interaction.StatusCode, body)
 	}
 	var csrfCookie *http.Cookie
@@ -122,9 +123,10 @@ func TestExternalProductionAuthorizationCodePKCE(t *testing.T) {
 	}
 
 	form.Set("csrf_token", string(csrf[1]))
+	form.Set("interaction", string(interactionHandle[1]))
 	form.Set("login", "alice")
 	form.Set("password", "correct horse battery staple")
-	form.Set("consent_approved", "true")
+	form.Set("action", "approve")
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/authorize", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(csrfCookie)
