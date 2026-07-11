@@ -6,7 +6,7 @@ probe_dir="$(mktemp -d)"
 trap 'rm -rf "$probe_dir"' EXIT
 
 mkdir -p "$probe_dir/consumer"
-printf 'module example.test/tinyidp-consumer\n\ngo 1.25.11\n\nrequire github.com/manuel/tinyidp v0.0.0\n\nreplace github.com/manuel/tinyidp => %s\n' "$repo_root" > "$probe_dir/go.mod"
+printf 'module example.test/tinyidp-consumer\n\ngo 1.26.1\n\nrequire github.com/manuel/tinyidp v0.0.0\n\nreplace github.com/manuel/tinyidp => %s\n' "$repo_root" > "$probe_dir/go.mod"
 cp "$repo_root/go.sum" "$probe_dir/go.sum"
 printf '%s\n' \
   'package consumer' \
@@ -47,6 +47,9 @@ printf '%s\n' \
   '}' > "$probe_dir/consumer/consumer.go"
 cp "$repo_root/ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-consumer/flow_test.go" "$probe_dir/consumer/flow_test.go"
 
-output="$(cd "$probe_dir" && GOWORK=off go test -mod=mod ./consumer 2>&1)"
+if ! output="$(cd "$probe_dir" && GOWORK=off go test -mod=mod ./consumer 2>&1)"; then
+	printf '%s\n' "$output" >&2
+	exit 1
+fi
 printf '%s\n' "$output"
 printf 'OK: external production embedding compiles and completes Authorization Code + PKCE\n'
