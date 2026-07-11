@@ -2798,6 +2798,222 @@ production code changes: none
 release status: NOT APPROVED
 ```
 
+## Step 23: Make token lifecycles atomic and add executable assurance layers
+
+This step extended the authorization work into code redemption and refresh-token
+rotation. The SQL Fosite store now implements the upstream `storage.Transactional`
+contract, so Fosite—not a handler-specific wrapper—defines the complete token
+transaction boundary. Eighteen named failpoints prove rollback behavior, and
+every failed refresh rotation remains retryable with the original token.
+
+The step also established the first executable assurance stack above example
+tests. Rapid drives a reference interaction state machine, Porcupine checks
+concurrent histories, and a versioned secret-free security event stream feeds an
+offline parametric monitor. A new research-foundations document ties these
+mechanisms to OAuth/OIDC standards, formal protocol analysis, model-based
+testing, fault injection, runtime verification, and linearizability literature.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead. do it all, i'm going running."
+
+**Additional user prompt (verbatim):** "also, as you go, write documents that tie the research to the work you did, at appropriate \"intervals\" / topics. Do it retroactively too if appropriate, I basically want to be able to tie back some of the code you wrote to its underlying research, and what you inferred from it. This is valuable work that needs to be properly put into academic context."
+
+**Assistant interpretation:** Continue every locally actionable assurance phase
+autonomously, and publish topic-oriented research-to-code documents at coherent
+implementation intervals rather than leaving academic context implicit.
+
+**Inferred user intent:** Produce durable engineering evidence that a future
+reviewer or researcher can trace from primary sources and abstract properties to
+specific implementation choices, counterexamples, tests, and residual risks.
+
+**Commit (code):** `26fa7dbff131b7862431b223a7f0d55aedf98fb6` — "Verify token lifecycles and security traces"
+
+### What I did
+
+- Inspected Fosite 0.49.0 token handlers and its `storage.Transactional`
+  interface directly from module source.
+- Captured the official Fosite storage API with Defuddle in
+  `sources/fosite-transactional-storage-api.md`.
+- Created
+  `design-doc/03-research-foundations-for-identity-protocol-invariants-atomicity-and-runtime-verification.md`.
+- Wrote a retrospective research-to-code map for:
+  - the opaque authorization interaction;
+  - authorization artifact atomicity;
+  - code redemption and refresh rotation;
+  - state-machine testing and runtime trace monitoring.
+- Added `TokenPersistenceHook` and implemented Fosite's `BeginTX`, `Commit`, and
+  `Rollback` contract in `sqlFositeStore`.
+- Made authorization-code invalidation, access-token creation, refresh-token
+  creation, and refresh rotation transaction-aware.
+- Changed refresh rotation's linearization point to a conditional update of the
+  exact active presented token. Zero rows returns `fosite.ErrSerializationFailure`.
+- Added eight code-redemption failpoints:
+  - before transaction begin;
+  - before/after code invalidation;
+  - before/after access-token creation;
+  - before/after refresh-token creation;
+  - before commit.
+- Added ten refresh-rotation failpoints:
+  - before transaction begin;
+  - before rotation;
+  - after old-refresh deactivation;
+  - after old-access deletion;
+  - after rotation;
+  - before/after replacement access creation;
+  - before/after replacement refresh creation;
+  - before commit.
+- Proved after each redemption failure that the code remains active and no token
+  rows exist.
+- Proved after each refresh failure that the original refresh/access pair remains
+  active and a subsequent retry succeeds.
+- Added Rapid and Porcupine as explicit test dependencies.
+- Added a Rapid interaction-store state machine with create, get, consume,
+  expire, replay, duplicate-create, and returned-copy mutation commands.
+- Added a Porcupine model for exactly-once consumption and a 16-client memory
+  store history.
+- Added an eight-client SQLite concurrent refresh history.
+- Added `internal/securitytrace` with:
+  - schema version 1;
+  - secret-free typed events;
+  - a concurrency-safe recorder;
+  - a parametric interaction monitor;
+  - violations for missing required actions, duplicate terminal outcomes,
+    artifacts before approval, and duplicate artifact commits.
+- Instrumented real provider transitions for interaction creation,
+  authentication, consent, terminal outcome, authorization artifact commit, and
+  token lifecycle commit.
+- Exposed a separate security-event delivery-failure counter rather than silently
+  treating monitor evidence as delivered.
+- Fed a real browser authorization trace into the offline monitor and asserted no
+  violations.
+- Ran the complete repository suite successfully.
+
+### Why
+
+- Fosite already exposes the correct transaction extension point. Implementing
+  that contract keeps tiny-idp aligned with upstream handler sequencing and
+  avoids duplicating token orchestration in the HTTP provider.
+- A private transaction inside `RotateRefreshToken` covered only two mutations;
+  it did not include replacement token creation or code invalidation.
+- Fault injection before and after each mutation establishes which intermediate
+  states are externally impossible.
+- State-machine generation explores legal and adversarial sequences that example
+  tests do not enumerate and produces shrinkable counterexamples.
+- Linearizability checking answers a different question from the race detector:
+  whether completed concurrent results admit a legal sequential explanation.
+- A log becomes verification evidence only after its schema and monitor verdict
+  are explicit. The security trace therefore remains separate from human audit
+  prose and excludes raw handles, credentials, codes, and tokens.
+
+### What worked
+
+- All eight redemption failpoints rolled back code invalidation and token rows.
+- All ten refresh failpoints restored the old token pair and allowed retry.
+- Rapid passed 100 generated state-machine cases on its first run.
+- The 16-client interaction consumption history was linearizable.
+- The eight-client refresh history had exactly one successful rotation and was
+  linearizable with the one-time operation model.
+- The real provider event trace satisfied the offline monitor.
+- `go test ./... -count=1` passed, including the new securitytrace package and
+  external consumer.
+
+### What didn't work
+
+- The first Porcupine test compared `CheckOperations` with `porcupine.Ok`, but
+  version 1.3.0 returns `bool` from that convenience function:
+
+  ```text
+  invalid operation: result != porcupine.Ok (mismatched types bool and porcupine.CheckResult)
+  ```
+
+  Switching to the documented boolean result fixed the build.
+- The first concurrent refresh assertion expected the winner's replacement token
+  family to remain active. All ten repetitions instead ended with zero active
+  refresh tokens. Investigation showed the sequence was correct Fosite reuse
+  handling: requests that validate after the winner commits see the old token as
+  inactive and revoke the whole family.
+
+### What I learned
+
+- Fosite's token handlers already call `MaybeBeginTx`, `MaybeCommitTx`, and
+  `MaybeRollbackTx`; the missing atomicity was entirely in the adapter contract.
+- Refresh rotation and refresh reuse are distinct abstract operations. Rotation
+  is linearizable, but a subsequent replay intentionally transitions the family
+  to revoked.
+- Concurrent refresh by a legitimate client can therefore invalidate the winning
+  response. Clients must serialize refresh and operators should treat concurrent
+  refresh bursts as a likely family-revocation cause.
+- A conditional SQL update on `(request_id, signature, active=1)` provides a clear
+  rotation linearization point and maps contention to a typed serialization
+  failure.
+- Research context is most useful when it distinguishes normative requirements,
+  observed library behavior, and local design inference; conflating them would
+  overstate the strength of the evidence.
+
+### What was tricky to build
+
+- Some revocation methods are called both inside Fosite transactions and directly
+  during code-reuse handling. They must use the context transaction when present
+  but preserve direct revocation behavior outside issuance.
+- Failpoint hooks must fail after a mutation but before commit to prove rollback,
+  without adding an artificial compensating mutation.
+- The refresh Porcupine history observed only HTTP success/failure, while the
+  final database state included Fosite's separate reuse response. The test now
+  checks both the operation history and the intentional terminal family state.
+- Security events must be emitted after authoritative transitions. SQL terminal
+  and artifact events occur only after commit; memory terminal events occur after
+  atomic consume.
+
+### What warrants a second pair of eyes
+
+- Review whether `fosite.ErrSerializationFailure` is the best external mapping
+  for a zero-row conditional refresh rotation.
+- Review direct code-reuse revocation methods that operate outside a transaction;
+  Fosite performs two best-effort revocations in that branch.
+- Review the event schema before long-term compatibility is promised; it is
+  versioned but still internal.
+- Review whether security-event delivery failure should degrade readiness rather
+  than only increment a counter.
+- Review the operational policy for concurrent refresh family revocation and
+  whether client documentation should require singleflight behavior.
+
+### What should be done in the future
+
+1. Extend the monitor to token-family events and feed failpoint traces through it.
+2. Add analyzer rules preventing browser protocol continuation and issuance
+   outside lifecycle helpers.
+3. Preserve failing Rapid seeds and add metamorphic HTTP relations.
+4. Capture Porcupine's primary paper and document the model's claim boundary.
+5. Run race, longer fuzz/property schedules, recovery, and exact-candidate gates.
+
+### Code review instructions
+
+- Start with Fosite's saved `Transactional` source and compare it with
+  `sqlFositeStore.BeginTX`, `Commit`, and `Rollback`.
+- Trace code exchange and refresh mutations through `tokenExec` and
+  `RotateRefreshToken`.
+- Run the two failpoint tables independently.
+- Read the Rapid reference state beside memory store semantics.
+- Read the Porcupine model before interpreting either concurrent history.
+- Check `securitytrace.Event` for secrets and then follow every
+  `recordSecurity` call in the provider.
+
+### Technical details
+
+```text
+code redemption failpoints: 8/8 PASS
+refresh rotation failpoints: 10/10 PASS and retryable
+interaction Rapid cases: 100 PASS
+interaction Porcupine clients: 16, linearizable
+refresh Porcupine clients: 8, one rotation winner
+refresh final state after concurrent reuse: active refresh=0, access=0
+security event schema: version 1
+real authorization trace monitor: PASS
+full repository suite: PASS
+release status: NOT APPROVED
+```
+
 ## Step 19: Freeze the authorization-hardening phase and task ledger
 
 This step converted the broad assurance phases into 31 small implementation

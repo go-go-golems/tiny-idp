@@ -120,9 +120,9 @@ tasks so partial implementation never looks like phase completion.
 - [x] Add failing regressions for forced reauthentication POST bypass, invalid/negative/overflow max_age, and invalid request plus max_age credential-form behavior. <!-- t:dcd5 -->
 - [x] Replace browser-hidden authorization continuation with an opaque expiring one-time server-side interaction record; add no compatibility fallback. <!-- t:1y0n -->
 - [x] Implement explicit approve/deny consent bound to the validated client and displayed scopes, with OAuth access_denied semantics. <!-- t:dfg5 -->
-- [ ] Add deterministic-clock authorization state-machine, mutation, replay, concurrent-tab, duplicate-parameter, property, and fuzz tests. <!-- t:zg5j -->
+- [x] Add deterministic-clock authorization state-machine, mutation, replay, concurrent-tab, duplicate-parameter, property, and fuzz tests. <!-- t:zg5j -->
 - [x] Harden token endpoint rate-limit identities and UserInfo method, bearer transport, cache, and challenge contracts. <!-- t:scll -->
-- [ ] Add Fosite authorize/token lifecycle fault injection and prove or enforce atomic/compensated protocol persistence across handler boundaries. <!-- t:3uhz -->
+- [x] Add Fosite authorize/token lifecycle fault injection and prove or enforce atomic/compensated protocol persistence across handler boundaries. <!-- t:3uhz -->
 - [ ] Rerun external-module flows, race, analyzers, fuzzing, recovery, and hosted OIDF against the new exact artifact hash. <!-- t:9ajq -->
 - [x] Authorization interaction hardening gate: no invalid request collects credentials, required actions cannot disappear, and one interaction has at most one terminal outcome. <!-- t:3ufn -->
 - [ ] Assurance Phase 0: review and accept the invariant catalog, threat model, event schema, consent semantics, UserInfo transport, and release profile <!-- t:uum1 -->
@@ -132,10 +132,10 @@ tasks so partial implementation never looks like phase completion.
 - [ ] Assurance Phase 2: add Rapid state-machine properties, metamorphic relations, native fuzz action sequences, seed persistence, and shrunk replay tests <!-- t:tlmk -->
 - [x] Assurance Phase 3: extend auditlint with strict security parsing, explicit bearer transport, and injected-clock analyzers plus analysistest fixtures <!-- t:j7dm -->
 - [ ] Assurance Phase 3: add interaction-continuation, limiter-identity taint, ignored-security-error, and protocol-lifecycle analyzers with documented precision limits <!-- t:mo8x -->
-- [ ] Assurance Phase 4: implement versioned secret-free SecurityEvent instrumentation for interaction, authentication, consent, protocol mutation, and terminal boundaries <!-- t:6ruz -->
+- [x] Assurance Phase 4: implement versioned secret-free SecurityEvent instrumentation for interaction, authentication, consent, protocol mutation, and terminal boundaries <!-- t:6ruz -->
 - [ ] Assurance Phase 4: build a typed parametric offline trace monitor and feed deterministic, property, fuzz, and failpoint executions through it <!-- t:671q -->
-- [ ] Assurance Phase 5: add test scheduling probes and Porcupine linearizability histories for interaction consumption and refresh rotation <!-- t:zbyl -->
-- [ ] Assurance Phase 5: enumerate Fosite authorization lifecycle failpoints and verify all-or-none code, PKCE, OIDC, audit, and terminal state <!-- t:nvcc -->
+- [x] Assurance Phase 5: add test scheduling probes and Porcupine linearizability histories for interaction consumption and refresh rotation <!-- t:zbyl -->
+- [x] Assurance Phase 5: enumerate Fosite authorization lifecycle failpoints and verify all-or-none code, PKCE, OIDC, audit, and terminal state <!-- t:nvcc -->
 - [ ] Assurance Phase 6: integrate the isolated tinyidp/verify VerificationPlan runner after native interaction semantics stabilize <!-- t:1qfc -->
 - [ ] Assurance Phase 7: run exact-candidate static, race, fuzz, failpoint, local and hosted OIDF, reverse-proxy, and generic web gates <!-- t:13it -->
 - [ ] Assurance Phase 8: canary with native guards, shadow monitors, audit delivery verification, rollback drills, and signed residual-risk approval <!-- t:bwsn -->
