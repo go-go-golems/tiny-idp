@@ -4760,3 +4760,64 @@ writing style: foundational prose, direct models, no analogies
 production code changes: none
 release status: NOT APPROVED
 ```
+
+## Step 32: Publish the completed intern textbook
+
+The seven completed intern documents were rendered as one table-of-contents PDF
+and uploaded under a new name so prior annotated assurance bundles were not
+overwritten.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 29)
+
+**Assistant interpretation:** Deliver the expanded, code-led, research-grounded
+textbook as a usable reading artifact after validating and committing it.
+
+**Inferred user intent:** Let the intern begin tomorrow with one ordered packet
+while retaining the source Markdown, diary provenance, and validation tooling in
+the repository.
+
+### What I did
+
+- Ran the committed validation script successfully: seven documents and 7,126
+  total lines after docmgr relationship normalization.
+- Committed the completed corpus as `314f8ae`.
+- Rendered only the seven onboarding documents, ordered curriculum through labs,
+  with table-of-contents depth two.
+- Uploaded under a commit-specific name without `--force`.
+
+### What worked
+
+Pandoc and the reMarkable upload completed on the first attempt for the expanded
+corpus.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+A focused textbook bundle is more usable for onboarding than repeating every
+historical ticket document, while the curriculum links back to those documents
+when the intern needs implementation chronology or full evidence.
+
+### What warrants a second pair of eyes
+
+- Review PDF pagination and table width on the device.
+- Ask the intern whether ToC depth two is sufficient for navigation.
+
+### What should be done in the future
+
+Record the first cohort's feedback and revise by observed learning gaps.
+
+### Technical details
+
+```text
+commit: 314f8ae
+document: TINYIDP Intern Security Textbook 314f8ae.pdf
+destination: /ai/2026/07/10/TINYIDP-PROD-IMPL-001
+overwrite: no
+upload: PASS
+release status: NOT APPROVED
+```

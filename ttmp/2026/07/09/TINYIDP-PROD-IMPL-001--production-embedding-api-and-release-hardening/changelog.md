@@ -259,3 +259,11 @@ Completed the code-led intern textbook: seven documents, each at least 1,000 lin
 - design-doc/10-production-trust-boundaries-and-release-security.md — 1001-line production chapter
 - reference/07-intern-security-review-labs.md — 1001-line lab workbook
 - scripts/04-validate-intern-textbook.sh — Corpus validation
+
+## 2026-07-10
+
+Uploaded the committed 7,126-line intern security textbook as a new reMarkable bundle named for commit 314f8ae, preserving earlier annotated packets.
+
+### Related Files
+
+- reference/01-implementation-diary.md — Textbook publication record
