@@ -7,9 +7,11 @@ package main
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -32,6 +34,9 @@ func main() {
 		bearerTransportAnalyzer,
 		securityClockAnalyzer,
 		strictSecurityParseAnalyzer,
+		interactionContinuationAnalyzer,
+		protocolLifecycleAnalyzer,
+		ignoredSecurityErrorAnalyzer,
 	)
 }
 
@@ -546,6 +551,168 @@ func expressionUsesAny(_ *analysis.Pass, expression ast.Expr, names map[string]s
 		return !found
 	})
 	return found
+}
+
+var interactionContinuationAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpinteractioncontinuation",
+	Doc:      "reports browser POST authorization protocol fields read by authorization resume handlers",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		forbidden := map[string]struct{}{
+			"client_id": {}, "redirect_uri": {}, "response_type": {}, "scope": {},
+			"state": {}, "nonce": {}, "code_challenge": {}, "code_challenge_method": {},
+			"prompt": {}, "max_age": {},
+		}
+		for _, file := range pass.Files {
+			for _, declaration := range file.Decls {
+				fn, ok := declaration.(*ast.FuncDecl)
+				if !ok || fn.Body == nil || fn.Name.Name != "resumeAuthorize" {
+					continue
+				}
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					call, ok := node.(*ast.CallExpr)
+					if !ok || len(call.Args) != 1 {
+						return true
+					}
+					method, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok || method.Sel.Name != "Get" {
+						return true
+					}
+					postForm, ok := method.X.(*ast.SelectorExpr)
+					if !ok || postForm.Sel.Name != "PostForm" {
+						return true
+					}
+					literal, ok := call.Args[0].(*ast.BasicLit)
+					if !ok || literal.Kind != token.STRING {
+						return true
+					}
+					field, err := strconv.Unquote(literal.Value)
+					if err != nil {
+						return true
+					}
+					if _, prohibited := forbidden[field]; prohibited {
+						pass.Reportf(call.Pos(), "authorization resume reads browser-owned protocol field %q; reconstruct protocol input from the server-owned interaction", field)
+					}
+					return true
+				})
+			}
+		}
+		return nil, nil
+	},
+}
+
+var protocolLifecycleAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpprotocollifecycle",
+	Doc:      "reports Fosite persistence methods that bypass required lifecycle helpers",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		required := map[string]string{
+			"CreateAuthorizeCodeSession":     "authorizeExec",
+			"CreatePKCERequestSession":       "authorizeExec",
+			"CreateOpenIDConnectSession":     "authorizeExec",
+			"InvalidateAuthorizeCodeSession": "tokenExec",
+			"CreateAccessTokenSession":       "tokenExec",
+			"CreateRefreshTokenSession":      "tokenExec",
+			"RotateRefreshToken":             "tokenLifecycleFromContext",
+		}
+		for _, file := range pass.Files {
+			if strings.HasSuffix(pass.Fset.Position(file.Pos()).Filename, "_test.go") {
+				continue
+			}
+			for _, declaration := range file.Decls {
+				fn, ok := declaration.(*ast.FuncDecl)
+				if !ok || fn.Body == nil || fn.Recv == nil {
+					continue
+				}
+				if receiverTypeName(fn) != "sqlFositeStore" {
+					continue
+				}
+				helper, relevant := required[fn.Name.Name]
+				if !relevant {
+					continue
+				}
+				found := false
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					call, ok := node.(*ast.CallExpr)
+					if !ok {
+						return !found
+					}
+					switch target := call.Fun.(type) {
+					case *ast.Ident:
+						found = target.Name == helper
+					case *ast.SelectorExpr:
+						found = target.Sel.Name == helper
+					}
+					return !found
+				})
+				if !found {
+					pass.Reportf(fn.Name.Pos(), "Fosite persistence method %s must use %s so protocol mutations share one lifecycle transaction", fn.Name.Name, helper)
+				}
+			}
+		}
+		return nil, nil
+	},
+}
+
+func receiverTypeName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) != 1 {
+		return ""
+	}
+	switch receiver := fn.Recv.List[0].Type.(type) {
+	case *ast.Ident:
+		return receiver.Name
+	case *ast.StarExpr:
+		if id, ok := receiver.X.(*ast.Ident); ok {
+			return id.Name
+		}
+	}
+	return ""
+}
+
+var ignoredSecurityErrorAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpignoredsecurityerror",
+	Doc:      "reports ignored results from security-critical state transitions",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		critical := map[string]struct{}{
+			"ConsumeInteraction": {}, "CreateBrowserSession": {}, "RecordConsent": {},
+			"ActiveSigningKey": {}, "Commit": {},
+		}
+		ins := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		ins.Preorder([]ast.Node{(*ast.AssignStmt)(nil), (*ast.ExprStmt)(nil)}, func(node ast.Node) {
+			var expression ast.Expr
+			ignored := false
+			switch statement := node.(type) {
+			case *ast.AssignStmt:
+				if len(statement.Rhs) != 1 {
+					return
+				}
+				expression = statement.Rhs[0]
+				ignored = len(statement.Lhs) == 1 && isBlank(statement.Lhs[0])
+				if len(statement.Lhs) > 1 {
+					ignored = isBlank(statement.Lhs[len(statement.Lhs)-1])
+				}
+			case *ast.ExprStmt:
+				expression = statement.X
+				ignored = true
+			}
+			if !ignored {
+				return
+			}
+			call, ok := expression.(*ast.CallExpr)
+			if !ok {
+				return
+			}
+			method, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return
+			}
+			if _, securityCritical := critical[method.Sel.Name]; securityCritical {
+				pass.Reportf(node.Pos(), "result from security-critical operation %s is ignored", method.Sel.Name)
+			}
+		})
+		return nil, nil
+	},
 }
 
 func inspectCalls(pass *analysis.Pass, fn func(*ast.CallExpr)) {

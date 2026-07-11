@@ -181,6 +181,7 @@ func (s *sqlFositeStore) tokenExec(ctx context.Context, name, query string, args
 	return result, nil
 }
 
+// tinyidp:transaction-scoped -- uses the Fosite context transaction when present.
 func (s *sqlFositeStore) tokenOrDirectExec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	if lifecycle, ok := ctx.Value(tokenLifecycleContextKey{}).(*tokenLifecycle); ok && lifecycle != nil && lifecycle.tx != nil {
 		return lifecycle.tx.ExecContext(ctx, query, args...)
@@ -459,6 +460,8 @@ func (s *sqlFositeStore) RevokeAccessToken(ctx context.Context, requestID string
 	_, err := s.tokenOrDirectExec(ctx, `DELETE FROM fosite_access_tokens WHERE request_id=?`, requestID)
 	return err
 }
+
+// tinyidp:transaction-scoped -- Fosite BeginTX owns commit and rollback.
 func (s *sqlFositeStore) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) error {
 	lifecycle, err := tokenLifecycleFromContext(ctx)
 	if err != nil {

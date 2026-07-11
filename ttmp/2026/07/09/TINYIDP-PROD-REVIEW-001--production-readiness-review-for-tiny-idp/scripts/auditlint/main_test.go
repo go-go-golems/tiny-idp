@@ -37,3 +37,15 @@ func TestSecurityClockAnalyzer(t *testing.T) {
 func TestStrictSecurityParseAnalyzer(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), strictSecurityParseAnalyzer, "fixture/checks/strictparsecheck")
 }
+
+func TestInteractionContinuationAnalyzer(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), interactionContinuationAnalyzer, "fixture/checks/continuationcheck")
+}
+
+func TestProtocolLifecycleAnalyzer(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), protocolLifecycleAnalyzer, "fixture/checks/lifecyclecheck")
+}
+
+func TestIgnoredSecurityErrorAnalyzer(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), ignoredSecurityErrorAnalyzer, "fixture/checks/securityerrorcheck")
+}
