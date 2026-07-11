@@ -2798,6 +2798,129 @@ production code changes: none
 release status: NOT APPROVED
 ```
 
+## Step 32: Publish the static-analysis program as a full Obsidian textbook report
+
+This interval extracted the static-analysis story from the broader 7,126-line
+intern textbook and wrote a standalone 1,516-line project report. The report
+connects all fifteen auditlint analyzers to their originating defect class,
+research basis, AST/type implementation, fixtures, production findings, repair
+history, precision boundary, CI role, and complementary dynamic evidence.
+
+### Prompt Context
+
+**User prompt (verbatim):** "make a big textbook authoring style project report for theobsidian vault going through all the static analysis tooling you wrote and use for validating and robustifying and studying tiny-idp"
+
+**Assistant interpretation:** Create a durable full-length Obsidian research
+article focused on the custom and general static-analysis tools used throughout
+the tiny-idp production review, rather than another short ticket summary.
+
+**Inferred user intent:** Preserve the analyzer engineering knowledge as a
+reusable internal textbook that explains both how the tools work and how to
+interpret their evidence professionally.
+
+### What I did
+
+- Read the Obsidian research-report, vault-writing, Obsidian Markdown, and
+  textbook-authoring workflows.
+- Re-read the report style, source collection, structure, and delivery
+  checklists.
+- Inspected the complete auditlint registration, all analyzer implementations,
+  every analysistest entry point, and diary passages describing analyzer
+  findings and repairs.
+- Ran targeted Kagi searches for Go AST/type/SSA analysis, IFDS and abstract
+  interpretation, domain-specific security analyzers, CodeQL, and Semgrep.
+- Used the completed assurance chapter as a foundation, then added a dedicated
+  static-analysis executive summary, analyzer architecture, chronology,
+  taxonomy, implementation internals, fixture methodology, tooling portfolio,
+  research synthesis, professional extension workflow, and open questions.
+- Documented all fifteen analyzers individually and summarized each supported
+  property, technique, and principal limitation.
+- Included the strict-parser debugging episode from the diary as a detailed case
+  study in monotonic AST search state and semantic result-shape precision.
+- Added Mermaid diagrams for the analyzer pipeline and historical evolution.
+- Added exact pseudocode for recursive public-type traversal and rule authoring.
+- Distinguished exact typed call identity from repository naming heuristics.
+- Documented `rg`, build/external compilation, vet, Staticcheck,
+  golangci-lint, Glazed lint, govulncheck, CodeQL, Semgrep, SSA, and IFDS as
+  complementary or escalation tools.
+- Created design doc 11 at 1,516 lines and 68,182 bytes.
+- Copied the complete report to the vault's `Research/2026/07/11` directory and
+  replaced docmgr metadata with Obsidian article metadata.
+
+### Why
+
+- The static-analysis suite is a coherent engineering program with lessons that
+  are obscured when distributed across the implementation diary and general
+  assurance chapter.
+- The most valuable knowledge is not the final rule code alone. It is the chain
+  from defect to abstraction, fixture, false positive, precision repair,
+  production migration, and bounded release claim.
+- A full vault article makes that chain readable without requiring navigation
+  through the ticket workspace.
+
+### What worked
+
+- The existing source packet already contained the Go analysis API, IFDS,
+  typestate, CodeQL, Semgrep, dynamic invariants, and assurance research needed
+  for a grounded report.
+- The auditlint source and diary supplied concrete algorithms and failure history
+  rather than idealized static-analysis descriptions.
+- The report reached the research workflow's 50–80 KB target without padding;
+  its size is 68 KB.
+
+### What didn't work
+
+- No implementation failure occurred. The vault already contained unrelated
+  untracked `.pi` and `.ttmp.yaml` files; they were explicitly excluded from the
+  intended report commit.
+
+### What I learned
+
+- Analyzer chronology is an effective architecture narrative: API usability,
+  host safety, durable state, and protocol authority emerged as successive
+  layers of the review.
+- False-positive repair episodes are essential static-analysis teaching material
+  because they expose the semantic assumptions behind an AST pattern.
+- The project consistently chose the weakest analysis capable of recognizing a
+  rule reliably, with an explicit escalation path to SSA/IFDS or CodeQL when
+  value flow becomes material.
+
+### What warrants a second pair of eyes
+
+- Verify every analyzer's current false-negative boundary against likely future
+  refactors and renamed handlers.
+- Review whether limiter identity now warrants real SSA taint tracking.
+- Review whether lifecycle helper requirements should be generated from typed
+  annotations instead of a maintained method/helper matrix.
+
+### What should be done in the future
+
+1. Add structured invariant IDs and analyzer versions to diagnostics and release
+   evidence envelopes.
+2. Build one experimental SSA rule for request-to-limiter-key flow and compare
+   its precision and maintenance cost with the current local rule.
+3. Add direct links from the vault article to future analyzer-focused notes.
+
+### Code review instructions
+
+- Start with the report's analyzer taxonomy and chronology.
+- Compare each analyzer section with `scripts/auditlint/main.go` and its fixture.
+- Read the strict-parser case study beside diary Steps 21 and 22.
+- Confirm all claims about race, transactions, monitors, and conformance are
+  presented as complementary evidence rather than static proof.
+
+### Technical details
+
+```text
+ticket report: design-doc/11-static-analysis-for-tiny-idp-security-engineering-project-report.md
+report lines: 1516
+report bytes: 68182
+custom analyzers: 15
+vault article: Research/2026/07/11/ARTICLE - Static Analysis for tiny-idp Security Engineering.md
+production code changes: none
+release status: NOT APPROVED
+```
+
 ## Step 29: Expand the intern textbook from outlines into code-led research chapters
 
 This interval began the requested textbook-scale rewrite. It treated line count

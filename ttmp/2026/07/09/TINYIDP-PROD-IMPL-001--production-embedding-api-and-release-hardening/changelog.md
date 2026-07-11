@@ -267,3 +267,12 @@ Uploaded the committed 7,126-line intern security textbook as a new reMarkable b
 ### Related Files
 
 - reference/01-implementation-diary.md — Textbook publication record
+
+## 2026-07-11
+
+Authored a 1,516-line textbook project report on all fifteen tiny-idp static analyzers, their research foundations, diary history, AST/type implementation, fixtures, findings, precision limits, CI role, and dynamic assurance boundaries; copied the full report to the Obsidian Research vault.
+
+### Related Files
+
+- /home/manuel/code/wesen/go-go-golems/go-go-parc/Research/2026/07/11/ARTICLE - Static Analysis for tiny-idp Security Engineering.md — Full Obsidian article
+- design-doc/11-static-analysis-for-tiny-idp-security-engineering-project-report.md — Primary exhaustive report
