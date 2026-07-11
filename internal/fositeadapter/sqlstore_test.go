@@ -192,6 +192,151 @@ func TestSQLiteAuthorizePersistenceCommitsAllArtifactsAndInteraction(t *testing.
 	}
 }
 
+func TestSQLiteAuthorizationCodeRedemptionFailpointsAreAtomic(t *testing.T) {
+	points := []string{
+		"before_begin_token",
+		"before_invalidate_authorize_code",
+		"after_invalidate_authorize_code",
+		"before_create_access_token",
+		"after_create_access_token",
+		"before_create_refresh_token",
+		"after_create_refresh_token",
+		"before_commit_token",
+	}
+	for _, point := range points {
+		t.Run(point, func(t *testing.T) {
+			armed := false
+			store, server, verifier := newSQLiteTokenFixture(t, func(candidate string) error {
+				if armed && candidate == point {
+					return errors.New("injected token persistence failure")
+				}
+				return nil
+			})
+			code := authorizeForCode(t, server.URL, verifier)
+			armed = true
+			status, _ := postTokenForm(t, server.URL, url.Values{
+				"grant_type":    {"authorization_code"},
+				"client_id":     {"spa"},
+				"code":          {code},
+				"redirect_uri":  {"http://localhost/callback"},
+				"code_verifier": {verifier},
+			})
+			if status == http.StatusOK {
+				t.Fatalf("failpoint %s returned success", point)
+			}
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_authorize_codes WHERE active=1`, 1)
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_access_tokens`, 0)
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens`, 0)
+		})
+	}
+}
+
+func TestSQLiteRefreshRotationFailpointsAreAtomicAndRetryable(t *testing.T) {
+	points := []string{
+		"before_begin_token",
+		"before_rotate_refresh",
+		"after_revoke_refresh",
+		"after_delete_old_access",
+		"after_rotate_refresh",
+		"before_create_access_token",
+		"after_create_access_token",
+		"before_create_refresh_token",
+		"after_create_refresh_token",
+		"before_commit_token",
+	}
+	for _, point := range points {
+		t.Run(point, func(t *testing.T) {
+			armed := false
+			store, server, verifier := newSQLiteTokenFixture(t, func(candidate string) error {
+				if armed && candidate == point {
+					return errors.New("injected refresh persistence failure")
+				}
+				return nil
+			})
+			code := authorizeForCode(t, server.URL, verifier)
+			tokens := exchangeCode(t, server.URL, code, verifier)
+			oldRefresh := tokens["refresh_token"].(string)
+			armed = true
+			status, _ := postTokenForm(t, server.URL, url.Values{
+				"grant_type":    {"refresh_token"},
+				"client_id":     {"spa"},
+				"refresh_token": {oldRefresh},
+			})
+			if status == http.StatusOK {
+				t.Fatalf("failpoint %s returned success", point)
+			}
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens WHERE active=1`, 1)
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens`, 1)
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_access_tokens`, 1)
+			armed = false
+			retried := refreshToken(t, server.URL, oldRefresh)
+			if retried["access_token"] == "" || retried["refresh_token"] == "" {
+				t.Fatalf("retry after failpoint %s did not issue tokens: %#v", point, retried)
+			}
+		})
+	}
+}
+
+func newSQLiteTokenFixture(t *testing.T, hook func(string) error) (*sqlitestore.Store, *httptest.Server, string) {
+	t.Helper()
+	ctx := context.Background()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-token-atomic", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+		Issuer:               "http://127.0.0.1:5556",
+		Store:                store,
+		SecretKey:            []byte("sqlite-fosite-secret-key-32-bytes"),
+		TokenPersistenceHook: hook,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	t.Cleanup(server.Close)
+	return store, server, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+}
+
+func postTokenForm(t *testing.T, baseURL string, form url.Values) (int, []byte) {
+	t.Helper()
+	response, err := http.PostForm(baseURL+"/token", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, body
+}
+
+func assertSQLCount(t *testing.T, store *sqlitestore.Store, query string, want int) {
+	t.Helper()
+	var count int
+	if err := store.SQLDB().QueryRowContext(context.Background(), query).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != want {
+		t.Fatalf("query %q count=%d, want %d", query, count, want)
+	}
+}
+
 func TestFositeSQLiteClientWithEmptyScopesRejectsRequestedScope(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "idp.db")

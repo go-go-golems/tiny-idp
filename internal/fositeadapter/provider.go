@@ -30,6 +30,7 @@ import (
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
+	"github.com/manuel/tinyidp/internal/securitytrace"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
@@ -71,28 +72,34 @@ type Options struct {
 	// AuthorizePersistenceHook is a test-only failpoint hook for the durable
 	// authorization response lifecycle. Production callers should leave it nil.
 	AuthorizePersistenceHook func(point string) error
+	// TokenPersistenceHook is a test-only failpoint hook for authorization-code
+	// redemption and refresh-token rotation storage lifecycles.
+	TokenPersistenceHook func(point string) error
+	SecurityEvents       securitytrace.Sink
 }
 
 type Provider struct {
-	issuer         oidcmeta.Issuer
-	store          idpstore.Store
-	fositeStore    *fositememory.MemoryStore
-	sqlStore       *sqlFositeStore
-	oauth2         fosite.OAuth2Provider
-	config         *fosite.Config
-	mode           idpstore.Mode
-	csrfKey        []byte
-	cookieSecure   bool
-	cookieSameSite http.SameSite
-	audit          idp.Sink
-	consent        idp.ConsentPolicy
-	rateLimiter    idp.RateLimiter
-	clientAddress  idp.ClientAddressResolver
-	authenticator  idp.PasswordAuthenticator
-	auditFailures  atomic.Uint64
-	sessionTTL     time.Duration
-	interactionTTL time.Duration
-	clock          func() time.Time
+	issuer           oidcmeta.Issuer
+	store            idpstore.Store
+	fositeStore      *fositememory.MemoryStore
+	sqlStore         *sqlFositeStore
+	oauth2           fosite.OAuth2Provider
+	config           *fosite.Config
+	mode             idpstore.Mode
+	csrfKey          []byte
+	cookieSecure     bool
+	cookieSameSite   http.SameSite
+	audit            idp.Sink
+	securityEvents   securitytrace.Sink
+	consent          idp.ConsentPolicy
+	rateLimiter      idp.RateLimiter
+	clientAddress    idp.ClientAddressResolver
+	authenticator    idp.PasswordAuthenticator
+	auditFailures    atomic.Uint64
+	securityFailures atomic.Uint64
+	sessionTTL       time.Duration
+	interactionTTL   time.Duration
+	clock            func() time.Time
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -105,9 +112,23 @@ func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
 
 func (p *Provider) AuditDeliveryFailures() uint64 { return p.auditFailures.Load() }
 
+func (p *Provider) SecurityEventDeliveryFailures() uint64 { return p.securityFailures.Load() }
+
 func (p *Provider) recordAudit(ctx context.Context, event idp.Event) {
 	if err := p.audit.Emit(ctx, event); err != nil {
 		p.auditFailures.Add(1)
+	}
+}
+
+func (p *Provider) recordSecurity(ctx context.Context, event securitytrace.Event) {
+	if event.Version == 0 {
+		event.Version = securitytrace.SchemaVersion
+	}
+	if event.Time.IsZero() {
+		event.Time = p.now()
+	}
+	if err := p.securityEvents.EmitSecurity(ctx, event); err != nil {
+		p.securityFailures.Add(1)
 	}
 }
 
@@ -137,6 +158,9 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	}
 	if opts.Audit == nil {
 		opts.Audit = idp.NoopSink{}
+	}
+	if opts.SecurityEvents == nil {
+		opts.SecurityEvents = securitytrace.NoopSink{}
 	}
 	if opts.Consent == nil {
 		if opts.Mode == idpstore.ProductionMode {
@@ -214,11 +238,11 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		},
 	}
 
-	fs, err := buildFositeStore(ctx, opts.Store, cfg, opts.ClientSecrets, opts.AuthorizePersistenceHook)
+	fs, err := buildFositeStore(ctx, opts.Store, cfg, opts.ClientSecrets, opts.AuthorizePersistenceHook, opts.TokenPersistenceHook)
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, audit: opts.Audit, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -245,9 +269,9 @@ type composedFositeStore struct {
 	sqlStore    *sqlFositeStore
 }
 
-func buildFositeStore(ctx context.Context, st idpstore.Store, cfg *fosite.Config, plainSecrets map[string]string, hook func(string) error) (*composedFositeStore, error) {
+func buildFositeStore(ctx context.Context, st idpstore.Store, cfg *fosite.Config, plainSecrets map[string]string, authorizeHook, tokenHook func(string) error) (*composedFositeStore, error) {
 	if sqlProvider, ok := st.(sqlDBProvider); ok {
-		s, err := newSQLFositeStore(sqlProvider.SQLDB(), st, cfg, plainSecrets, hook)
+		s, err := newSQLFositeStore(sqlProvider.SQLDB(), st, cfg, plainSecrets, authorizeHook, tokenHook)
 		if err != nil {
 			return nil, err
 		}
@@ -489,6 +513,9 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
 		}
+		traceID := interactionTraceID(record)
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentDenied, InteractionID: traceID, ClientID: record.ClientID})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeDenied)})
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
 		return
 	}
@@ -531,6 +558,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.success", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthenticationSatisfied, InteractionID: interactionTraceID(record), ClientID: record.ClientID})
 	}
 	if !hasSession {
 		http.Error(w, "login is required", http.StatusBadRequest)
@@ -551,11 +579,15 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "an explicit consent decision is required", http.StatusBadRequest)
 		return
 	}
+	if requireConsent && approved {
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentApproved, InteractionID: interactionTraceID(record), ClientID: record.ClientID})
+	}
 	if p.sqlStore == nil {
 		if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
 		}
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
 	}
 	p.finishAuthorize(w, r, ar, u, authTime, approved, &record)
 }
@@ -646,6 +678,7 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.TokenLifecycleDone, RequestID: accessRequest.GetID(), ClientID: accessRequest.GetClient().GetID(), GrantType: strings.Join(accessRequest.GetGrantTypes(), " ")})
 	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "token.request.accepted", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "accepted", Fields: map[string]string{"grant_type": strings.Join(accessRequest.GetGrantTypes(), " ")}})
 	p.oauth2.WriteAccessResponse(r.Context(), w, accessRequest, response)
 }
@@ -953,6 +986,13 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 			http.Error(w, "authorization persistence failed", http.StatusInternalServerError)
 			return
 		}
+	}
+	if interaction != nil {
+		traceID := interactionTraceID(*interaction)
+		if p.sqlStore != nil {
+			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, ClientID: client.ID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+		}
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthorizationArtifactsDone, InteractionID: traceID, RequestID: ar.GetID(), ClientID: client.ID})
 	}
 	p.emit(r.Context(), idp.New("authorize.request.accepted"), ar, "accepted", "")
 	p.oauth2.WriteAuthorizeResponse(r.Context(), w, ar, response)

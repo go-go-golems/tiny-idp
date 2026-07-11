@@ -2,6 +2,7 @@ package fositeadapter
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ory/fosite"
 
+	"github.com/manuel/tinyidp/internal/securitytrace"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -99,7 +101,12 @@ func (p *Provider) createInteraction(w http.ResponseWriter, r *http.Request, ar 
 	if err := p.store.CreateInteraction(r.Context(), record); err != nil {
 		return "", "", fmt.Errorf("create interaction: %w", err)
 	}
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionCreated, InteractionID: interactionTraceID(record), ClientID: record.ClientID, RequiredActions: uint32(record.RequiredActions)})
 	return handle, csrfToken, nil
+}
+
+func interactionTraceID(record idpstore.InteractionRecord) string {
+	return hex.EncodeToString(record.IDHash)
 }
 
 func (p *Provider) browserSessionHash(r *http.Request) []byte {

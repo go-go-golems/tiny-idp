@@ -16,6 +16,7 @@ import (
 
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
+	"github.com/manuel/tinyidp/internal/securitytrace"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
@@ -29,10 +30,14 @@ type interactionFixture struct {
 }
 
 func newInteractionFixture(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy) *interactionFixture {
-	return newInteractionFixtureWithClock(t, consentFactory, nil)
+	return newInteractionFixtureConfigured(t, consentFactory, nil, nil)
 }
 
 func newInteractionFixtureWithClock(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy, clock func() time.Time) *interactionFixture {
+	return newInteractionFixtureConfigured(t, consentFactory, clock, nil)
+}
+
+func newInteractionFixtureConfigured(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy, clock func() time.Time, securityEvents securitytrace.Sink) *interactionFixture {
 	t.Helper()
 	ctx := context.Background()
 	st := memory.New()
@@ -60,11 +65,12 @@ func newInteractionFixtureWithClock(t *testing.T, consentFactory func(*memory.St
 		consent = consentFactory(st)
 	}
 	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
-		Issuer:    "http://127.0.0.1:5556",
-		Store:     st,
-		SecretKey: []byte("interaction-hardening-secret-key-32"),
-		Consent:   consent,
-		Clock:     clock,
+		Issuer:         "http://127.0.0.1:5556",
+		Store:          st,
+		SecretKey:      []byte("interaction-hardening-secret-key-32"),
+		Consent:        consent,
+		Clock:          clock,
+		SecurityEvents: securityEvents,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +86,19 @@ func newInteractionFixtureWithClock(t *testing.T, consentFactory func(*memory.St
 		server: server,
 		client: &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		store:  st,
+	}
+}
+
+func TestAuthorizationSecurityTraceSatisfiesOfflineMonitor(t *testing.T) {
+	recorder := &securitytrace.Recorder{}
+	fixture := newInteractionFixtureConfigured(t, nil, nil, recorder)
+	fixture.login()
+	monitor := securitytrace.NewMonitor()
+	for _, event := range recorder.Events() {
+		monitor.Observe(event)
+	}
+	if violations := monitor.Violations(); len(violations) != 0 {
+		t.Fatalf("security trace violations=%v events=%#v", violations, recorder.Events())
 	}
 }
 

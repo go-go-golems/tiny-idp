@@ -12,26 +12,30 @@ import (
 
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/openid"
+	"github.com/ory/fosite/storage"
 	fositejwt "github.com/ory/fosite/token/jwt"
 
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
 type sqlFositeStore struct {
-	db      *sql.DB
-	project idpstore.Store
-	config  *fosite.Config
-	secrets map[string]string
-	hook    func(string) error
+	db            *sql.DB
+	project       idpstore.Store
+	config        *fosite.Config
+	secrets       map[string]string
+	authorizeHook func(string) error
+	tokenHook     func(string) error
 }
 
 type sqlDBProvider interface {
 	SQLDB() *sql.DB
 }
 
-func newSQLFositeStore(db *sql.DB, project idpstore.Store, config *fosite.Config, secrets map[string]string, hook func(string) error) (*sqlFositeStore, error) {
-	return &sqlFositeStore{db: db, project: project, config: config, secrets: secrets, hook: hook}, nil
+func newSQLFositeStore(db *sql.DB, project idpstore.Store, config *fosite.Config, secrets map[string]string, authorizeHook, tokenHook func(string) error) (*sqlFositeStore, error) {
+	return &sqlFositeStore{db: db, project: project, config: config, secrets: secrets, authorizeHook: authorizeHook, tokenHook: tokenHook}, nil
 }
+
+var _ storage.Transactional = (*sqlFositeStore)(nil)
 
 type authorizeLifecycleContextKey struct{}
 
@@ -84,10 +88,10 @@ func (s *sqlFositeStore) beginAuthorizeLifecycle(ctx context.Context, interactio
 }
 
 func (s *sqlFositeStore) runAuthorizeHook(point string) error {
-	if s.hook == nil {
+	if s.authorizeHook == nil {
 		return nil
 	}
-	return s.hook(point)
+	return s.authorizeHook(point)
 }
 
 func (s *sqlFositeStore) authorizeExec(ctx context.Context, name, query string, args ...any) error {
@@ -102,6 +106,86 @@ func (s *sqlFositeStore) authorizeExec(ctx context.Context, name, query string, 
 		return err
 	}
 	return s.runAuthorizeHook("after_" + name)
+}
+
+type tokenLifecycleContextKey struct{}
+
+type tokenLifecycle struct {
+	tx *sql.Tx
+}
+
+func (s *sqlFositeStore) BeginTX(ctx context.Context) (context.Context, error) {
+	if lifecycle, ok := ctx.Value(tokenLifecycleContextKey{}).(*tokenLifecycle); ok && lifecycle != nil {
+		return ctx, fmt.Errorf("nested Fosite token transaction")
+	}
+	if err := s.runTokenHook("before_begin_token"); err != nil {
+		return ctx, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ctx, err
+	}
+	return context.WithValue(ctx, tokenLifecycleContextKey{}, &tokenLifecycle{tx: tx}), nil
+}
+
+func (s *sqlFositeStore) Commit(ctx context.Context) error {
+	lifecycle, err := tokenLifecycleFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.runTokenHook("before_commit_token"); err != nil {
+		_ = lifecycle.tx.Rollback()
+		return err
+	}
+	return lifecycle.tx.Commit()
+}
+
+func (s *sqlFositeStore) Rollback(ctx context.Context) error {
+	lifecycle, err := tokenLifecycleFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return lifecycle.tx.Rollback()
+}
+
+func tokenLifecycleFromContext(ctx context.Context) (*tokenLifecycle, error) {
+	lifecycle, ok := ctx.Value(tokenLifecycleContextKey{}).(*tokenLifecycle)
+	if !ok || lifecycle == nil || lifecycle.tx == nil {
+		return nil, fmt.Errorf("Fosite token persistence requires an active transaction")
+	}
+	return lifecycle, nil
+}
+
+func (s *sqlFositeStore) runTokenHook(point string) error {
+	if s.tokenHook == nil {
+		return nil
+	}
+	return s.tokenHook(point)
+}
+
+func (s *sqlFositeStore) tokenExec(ctx context.Context, name, query string, args ...any) (sql.Result, error) {
+	lifecycle, err := tokenLifecycleFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.runTokenHook("before_" + name); err != nil {
+		return nil, err
+	}
+	result, err := lifecycle.tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.runTokenHook("after_" + name); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *sqlFositeStore) tokenOrDirectExec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if lifecycle, ok := ctx.Value(tokenLifecycleContextKey{}).(*tokenLifecycle); ok && lifecycle != nil && lifecycle.tx != nil {
+		return lifecycle.tx.ExecContext(ctx, query, args...)
+	}
+	return s.db.ExecContext(ctx, query, args...)
 }
 
 func (s *sqlFositeStore) GetClient(ctx context.Context, id string) (fosite.Client, error) {
@@ -275,7 +359,7 @@ func (s *sqlFositeStore) GetAuthorizeCodeSession(ctx context.Context, code strin
 	return req, nil
 }
 func (s *sqlFositeStore) InvalidateAuthorizeCodeSession(ctx context.Context, code string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE fosite_authorize_codes SET active=0 WHERE signature=?`, code)
+	res, err := s.tokenExec(ctx, "invalidate_authorize_code", `UPDATE fosite_authorize_codes SET active=0 WHERE signature=?`, code)
 	if err != nil {
 		return err
 	}
@@ -317,7 +401,7 @@ func (s *sqlFositeStore) CreateAccessTokenSession(ctx context.Context, signature
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_access_tokens(signature,request_id,subject,request_json) VALUES(?,?,?,?)`, signature, req.GetID(), requesterSubject(req), b)
+	_, err = s.tokenExec(ctx, "create_access_token", `INSERT INTO fosite_access_tokens(signature,request_id,subject,request_json) VALUES(?,?,?,?)`, signature, req.GetID(), requesterSubject(req), b)
 	return err
 }
 func (s *sqlFositeStore) GetAccessTokenSession(ctx context.Context, signature string, _ fosite.Session) (fosite.Requester, error) {
@@ -333,7 +417,7 @@ func (s *sqlFositeStore) CreateRefreshTokenSession(ctx context.Context, signatur
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO fosite_refresh_tokens(signature,request_id,active,access_token_signature,subject,request_json) VALUES(?,?,?,?,?,?)`, signature, req.GetID(), 1, accessTokenSignature, requesterSubject(req), b)
+	_, err = s.tokenExec(ctx, "create_refresh_token", `INSERT INTO fosite_refresh_tokens(signature,request_id,active,access_token_signature,subject,request_json) VALUES(?,?,?,?,?,?)`, signature, req.GetID(), 1, accessTokenSignature, requesterSubject(req), b)
 	return err
 }
 
@@ -363,31 +447,47 @@ func (s *sqlFositeStore) GetRefreshTokenSession(ctx context.Context, signature s
 	return req, nil
 }
 func (s *sqlFositeStore) DeleteRefreshTokenSession(ctx context.Context, signature string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM fosite_refresh_tokens WHERE signature=?`, signature)
+	_, err := s.tokenOrDirectExec(ctx, `DELETE FROM fosite_refresh_tokens WHERE signature=?`, signature)
 	return err
 }
 
 func (s *sqlFositeStore) RevokeRefreshToken(ctx context.Context, requestID string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE fosite_refresh_tokens SET active=0 WHERE request_id=?`, requestID)
+	_, err := s.tokenOrDirectExec(ctx, `UPDATE fosite_refresh_tokens SET active=0 WHERE request_id=?`, requestID)
 	return err
 }
 func (s *sqlFositeStore) RevokeAccessToken(ctx context.Context, requestID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM fosite_access_tokens WHERE request_id=?`, requestID)
+	_, err := s.tokenOrDirectExec(ctx, `DELETE FROM fosite_access_tokens WHERE request_id=?`, requestID)
 	return err
 }
 func (s *sqlFositeStore) RotateRefreshToken(ctx context.Context, requestID string, refreshTokenSignature string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	lifecycle, err := tokenLifecycleFromContext(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `UPDATE fosite_refresh_tokens SET active=0 WHERE request_id=?`, requestID); err != nil {
+	if err := s.runTokenHook("before_rotate_refresh"); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM fosite_access_tokens WHERE request_id=?`, requestID); err != nil {
+	result, err := lifecycle.tx.ExecContext(ctx, `UPDATE fosite_refresh_tokens SET active=0 WHERE request_id=? AND signature=? AND active=1`, requestID, refreshTokenSignature)
+	if err != nil {
 		return err
 	}
-	return tx.Commit()
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return fosite.ErrSerializationFailure
+	}
+	if err := s.runTokenHook("after_revoke_refresh"); err != nil {
+		return err
+	}
+	if _, err := lifecycle.tx.ExecContext(ctx, `DELETE FROM fosite_access_tokens WHERE request_id=?`, requestID); err != nil {
+		return err
+	}
+	if err := s.runTokenHook("after_delete_old_access"); err != nil {
+		return err
+	}
+	return s.runTokenHook("after_rotate_refresh")
 }
 
 func (s *sqlFositeStore) getRequester(ctx context.Context, query, signature string) (fosite.Requester, error) {
