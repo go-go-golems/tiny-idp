@@ -530,3 +530,135 @@ assertion authority: native registry plus mandatory baseline set
 test capabilities visible to JS: none; symbolic references only
 production mutation hooks: rejected
 ```
+
+## Step 5: Synthesize scripting, model checking, and static analysis into a refactoring design
+
+This step revisited the original identity-microkernel proposal after substantial
+assurance work had landed. It compared the proposed Goja configuration graph with
+the current interaction state, atomic store contracts, verification plan/compiler,
+runtime security monitor, executable state models, model-checking design, and
+static-analysis design.
+
+The principal result is that tiny-idp does not need an immediate universal
+workflow rewrite. It already has the right state-machine primitives. The proposed
+refactor first consolidates their vocabulary and transition authority through
+three linked data schemas, then extracts typed authorization proof boundaries and
+only later evaluates selective pure transition kernels.
+
+### Prompt Context
+
+**User prompt (verbatim):** "now look at tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer  and all that model checking and static analysis design work, and make a new document (you can put it in the TINYIDP-GOJA-001 ticket) about proposals to refactor / reorganize the current codebase to make it more amenable to static analysis / model checking / scriptability. Probably we can build it around a core grammar of steps and resources and such that can be more easily analyszed statically or logged / traced for model checking etc... Maybe we are also already in a great state . \n\nAnyway, do a deep thinking research and write deep analysis and design doc."
+
+**Assistant interpretation:** Assess the actual post-hardening architecture,
+synthesize the Goja, model-checking, and static-analysis programs, and design a
+refactor that improves all three without weakening native protocol security.
+
+**Inferred user intent:** Establish one coherent architectural direction so
+scripting and assurance tooling reinforce each other instead of creating
+parallel, drifting vocabularies and execution layers.
+
+### What I did
+
+- Read the complete code-quality review and textbook-authoring instructions and
+  defined a precise no-analogy textbook/RFC style.
+- Inventoried the full Goja ticket, its source research, implementation guide,
+  verification assessment, diary, and task ledger.
+- Mapped the current 22,870-line internal/pkg Go surface and largest control-flow
+  files.
+- Inspected interaction/store types and interfaces, provider authorization flow,
+  Goja verification compiler/module, VerificationPlan, strict scenario driver,
+  security trace/monitor, Rapid state model, and Porcupine histories.
+- Cross-read the primary model-checking and static-analysis system designs.
+- Identified six concrete architectural friction points with file locations,
+  runtime/assurance consequences, and cleanup sketches.
+- Wrote the 1,129-line
+  `design-doc/02-assurance-oriented-core-grammar-and-codebase-refactoring-proposal.md`.
+- Added Phase 9 with thirteen tasks and stable task IDs.
+- Corrected the ticket index to acknowledge the verification implementation that
+  now exists and distinguish it from the unimplemented configuration graph.
+
+### Why
+
+- Stable transition vocabulary is now the largest shared gap across scripting,
+  model checking, static analysis, scenarios, and traces.
+- A generic interpreted workflow could improve extensibility while weakening the
+  trusted protocol boundary and erasing types/effects required by analyzers.
+- Existing server-owned interaction state and named atomic operations should be
+  preserved and made more explicit rather than replaced.
+
+### What worked
+
+- The current code provided concrete instances of the proposed architecture:
+  data-only VerificationPlan compilation, typed interaction obligations, one-time
+  consume, structured traces, and executable reference models.
+- The original Goja graph already separates serializable configuration from
+  Go-owned resources and capabilities.
+- The model/static tickets supplied compatible stable-ID, evidence-envelope,
+  counterexample, abstract-domain, and transition-authority concepts.
+
+### What didn't work
+
+N/A. Some command output was intentionally truncated because the combined code
+inventory exceeded the terminal output budget; all targeted files were then read
+directly in focused ranges.
+
+### What I learned
+
+- The desired “core grammar” should be a typed assurance IR and registry before
+  it becomes an execution engine.
+- Configuration graph, native transition catalog, and scenario/trace records
+  require linked but distinct schemas.
+- Unexported proof types at irreversible sinks can simplify static analysis
+  without pretending to be a formal proof system.
+- Generated model skeletons and analyzer metadata reduce vocabulary drift, but
+  human authors must still define abstractions, invariants, and transfer
+  semantics.
+
+### What was tricky to build
+
+- The design had to improve scriptability without making protocol validation,
+  credential handling, atomicity, or artifact issuance scriptable.
+- A single grammar had to support runtime identifiers, finite formal atoms, and
+  source-level code authorities without conflating their representations.
+- The proposal needed useful refactoring steps while honestly concluding that
+  the current architecture is already good enough to avoid a broad rewrite.
+
+### What warrants a second pair of eyes
+
+- Review the three-schema split and whether `internal/assurance` is the right
+  initial package boundary.
+- Review the authorization proof type and artifact sink before implementation.
+- Review whether transition results can generate complete trace events without
+  obscuring Fosite transaction boundaries.
+- Review public-package timing for `idpgraph`; the recommendation is internal
+  until two consumers and one vertical slice stabilize it.
+
+### What should be done in the future
+
+1. Complete Phase 9 vocabulary/crosswalk work without changing provider behavior.
+2. Add typed VerificationPlan codecs as the first executable consumer.
+3. Consolidate transition tracing before refactoring provider control flow.
+4. Introduce the authorization proof boundary under characterization and
+   differential tests.
+5. Materialize the Goja graph only after the native catalog is stable.
+
+### Code review instructions
+
+- Read the new document's Executive Summary, current-state assessment, three
+  schemas, authorization slice, migration phases, and final assessment.
+- Verify evidence against `idpstore/types.go`, `idpstore/interfaces.go`,
+  `provider.go`, `verifyplan/plan.go`, `gojaverify/compiler.go`,
+  `securitytrace/trace.go`, and the model tests.
+- Confirm Phase 9 marks only the synthesis document complete.
+- Run `docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30`.
+
+### Technical details
+
+```text
+new design document: 1,129 lines
+current internal/pkg Go surface: 22,870 lines
+linked schemas: configuration graph, transition catalog, scenario/trace
+initial vertical slice: authorization interaction
+new tracked tasks: 13
+production code changes: none
+```

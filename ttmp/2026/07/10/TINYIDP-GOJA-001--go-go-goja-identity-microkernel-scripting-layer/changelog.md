@@ -52,3 +52,12 @@ Step 4 delivery: included the security verification scripting-plane assessment i
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/02-security-verification-scripting-plane-assessment.md — Uploaded focused assessment
+
+## 2026-07-11
+
+Added a 1,129-line assurance-oriented refactoring proposal that synthesizes the Goja graph, current verification implementation, model checking, static analysis, and runtime tracing around three linked schemas and a staged authorization vertical slice.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/02-assurance-oriented-core-grammar-and-codebase-refactoring-proposal.md — New synthesis architecture and phased refactoring plan
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 5 records evidence, reasoning, and review guidance

@@ -19,8 +19,8 @@ RelatedFiles:
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md
       Note: Chronological evidence and validation record
 ExternalSources: []
-Summary: Design ticket for adding a safe graph-compiled go-go-goja scripting and policy layer to tiny-idp while preserving Go ownership of identity security invariants.
-LastUpdated: 2026-07-10T11:11:55.240944351-04:00
+Summary: Design and implementation ticket for a safe graph-compiled Goja identity layer plus an assurance-oriented grammar shared by scripting, static analysis, model checking, scenarios, and runtime traces.
+LastUpdated: 2026-07-12T02:10:00Z
 WhatFor: Planning and implementing the tiny-idp identity-microkernel scripting layer.
 WhenToUse: Start here when reviewing, implementing, or resuming TINYIDP-GOJA-001.
 ---
@@ -47,6 +47,8 @@ multi-actor flows follow as native block phases.
 ## Key links
 
 - [Analysis, design, and implementation guide](design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md)
+- [Assurance-oriented core grammar and refactoring proposal](design-doc/02-assurance-oriented-core-grammar-and-codebase-refactoring-proposal.md)
+- [Security verification scripting-plane assessment](reference/02-security-verification-scripting-plane-assessment.md)
 - [Investigation diary](reference/01-investigation-diary.md)
 - [Colleague identity-microkernel research](sources/01-colleague-identity-microkernel-research.md)
 - [Implementation tasks](tasks.md)
@@ -54,15 +56,18 @@ multi-actor flows follow as native block phases.
 
 ## Current status
 
-Research, design, docmgr validation, and reMarkable delivery are complete.
-Implementation has not started. The review bundle is available at
+Research, initial design, docmgr validation, and reMarkable delivery are
+complete. The pure-Go `VerificationPlan`, isolated `tinyidp/verify` Goja compiler
+module, native runner, and strict-provider scenario driver now exist. The
+configuration graph, policy runtime pool, materializer, and general challenge
+engine have not been implemented. The review bundle is available at
 `/ai/2026/07/10/TINYIDP-GOJA-001` as `TINYIDP GOJA 001 Identity Microkernel
 Scripting Design.pdf`.
 
-The first owner decision is whether tiny-idp may raise its minimum Go version to
-match the current go-go-goja module. Phase 0 should then prove explicit module
-isolation, program reuse, runtime ownership, and deadline interruption before
-any public JavaScript API is frozen.
+The new refactoring proposal recommends consolidating stable resource, fact,
+obligation, step, effect, outcome, observation, and property identifiers before
+introducing a general graph executor. The first vertical slice is the existing
+authorization interaction, preserving native Fosite and storage semantics.
 
 ## Key decisions
 
