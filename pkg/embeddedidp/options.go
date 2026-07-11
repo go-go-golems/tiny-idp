@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/manuel/tinyidp/internal/keys"
@@ -20,8 +22,11 @@ const (
 )
 
 type CookieConfig struct {
-	Secure   bool
-	SameSite http.SameSite
+	Secure      bool
+	SameSite    http.SameSite
+	SessionName string
+	CSRFName    string
+	Path        string
 }
 
 type TokenConfig struct {
@@ -67,8 +72,18 @@ func (o Options) Validate(ctx context.Context) error {
 	if err := oidcmeta.ValidateIssuer(o.Issuer, mode); err != nil {
 		return err
 	}
+	issuerURL, err := url.Parse(o.Issuer)
+	if err != nil {
+		return fmt.Errorf("parse issuer for cookie configuration: %w", err)
+	}
+	if o.Cookie.Path != "" && !cookiePathCoversIssuer(o.Cookie.Path, issuerURL.EscapedPath()) {
+		return fmt.Errorf("cookie path %q does not cover issuer path %q", o.Cookie.Path, issuerURL.EscapedPath())
+	}
 	if o.Store == nil {
 		return fmt.Errorf("store is required")
+	}
+	if err := validateCookieConfig(o.Cookie); err != nil {
+		return err
 	}
 	clients, err := o.Store.ListClients(ctx)
 	if err != nil {
@@ -194,6 +209,32 @@ func (o Options) Validate(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func validateCookieConfig(cfg CookieConfig) error {
+	for label, name := range map[string]string{"session": cfg.SessionName, "csrf": cfg.CSRFName} {
+		if name == "" {
+			continue
+		}
+		if strings.TrimSpace(name) != name || strings.ContainsAny(name, "\x00\r\n\t ;,=") {
+			return fmt.Errorf("%s cookie name is invalid", label)
+		}
+	}
+	if cfg.SessionName != "" && cfg.SessionName == cfg.CSRFName {
+		return fmt.Errorf("session and csrf cookie names must differ")
+	}
+	if cfg.Path != "" && (!strings.HasPrefix(cfg.Path, "/") || strings.ContainsAny(cfg.Path, "\x00\r\n;")) {
+		return fmt.Errorf("cookie path must be an absolute HTTP path")
+	}
+	return nil
+}
+
+func cookiePathCoversIssuer(cookiePath, issuerPath string) bool {
+	if cookiePath == "/" {
+		return true
+	}
+	issuerPath = strings.TrimSuffix(issuerPath, "/")
+	return issuerPath == cookiePath || strings.HasPrefix(issuerPath, strings.TrimSuffix(cookiePath, "/")+"/")
 }
 
 func normalizeMaintenance(cfg MaintenanceConfig, clients []idpstore.Client) (MaintenanceConfig, error) {

@@ -110,7 +110,7 @@ func interactionTraceID(record idpstore.InteractionRecord) string {
 }
 
 func (p *Provider) browserSessionHash(r *http.Request) []byte {
-	cookie, err := r.Cookie(sessionCookieName)
+	cookie, err := r.Cookie(p.sessionCookieName)
 	if err != nil || cookie.Value == "" {
 		return nil
 	}
@@ -118,7 +118,7 @@ func (p *Provider) browserSessionHash(r *http.Request) []byte {
 }
 
 func (p *Provider) browserBindingHash(r *http.Request) []byte {
-	cookie, err := r.Cookie(csrfCookieName)
+	cookie, err := r.Cookie(p.csrfCookieName)
 	if err != nil || cookie.Value == "" {
 		return nil
 	}

@@ -280,6 +280,10 @@ func TestStrictProviderHasNoDebugRoute(t *testing.T) {
 }
 
 func fetchCSRF(t *testing.T, baseURL string, form url.Values) (string, *http.Cookie) {
+	return fetchCSRFNamed(t, baseURL, form, "tinyidp_csrf")
+}
+
+func fetchCSRFNamed(t *testing.T, baseURL string, form url.Values, cookieName string) (string, *http.Cookie) {
 	t.Helper()
 	q := cloneValues(form)
 	q.Del("login")
@@ -301,11 +305,11 @@ func fetchCSRF(t *testing.T, baseURL string, form url.Values) (string, *http.Coo
 	}
 	form.Set("interaction", interaction[1])
 	for _, c := range resp.Cookies() {
-		if c.Name == "tinyidp_csrf" {
+		if c.Name == cookieName {
 			return m[1], c
 		}
 	}
-	t.Fatal("csrf cookie not found")
+	t.Fatalf("csrf cookie %q not found", cookieName)
 	return "", nil
 }
 

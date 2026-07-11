@@ -11,7 +11,7 @@ import (
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
-const sessionCookieName = "tinyidp_session"
+const defaultSessionCookieName = "tinyidp_session"
 
 type browserSessionState string
 
@@ -35,12 +35,12 @@ func (p *Provider) createBrowserSession(w http.ResponseWriter, r *http.Request, 
 	if err := p.store.CreateSession(r.Context(), idpstore.Session{IDHash: hash, UserID: u.ID, AuthTime: authTime, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(p.sessionTTL)}); err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: handle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.sessionTTL.Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: p.sessionCookieName, Value: handle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.sessionTTL.Seconds())})
 	return nil
 }
 
 func (p *Provider) readBrowserSession(r *http.Request) (idpstore.User, idpstore.Session, browserSessionState, error) {
-	c, err := r.Cookie(sessionCookieName)
+	c, err := r.Cookie(p.sessionCookieName)
 	if err != nil || c.Value == "" {
 		return idpstore.User{}, idpstore.Session{}, browserSessionAbsent, nil
 	}

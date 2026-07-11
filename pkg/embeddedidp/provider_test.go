@@ -215,3 +215,40 @@ func TestNewRejectsCanceledContext(t *testing.T) {
 		t.Fatal("expected canceled context error")
 	}
 }
+
+func TestCookieConfigurationValidation(t *testing.T) {
+	store := memory.New()
+	tests := []struct {
+		name   string
+		issuer string
+		cookie embeddedidp.CookieConfig
+	}{
+		{name: "same names", issuer: "http://127.0.0.1:5556/idp", cookie: embeddedidp.CookieConfig{SessionName: "shared", CSRFName: "shared"}},
+		{name: "invalid session name", issuer: "http://127.0.0.1:5556/idp", cookie: embeddedidp.CookieConfig{SessionName: "bad name"}},
+		{name: "relative path", issuer: "http://127.0.0.1:5556/idp", cookie: embeddedidp.CookieConfig{Path: "idp"}},
+		{name: "path does not cover issuer", issuer: "http://127.0.0.1:5556/idp", cookie: embeddedidp.CookieConfig{Path: "/other"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := embeddedidp.New(context.Background(), embeddedidp.Options{Issuer: tt.issuer, Store: store, Cookie: tt.cookie})
+			if err == nil {
+				t.Fatal("expected invalid cookie configuration to be rejected")
+			}
+		})
+	}
+}
+
+func TestCookiePathMayBroadenIssuerPathForCombinedHost(t *testing.T) {
+	store := memory.New()
+	p, err := embeddedidp.New(context.Background(), embeddedidp.Options{
+		Issuer: "http://127.0.0.1:5556/idp",
+		Store:  store,
+		Cookie: embeddedidp.CookieConfig{SessionName: "xapp_idp_session", CSRFName: "xapp_idp_csrf", Path: "/"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}

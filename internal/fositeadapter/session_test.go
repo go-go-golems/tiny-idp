@@ -127,6 +127,82 @@ func TestBrowserSessionSilentAuthorizeAndPromptNone(t *testing.T) {
 	}
 }
 
+func TestConfiguredCookiesCoexistWithHostApplicationCookie(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	_ = st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}})
+	_ = st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"})
+	key, _ := keys.GenerateRSA("kid-1", time.Now())
+	_ = st.CreateSigningKey(ctx, key)
+	p, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+		Issuer:            "http://127.0.0.1:5556/idp",
+		Store:             st,
+		SecretKey:         []byte("session-secret-key-32-bytes!!!!!"),
+		SessionCookieName: "xapp_idp_session",
+		CSRFCookieName:    "xapp_idp_csrf",
+		CookiePath:        "/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+
+	form := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	idpBaseURL := ts.URL + "/idp"
+	csrf, csrfCookie := fetchCSRFNamed(t, idpBaseURL, form, "xapp_idp_csrf")
+	if csrfCookie.Path != "/" {
+		t.Fatalf("csrf cookie path = %q, want /", csrfCookie.Path)
+	}
+	form.Set("csrf_token", csrf)
+
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	req, _ := http.NewRequest(http.MethodPost, idpBaseURL+"/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "xapp_session", Value: "host-owned-session"})
+	req.AddCookie(csrfCookie)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login status=%d", resp.StatusCode)
+	}
+
+	var sessionCookie *http.Cookie
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "tinyidp_session" || cookie.Name == "tinyidp_csrf" {
+			t.Fatalf("provider emitted default cookie %q despite explicit names", cookie.Name)
+		}
+		if cookie.Name == "xapp_idp_session" {
+			sessionCookie = cookie
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("configured session cookie missing")
+	}
+	if sessionCookie.Path != "/" {
+		t.Fatalf("session cookie path = %q, want /", sessionCookie.Path)
+	}
+
+	q := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	q.Del("login")
+	q.Set("state", "coexistence-state-1234567890")
+	silentReq, _ := http.NewRequest(http.MethodGet, idpBaseURL+"/authorize?"+q.Encode(), nil)
+	silentReq.AddCookie(&http.Cookie{Name: "xapp_session", Value: "host-owned-session"})
+	silentReq.AddCookie(sessionCookie)
+	silent, err := client.Do(silentReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer silent.Body.Close()
+	location, _ := url.Parse(silent.Header.Get("Location"))
+	if (silent.StatusCode != http.StatusFound && silent.StatusCode != http.StatusSeeOther) || location.Query().Get("code") == "" {
+		t.Fatalf("silent authorize with coexisting cookies failed: status=%d location=%s", silent.StatusCode, location.String())
+	}
+}
+
 func authorizeForm(verifier string) url.Values {
 	return url.Values{"response_type": {"code"}, "client_id": {"spa"}, "redirect_uri": {"http://localhost/callback"}, "scope": {"openid"}, "state": {"state-1234567890"}, "nonce": {"nonce-1234567890"}, "code_challenge": {s256(verifier)}, "code_challenge_method": {"S256"}, "login": {"alice"}}
 }

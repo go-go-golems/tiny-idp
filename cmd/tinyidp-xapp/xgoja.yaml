@@ -92,6 +92,8 @@ artifacts:
       - application-routes
       - frontend-assets
       - object-bundle
+  # Asset sources require this marker in addition to the runtime-package
+  # source list so the generated host receives an embedded fs.FS.
   - id: frontend-embedded-assets
     type: embedded-assets
     sources:

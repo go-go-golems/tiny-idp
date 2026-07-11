@@ -9,11 +9,11 @@ import (
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
-const csrfCookieName = "tinyidp_csrf"
+const defaultCSRFCookieName = "tinyidp_csrf"
 
 func (p *Provider) issueCSRF(w http.ResponseWriter, r *http.Request, interactionHandle string) (string, []byte, error) {
 	nonce := ""
-	if cookie, err := r.Cookie(csrfCookieName); err == nil {
+	if cookie, err := r.Cookie(p.csrfCookieName); err == nil {
 		nonce = cookie.Value
 	}
 	if nonce == "" {
@@ -23,12 +23,12 @@ func (p *Provider) issueCSRF(w http.ResponseWriter, r *http.Request, interaction
 			return "", nil, err
 		}
 	}
-	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: nonce, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.interactionTTL.Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: p.csrfCookieName, Value: nonce, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.interactionTTL.Seconds())})
 	return p.csrfMAC(nonce, interactionHandle), idpstore.HashSecret(p.csrfKey, nonce), nil
 }
 
 func (p *Provider) validateCSRF(r *http.Request, interactionHandle string) bool {
-	cookie, err := r.Cookie(csrfCookieName)
+	cookie, err := r.Cookie(p.csrfCookieName)
 	if err != nil || cookie.Value == "" {
 		return false
 	}
@@ -47,6 +47,9 @@ func (p *Provider) csrfMAC(nonce, interactionHandle string) string {
 }
 
 func (p *Provider) cookiePath() string {
+	if p.cookiePathValue != "" {
+		return p.cookiePathValue
+	}
 	path := p.issuer.URL.EscapedPath()
 	if path == "" {
 		return "/"

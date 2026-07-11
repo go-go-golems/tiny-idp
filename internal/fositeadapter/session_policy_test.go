@@ -105,7 +105,7 @@ func TestBrowserSessionStorageFailureDoesNotRenderLogin(t *testing.T) {
 		"code_challenge_method": {"S256"},
 	}
 	request, _ := http.NewRequest(http.MethodGet, server.URL+"/authorize?"+query.Encode(), nil)
-	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "existing-browser-session"})
+	request.AddCookie(&http.Cookie{Name: defaultSessionCookieName, Value: "existing-browser-session"})
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)

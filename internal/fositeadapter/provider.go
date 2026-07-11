@@ -59,16 +59,19 @@ type Options struct {
 	// ClientSecrets optionally supplies plaintext client secrets for callers that
 	// are converting legacy/dev config into Fosite's BCrypt client store. The
 	// production embedded API should prefer BCrypt hashes in idpstore.Client.SecretHash.
-	ClientSecrets  map[string]string
-	CookieSecure   bool
-	CookieSameSite http.SameSite
-	Audit          idp.Sink
-	Consent        idp.ConsentPolicy
-	RateLimiter    idp.RateLimiter
-	ClientAddress  idp.ClientAddressResolver
-	Authenticator  idp.PasswordAuthenticator
-	PasswordPolicy idp.PasswordAcceptancePolicy
-	PasswordWork   idp.PasswordWorkConfig
+	ClientSecrets     map[string]string
+	CookieSecure      bool
+	CookieSameSite    http.SameSite
+	SessionCookieName string
+	CSRFCookieName    string
+	CookiePath        string
+	Audit             idp.Sink
+	Consent           idp.ConsentPolicy
+	RateLimiter       idp.RateLimiter
+	ClientAddress     idp.ClientAddressResolver
+	Authenticator     idp.PasswordAuthenticator
+	PasswordPolicy    idp.PasswordAcceptancePolicy
+	PasswordWork      idp.PasswordWorkConfig
 	// AuthorizePersistenceHook is a test-only failpoint hook for the durable
 	// authorization response lifecycle. Production callers should leave it nil.
 	AuthorizePersistenceHook func(point string) error
@@ -79,27 +82,30 @@ type Options struct {
 }
 
 type Provider struct {
-	issuer           oidcmeta.Issuer
-	store            idpstore.Store
-	fositeStore      *fositememory.MemoryStore
-	sqlStore         *sqlFositeStore
-	oauth2           fosite.OAuth2Provider
-	config           *fosite.Config
-	mode             idpstore.Mode
-	csrfKey          []byte
-	cookieSecure     bool
-	cookieSameSite   http.SameSite
-	audit            idp.Sink
-	securityEvents   securitytrace.Sink
-	consent          idp.ConsentPolicy
-	rateLimiter      idp.RateLimiter
-	clientAddress    idp.ClientAddressResolver
-	authenticator    idp.PasswordAuthenticator
-	auditFailures    atomic.Uint64
-	securityFailures atomic.Uint64
-	sessionTTL       time.Duration
-	interactionTTL   time.Duration
-	clock            func() time.Time
+	issuer            oidcmeta.Issuer
+	store             idpstore.Store
+	fositeStore       *fositememory.MemoryStore
+	sqlStore          *sqlFositeStore
+	oauth2            fosite.OAuth2Provider
+	config            *fosite.Config
+	mode              idpstore.Mode
+	csrfKey           []byte
+	cookieSecure      bool
+	cookieSameSite    http.SameSite
+	sessionCookieName string
+	csrfCookieName    string
+	cookiePathValue   string
+	audit             idp.Sink
+	securityEvents    securitytrace.Sink
+	consent           idp.ConsentPolicy
+	rateLimiter       idp.RateLimiter
+	clientAddress     idp.ClientAddressResolver
+	authenticator     idp.PasswordAuthenticator
+	auditFailures     atomic.Uint64
+	securityFailures  atomic.Uint64
+	sessionTTL        time.Duration
+	interactionTTL    time.Duration
+	clock             func() time.Time
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -217,6 +223,18 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if opts.CookieSameSite == 0 {
 		opts.CookieSameSite = http.SameSiteLaxMode
 	}
+	if opts.SessionCookieName == "" {
+		opts.SessionCookieName = defaultSessionCookieName
+	}
+	if opts.CSRFCookieName == "" {
+		opts.CSRFCookieName = defaultCSRFCookieName
+	}
+	if !validCookieName(opts.SessionCookieName) || !validCookieName(opts.CSRFCookieName) || opts.SessionCookieName == opts.CSRFCookieName {
+		return nil, fmt.Errorf("fositeadapter: session and csrf cookie names must be distinct valid cookie names")
+	}
+	if opts.CookiePath != "" && (!strings.HasPrefix(opts.CookiePath, "/") || strings.ContainsAny(opts.CookiePath, "\x00\r\n;")) {
+		return nil, fmt.Errorf("fositeadapter: cookie path must be an absolute HTTP path")
+	}
 
 	sendDebug := opts.Mode != idpstore.ProductionMode
 	cfg := &fosite.Config{
@@ -242,7 +260,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -259,6 +277,10 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		compose.OAuth2TokenIntrospectionFactory,
 	)
 	return p, nil
+}
+
+func validCookieName(name string) bool {
+	return name != "" && strings.TrimSpace(name) == name && !strings.ContainsAny(name, "\x00\r\n\t ;,=")
 }
 
 func (p *Provider) now() time.Time { return p.clock().UTC() }
