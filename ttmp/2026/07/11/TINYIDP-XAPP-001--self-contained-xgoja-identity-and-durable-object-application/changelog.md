@@ -11,3 +11,4 @@
 - Scoped application identities and SQL uniqueness to the OIDC issuer-and-subject tuple in go-go-goja (`43a69d7`).
 - Published the index, design, implementation diary, tasks, and changelog as `TINYIDP-XAPP-001 Self Contained Identity Objects e93d304.pdf` under `/ai/2026/07/11/TINYIDP-XAPP-001` on reMarkable.
 - Added and generated the `cmd/tinyidp-xapp` Glazed command, xgoja runtime package, trusted routes, bounded USER_STATE object, pnpm/Bootstrap frontend shell, embedded assets, declarations, and generation tests (`5176052`).
+- Added configurable issuer-aware IdP cookie names and paths with host-session coexistence tests; corrected and documented the xgoja embedded-assets generation contract (`577f253`).

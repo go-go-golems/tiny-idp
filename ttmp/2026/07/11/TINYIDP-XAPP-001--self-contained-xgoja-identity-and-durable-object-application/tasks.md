@@ -26,7 +26,7 @@
 
 ## Phase 2 — tiny-idp application embedding
 
-- [ ] Add cookie name/path configuration with issuer-path default and coexistence tests. <!-- t:o3fe -->
+- [x] Add cookie name/path configuration with issuer-path default and coexistence tests. <!-- t:o3fe -->
 - [ ] Define idempotent initialization for schema, secrets, signing key, RP client, and first user. <!-- t:8r8o -->
 - [ ] Add explicit serve refusal for missing initialization or ephemeral production state. <!-- t:fegd -->
 - [ ] Configure public PKCE client with exact callback and scopes. <!-- t:3vlx -->

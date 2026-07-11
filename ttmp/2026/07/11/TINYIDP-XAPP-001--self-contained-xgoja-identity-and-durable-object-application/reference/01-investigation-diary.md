@@ -499,3 +499,118 @@ Committed in tiny-idp:
 ```
 
 This completes the generation seam, not the product lifecycle. The next open task is the custom host that owns persistent tiny-idp, application auth/session stores, the binding key and manager, HostServices injection, route loading, listener, readiness, maintenance, and shutdown.
+
+## Step 19 — Make IdP cookies explicit at the combined-host boundary
+
+Continued with Phase 2 task `o3fe`, because a combined origin has at least three
+independent browser-state domains: the tiny-idp login session, the tiny-idp CSRF
+nonce, and the application's own session. Fixed literal cookie names in the
+Fosite adapter would make independently configured applications collide and
+would prevent a host from stating its cookie ownership policy explicitly.
+
+Extended `embeddedidp.CookieConfig` with `SessionName`, `CSRFName`, and `Path`.
+The embedded provider passes these values into the adapter, and every read and
+write of either cookie now uses provider-owned configuration. Defaults preserve
+the existing names and derive the path from the issuer URL. A host may broaden
+the path (for example, `/`) when necessary, but configuration validation rejects:
+
+- equal session and CSRF names;
+- whitespace and HTTP separator/control characters in names;
+- relative or header-unsafe paths;
+- a configured path that does not contain the issuer path.
+
+The adapter repeats the direct-caller validation rather than relying only on the
+public embedding layer. This protects internal tests and any future package-level
+composition from constructing an unusable cookie policy.
+
+Initial formatting and focused tests passed before the new scenario was added:
+
+```text
+go test ./internal/fositeadapter ./pkg/embeddedidp -count=1
+ok
+```
+
+Added a full cookie coexistence scenario. It configures issuer `/idp`, names the
+IdP cookies `xapp_idp_session` and `xapp_idp_csrf`, supplies an unrelated
+`xapp_session=host-owned-session`, completes password login, and performs silent
+authorization with both the application and IdP session cookies. It also asserts
+that no default tiny-idp names are emitted and both configured cookies carry the
+requested path.
+
+The first run returned `404 page not found` while fetching CSRF. This was useful
+evidence: direct adapter routes are mounted under the configured issuer path, so
+the test had incorrectly requested `/authorize` instead of `/idp/authorize`.
+Changed the scenario base URL to include `/idp`.
+
+The second run issued a valid authorization code with HTTP 303, while the test
+only admitted HTTP 302. Updated the acceptance condition to match the provider's
+existing successful redirect contract (`Found` or `See Other`). The focused
+suite then passed:
+
+```text
+ok github.com/manuel/tinyidp/internal/fositeadapter
+ok github.com/manuel/tinyidp/pkg/embeddedidp
+```
+
+## Step 20 — Remove a stale generation side effect without losing embedded assets
+
+`git status --short` revealed an untracked root-level
+`internal/xgojaruntime/xgoja_embed/assets` tree. This was a stale artifact from
+the earlier generation attempt that ran before artifact outputs were made
+repository-root-qualified. It duplicated the checked-in generated package under
+`cmd/tinyidp-xapp/internal/xgojaruntime`.
+
+I first removed the `embedded-assets` artifact marker to test whether the runtime
+package's own source list was sufficient. Regeneration proved that this was not
+correct: xgoja intentionally uses the separate marker to decide whether to copy
+asset sources and inject `EmbeddedAssets` into `app.HostOptions`. Restored the
+marker, added a comment explaining the non-obvious two-part contract, removed
+only the known stale generated files, and regenerated.
+
+The final reproducibility check established all three conditions:
+
+```text
+go generate ./cmd/tinyidp-xapp
+xgoja generate ok: cmd/tinyidp-xapp/internal/xgojaruntime
+
+find internal/xgojaruntime -type f
+(no output)
+
+git diff --exit-code -- \
+  cmd/tinyidp-xapp/internal/xgojaruntime/xgoja_runtime.gen.go \
+  cmd/tinyidp-xapp/app/types/xgoja-modules.d.ts
+(exit 0)
+```
+
+The generated package still contains `//go:embed all:xgoja_embed/assets/*` and
+passes `embeddedAssets` to the host. The correction therefore removes accidental
+root output without weakening the single-binary asset contract.
+
+## Step 21 — Run the repository-wide gate for the cookie checkpoint
+
+Ran the entire tiny-idp Go suite through the shared `go.work` after the focused
+tests and regeneration check:
+
+```text
+go test ./... -count=1
+```
+
+All command, adapter, authn, persistence, scenario, generated runtime, static
+analysis helper, and external-consumer packages passed. No private module cache
+or nested module was introduced. The two pre-existing untracked OIDF source
+trees under the unrelated production-review ticket remain deliberately
+unstaged.
+
+## Step 22 — Commit the cookie boundary checkpoint
+
+Reviewed the implementation diff, ran `git diff --check`, staged only the eleven
+implementation, focused-test, and xgoja-spec files, and committed:
+
+```text
+577f253 IDP: configure embedded cookie ownership
+```
+
+The ticket documents and unrelated OIDF research trees were not included in the
+implementation commit. Task `o3fe` is complete based on the focused coexistence
+test, invalid-configuration table, deterministic generation check, and full
+repository test gate above.

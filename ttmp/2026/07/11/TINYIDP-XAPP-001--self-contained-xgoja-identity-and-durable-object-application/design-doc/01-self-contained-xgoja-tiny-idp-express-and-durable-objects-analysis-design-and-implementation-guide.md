@@ -609,6 +609,14 @@ Extend cookie configuration with a path defaulting to the issuer path (`/idp` in
 this product). This reduces unnecessary IdP-cookie exposure to application paths.
 Add tests for issuer prefixes, cookie paths, and coexistence with `app_session`.
 
+Implementation checkpoint: `embeddedidp.CookieConfig` now exposes distinct
+session and CSRF names plus an optional path. An empty path retains the
+issuer-derived least-exposure default. Both the embedding API and the lower
+Fosite adapter reject invalid or colliding names, unsafe paths, and paths that do
+not cover the issuer. The integration test carries an unrelated host session
+through login and silent authorization, proving that the application and IdP
+cookies can coexist without name interpretation or accidental replacement.
+
 ## 8. xgoja build design
 
 ### 8.1 Proposed specification
