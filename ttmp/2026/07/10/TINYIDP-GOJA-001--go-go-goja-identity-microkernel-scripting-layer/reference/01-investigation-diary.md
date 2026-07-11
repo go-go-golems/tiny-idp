@@ -547,7 +547,13 @@ only later evaluates selective pure transition kernels.
 
 ### Prompt Context
 
-**User prompt (verbatim):** "now look at tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer  and all that model checking and static analysis design work, and make a new document (you can put it in the TINYIDP-GOJA-001 ticket) about proposals to refactor / reorganize the current codebase to make it more amenable to static analysis / model checking / scriptability. Probably we can build it around a core grammar of steps and resources and such that can be more easily analyszed statically or logged / traced for model checking etc... Maybe we are also already in a great state . \n\nAnyway, do a deep thinking research and write deep analysis and design doc."
+**User prompt (verbatim):**
+
+```text
+now look at tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer  and all that model checking and static analysis design work, and make a new document (you can put it in the TINYIDP-GOJA-001 ticket) about proposals to refactor / reorganize the current codebase to make it more amenable to static analysis / model checking / scriptability. Probably we can build it around a core grammar of steps and resources and such that can be more easily analyszed statically or logged / traced for model checking etc... Maybe we are also already in a great state .
+
+Anyway, do a deep thinking research and write deep analysis and design doc.
+```
 
 **Assistant interpretation:** Assess the actual post-hardening architecture,
 synthesize the Goja, model-checking, and static-analysis programs, and design a
@@ -661,4 +667,88 @@ linked schemas: configuration graph, transition catalog, scenario/trace
 initial vertical slice: authorization interaction
 new tracked tasks: 13
 production code changes: none
+```
+
+## Step 6: Render and upload the assurance-core bundle
+
+This step published the updated GOJA ticket as one reMarkable PDF. The bundle
+orders the index and assurance-core proposal first, followed by the original
+scripting design, verification assessment, diary, tasks, and changelog.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Upload to remarkable."
+
+**Assistant interpretation:** Bundle and publish the complete updated GOJA ticket
+to its existing dated reMarkable folder.
+
+**Inferred user intent:** Read and annotate the synthesis together with the
+designs from which it was derived.
+
+### What I did
+
+- Dry-ran a seven-document bundle with ToC depth 2.
+- Attempted the real render and captured the Pandoc error.
+- Located a literal `\n` sequence in the diary's verbatim prompt text.
+- Replaced it with the actual paragraph break inside a fenced text block.
+- Re-ran the exact upload successfully.
+
+### Why
+
+The bundle name includes source commit `3267560`, making the rendered architecture
+traceable to repository state.
+
+### What worked
+
+```text
+OK: uploaded TINYIDP-GOJA-001 Assurance Core Grammar 3267560.pdf -> /ai/2026/07/10/TINYIDP-GOJA-001
+```
+
+### What didn't work
+
+The first real render failed before upload:
+
+```text
+Error: pandoc failed: Error producing PDF.
+! Undefined control sequence.
+l.6805 \n
+
+: exit status 43
+```
+
+The literal prompt encoding was the cause. Converting it to a fenced verbatim
+block with an actual blank line fixed the render.
+
+### What I learned
+
+Literal backslash commands in ordinary Markdown prose may survive into LaTeX and
+break PDF generation. Verbatim multi-paragraph prompts should use fenced text
+blocks with real line breaks.
+
+### What was tricky to build
+
+The dry run does not invoke Pandoc, so it validated input resolution and upload
+destination but could not expose the LaTeX rendering error.
+
+### What warrants a second pair of eyes
+
+Review the wide grammar, phase, and scriptability tables on the device.
+
+### What should be done in the future
+
+Use a unique commit-suffixed name for later material revisions so existing
+annotations are preserved.
+
+### Code review instructions
+
+Verify that the uploaded suffix matches `3267560` and that the diary contains no
+literal `\n` prompt encodings outside code blocks.
+
+### Technical details
+
+```text
+bundle inputs: 7 Markdown documents
+bundle name: TINYIDP-GOJA-001 Assurance Core Grammar 3267560.pdf
+remote destination: /ai/2026/07/10/TINYIDP-GOJA-001
+upload result: success after one render fix
 ```

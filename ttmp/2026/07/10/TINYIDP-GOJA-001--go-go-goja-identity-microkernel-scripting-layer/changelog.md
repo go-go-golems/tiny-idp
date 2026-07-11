@@ -61,3 +61,11 @@ Added a 1,129-line assurance-oriented refactoring proposal that synthesizes the 
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/02-assurance-oriented-core-grammar-and-codebase-refactoring-proposal.md — New synthesis architecture and phased refactoring plan
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 5 records evidence, reasoning, and review guidance
+
+## 2026-07-11
+
+Rendered and uploaded TINYIDP-GOJA-001 Assurance Core Grammar 3267560.pdf to /ai/2026/07/10/TINYIDP-GOJA-001; corrected one literal newline escape that initially broke Pandoc.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 6 records the render failure, correction, and successful upload
