@@ -398,3 +398,32 @@ Deliberately still open:
 - disabled-user end-to-end object denial;
 - request/value/nesting limits and quotas;
 - the generated runtime package and actual tiny-idp product host.
+
+## Step 17 — Validate, commit, and publish the checkpoint
+
+Related the design to eight concrete implementation files across the three repositories. The first docmgr relation attempt interpreted sibling `../go-go-goja` and `../go-go-objects` paths relative to the ticket directory and produced six missing-file warnings. Replaced those generated paths with explicit `ws:///go-go-goja/...` and `ws:///go-go-objects/...` anchors.
+
+Conclusive documentation validation:
+
+```text
+docmgr doctor --ticket TINYIDP-XAPP-001 --fail-on warning
+All checks passed
+
+git diff --check
+clean
+```
+
+Committed the ticket and preserved source packet in tiny-idp:
+
+```text
+e93d304 Docs: design self-contained identity object app
+```
+
+Uploaded one table-of-contents bundle containing the ticket index, 1,139-line design guide, 400-line diary, phased tasks, and changelog:
+
+```text
+TINYIDP-XAPP-001 Self Contained Identity Objects e93d304.pdf
+/ai/2026/07/11/TINYIDP-XAPP-001
+```
+
+The uploader returned `OK: uploaded`; no redundant cloud listing was performed.
