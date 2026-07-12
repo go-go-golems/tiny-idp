@@ -44,6 +44,13 @@ func TestInitializedApplicationUsesPersistentStoresAndIsReady(t *testing.T) {
 	if err := app.Ready(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	for path, want := range map[string]int{"/healthz": http.StatusOK, "/readyz": http.StatusOK} {
+		recorder := httptest.NewRecorder()
+		initializedHandler(app, 1024).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://app.example.test"+path, nil))
+		if recorder.Code != want {
+			t.Fatalf("%s status=%d", path, recorder.Code)
+		}
+	}
 	recorder := httptest.NewRecorder()
 	app.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://app.example.test/", nil))
 	if recorder.Code != http.StatusOK {

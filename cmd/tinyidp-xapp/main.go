@@ -67,6 +67,18 @@ func main() {
 	cobra.CheckErr(err)
 	root.AddCommand(initCobra)
 
+	initializedServe, err := NewServeInitializedCommand()
+	cobra.CheckErr(err)
+	initializedServeCobra, err := cli.BuildCobraCommandFromCommand(initializedServe,
+		cli.WithParserConfig(cli.CobraParserConfig{
+			AppName:           "tinyidp-xapp",
+			ShortHelpSections: []string{"default"},
+			MiddlewaresFunc:   cli.CobraCommandDefaultMiddlewares,
+		}),
+	)
+	cobra.CheckErr(err)
+	root.AddCommand(initializedServeCobra)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := root.ExecuteContext(ctx); err != nil {
