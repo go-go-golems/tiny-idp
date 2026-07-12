@@ -51,6 +51,7 @@ type DevelopmentApplication struct {
 	objects *durableobjects.Server
 	auth    *hostauth.Services
 	oidc    *observedRoundTripper
+	extras  []func(context.Context) error
 }
 
 func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationConfig) (_ *DevelopmentApplication, retErr error) {
@@ -159,8 +160,17 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 		return nil, errors.Wrap(err, "build application authentication services")
 	}
 	app.auth = authServices
+	if err := composeApplication(ctx, app, authFactory, cfg.StateRoot); err != nil {
+		return nil, err
+	}
+	return app, nil
+}
 
-	httpHost := gojahttp.NewHost(gojahttp.HostOptions{Auth: authServices.AuthOptions, RejectRawRoutes: true})
+func composeApplication(ctx context.Context, app *DevelopmentApplication, authFactory hostauth.ServiceFactory, stateRoot string) error {
+	if app == nil || app.idp == nil || app.auth == nil {
+		return errors.New("identity and application auth services are required")
+	}
+	httpHost := gojahttp.NewHost(gojahttp.HostOptions{Auth: app.auth.AuthOptions, RejectRawRoutes: true})
 	var configureErr error
 	bundle, err := xgojaruntime.NewBundle(xgojaruntime.Options{ConfigureServices: func(services *xgojaapp.HostServices) {
 		if configureErr != nil {
@@ -174,11 +184,11 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 		if configureErr != nil {
 			return
 		}
-		app.objects, configureErr = newDevelopmentObjectServer(ctx, services.Assets, cfg.StateRoot)
+		app.objects, configureErr = newDevelopmentObjectServer(ctx, services.Assets, stateRoot)
 		if configureErr != nil {
 			return
 		}
-		bindingKey, keyErr := loadOrCreateKey(filepath.Join(cfg.StateRoot, "secrets", "object-binding.key"))
+		bindingKey, keyErr := loadOrCreateKey(filepath.Join(stateRoot, "secrets", "object-binding.key"))
 		if keyErr != nil {
 			configureErr = keyErr
 			return
@@ -204,28 +214,28 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 		})
 	}})
 	if err != nil {
-		return nil, errors.Wrap(err, "create generated xgoja bundle")
+		return errors.Wrap(err, "create generated xgoja bundle")
 	}
 	if configureErr != nil {
-		return nil, errors.Wrap(configureErr, "configure generated host services")
+		return errors.Wrap(configureErr, "configure generated host services")
 	}
 	runtime, err := bundle.NewRuntime(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "create generated xgoja runtime")
+		return errors.Wrap(err, "create generated xgoja runtime")
 	}
 	app.runtime = runtime
 	if err := loadApplicationRoutes(runtime, bundle.Host.EmbeddedJSVerbs); err != nil {
-		return nil, errors.Wrap(err, "load trusted application routes")
+		return errors.Wrap(err, "load trusted application routes")
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/idp/", idpProvider.Handler())
-	for _, native := range authServices.NativeHandlers {
+	mux.Handle("/idp/", app.idp.Handler())
+	for _, native := range app.auth.NativeHandlers {
 		mux.Handle(native.Method+" "+native.Path, native.Handler)
 	}
 	mux.Handle("/", httpHost)
 	app.handler = mux
-	return app, nil
+	return nil
 }
 
 func (a *DevelopmentApplication) Handler() http.Handler {
@@ -270,6 +280,11 @@ func (a *DevelopmentApplication) Close(ctx context.Context) error {
 			first = err
 		}
 	}
+	for _, closeResource := range a.extras {
+		if err := closeResource(ctx); err != nil && first == nil {
+			first = err
+		}
+	}
 	return first
 }
 
@@ -285,9 +300,13 @@ func newDevelopmentObjectServer(ctx context.Context, assets *xgojaapp.AssetStore
 	if err != nil {
 		return nil, errors.Wrap(err, "read embedded object bundle")
 	}
+	objectRoot := filepath.Join(stateRoot, "objects")
+	if err := os.MkdirAll(objectRoot, 0o700); err != nil {
+		return nil, errors.Wrap(err, "create object storage root")
+	}
 	return durableobjects.NewServer(ctx, durableobjects.ServerOptions{
 		BundleSource:    string(source),
-		StorageRoot:     filepath.Join(stateRoot, "objects"),
+		StorageRoot:     objectRoot,
 		CPUTimeout:      2 * time.Second,
 		IdleTimeout:     time.Minute,
 		AlarmInterval:   time.Second,
