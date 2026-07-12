@@ -614,3 +614,237 @@ The ticket documents and unrelated OIDF research trees were not included in the
 implementation commit. Task `o3fe` is complete based on the focused coexistence
 test, invalid-configuration table, deterministic generation check, and full
 repository test gate above.
+
+## Step 23 — Build the first custom development host
+
+Started Phase 0 task `w8ei` and the Phase 4 composition seam by implementing a
+Go-owned development application rather than delegating lifecycle to the
+generated `serve` command. The custom host now constructs and owns:
+
+- an in-memory tiny-idp store with an exact public PKCE relying-party client;
+- one password-backed development user and an ephemeral RSA signing key;
+- an `embeddedidp.Provider` mounted below `/idp`;
+- an origin/path-restricted in-process OIDC transport for discovery, token
+  exchange, and JWKS retrieval;
+- application auth/session/audit/authorization services from `hostauth`;
+- one external `gojahttp.Host` with raw routes rejected;
+- the generated xgoja runtime package and its embedded assets;
+- a Go-owned Durable Objects server using SQLite under the selected state root;
+- an HMAC `BoundDispatcher` restricted to `USER_STATE`;
+- trusted route loading before the HTTP handler becomes available;
+- exact native `/auth/*` handlers, the IdP prefix, and the Express fallback in
+  one outer Go 1.22+ `ServeMux`;
+- reverse-order runtime, object, auth-store, and IdP shutdown.
+
+Added a Glazed `serve` command with explicit `--listen`, `--public-base-url`,
+`--state-root`, `--login`, and development-only `--password` fields. It starts a
+bounded `http.Server` with read-header, read, write, and idle timeouts and uses
+`errgroup` to coordinate serving with graceful context-driven shutdown. No
+environment lookup, nested module, or private Go cache was introduced.
+
+Added owner-only binding-key initialization at
+`<state-root>/secrets/object-binding.key`. Creation uses 32 random bytes,
+`O_CREATE|O_EXCL`, directory mode `0700`, and file mode `0600`. A second load
+returns the same bytes. This is the first persistent security root in the
+product host and prevents a restart from silently remapping every actor to a
+new physical object.
+
+The first compile exposed three mechanical issues: the standard and pkg/errors
+packages had the same import name, `cmds.WithFlags` accepts multiple
+`*fields.Definition` values rather than one variadic `fields.New` call, and the
+xgoja app package alias was missing. Corrected those directly. The focused
+command package then compiled and its prior tests passed.
+
+## Step 24 — Find and repair multi-provider HTTP-host composition
+
+The first real construction test failed while registering the Express module:
+
+```text
+http host service "go-go-goja-http.host" must be ExternalHostService,
+got []interface {}
+```
+
+This was a cross-provider contract failure. The custom host contributed its
+external HTTP host, and the Durable Objects capability also contributed an HTTP
+host value. `app.HostServices` correctly represents service keys as ordered
+multi-values, but the HTTP provider called the singular `HostService` accessor;
+that accessor returns the complete slice when more than one value exists.
+
+Changed go-go-goja's HTTP provider to consume `HostServiceValues`, validate each
+contribution, and select the first non-nil host deterministically. Added a
+regression test with two composed contributions and proved the custom host can
+then construct its runtime.
+
+The initial handler-level host test now proves:
+
+- `/` returns the generated HTML;
+- `/static/app.js` is served from embedded assets;
+- `/api/me` and `/api/object` reject unauthenticated access;
+- `/rpc/USER_STATE/injected` remains unavailable;
+- `/idp/.well-known/openid-configuration` publishes the exact combined-host
+  issuer.
+
+Ran the actual server under tmux on port `18787`, captured its pane, and queried
+the live listener. Results were `root=200`, `discovery=200`, and `private=401`.
+`/auth/login` returned a 302 to the embedded issuer with an exact callback,
+state, nonce, S256 PKCE challenge, and `openid profile email` scopes. Sent
+Ctrl-C through tmux, checked/killed the port with `lsof-who`, and removed the
+tmux session.
+
+## Step 25 — Extend the smoke test through login and stop on a repeated token failure
+
+Added an end-to-end `httptest` scenario with a real cookie jar. It follows
+`/auth/login` to the embedded credential form, extracts the interaction and
+CSRF values, submits Alice's password, follows the authorization callback,
+reads the application session, and is intended to write and reread the private
+object.
+
+The first run reached the callback with `error=access_denied`. The form helper
+had captured both submit-button values and retained the final `deny` value.
+Explicitly selecting `action=approve` corrected the harness and produced a real
+authorization code.
+
+The callback then failed at token exchange:
+
+```text
+401 oidc token exchange failed
+```
+
+The first protocol hypothesis was OAuth2 client-auth probing. Go's OAuth2
+client can probe HTTP Basic before retrying body parameters; a strict provider
+may consume a one-time code during a malformed first request. Changed
+go-go-goja's OIDC adapter to set `AuthStyleInParams` when `ClientSecret` is
+empty, with a focused public-client configuration test. Both the OIDC and HTTP
+provider suites passed, but the integrated tiny-idp exchange still returned the
+same generic 401.
+
+At that point two consecutive protocol-level corrections had not resolved the
+same failure. In accordance with the repository debugging rule, stopped without
+committing the incomplete host and reported:
+
+```text
+I think I'm stuck, let's TOUCH GRASS
+```
+
+The next authorized step is narrow observation of the failed token endpoint
+response. It must preserve the response body for the OAuth client, avoid logging
+tokens or credentials, and distinguish client authentication, redirect/PKCE,
+code lifecycle, and persistence errors before another implementation change.
+
+## Step 26 — Instrument the failed back channel and repair server metadata
+
+Added a development-only observing RoundTripper around the already restricted
+in-process transport. It buffers only failed responses, restores the body for
+the OAuth client, caps observation at 64 KiB, and records method, issuer-relative
+path, status, and error body. It never records request bodies, authorization
+codes, PKCE verifiers, cookies, or headers.
+
+The next vertical test produced the exact failure:
+
+```text
+POST /idp/token
+500
+{"error":"server_error","error_description":"resolve client address failed"}
+```
+
+The transport had supplied the outbound client-side `http.Request` directly to
+an `http.Handler`. Client-side requests do not carry server connection metadata,
+so `RemoteAddr` was empty and tiny-idp's fail-closed client-address resolver
+rejected the token request. This was unrelated to client authentication, PKCE,
+or authorization-code consumption.
+
+Changed `InProcessIssuerTransport` to clone the request into a server-facing
+view, set `RequestURI` from the absolute URL, and provide the explicit loopback
+peer `127.0.0.1:0` when no peer exists. The exact-origin and issuer-path checks
+still run before dispatch. Added a test that verifies both server metadata
+fields. The focused OIDC and HTTP-provider suites passed.
+
+The token exchange then succeeded and the test created an application session.
+
+## Step 27 — Define implicit-self authorization for actor-bound writes
+
+The authenticated object read returned `{}`, but the CSRF-protected write was
+denied with 403. The route uses action `user.self.update` and deliberately has no
+request-selected resource: its physical Durable Object identity is derived from
+the authenticated actor after authorization. The generic app authorizer had
+required an explicit `user` resource even for the self action.
+
+Refined the action contract as follows:
+
+```text
+user.self.update + no resource
+    => authenticated actor's implicit self; allow
+
+user.self.update + explicit resource
+    => require type=user and resource.id == actor.id
+```
+
+This does not allow selection of another object. Explicit resources retain the
+same equality check, while the no-resource form is appropriate only for trusted
+routes whose downstream service derives ownership from the enforced actor.
+Added the implicit-self positive case without weakening the existing
+other-user negative case.
+
+The complete vertical scenario then passed:
+
+```text
+/auth/login
+  -> /idp/authorize credential + CSRF interaction
+  -> /auth/callback with code
+  -> in-process /idp/token and /idp/jwks
+  -> xapp_session
+  -> GET /api/object                    200 {}
+  -> POST /api/object + X-CSRF-Token    200 {"message":"private"}
+  -> GET /api/object                    200 {"message":"private"}
+```
+
+## Step 28 — Eliminate the shadow Durable Objects manager
+
+After the successful path, `git status` showed an unexpected untracked
+`var/durable-objects/alarms.sqlite`. The provider constructed the manager from
+module configuration before looking up the host-supplied manager, then replaced
+the configured manager during module initialization. The losing manager still
+created storage and background resources.
+
+Reordered construction so external gateway service lookup happens first. When
+a host manager exists, module configuration is not allowed to instantiate a
+second manager. Added a regression test with an invalid configured bundle path
+and a sentinel storage root; loader construction succeeds via the external
+manager and the sentinel directory remains nonexistent. Removed the known
+generated `var/` artifact and verified subsequent product tests do not recreate
+it.
+
+Also strengthened the persistent binding-key initializer. Existing keys must
+be exactly 32 bytes and mode `0600`; new keys are synced before close; short or
+failed writes remove the incomplete file. Tests cover stable reload, exact
+length, owner-only creation, and rejection of loose existing permissions.
+
+## Step 29 — Validate and commit the first vertical product
+
+Conclusive full-suite gates:
+
+```text
+go-go-goja:    go test ./... -count=1    PASS
+go-go-objects: go test ./... -count=1    PASS
+tiny-idp:      go test ./... -count=1    PASS
+```
+
+The go-go-goja pre-commit hook additionally ran generation, golangci-lint,
+Glazed lint/vet, and its complete test suite. The go-go-objects pre-commit hook
+ran `GOWORK=off go test ./...`, golangci-lint, Glazed lint/vet, and logcopter
+validation. Product-focused `go vet ./cmd/tinyidp-xapp/...` also passed.
+
+Committed independently in dependency order:
+
+```text
+2d7878d  go-go-goja     HTTP: harden composed in-process OIDC hosts
+46ba195  go-go-objects  Objects: prefer host-owned manager without side effects
+3ca71e5  tiny-idp       App: run embedded identity object vertical slice
+```
+
+The implementation commits exclude ticket documents and the unrelated OIDF
+source trees. The product is now usable as a development vertical slice. It is
+not yet a production service: identity and application auth stores remain
+in-memory, initialization is not an operator command, aggregate readiness and
+backup/restore are absent, and the default development credential must not be
+used outside the explicitly labeled command.

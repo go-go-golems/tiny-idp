@@ -15,6 +15,12 @@ DocType: index
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/development_app.go
+      Note: Custom development lifecycle host, in-process OIDC, bound objects, route loading, and resource shutdown
+    - Path: repo://cmd/tinyidp-xapp/development_app_test.go
+      Note: Complete browser login, application session, CSRF write, private-object persistence, and raw-gateway denial proof
+    - Path: repo://cmd/tinyidp-xapp/serve.go
+      Note: Glazed development serve command with bounded HTTP timeouts and graceful shutdown
     - Path: repo://cmd/tinyidp-xapp/xgoja.yaml
       Note: Generated runtime and separate embedded-asset marker contract
     - Path: repo://internal/fositeadapter/csrf.go
@@ -29,12 +35,21 @@ RelatedFiles:
       Note: Public cookie ownership and issuer-path validation for combined hosts
     - Path: repo://pkg/embeddedidp/provider.go
       Note: Transfers the embedding cookie contract into the protocol adapter
+    - Path: ws://go-go-goja/pkg/gojahttp/auth/appauth/appauth.go
+      Note: Implicit-self authorization contract for actor-derived resources
+    - Path: ws://go-go-goja/pkg/gojahttp/auth/oidcauth/inprocess_transport.go
+      Note: Exact-origin in-process transport with valid server-side request metadata
+    - Path: ws://go-go-goja/pkg/xgoja/providers/http/http.go
+      Note: Ordered multi-provider external HTTP host composition
+    - Path: ws://go-go-objects/pkg/xgoja/providers/durableobjects/durableobjects.go
+      Note: Host manager precedence without configured-manager side effects
 ExternalSources: []
 Summary: Design and implementation program for a self-contained xgoja application combining tiny-idp, Express planned routes, an embedded frontend, and authenticated actor-bound Durable Objects.
 LastUpdated: 2026-07-11T18:45:00-04:00
 WhatFor: Track architecture, cross-repository implementation, security invariants, operational work, validation, and production release evidence.
 WhenToUse: Use when implementing or reviewing the integrated product host, OIDC boundary, app session, actor/object binding, xgoja runtime, frontend, persistence, or release gates.
 ---
+
 
 
 # Self-Contained xgoja Identity and Durable Object Application

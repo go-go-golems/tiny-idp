@@ -9,8 +9,8 @@
 - [x] Freeze v1 product story, URL layout, single-node deployment class, and non-goals. <!-- t:i785 -->
 - [x] Create product directory, xgoja runtime-package specification, route/object/frontend skeletons, and Glazed command root. <!-- t:21x5 -->
 - [x] Generate runtime package and TypeScript declarations from a clean workspace. <!-- t:18w8 -->
-- [ ] Build a minimal custom Go host with development tiny-idp, Express, assets, and durable objects. <!-- t:w8ei -->
-- [ ] Complete one login-to-private-object read/write vertical smoke test. <!-- t:m7ar -->
+- [x] Build a minimal custom Go host with development tiny-idp, Express, assets, and durable objects. <!-- t:w8ei -->
+- [x] Complete one login-to-private-object read/write vertical smoke test. <!-- t:m7ar -->
 - [ ] Obtain architecture and threat-model approval before persistence/product work. <!-- t:vzqy -->
 
 ## Phase 1 — Provider-neutral OIDC and in-process issuer transport
@@ -29,7 +29,7 @@
 - [x] Add cookie name/path configuration with issuer-path default and coexistence tests. <!-- t:o3fe -->
 - [ ] Define idempotent initialization for schema, secrets, signing key, RP client, and first user. <!-- t:8r8o -->
 - [ ] Add explicit serve refusal for missing initialization or ephemeral production state. <!-- t:fegd -->
-- [ ] Configure public PKCE client with exact callback and scopes. <!-- t:3vlx -->
+- [x] Configure public PKCE client with exact callback and scopes. <!-- t:3vlx -->
 - [ ] Construct production audit, limiter, address resolver, authenticator, and maintenance services. <!-- t:xb9m -->
 - [ ] Mount issuer under /idp and aggregate liveness/readiness. <!-- t:vecw -->
 - [ ] Schedule immediate and periodic maintenance under errgroup context. <!-- t:keba -->
@@ -38,7 +38,7 @@
 ## Phase 3 — Subject-bound durable objects
 
 - [x] Define provider-neutral Issuer+Subject application identity derivation. <!-- t:d5yg -->
-- [ ] Generate and persist an owner-only object-binding key. <!-- t:25dn -->
+- [x] Generate and persist an owner-only object-binding key. <!-- t:25dn -->
 - [x] Implement BoundDispatcher with allowed namespace policy. <!-- t:71id -->
 - [x] Add fetch/rpc-for-actor xgoja adapter and TypeScript declarations. <!-- t:eg3d -->
 - [x] Keep raw /rpc and /fetch gateways disabled in product mode. <!-- t:bbyu -->
@@ -50,20 +50,20 @@
 ## Phase 4 — Custom host and generated runtime composition
 
 - [x] Implement generated runtime-package xgoja.yaml with Express, assets, and durableobjects providers. <!-- t:6irf -->
-- [ ] Inject Go-owned HTTP host, auth services, object dispatcher, and asset resolver through HostServices. <!-- t:57m6 -->
-- [ ] Load route JS before accepting traffic and fail on partial registration. <!-- t:omdh -->
+- [x] Inject Go-owned HTTP host, auth services, object dispatcher, and asset resolver through HostServices. <!-- t:57m6 -->
+- [x] Load route JS before accepting traffic and fail on partial registration. <!-- t:omdh -->
 - [ ] Build outer ServeMux with duplicate-safe native mount contributions. <!-- t:gdgh -->
 - [ ] Add Glazed init, serve, doctor, backup, restore, and print-config commands. <!-- t:73t4 -->
-- [ ] Run HTTP server with TLS/proxy assumptions, timeouts, request limits, and graceful shutdown. <!-- t:2fai -->
-- [ ] Close runtime, object manager, app stores, IdP provider, and audit resources in dependency order. <!-- t:90ms -->
+- [x] Run HTTP server with TLS/proxy assumptions, timeouts, request limits, and graceful shutdown. <!-- t:2fai -->
+- [x] Close runtime, object manager, app stores, IdP provider, and audit resources in dependency order. <!-- t:90ms -->
 - [ ] Add aggregate readiness for identity, app auth, object manager, JS routes, and background loops. <!-- t:1iq0 -->
 
 ## Phase 5 — Frontend product loop
 
 - [ ] Build embedded TypeScript/HTML/CSS frontend using pnpm and React/Redux/RTK Query if the UI exceeds the initial minimal shell. <!-- t:fw3t -->
-- [ ] Serve assets only under /static and serve index through an explicit route. <!-- t:dvyc -->
+- [x] Serve assets only under /static and serve index through an explicit route. <!-- t:dvyc -->
 - [ ] Implement session bootstrap, login redirect, app logout, and visible IdP-session semantics. <!-- t:jxa1 -->
-- [ ] Implement CSRF-aware object read/write API client. <!-- t:x474 -->
+- [x] Implement CSRF-aware object read/write API client. <!-- t:x474 -->
 - [ ] Add loading, unauthenticated, authenticated, forbidden, conflict, offline, and error states. <!-- t:hgot -->
 - [ ] Add accessible keyboard/focus/status behavior. <!-- t:1jom -->
 - [ ] Add browser end-to-end login, persistence, logout, expiry, and two-user isolation tests. <!-- t:j5ba -->

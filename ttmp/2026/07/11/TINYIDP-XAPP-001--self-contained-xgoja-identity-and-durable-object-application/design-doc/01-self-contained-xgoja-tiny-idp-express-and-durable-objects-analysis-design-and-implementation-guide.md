@@ -617,6 +617,22 @@ not cover the issuer. The integration test carries an unrelated host session
 through login and silent authorization, proving that the application and IdP
 cookies can coexist without name interpretation or accidental replacement.
 
+### 7.6 Development vertical-slice implementation checkpoint
+
+The first custom host is now implemented in `cmd/tinyidp-xapp`. Its construction
+order follows the ownership model in this guide: tiny-idp first, then the
+restricted in-process OIDC client, application auth services, the external HTTP
+host, the host-owned Durable Objects manager and bound dispatcher, the generated
+xgoja runtime, trusted route registration, and finally the outer handler. The
+listener is created only by the `serve` command after construction succeeds.
+
+The end-to-end test crosses all intended trust boundaries rather than injecting
+an actor directly. It completes the browser OIDC code flow, creates the opaque
+application session, obtains host CSRF state, and performs an actor-bound SQLite
+write and reread. Raw object gateways remain absent. The binding key is stable,
+owner-only state under the chosen root; the IdP and application auth stores are
+still deliberately ephemeral and therefore keep this command development-only.
+
 ## 8. xgoja build design
 
 ### 8.1 Proposed specification
