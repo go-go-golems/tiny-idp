@@ -1009,3 +1009,16 @@ This is the first production-shaped serve path. Remaining operational work
 includes proxy-mode policy, backup/restore commands and drills, stronger
 component-level readiness probes, browser E2E against a real TLS listener, and
 release assurance/load/fault gates.
+
+## Step 34 — Publish the initialized TLS checkpoint
+
+Dry-ran and uploaded the refreshed five-document ticket bundle:
+
+```text
+TINYIDP-XAPP-001 Initialized TLS b1b22e3.pdf
+/ai/2026/07/11/TINYIDP-XAPP-001
+OK: uploaded
+```
+
+This version includes the persistent state contract, initialized constructor,
+TLS lifecycle, current task state, and the complete debugging chronology.
