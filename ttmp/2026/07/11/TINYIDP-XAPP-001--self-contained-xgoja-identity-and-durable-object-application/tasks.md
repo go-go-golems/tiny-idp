@@ -28,11 +28,11 @@
 
 - [x] Add cookie name/path configuration with issuer-path default and coexistence tests. <!-- t:o3fe -->
 - [x] Define idempotent initialization for schema, secrets, signing key, RP client, and first user. <!-- t:8r8o -->
-- [ ] Add explicit serve refusal for missing initialization or ephemeral production state. <!-- t:fegd -->
+- [x] Add explicit serve refusal for missing initialization or ephemeral production state. <!-- t:fegd -->
 - [x] Configure public PKCE client with exact callback and scopes. <!-- t:3vlx -->
 - [x] Construct production audit, limiter, address resolver, authenticator, and maintenance services. <!-- t:xb9m -->
-- [ ] Mount issuer under /idp and aggregate liveness/readiness. <!-- t:vecw -->
-- [ ] Schedule immediate and periodic maintenance under errgroup context. <!-- t:keba -->
+- [x] Mount issuer under /idp and aggregate liveness/readiness. <!-- t:vecw -->
+- [x] Schedule immediate and periodic maintenance under errgroup context. <!-- t:keba -->
 - [ ] Add signing-key rotation and retained verification-key integration test. <!-- t:t20n -->
 
 ## Phase 3 — Subject-bound durable objects

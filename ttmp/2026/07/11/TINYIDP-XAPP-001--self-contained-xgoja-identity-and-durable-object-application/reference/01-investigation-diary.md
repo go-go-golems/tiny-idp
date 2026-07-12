@@ -968,3 +968,44 @@ a9b562e App: construct initialized persistent runtime
 The listener is still deliberately absent. The next checkpoint adds TLS,
 aggregate `/healthz` and `/readyz`, request-size bounds, periodic maintenance,
 and cancellation-driven shutdown around this already-validated constructor.
+
+## Step 33 — Add the initialized TLS serving lifecycle
+
+Added the Glazed `serve-initialized` command. It validates duration and request
+limits, calls the strict initialized constructor, requires aggregate readiness,
+and only then invokes `ListenAndServeTLS`. Certificate and private-key paths are
+required; this path does not silently downgrade to cleartext or trust forwarded
+headers.
+
+The outer production handler reserves native aggregate endpoints:
+
+- `GET /healthz` reports process liveness without dependency detail;
+- `GET /readyz` calls combined readiness and returns 503 when dependencies are
+  degraded;
+- all remaining paths are wrapped by `http.MaxBytesHandler` before entering the
+  IdP/auth/Express mux.
+
+The server config bounds header parsing, request reads, response writes,
+keep-alive idleness, maximum header bytes, and graceful shutdown. An errgroup
+owns the TLS server, periodic maintenance ticker, and cancellation-triggered
+shutdown. Initial maintenance already runs in the constructor; subsequent
+maintenance failures are logged and reflected by tiny-idp readiness.
+
+Focused tests cover aggregate health/readiness on a fully persistent
+application. The complete repository suite and product vet gate passed:
+
+```text
+go test ./... -count=1                     PASS
+go vet ./cmd/tinyidp-xapp/...              PASS
+```
+
+Committed:
+
+```text
+568367b App: serve initialized runtime over TLS
+```
+
+This is the first production-shaped serve path. Remaining operational work
+includes proxy-mode policy, backup/restore commands and drills, stronger
+component-level readiness probes, browser E2E against a real TLS listener, and
+release assurance/load/fault gates.

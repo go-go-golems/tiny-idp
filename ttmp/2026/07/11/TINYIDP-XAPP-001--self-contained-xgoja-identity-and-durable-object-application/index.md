@@ -27,6 +27,8 @@ RelatedFiles:
       Note: Incomplete-state refusal and persistent-service readiness proof
     - Path: repo://cmd/tinyidp-xapp/serve.go
       Note: Glazed development serve command with bounded HTTP timeouts and graceful shutdown
+    - Path: repo://cmd/tinyidp-xapp/serve_initialized.go
+      Note: TLS-only initialized serve lifecycle, aggregate health/readiness, limits, maintenance, and shutdown
     - Path: repo://cmd/tinyidp-xapp/state.go
       Note: Idempotent persistent state layout, reconciliation, owner-only roots, and completion manifest
     - Path: repo://cmd/tinyidp-xapp/state_test.go
@@ -59,6 +61,7 @@ LastUpdated: 2026-07-11T18:45:00-04:00
 WhatFor: Track architecture, cross-repository implementation, security invariants, operational work, validation, and production release evidence.
 WhenToUse: Use when implementing or reviewing the integrated product host, OIDC boundary, app session, actor/object binding, xgoja runtime, frontend, persistence, or release gates.
 ---
+
 
 
 

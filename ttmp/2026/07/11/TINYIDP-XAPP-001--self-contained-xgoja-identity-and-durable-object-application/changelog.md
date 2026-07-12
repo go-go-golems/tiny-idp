@@ -16,3 +16,4 @@
 - Published the refreshed five-document bundle as `TINYIDP-XAPP-001 Vertical Slice 86595c6.pdf` under the ticket's reMarkable directory.
 - Added idempotent persistent product-state initialization, owner-only secret/password files, exact RP/user/key reconciliation, and completion-manifest validation (`acbf207`).
 - Added initialized-state refusal and persistent production construction for identity, application auth/session/audit, and actor-bound object stores (`a9b562e`).
+- Added initialized-state TLS serving with aggregate health/readiness, global body limits, periodic maintenance, bounded timeouts, and graceful shutdown (`568367b`).
