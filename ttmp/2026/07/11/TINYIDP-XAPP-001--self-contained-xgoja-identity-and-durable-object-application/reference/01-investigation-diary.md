@@ -919,3 +919,52 @@ This completes initialization and state layout, but not production serving. The
 next step must construct the combined host from this state, refuse an absent or
 incomplete manifest, use persistent application auth/session/audit stores, and
 aggregate readiness before opening a listener.
+
+## Step 32 — Construct the initialized persistent runtime
+
+Extracted the shared composition seam from the development constructor. Both
+deployment modes now feed their chosen identity/auth services into the same
+external HTTP host, host-owned object manager, bound dispatcher, generated
+runtime, trusted route registration, and outer mux construction path.
+
+Added `NewInitializedApplication`. Before allocating runtime resources it calls
+`ValidateInitializedState`, so a missing manifest, database, token key, binding
+key, or owner-only permission invariant refuses construction. It then opens:
+
+- the migrated persistent tiny-idp SQLite store;
+- the durable file audit sink;
+- production password work, fixed-window rate limiting, and direct-peer address
+  resolution;
+- production secure IdP cookies and the initialized token secret;
+- the in-process issuer transport;
+- a shared SQLite application session/audit/user/capability store with schemas;
+- the persistent object root and initialized binding key.
+
+Initial retention maintenance runs synchronously before construction succeeds.
+`Ready` requires every major component and delegates identity dependency checks
+to `embeddedidp.Readiness`. Resource closure now includes the identity audit and
+SQLite handles after runtime, object, auth, and provider shutdown.
+
+Focused tests prove incomplete-state refusal, persistent application-auth DB
+creation, object-root creation, production provider readiness, explicit route
+availability, and clean shutdown. The first run exposed missing parent
+directories for the application-auth database and lazily-created object root;
+both are now created explicitly before the corresponding services start.
+
+Validation:
+
+```text
+go test ./... -count=1                     PASS
+go vet ./cmd/tinyidp-xapp/...              PASS
+git diff --check                           PASS
+```
+
+Committed:
+
+```text
+a9b562e App: construct initialized persistent runtime
+```
+
+The listener is still deliberately absent. The next checkpoint adds TLS,
+aggregate `/healthz` and `/readyz`, request-size bounds, periodic maintenance,
+and cancellation-driven shutdown around this already-validated constructor.

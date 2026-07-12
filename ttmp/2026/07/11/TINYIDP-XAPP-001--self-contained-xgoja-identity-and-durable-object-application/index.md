@@ -21,6 +21,10 @@ RelatedFiles:
       Note: Complete browser login, application session, CSRF write, private-object persistence, and raw-gateway denial proof
     - Path: repo://cmd/tinyidp-xapp/init.go
       Note: Glazed initialization command using an owner-only password file
+    - Path: repo://cmd/tinyidp-xapp/production_app.go
+      Note: Strict initialized-state construction of persistent identity, app auth, object, runtime, and readiness services
+    - Path: repo://cmd/tinyidp-xapp/production_app_test.go
+      Note: Incomplete-state refusal and persistent-service readiness proof
     - Path: repo://cmd/tinyidp-xapp/serve.go
       Note: Glazed development serve command with bounded HTTP timeouts and graceful shutdown
     - Path: repo://cmd/tinyidp-xapp/state.go
@@ -55,6 +59,7 @@ LastUpdated: 2026-07-11T18:45:00-04:00
 WhatFor: Track architecture, cross-repository implementation, security invariants, operational work, validation, and production release evidence.
 WhenToUse: Use when implementing or reviewing the integrated product host, OIDC boundary, app session, actor/object binding, xgoja runtime, frontend, persistence, or release gates.
 ---
+
 
 
 

@@ -30,7 +30,7 @@
 - [x] Define idempotent initialization for schema, secrets, signing key, RP client, and first user. <!-- t:8r8o -->
 - [ ] Add explicit serve refusal for missing initialization or ephemeral production state. <!-- t:fegd -->
 - [x] Configure public PKCE client with exact callback and scopes. <!-- t:3vlx -->
-- [ ] Construct production audit, limiter, address resolver, authenticator, and maintenance services. <!-- t:xb9m -->
+- [x] Construct production audit, limiter, address resolver, authenticator, and maintenance services. <!-- t:xb9m -->
 - [ ] Mount issuer under /idp and aggregate liveness/readiness. <!-- t:vecw -->
 - [ ] Schedule immediate and periodic maintenance under errgroup context. <!-- t:keba -->
 - [ ] Add signing-key rotation and retained verification-key integration test. <!-- t:t20n -->
@@ -71,7 +71,7 @@
 ## Phase 6 — Persistent operations and recovery
 
 - [x] Define state-root layout and owner-only permissions. <!-- t:z87a -->
-- [ ] Use persistent SQLite stores for identity, app sessions/auth/audit, and durable objects. <!-- t:eat7 -->
+- [x] Use persistent SQLite stores for identity, app sessions/auth/audit, and durable objects. <!-- t:eat7 -->
 - [ ] Implement quiesced or snapshot-consistent full state-root backup. <!-- t:e6lw -->
 - [ ] Implement restore into a new directory with schema, secret, client, key, and object reconciliation checks. <!-- t:8d70 -->
 - [ ] Test restart, backup/restore, missing alarm index repair, and partial-state failure. <!-- t:5qfj -->
