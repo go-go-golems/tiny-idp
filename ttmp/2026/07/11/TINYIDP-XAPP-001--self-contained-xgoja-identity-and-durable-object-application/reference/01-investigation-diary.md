@@ -864,3 +864,58 @@ OK: uploaded
 
 No overwrite was required because the checkpoint has a unique commit-qualified
 name; prior ticket bundles and annotations remain intact.
+
+## Step 31 — Implement idempotent persistent-state initialization
+
+Implemented the `tinyidp-xapp init` Glazed command and a reusable
+`InitializeState` reconciler. The command accepts an owner-only password file,
+not a password value or environment variable, and clears the loaded byte slice
+after use. Production initialization requires a canonical HTTPS origin with no
+path, query, fragment, or userinfo.
+
+The state-root layout is now explicit:
+
+```text
+<root>/
+  state.json                         completion manifest, mode 0600
+  identity/tinyidp.sqlite            migrated tiny-idp store, mode 0600
+  audit/tinyidp.jsonl                durable initialization/audit stream
+  secrets/token.key                  32-byte token/CSRF root, mode 0600
+  secrets/object-binding.key         32-byte actor binding root, mode 0600
+  application/auth.sqlite            reserved persistent app-auth store
+  objects/                           per-object SQLite state
+```
+
+Initialization performs migrations and reconciles the exact public PKCE client,
+first password credential, active RSA signing key, token secret, and object
+binding key. `state.json` is written last, so its presence is the completion
+marker rather than evidence that an earlier partial step merely started. The
+manifest temporary file is owner-only, fully written, synced, closed, and then
+renamed.
+
+Reruns preserve existing secrets, signing keys, and credential hashes. They
+reject a conflicting public origin, client redirect/scope contract, disabled or
+conflicting first user, corrupt key length, or loose permissions. The
+initialization tests run the reconciler twice with a different second password
+and prove that no root or credential changes. Additional tests prove incomplete
+state refusal, HTTPS validation before manifest mutation, password-file newline
+handling, and rejection of a mode-0644 password file.
+
+Validation:
+
+```text
+go test ./cmd/tinyidp-xapp/... -count=1    PASS
+go vet ./cmd/tinyidp-xapp/...              PASS
+go test ./... -count=1                     PASS
+```
+
+Committed:
+
+```text
+acbf207 App: initialize persistent product security state
+```
+
+This completes initialization and state layout, but not production serving. The
+next step must construct the combined host from this state, refuse an absent or
+incomplete manifest, use persistent application auth/session/audit stores, and
+aggregate readiness before opening a listener.

@@ -27,7 +27,7 @@
 ## Phase 2 — tiny-idp application embedding
 
 - [x] Add cookie name/path configuration with issuer-path default and coexistence tests. <!-- t:o3fe -->
-- [ ] Define idempotent initialization for schema, secrets, signing key, RP client, and first user. <!-- t:8r8o -->
+- [x] Define idempotent initialization for schema, secrets, signing key, RP client, and first user. <!-- t:8r8o -->
 - [ ] Add explicit serve refusal for missing initialization or ephemeral production state. <!-- t:fegd -->
 - [x] Configure public PKCE client with exact callback and scopes. <!-- t:3vlx -->
 - [ ] Construct production audit, limiter, address resolver, authenticator, and maintenance services. <!-- t:xb9m -->
@@ -70,7 +70,7 @@
 
 ## Phase 6 — Persistent operations and recovery
 
-- [ ] Define state-root layout and owner-only permissions. <!-- t:z87a -->
+- [x] Define state-root layout and owner-only permissions. <!-- t:z87a -->
 - [ ] Use persistent SQLite stores for identity, app sessions/auth/audit, and durable objects. <!-- t:eat7 -->
 - [ ] Implement quiesced or snapshot-consistent full state-root backup. <!-- t:e6lw -->
 - [ ] Implement restore into a new directory with schema, secret, client, key, and object reconciliation checks. <!-- t:8d70 -->

@@ -14,3 +14,4 @@
 - Added configurable issuer-aware IdP cookie names and paths with host-session coexistence tests; corrected and documented the xgoja embedded-assets generation contract (`577f253`).
 - Added the working development custom host and complete login-to-private-object vertical test (`3ca71e5`), supported by composed HTTP/OIDC fixes in go-go-goja (`2d7878d`) and side-effect-free external manager precedence in go-go-objects (`46ba195`).
 - Published the refreshed five-document bundle as `TINYIDP-XAPP-001 Vertical Slice 86595c6.pdf` under the ticket's reMarkable directory.
+- Added idempotent persistent product-state initialization, owner-only secret/password files, exact RP/user/key reconciliation, and completion-manifest validation (`acbf207`).

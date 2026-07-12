@@ -633,6 +633,16 @@ write and reread. Raw object gateways remain absent. The binding key is stable,
 owner-only state under the chosen root; the IdP and application auth stores are
 still deliberately ephemeral and therefore keep this command development-only.
 
+### 7.7 Persistent initialization checkpoint
+
+The `init` command now treats initialization as desired-state reconciliation,
+not an imperative seed script. The manifest is committed only after migrations,
+security roots, the RP client, first credential, and signing key are available.
+Reruns validate immutable identity configuration and preserve credential/key
+material. This allows a future production `serve` path to use `state.json` as a
+strict completion marker while still validating every referenced file and
+database before accepting traffic.
+
 ## 8. xgoja build design
 
 ### 8.1 Proposed specification
