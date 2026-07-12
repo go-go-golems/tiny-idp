@@ -848,3 +848,19 @@ not yet a production service: identity and application auth stores remain
 in-memory, initialization is not an operator command, aggregate readiness and
 backup/restore are absent, and the default development credential must not be
 used outside the explicitly labeled command.
+
+## Step 30 — Publish the vertical-slice checkpoint
+
+Ran the reMarkable bundle workflow as a dry run first, explicitly ordering the
+ticket index, design guide, diary, tasks, and changelog and selecting ToC depth
+2. The preflight resolved all five inputs and the intended remote directory.
+Uploaded the resulting bundle non-interactively:
+
+```text
+TINYIDP-XAPP-001 Vertical Slice 86595c6.pdf
+/ai/2026/07/11/TINYIDP-XAPP-001
+OK: uploaded
+```
+
+No overwrite was required because the checkpoint has a unique commit-qualified
+name; prior ticket bundles and annotations remain intact.
