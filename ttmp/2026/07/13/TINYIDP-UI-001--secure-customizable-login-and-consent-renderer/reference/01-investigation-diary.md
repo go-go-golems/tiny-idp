@@ -1292,3 +1292,92 @@ production observations.
 
 The uploaded bundle name and remote directory intentionally match the earlier
 design delivery; `--force` replaced it with the implementation-complete packet.
+
+## Step 11: Restart and verify the initialized xapp handoff
+
+After all code and documentation commits, I restarted the user's existing
+`tinyidp-xapp-e2e` tmux session with its exact initialized TLS server command.
+This did not substitute the disposable port-8790 canary; it refreshed the
+long-running xapp that the user had asked to keep available.
+
+### Prompt Context
+
+**User prompt (verbatim):** "restart the xapp in the tmux, once done."
+
+**Assistant interpretation:** Restart only after implementation, validation,
+documentation, commits, and delivery are complete; preserve the existing
+initialized state, TLS files, listen address, logging level, and session name.
+
+**Inferred user intent:** Leave the newly themed, hardened application running
+in the same operational location for immediate manual use.
+
+### What I did
+
+- Read the tmux pane's current path and start command rather than guessing its
+  mode or port.
+- Determined that the session served initialized TLS on
+  `127.0.0.1:19443`, not development HTTP on port 8787.
+- Stopped the listening process with `lsof-who -p 19443 -k`.
+- Recreated `tinyidp-xapp-e2e` with the exact prior `serve-initialized` command,
+  state root, certificate, key, maintenance interval, and debug log level.
+- Captured the new pane output and confirmed the initialized TLS server startup
+  message.
+- Verified `GET /readyz` returned 200 with JSON.
+- Verified `GET /static/tinyidp/login.css` returned 200,
+  `text/css; charset=utf-8`, and 3,092 bytes.
+
+### Why
+
+- Reusing the exact initialized command prevents accidental replacement of the
+  persistent application with a development server.
+- Port-aware termination follows the workspace operating rules and avoids an
+  orphan listener.
+- Readiness plus the themed CSS route verifies both core construction and the
+  newly added outer-host mount after restart.
+
+### What worked
+
+- The old process received TERM successfully.
+- The new initialized server bound the same TLS address and became ready.
+- The embedded themed asset was available from the fresh process.
+- The tmux session remains named `tinyidp-xapp-e2e`.
+
+### What didn't work
+
+- The first three readiness polls saw connection refused while `go run` compiled
+  and the initialized application opened its stores. The bounded poll continued,
+  and the next request succeeded. This was expected startup behavior, not a
+  server fault.
+
+### What I learned
+
+- The active handoff server uses port 19443 and initialized persistent state;
+  port 8787 was only a historical development default. Inspecting tmux metadata
+  is necessary before every restart.
+
+### What was tricky to build
+
+N/A. The restart reused an already proven command and required no runtime code
+change.
+
+### What warrants a second pair of eyes
+
+- Open the live login flow at `https://127.0.0.1:19443/auth/login` in the trusted
+  local browser and visually confirm the intended theme.
+- Do not treat this local initialized server as the outstanding production
+  canary approval.
+
+### What should be done in the future
+
+- Complete the two remaining external Phase 6 gates when the deployment and
+  human reviewers are available.
+
+### Code review instructions
+
+- Review tmux with `tmux capture-pane -pt tinyidp-xapp-e2e:0 -S -100`.
+- Recheck readiness without printing bodies or cookies.
+
+### Technical details
+
+The final handoff bundle will be refreshed once more after this diary entry is
+committed so the reMarkable copy contains the complete restart record.

@@ -83,3 +83,13 @@ Step 10: Published the public rendering guide, browser/canary evidence, producti
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/docs/interaction-rendering.md — Public API and operations documentation
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/reference/03-interaction-ui-release-and-rollback-runbook.md — Production rollout and rollback procedure
+
+
+## 2026-07-13
+
+Step 11: Restarted the initialized TLS xapp in the existing tinyidp-xapp-e2e tmux session and verified readiness plus the embedded themed stylesheet on the fresh process.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/serve_initialized.go — Restarted initialized server lifecycle
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/internal/loginui/static/login.css — Verified themed asset
