@@ -887,3 +887,116 @@ default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'
 
 This permits only same-origin external CSS. Scripts, inline styles, images,
 fonts, frames, objects, and network connections remain denied by default.
+
+## Step 8: Build and wire the xapp-owned interaction presentation
+
+Phase 4 added a host-specific renderer under
+`cmd/tinyidp-xapp/internal/loginui`. It uses a compiled contextual Go template
+and an embedded stylesheet, while depending only on the public `pkg/idpui`
+contract. Both the ephemeral development application and initialized persistent
+application construct the same renderer and pass it through `embeddedidp.UI`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Implement the preferred host-owned customization
+method in the actual xgoja application, preserving the previously requested
+retro monochrome visual direction and production construction path.
+
+**Inferred user intent:** Make the running BBS application visibly coherent at
+the login boundary without coupling tiny-idp core to BBS product styling.
+
+**Commit (code):** fc16a87 — "Xapp: add themed IdP interaction UI"
+
+### What I did
+
+- Added an xapp-local `InteractionRenderer` implementation with a compile-time
+  interface assertion.
+- Embedded a complete interaction template and CSS using `_ "embed"`.
+- Validated stylesheet URLs as clean, root-relative, same-origin paths below
+  `/static/`; absolute URLs, scheme-relative URLs, query strings, fragments,
+  traversal, and backslashes are rejected at construction.
+- Mounted the stylesheet explicitly at `GET /static/tinyidp/` on the outer host.
+- Implemented the requested monochrome early-Macintosh character with square
+  geometry, monospaced system fonts, strong black outlines, and restrained mint,
+  rose, blue, and gold foreground accents. It has no menu bar, window chrome, or
+  Chicago font dependency.
+- Kept labels, alert associations, autocomplete hints, focus indicators,
+  responsive actions, reduced-motion behavior, and an always-available deny
+  action.
+- Added renderer tests for login-only, forced login, consent-only, combined,
+  denial, credential error, and consent error shapes.
+- Added end-to-end HTTP assertions for themed login HTML, stylesheet reachability
+  and media type, exact CSP compatibility, and initialized-production asset
+  mounting.
+- Ran focused xapp tests and the complete repository suite.
+
+### Why
+
+- The application host owns product identity and static assets; tiny-idp owns
+  authorization semantics. The public view model is the narrow boundary between
+  them.
+- A same-origin stylesheet fits the strict CSP without enabling inline style,
+  script, image, font, or third-party network sources.
+- Using the same constructor in both modes prevents an attractive development
+  page from masking a missing production asset mount.
+
+### What worked
+
+- All renderer and xapp integration tests passed on the first run.
+- The login-to-application vertical slice loaded the themed IdP page, fetched the
+  CSS, authenticated, completed the OIDC callback, and reached the BBS session.
+- The full Go suite passed after the xapp integration.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- The outer xapp mux is the correct asset owner. The in-process IdP transport is
+  used for OIDC back-channel calls, while the browser reaches `/idp/authorize`
+  and `/static/tinyidp/login.css` through the combined host.
+- A renderer-specific asset handler can remain separate from the renderer
+  interface. This avoids giving presentation code an HTTP response writer while
+  still letting the host mount immutable embedded resources explicitly.
+
+### What was tricky to build
+
+The page must support consent-only interactions without emitting empty login
+controls, and combined login/consent interactions without letting HTML required
+fields block denial. The template renders only typed page sections and derives
+error associations from stable public field identifiers.
+
+### What warrants a second pair of eyes
+
+- Review the visual hierarchy and pastel contrast in a real browser at 200%
+  zoom, high contrast, and narrow mobile width.
+- Confirm the footer's local-processing statement remains correct for every
+  deployment topology of this particular xapp.
+- Review whether the short five-minute stylesheet cache is the desired release
+  behavior or whether content-hashed asset naming should precede a long cache.
+
+### What should be done in the future
+
+- Run structural conformance against both the built-in and xapp renderers.
+- Add browser automation and accessibility evidence beyond HTTP and parsed-DOM
+  tests.
+
+### Code review instructions
+
+- Review `internal/loginui/renderer.go`, then its template and stylesheet.
+- Follow construction from both application constructors into the outer mux.
+- Validate with:
+
+  ```bash
+  go test ./cmd/tinyidp-xapp/internal/loginui ./cmd/tinyidp-xapp -count=1
+  go test ./...
+  ```
+
+### Technical details
+
+The stylesheet is served only for GET and HEAD at the validated configured path
+with `text/css; charset=utf-8` and a five-minute public cache. The authorization
+document itself remains `no-store` and carries the provider-owned CSP.

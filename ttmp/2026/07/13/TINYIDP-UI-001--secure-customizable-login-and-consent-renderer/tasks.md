@@ -27,13 +27,13 @@
 - [x] Phase 3.5: Validate submitted actions against server-required actions independent of rendered controls. <!-- t:3kqr -->
 - [x] Phase 3.6: Resolve and test 303 versus 302 redirects after credential POSTs using RFC 9700 guidance. <!-- t:ac5j -->
 - [x] Phase 3.7: Re-run replay, expiry, browser/session binding, client mutation, scope, redirect, and concurrent-terminal tests. <!-- t:8elq -->
-- [ ] Phase 4.1: Create cmd/tinyidp-xapp/internal/loginui with a host-owned html/template renderer. <!-- t:021t -->
-- [ ] Phase 4.2: Embed the xapp login template and CSS into the application binary. <!-- t:2lzq -->
-- [ ] Phase 4.3: Mount themed assets under /static/tinyidp/ through the existing outer host. <!-- t:5fdi -->
-- [ ] Phase 4.4: Validate root-relative /static/ theme URLs at renderer construction. <!-- t:u88o -->
-- [ ] Phase 4.5: Implement accessible responsive login, forced-login, consent, deny, and error presentations. <!-- t:v9g1 -->
-- [ ] Phase 4.6: Wire the renderer into both development and production xapp construction. <!-- t:9vhb -->
-- [ ] Phase 4.7: Add an HTTP smoke test for themed HTML, CSS reachability, media type, and CSP compatibility. <!-- t:tyzo -->
+- [x] Phase 4.1: Create cmd/tinyidp-xapp/internal/loginui with a host-owned html/template renderer. <!-- t:021t -->
+- [x] Phase 4.2: Embed the xapp login template and CSS into the application binary. <!-- t:2lzq -->
+- [x] Phase 4.3: Mount themed assets under /static/tinyidp/ through the existing outer host. <!-- t:5fdi -->
+- [x] Phase 4.4: Validate root-relative /static/ theme URLs at renderer construction. <!-- t:u88o -->
+- [x] Phase 4.5: Implement accessible responsive login, forced-login, consent, deny, and error presentations. <!-- t:v9g1 -->
+- [x] Phase 4.6: Wire the renderer into both development and production xapp construction. <!-- t:9vhb -->
+- [x] Phase 4.7: Add an HTTP smoke test for themed HTML, CSS reachability, media type, and CSP compatibility. <!-- t:tyzo -->
 - [ ] Phase 5.1: Build a reusable structural renderer-conformance harness for downstream hosts. <!-- t:ktfo -->
 - [ ] Phase 5.2: Detect scripts, event handlers, inline styles, dangerous URLs, protocol hidden fields, and external origins. <!-- t:jeb4 -->
 - [ ] Phase 5.3: Add go/analysis checks for text/template, trusted-content wrappers, direct HTML string construction, and broad renderer HTTP APIs. <!-- t:mqle -->

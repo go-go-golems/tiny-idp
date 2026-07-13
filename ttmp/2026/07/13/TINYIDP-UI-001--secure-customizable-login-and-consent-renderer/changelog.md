@@ -52,3 +52,13 @@ Step 7: Integrated custom interaction rendering through the public embedding API
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/rendering.go — Typed page construction and bounded response rendering
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Public UI configuration boundary
+
+
+## 2026-07-13
+
+Step 8: Added and wired the xapp-owned themed interaction renderer, embedded same-origin stylesheet, strict asset URL validation, page-shape coverage, and development/production HTTP smoke tests (commit fc16a87).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/internal/loginui/renderer.go — Host-owned renderer and asset handler
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/internal/loginui/static/login.css — Product interaction theme
