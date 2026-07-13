@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in</title>
+</head>
+<body>
+  <main>
+    <h1>Sign in</h1>
+    <p>Sign in to continue.</p>
+    <section aria-labelledby="requested-access-heading">
+      <h2 id="requested-access-heading">Requested access</h2>
+      <p>Client: <strong>example-client</strong></p>
+      <ul>
+        <li><code>openid</code></li>
+        <li><code>email</code> — Read your email address</li>
+      </ul>
+    </section>
+    <form method="post" action="https://issuer.example.test/idp/authorize">
+      <p>
+        <label for="tinyidp-login">Username</label>
+        <input id="tinyidp-login" name="login" value="alice" autocomplete="username" required autofocus>
+      </p>
+      <p>
+        <label for="tinyidp-password">Password</label>
+        <input id="tinyidp-password" name="password" type="password" autocomplete="current-password" required>
+      </p>
+      <input type="hidden" name="interaction" value="opaque-handle">
+      <input type="hidden" name="csrf_token" value="csrf-value">
+      <p>
+        <button type="submit" name="action" value="approve">Approve</button>
+        <button type="submit" name="action" value="deny" formnovalidate>Deny</button>
+      </p>
+    </form>
+  </main>
+</body>
+</html>
