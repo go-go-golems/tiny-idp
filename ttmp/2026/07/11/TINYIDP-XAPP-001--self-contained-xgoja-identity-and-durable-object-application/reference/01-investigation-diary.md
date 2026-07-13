@@ -14,13 +14,26 @@ Topics:
 DocType: reference
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/production_app.go
+      Note: Persistent product composition and application-versus-IdP cookie configuration exercised by the real server
+    - Path: repo://cmd/tinyidp-xapp/serve_initialized.go
+      Note: Production-shaped TLS listener readiness maintenance and shutdown lifecycle used by the checkpoint
+    - Path: repo://ttmp/2026/07/11/TINYIDP-XAPP-001--self-contained-xgoja-identity-and-durable-object-application/scripts/01_real_browser_e2e.py
+      Note: Draft real-Chromium two-user TLS/OIDC/CSRF/object-isolation harness described by the handoff
+    - Path: ws://go-go-goja/pkg/gojahttp/auth/oidcauth/oidcauth.go
+      Note: Native OIDC callback session creation and current GET/POST logout semantics flagged for lifecycle review
+    - Path: ws://go-go-goja/pkg/xgoja/hostauth/builder.go
+      Note: Native auth route registration and session endpoint surface used by the composed XAPP
 ExternalSources: []
 Summary: Chronological record of the research, design, implementation, failures, decisions, verification, and review procedure for the self-contained xgoja identity and Durable Objects application.
 LastUpdated: 2026-07-11T19:05:00-04:00
 WhatFor: Reconstruct why the architecture and implementation took their present form, reproduce validation, and help a new contributor resume work safely.
 WhenToUse: Read before changing the product host, OIDC integration, subject-to-object binding, persistence layout, or generated xgoja package.
 ---
+
+
+
 
 # Investigation and Implementation Diary
 
@@ -1022,3 +1035,438 @@ OK: uploaded
 
 This version includes the persistent state contract, initialized constructor,
 TLS lifecycle, current task state, and the complete debugging chronology.
+
+## Step 35 — Park layered backup design and resume the real product
+
+### Prompt Context
+
+The user said:
+
+> ok, create a ticket to keep track of that, so that we can build it later. then, let's do 2 - 3 - 4, which are actually running a real app
+
+Here, “that” refers to the decision that tiny-idp should own a general,
+component-level backup and restore contract while the composed XAPP owns
+quiescence, manifesting, and whole-product recovery. Items 2, 3, and 4 refer to
+the previously proposed real-browser end-to-end harness, identity/session
+lifecycle closure, and injected failure testing.
+
+### What I did and why
+
+Created and committed `TINYIDP-BACKUP-001`, a separate docmgr ticket that
+records the layered backup ownership model, archive contract, CLI surface,
+consistency protocol, restore staging algorithm, phases, and stable tasks. This
+keeps future recovery implementation precise without allowing it to displace
+the immediate goal of exercising the running product.
+
+The backup ticket passed `docmgr doctor --fail-on-warning` after replacing
+unregistered vocabulary with the repository's controlled topics. It was
+committed as:
+
+```text
+efd2c52 Docs: plan layered backup and restore
+```
+
+I then returned to this XAPP ticket and selected an evidence-first order for
+the requested work:
+
+1. initialize the persistent product state and run `serve-initialized` with a
+   real TLS certificate in `tmux`;
+2. drive the complete browser/OIDC/PKCE/session/object path with Chromium;
+3. encode the observed lifecycle invariants, including two-user isolation,
+   disablement, logout, and expiry;
+4. add explicit failure seams and exercise dependency, persistence,
+   maintenance, JavaScript, and shutdown failures against the composed app.
+
+### What worked
+
+The backup design is now independently searchable, reviewable, and deferred.
+The existing XAPP task ledger already identifies the relevant incomplete
+browser, two-user, disabled-user, and fault-injection work, so no speculative
+parallel architecture is needed before running the product.
+
+### What did not work
+
+My first diary lookup used a remembered `diary/01-implementation-diary.md`
+path. The actual ticket stores its chronology at
+`reference/01-investigation-diary.md`. I recovered with `rg --files` rather
+than making a second guessed lookup. No file was modified by the failed read.
+
+### What I learned
+
+The initialized TLS server, persistent stores, generated runtime, and minimal
+frontend already form the correct test subject. The next useful evidence must
+come from a browser crossing the external HTTP boundary, not another
+constructor-only test.
+
+### What was tricky
+
+“Running a real app” must not collapse into an in-memory `httptest` success.
+The harness needs a real listener, secure cookies, TLS, browser redirect and
+form behavior, JavaScript execution, and persistent SQLite/object state. Unit
+and in-process tests remain useful after this vertical observation, especially
+for deterministic fault injection.
+
+### How to review this step
+
+Read the new backup ticket and verify its doctor result, then inspect the XAPP
+commands and run the browser harness described by the next diary steps. Confirm
+that the server is launched in `tmux`, its output is captured, and its port is
+released with `lsof-who` after each run.
+
+### Future work
+
+Implement and preserve the real-browser harness, record each lifecycle gap it
+reveals before fixing it, add focused regression tests, and then introduce
+test-only failure controls at existing identity, app-auth, object, runtime, and
+maintenance seams.
+
+### Review instructions
+
+Treat browser assertions as product-contract tests, not screenshot-only smoke
+tests. A passing result must establish who authenticated, which cookies and
+paths were used, which actor/object was reached, what survived reload/restart,
+and what became inaccessible after logout, disablement, or expiry.
+
+### Technical details
+
+The backup ticket is located at
+`ttmp/2026/07/12/TINYIDP-BACKUP-001--layered-tiny-idp-and-xapp-backup-restore`.
+The runtime subject remains `cmd/tinyidp-xapp`, using its `init` and
+`serve-initialized` Glazed commands. Browser tooling and captured results will
+be stored under this ticket's `scripts/` and `reference/` directories so the
+investigation can be replayed.
+
+## Step 36 — Hand off the interrupted real-browser checkpoint
+
+This step preserves the exact state of the real-application investigation so a
+new engineer can continue without reconstructing the environment or mistaking
+a browser-installation failure for a tiny-idp failure. The production-shaped
+application successfully initialized, opened its persistent stores, served TLS,
+and reported ready. Chromium never reached the application because the local
+Playwright installation references browser artifacts that are absent.
+
+The handoff is intentionally made before lifecycle or fault-injection code was
+changed. The uncommitted browser script is an investigation harness, not yet a
+passing product test. It expresses the intended assertions and should be
+reviewed as draft code before being promoted into a release gate.
+
+### Prompt Context
+
+**User prompt (verbatim):** "write up your diary, we're going tohand it off"
+
+**Assistant interpretation:** Record the complete executable-app checkpoint,
+including failures and repository/runtime state, so another engineer can resume
+immediately and safely.
+
+**Inferred user intent:** Preserve engineering continuity and prevent the next
+person from repeating environment discovery, losing security observations, or
+assuming that phases 2–4 completed.
+
+**Commit (documentation):** not yet committed at the time of this entry; the
+last repository commit is `efd2c52` (`Docs: plan layered backup and restore`).
+
+### What I did
+
+- Verified Playwright availability under an explicit pyenv interpreter:
+
+  ```text
+  $ PYENV_VERSION=3.11.4 playwright --version
+  Version 1.50.0
+  $ PYENV_VERSION=3.11.4 python -c 'from playwright.sync_api import sync_playwright'
+  python-playwright: import OK
+  ```
+
+- Created the isolated runtime root
+  `/tmp/tinyidp-xapp-real-browser` with an owner-only operator directory,
+  password files, one-day self-signed RSA certificate, and initialized product
+  state. The certificate has `subjectAltName=IP:127.0.0.1`.
+- Initialized the real product at public origin
+  `https://127.0.0.1:19443` using:
+
+  ```text
+  go run ./cmd/tinyidp-xapp init \
+    --state-root /tmp/tinyidp-xapp-real-browser/state \
+    --public-base-url https://127.0.0.1:19443 \
+    --login alice \
+    --name 'Alice Operator' \
+    --email alice@example.test \
+    --password-file /tmp/tinyidp-xapp-real-browser/operator/alice-password
+  ```
+
+- Added a second identity to the same identity database through tiny-idp's real
+  admin surface:
+
+  ```text
+  go run ./cmd/tinyidp admin \
+    --db /tmp/tinyidp-xapp-real-browser/state/identity/tinyidp.sqlite \
+    user create \
+    --login bob \
+    --name 'Bob Operator' \
+    --email bob@example.test \
+    --email-verified \
+    --password-from-stdin \
+    < /tmp/tinyidp-xapp-real-browser/operator/bob-password
+  ```
+
+- Launched the actual initialized TLS command in tmux session
+  `tinyidp-xapp-e2e`:
+
+  ```text
+  go run ./cmd/tinyidp-xapp --log-level debug serve-initialized \
+    --state-root /tmp/tinyidp-xapp-real-browser/state \
+    --listen 127.0.0.1:19443 \
+    --tls-cert /tmp/tinyidp-xapp-real-browser/operator/tls.crt \
+    --tls-key /tmp/tinyidp-xapp-real-browser/operator/tls.key \
+    --maintenance-interval 10s
+  ```
+
+- Captured the tmux log and queried the external listener. The final readiness
+  response was:
+
+  ```text
+  HTTP/2 200
+  content-type: application/json
+
+  {"status":"ready"}
+  ```
+
+- Added the draft replayable harness at
+  `scripts/01_real_browser_e2e.py`. It is designed to cover two independent
+  browser contexts, the password/OIDC/PKCE flow, application and IdP cookies,
+  missing-CSRF denial, per-user durable-object persistence, two-user isolation,
+  logout, and post-logout session state.
+- After the two permitted browser-launch attempts failed, stopped the tmux
+  session, killed any listener through `lsof-who -p 19443 -k`, and verified
+  that port 19443 was no longer reachable.
+- Audited the handoff state: no `tinyidp-xapp-e2e` tmux session exists, no
+  process listens on port 19443, and the `/tmp` fixture remains available.
+
+### Why
+
+- A real browser and TLS listener observe redirects, Secure/HttpOnly/SameSite
+  cookie behavior, form interactions, JavaScript, route composition, and
+  persistent storage boundaries that constructor or `httptest` tests cannot.
+- Two users in one initialized product are necessary to establish subject-bound
+  object isolation; two separate installations would not exercise the shared
+  application database and object manager.
+- The server was kept external to the browser script so startup, readiness,
+  logs, maintenance, shutdown, and port ownership remain independently
+  observable.
+
+### What worked
+
+- `tinyidp-xapp init` reconciled a complete persistent state root.
+- The general tiny-idp admin command opened that identity database and created
+  Bob without a separate schema or compatibility path.
+- `serve-initialized` opened the composed identity, application-auth, generated
+  Goja runtime, and Durable Object application over real TLS.
+- Aggregate readiness returned HTTP 200 from the actual TCP listener.
+- The machine has usable browser launchers on PATH:
+  `/usr/bin/google-chrome`, `/snap/bin/chromium`, and
+  `/usr/bin/chromium-browser`. These were discovered during handoff inspection
+  but deliberately not tried after the two-failure stop threshold.
+- Cleanup completed. The message was:
+
+  ```text
+  tinyidp-xapp-e2e stopped; port 19443 released
+  ```
+
+### What didn't work
+
+- Invoking `playwright` under the default pyenv selection failed before the
+  real run because the command is installed only in Python 3.11.3/3.11.4:
+
+  ```text
+  pyenv: playwright: command not found
+
+  The `playwright' command exists in these Python versions:
+    3.11.3
+    3.11.4
+  ```
+
+  Pinning `PYENV_VERSION=3.11.4` resolved this discovery issue.
+- Browser launch attempt one used Playwright's default executable selection:
+
+  ```text
+  PYENV_VERSION=3.11.4 python \
+    ttmp/2026/07/11/TINYIDP-XAPP-001--self-contained-xgoja-identity-and-durable-object-application/scripts/01_real_browser_e2e.py \
+    --base-url https://127.0.0.1:19443 \
+    --alice-password-file /tmp/tinyidp-xapp-real-browser/operator/alice-password \
+    --bob-password-file /tmp/tinyidp-xapp-real-browser/operator/bob-password
+  ```
+
+  It failed verbatim with:
+
+  ```text
+  BrowserType.launch: Executable doesn't exist at /home/manuel/.cache/ms-playwright/chromium_headless_shell-1155/chrome-linux/headless_shell
+  Looks like Playwright was just installed or updated.
+  Please run the following command to download new browsers:
+      playwright install
+  ```
+
+- Browser launch attempt two set
+  `executable_path=playwright.chromium.executable_path`. Playwright had reported
+  that location during metadata inspection, but the file is absent. It failed
+  verbatim with:
+
+  ```text
+  BrowserType.launch: Failed to launch chromium because executable doesn't exist at /home/manuel/.cache/ms-playwright/chromium-1155/chrome-linux/chrome
+  ```
+
+- No browser page was opened, so none of the harness's identity, cookie, CSRF,
+  persistence, isolation, or logout assertions have executed. There is no
+  results JSON under `reference/results/` yet.
+- A later read-only executable audit used `path` as a zsh loop variable. In zsh,
+  `path` is tied to `PATH`, so the loop accidentally made `ls` unavailable and
+  printed `zsh:4: command not found: ls`. The `command -v` results and explicit
+  missing Playwright paths remain valid; future shell snippets must not use
+  `path` as a zsh variable name.
+
+### What I learned
+
+- The running application passed its first external production-shaped startup
+  checkpoint. The current blocker is local browser artifact selection, not
+  application initialization, TLS binding, or aggregate readiness.
+- Playwright package installation and Playwright browser installation are
+  distinct. `playwright --version` and Python import success do not establish
+  that the version-matched browser executable exists.
+- A system Chrome is available at `/usr/bin/google-chrome`; the smallest next
+  experiment is to point `chromium.launch(executable_path=...)` there. An
+  alternative is `PYENV_VERSION=3.11.4 playwright install chromium`, but that
+  performs a network download and changes the workstation cache.
+- The app logout implementation in go-go-goja currently accepts POST without a
+  CSRF check and also exposes GET logout. The frontend renders a plain POST
+  form, while object mutations use `X-CSRF-Token`. This is an observed review
+  target, not yet a fixed or browser-proven vulnerability in this checkpoint.
+- The preserved state root has mode `0700`, while
+  `state/application/auth.sqlite` and `state/objects/alarms.sqlite` are mode
+  `0644`. Directory traversal confines access today, but this conflicts with
+  earlier owner-only-store wording and could become unsafe if files are moved,
+  copied, or backed up incorrectly. The intended per-file permission contract
+  must be decided and tested.
+
+### What was tricky to build
+
+- The real flow spans two session domains: `xapp_session` for the application
+  and issuer-scoped `xapp_idp_session`/`xapp_idp_csrf` cookies for tiny-idp.
+  Logging out of the app may leave the IdP session valid, so a later `/auth/login`
+  can silently create a new app session. The harness must distinguish correct
+  two-layer behavior from a logout failure.
+- The browser script intentionally treats Alice's and Bob's application user
+  identifiers as opaque. Isolation must be established by different normalized
+  user IDs and different private object values, not by assuming an ID format.
+- Async frontend writes and reloads need response- or state-based waits. The
+  draft currently uses one fixed 100 ms wait in `loaded_document`; this may be
+  flaky and should be replaced with a response predicate or observable value
+  transition before calling the harness stable.
+- Playwright API request calls should be reviewed to ensure they use the
+  browser context's cookie-bearing request context. If this Playwright version
+  does not expose `page.request`, use `page.context.request` or execute `fetch`
+  in the page; do not create an unrelated API request context that bypasses the
+  browser cookie jar.
+
+### What warrants a second pair of eyes
+
+- Decide whether POST `/auth/logout` must enforce the current app-session CSRF
+  token and whether GET `/auth/logout` should exist at all. Review
+  `pkg/gojahttp/auth/oidcauth/oidcauth.go` and
+  `pkg/xgoja/hostauth/builder.go` in go-go-goja before changing the frontend.
+- Review the exact two-layer logout contract: app logout only, IdP logout only,
+  and product-wide logout should be distinct and visible to the user.
+- Confirm whether disabling a tiny-idp user must immediately invalidate an
+  already-issued XAPP session. Currently the app session is a locally persisted
+  projection; upstream disablement may only be observed at the next OIDC login.
+- Review permissions for all SQLite databases, WAL/SHM sidecars, audit logs,
+  secrets, certificate/key material, and future backup archives.
+- Review `scripts/01_real_browser_e2e.py` before trusting it as a gate,
+  especially cookie sharing for API requests, navigation waits, response waits,
+  cleanup on assertion failure, and whether logout-without-CSRF should be an
+  expected failure rather than merely an observation.
+- Preserve the unrelated untracked OIDF source directories under
+  `TINYIDP-PROD-001`; they predate this work and must not be staged or deleted.
+
+### What should be done in the future
+
+1. Change only the browser executable selection to
+   `/usr/bin/google-chrome`, restart the same real server in tmux, and rerun the
+   harness. If policy prefers a hermetic Playwright browser, install the exact
+   1.50 Chromium bundle instead; do not do both before learning which contract
+   the project wants.
+2. Fix any harness API/wait issues exposed after the browser actually launches,
+   preserving each exact error in the next diary step.
+3. Save the passing structured JSON under `reference/results/`, capture server
+   logs, and repeat after a full process restart to prove persistent object and
+   session behavior.
+4. Turn observed lifecycle behavior into explicit product contracts and
+   regression tests: CSRF-safe logout, app-versus-IdP logout, expiry, forced
+   reauthentication, password-change-required, and user disablement.
+5. Add deterministic failure seams and scenarios only after the successful
+   browser baseline: IdP/app/object SQLite failures, maintenance failure, Goja
+   timeout, readiness degradation, and cancellation/shutdown races.
+6. Decide and enforce the file-mode contract before backup work consumes these
+   files.
+7. Remove `/tmp/tinyidp-xapp-real-browser` after the handoff engineer either
+   completes the replay or deliberately creates a fresh fixture. Its passwords
+   are throwaway but known and must never be reused outside this local test.
+
+### Code review instructions
+
+- Start with this diary step, then review:
+  - `scripts/01_real_browser_e2e.py` for intended browser assertions;
+  - `cmd/tinyidp-xapp/production_app.go` for persistent composition and cookie
+    names;
+  - `cmd/tinyidp-xapp/serve_initialized.go` for the TLS lifecycle;
+  - `cmd/tinyidp-xapp/app/frontend/public/app.js` and `index.html` for CSRF and
+    logout behavior;
+  - go-go-goja's `pkg/gojahttp/auth/oidcauth/oidcauth.go` and
+    `pkg/xgoja/hostauth/builder.go` for native session endpoints.
+- Before restart, run:
+
+  ```text
+  lsof-who -p 19443 -k
+  tmux kill-session -t tinyidp-xapp-e2e  # ignore absent-session error
+  ```
+
+- Launch the server with the exact command under `What I did`, then inspect:
+
+  ```text
+  tmux capture-pane -p -t tinyidp-xapp-e2e -S -200
+  curl -ksi https://127.0.0.1:19443/readyz
+  ```
+
+- For the next controlled browser attempt, edit the draft launch to use:
+
+  ```python
+  browser = playwright.chromium.launch(
+      executable_path="/usr/bin/google-chrome",
+      headless=not args.headed,
+  )
+  ```
+
+- Do not mark the Phase 3 two-user task or Phase 5 browser task complete until
+  the browser reaches the app and emits passing structured evidence.
+- After any implementation changes, run focused tests, `go test ./... -count=1`,
+  `go vet ./cmd/tinyidp-xapp/...`, `git diff --check`, and docmgr doctor.
+
+### Technical details
+
+- Repository: `/home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp`
+- Ticket: `TINYIDP-XAPP-001`
+- Ticket directory:
+  `ttmp/2026/07/11/TINYIDP-XAPP-001--self-contained-xgoja-identity-and-durable-object-application`
+- Draft harness:
+  `scripts/01_real_browser_e2e.py`
+- Runtime fixture: `/tmp/tinyidp-xapp-real-browser`
+- Public origin: `https://127.0.0.1:19443`
+- tmux session when running: `tinyidp-xapp-e2e`
+- Playwright Python: pyenv `3.11.4`, Playwright `1.50.0`
+- Absent Playwright executables:
+  - `/home/manuel/.cache/ms-playwright/chromium_headless_shell-1155/chrome-linux/headless_shell`
+  - `/home/manuel/.cache/ms-playwright/chromium-1155/chrome-linux/chrome`
+- Candidate installed executable: `/usr/bin/google-chrome`
+- Current Git state relevant to this checkpoint:
+  - modified: `reference/01-investigation-diary.md`;
+  - untracked: `scripts/01_real_browser_e2e.py`;
+  - unrelated and untracked: two OIDF source directories under
+    `TINYIDP-PROD-001/sources/`.
+- No implementation source file was changed in this checkpoint.

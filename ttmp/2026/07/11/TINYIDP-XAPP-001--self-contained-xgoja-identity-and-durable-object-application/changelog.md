@@ -18,3 +18,11 @@
 - Added initialized-state refusal and persistent production construction for identity, application auth/session/audit, and actor-bound object stores (`a9b562e`).
 - Added initialized-state TLS serving with aggregate health/readiness, global body limits, periodic maintenance, bounded timeouts, and graceful shutdown (`568367b`).
 - Published `TINYIDP-XAPP-001 Initialized TLS b1b22e3.pdf` to the ticket's reMarkable directory.
+
+## 2026-07-12
+
+Recorded the real TLS application handoff: successful initialization/readiness, two-user fixture, draft Chromium harness, exact Playwright artifact failures, cleanup state, security review questions, and restart procedure.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/11/TINYIDP-XAPP-001--self-contained-xgoja-identity-and-durable-object-application/scripts/01_real_browser_e2e.py — Uncommitted browser checkpoint handed to the next engineer
