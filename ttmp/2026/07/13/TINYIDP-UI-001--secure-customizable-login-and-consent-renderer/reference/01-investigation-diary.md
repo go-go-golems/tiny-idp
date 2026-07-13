@@ -19,6 +19,14 @@ RelatedFiles:
       Note: Primary source traced during current-state investigation
     - Path: repo://internal/server/static/login.html
       Note: Synthetic server template inspected to rule out the wrong customization path
+    - Path: repo://pkg/idpui/default_renderer.go
+      Note: Contextually escaped embedded default renderer implemented in commit e77158f
+    - Path: repo://pkg/idpui/default_renderer_test.go
+      Note: Structural hostile-input contract and golden tests for Phase 1
+    - Path: repo://pkg/idpui/renderer.go
+      Note: Public writer-based renderer interface implemented in commit e77158f
+    - Path: repo://pkg/idpui/types.go
+      Note: Validated page contract actions reasons errors and defensive clone implemented in commit e77158f
 ExternalSources:
     - https://pkg.go.dev/html/template
     - https://www.w3.org/TR/CSP/
@@ -32,6 +40,7 @@ LastUpdated: 2026-07-13T17:38:39.058258495-04:00
 WhatFor: Records what was inspected, researched, decided, authored, validated, and delivered for TINYIDP-UI-001.
 WhenToUse: Read before resuming implementation or reviewing why the renderer API, trust boundary, CSP, asset policy, and assurance phases were chosen.
 ---
+
 
 
 # Investigation Diary
@@ -592,3 +601,125 @@ The planned checkpoint message is:
 ```text
 Docs: design secure interaction renderer
 ```
+
+## Step 6: Implement the public renderer contract and secure default
+
+Phase 1 introduced the presentation boundary as an isolated public package. The
+package contains no Fosite, store, HTTP response, request, or xapp dependency. A
+renderer receives a context, an `io.Writer`, and a validated clone of a typed
+page model; the built-in implementation uses Go's contextual HTML template
+escaping.
+
+The phase was validated both locally and through the complete repository suite
+before its focused code commit. This keeps provider integration out of the first
+checkpoint and makes the API reviewable on its own.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Implement Phase 1 completely, verify it, commit
+the code boundary, and record exact evidence before changing the provider.
+
+**Inferred user intent:** Establish a high-quality reusable contract that future
+xgoja hosts can consume without duplicating or weakening tiny-idp protocol code.
+
+**Commit (code):** e77158fc5c9412ce4b8e1113b7d6402445e917da — "IdP: add secure interaction renderer contract"
+
+### What I did
+
+- Added `pkg/idpui` with public actions, login reasons, public error codes, field
+  identifiers, page/form/prompt models, validation, and defensive cloning.
+- Added `InteractionRenderer` with the exact writer-based contract.
+- Added a concurrency-safe `html/template` default renderer and embedded full
+  HTML document template.
+- Added explicit visible labels, autocomplete metadata, required fields,
+  accessible error associations, consent disclosure, and a denial button that
+  bypasses browser constraint validation.
+- Added a semantic combined-page golden example without making whitespace an API.
+- Added tests for page shapes, escaping hostile values, password omission,
+  contract rejection, clone isolation, canceled contexts, and golden semantics.
+- Ran:
+
+  ```bash
+  go fmt ./pkg/idpui
+  go test ./pkg/idpui -count=1
+  go test ./... -count=1
+  ```
+
+### Why
+
+- The public model needs to be stable and testable before it is threaded through
+  security-sensitive authorize code.
+- A validated page catches provider programming errors before a custom renderer
+  sees them.
+- Structural HTML tests exercise actual parsed elements and attributes rather
+  than relying on regular expressions.
+
+### What worked
+
+- The package test completed in approximately two milliseconds.
+- The full repository suite passed, including strict provider, embedded provider,
+  xapp, production-review analyzers, and external-consumer tests.
+- Hostile client, scope, login, title, and error strings remained text and did
+  not create script, image, style, frame, object, embed, or event-handler nodes.
+- The model has no password value member, and the rendered password input never
+  has a `value` attribute.
+
+### What didn't work
+
+- N/A. The first implementation compiled and all selected and complete tests
+  passed.
+
+### What I learned
+
+- The denial action needs `formnovalidate` when login inputs are `required`, or
+  the browser prevents a user from denying a combined login/consent request with
+  empty credentials.
+- Validating an absolute HTTP(S) action URL in the public package provides a
+  useful fail-fast check while still permitting loopback HTTP development.
+- Defensive cloning must copy nested pointers and both action and scope slices;
+  copying only the top-level struct would still share mutable backing arrays.
+
+### What was tricky to build
+
+The default template must preserve two independent layers of validation.
+Browser-required fields improve usability, but the browser is untrusted and can
+be bypassed. The provider will still reject missing credentials. Conversely,
+browser validation must not block a security-relevant denial action. The
+`Action.SkipsConstraintValidation` method makes that required exception explicit
+without granting the renderer protocol authority.
+
+### What warrants a second pair of eyes
+
+- Review the exported struct surface for future additive evolution.
+- Review whether public English `Label` and `Explanation` methods belong on the
+  semantic types or only in the default renderer.
+- Review the strict action-URL validation against unusual but valid issuer
+  deployments.
+- Confirm the default error semantics associate invalid credentials with both
+  username and password without revealing which field failed.
+
+### What should be done in the future
+
+- Thread the renderer through `embeddedidp.Options` and the strict provider.
+- Add conformance analysis that prevents trusted-content wrappers in downstream
+  renderers, since the public model alone cannot stop a host from converting a
+  string to `template.HTML`.
+
+### Code review instructions
+
+- Start with `pkg/idpui/renderer.go` and `types.go`, then inspect the embedded
+  template and hostile-input tests.
+- Validate with:
+
+  ```bash
+  go test ./pkg/idpui -count=1
+  go test ./... -count=1
+  ```
+
+### Technical details
+
+The committed package contains 705 lines across seven files. `NewDefaultRenderer`
+parses its embedded template once, and `html/template.Template` is safe for
+concurrent execution after parsing.

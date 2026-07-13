@@ -8,11 +8,11 @@
 - [x] Phase 0.4: Define the renderer trust boundary, public API, CSP, asset model, failure policy, and decision records. <!-- t:tazx -->
 - [x] Phase 0.5: Complete the intern-ready design guide, investigation diary, relationships, doctor validation, and reMarkable delivery. <!-- t:58s9 -->
 - [x] Phase 0.6: Obtain identity, host, frontend, and security approval for the proposed contract before implementation. <!-- t:8uag -->
-- [ ] Phase 1.1: Create dependency-light pkg/idpui view-model and closed action/reason/error types. <!-- t:n40g -->
-- [ ] Phase 1.2: Add the writer-based InteractionRenderer interface and compile-time implementation assertions. <!-- t:w4uc -->
-- [ ] Phase 1.3: Implement the embedded html/template default renderer without trusted-content wrapper types. <!-- t:fqn4 -->
-- [ ] Phase 1.4: Add default-renderer unit tests for every page shape, dynamic-value escaping, and password omission. <!-- t:2yft -->
-- [ ] Phase 1.5: Add semantic golden examples and public package documentation without exact-markup compatibility promises. <!-- t:wz4y -->
+- [x] Phase 1.1: Create dependency-light pkg/idpui view-model and closed action/reason/error types. <!-- t:n40g -->
+- [x] Phase 1.2: Add the writer-based InteractionRenderer interface and compile-time implementation assertions. <!-- t:w4uc -->
+- [x] Phase 1.3: Implement the embedded html/template default renderer without trusted-content wrapper types. <!-- t:fqn4 -->
+- [x] Phase 1.4: Add default-renderer unit tests for every page shape, dynamic-value escaping, and password omission. <!-- t:2yft -->
+- [x] Phase 1.5: Add semantic golden examples and public package documentation without exact-markup compatibility promises. <!-- t:wz4y -->
 - [ ] Phase 2.1: Add UIConfig to pkg/embeddedidp.Options and forward the renderer into fositeadapter.Options. <!-- t:0unn -->
 - [ ] Phase 2.2: Default nil UI configuration to the built-in renderer and add public construction tests. <!-- t:4cre -->
 - [ ] Phase 2.3: Replace scalar renderInteraction arguments with a typed page builder and defensive slice copies. <!-- t:fw0i -->

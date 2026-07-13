@@ -27,6 +27,12 @@ RelatedFiles:
       Note: Construction boundary that forwards public options into the strict adapter
     - Path: repo://pkg/idpstore/types.go
       Note: Defines clients sessions consent required actions and authorization interaction records
+    - Path: repo://pkg/idpui/default_renderer.go
+      Note: Implemented secure built-in renderer
+    - Path: repo://pkg/idpui/renderer.go
+      Note: Implemented public renderer contract
+    - Path: repo://pkg/idpui/types.go
+      Note: Implemented typed presentation model
 ExternalSources:
     - https://pkg.go.dev/html/template
     - https://www.w3.org/TR/CSP/
@@ -40,6 +46,7 @@ LastUpdated: 2026-07-13T17:38:38.914499982-04:00
 WhatFor: Defines the public rendering API, trust boundary, CSP and asset policy, migration plan, implementation phases, and verification gates for customizable tiny-idp browser interactions.
 WhenToUse: Read before changing login or consent HTML, exposing UI configuration through embeddedidp.Options, mounting theme assets, modifying interaction errors, or reviewing a custom renderer for production use.
 ---
+
 
 
 # Secure Interaction Rendering Analysis Design and Implementation Guide
