@@ -1,0 +1,51 @@
+# Tasks
+
+## TODO
+
+- [x] Phase 0.1: Map strict provider rendering, authorize state transitions, interaction storage, CSRF, embedding construction, xapp mounts, and current tests. <!-- t:3pfy -->
+- [x] Phase 0.2: Distinguish the strict Fosite interaction page from the synthetic server login template. <!-- t:zclj -->
+- [x] Phase 0.3: Preserve primary Go template, CSP, CSRF, OIDC, OAuth BCP, and WCAG sources in the ticket. <!-- t:hl6w -->
+- [x] Phase 0.4: Define the renderer trust boundary, public API, CSP, asset model, failure policy, and decision records. <!-- t:tazx -->
+- [x] Phase 0.5: Complete the intern-ready design guide, investigation diary, relationships, doctor validation, and reMarkable delivery. <!-- t:58s9 -->
+- [x] Phase 0.6: Obtain identity, host, frontend, and security approval for the proposed contract before implementation. <!-- t:8uag -->
+- [ ] Phase 1.1: Create dependency-light pkg/idpui view-model and closed action/reason/error types. <!-- t:n40g -->
+- [ ] Phase 1.2: Add the writer-based InteractionRenderer interface and compile-time implementation assertions. <!-- t:w4uc -->
+- [ ] Phase 1.3: Implement the embedded html/template default renderer without trusted-content wrapper types. <!-- t:fqn4 -->
+- [ ] Phase 1.4: Add default-renderer unit tests for every page shape, dynamic-value escaping, and password omission. <!-- t:2yft -->
+- [ ] Phase 1.5: Add semantic golden examples and public package documentation without exact-markup compatibility promises. <!-- t:wz4y -->
+- [ ] Phase 2.1: Add UIConfig to pkg/embeddedidp.Options and forward the renderer into fositeadapter.Options. <!-- t:0unn -->
+- [ ] Phase 2.2: Default nil UI configuration to the built-in renderer and add public construction tests. <!-- t:4cre -->
+- [ ] Phase 2.3: Replace scalar renderInteraction arguments with a typed page builder and defensive slice copies. <!-- t:fw0i -->
+- [ ] Phase 2.4: Buffer renderer output with a fixed size bound and fail before committing the HTTP response. <!-- t:uc1i -->
+- [ ] Phase 2.5: Keep headers, status codes, cookies, and redirects provider-owned and add sanitized render-failure observability. <!-- t:cymp -->
+- [ ] Phase 2.6: Add the reviewed interaction CSP for same-origin external CSS while retaining script denial and anti-framing. <!-- t:oz5y -->
+- [ ] Phase 2.7: Remove the manual string renderer and htmlEscape helper after all callers migrate. <!-- t:lgo2 -->
+- [ ] Phase 3.1: Classify interaction-resume failures into retryable, terminal, protocol, and unavailable categories. <!-- t:80fm -->
+- [ ] Phase 3.2: Rerender missing-login and invalid-credential failures with generic non-enumerating public errors. <!-- t:8r7i -->
+- [ ] Phase 3.3: Preserve no-password-retention and decide normalized-login repopulation policy. <!-- t:3sa2 -->
+- [ ] Phase 3.4: Model missing-session, prompt=login, max_age, consent-only, combined login/consent, and step-up page states. <!-- t:0bm9 -->
+- [ ] Phase 3.5: Validate submitted actions against server-required actions independent of rendered controls. <!-- t:3kqr -->
+- [ ] Phase 3.6: Resolve and test 303 versus 302 redirects after credential POSTs using RFC 9700 guidance. <!-- t:ac5j -->
+- [ ] Phase 3.7: Re-run replay, expiry, browser/session binding, client mutation, scope, redirect, and concurrent-terminal tests. <!-- t:8elq -->
+- [ ] Phase 4.1: Create cmd/tinyidp-xapp/internal/loginui with a host-owned html/template renderer. <!-- t:021t -->
+- [ ] Phase 4.2: Embed the xapp login template and CSS into the application binary. <!-- t:2lzq -->
+- [ ] Phase 4.3: Mount themed assets under /static/tinyidp/ through the existing outer host. <!-- t:5fdi -->
+- [ ] Phase 4.4: Validate root-relative /static/ theme URLs at renderer construction. <!-- t:u88o -->
+- [ ] Phase 4.5: Implement accessible responsive login, forced-login, consent, deny, and error presentations. <!-- t:v9g1 -->
+- [ ] Phase 4.6: Wire the renderer into both development and production xapp construction. <!-- t:9vhb -->
+- [ ] Phase 4.7: Add an HTTP smoke test for themed HTML, CSS reachability, media type, and CSP compatibility. <!-- t:tyzo -->
+- [ ] Phase 5.1: Build a reusable structural renderer-conformance harness for downstream hosts. <!-- t:ktfo -->
+- [ ] Phase 5.2: Detect scripts, event handlers, inline styles, dangerous URLs, protocol hidden fields, and external origins. <!-- t:jeb4 -->
+- [ ] Phase 5.3: Add go/analysis checks for text/template, trusted-content wrappers, direct HTML string construction, and broad renderer HTTP APIs. <!-- t:mqle -->
+- [ ] Phase 5.4: Add analysistest positive and negative fixtures and integrate the analyzer with repository gates. <!-- t:iyed -->
+- [ ] Phase 5.5: Fuzz renderer escaping, conformance parsing, bounded writes, action matrices, Unicode, invalid UTF-8, and long values. <!-- t:74ok -->
+- [ ] Phase 5.6: Add full provider state-matrix integration tests with recording and failing renderers. <!-- t:cui3 -->
+- [ ] Phase 5.7: Add real-browser CSP, framing, third-party-request, password-manager, and two-account scenarios. <!-- t:mwnv -->
+- [ ] Phase 5.8: Run automated and manual accessibility review for labels, errors, focus, keyboard, zoom, contrast, and authentication. <!-- t:x0i2 -->
+- [ ] Phase 5.9: Add bounded render latency, failure, and oversized-document metrics without sensitive labels. <!-- t:1m8k -->
+- [ ] Phase 5.10: Run full Go tests, race tests, fuzz budgets, static analysis, and existing verification/model scenarios. <!-- t:g971 -->
+- [ ] Phase 6.1: Publish public API, custom-renderer, CSP, static-asset, caching, and reverse-proxy documentation. <!-- t:mcb1 -->
+- [ ] Phase 6.2: Add a production doctor check for interaction HTML and stylesheet health without token logging. <!-- t:2to7 -->
+- [ ] Phase 6.3: Capture safe visual-review evidence and execute a canary deployment. <!-- t:mfov -->
+- [ ] Phase 6.4: Review page source, headers, redirects, audit events, logs, and browser network traffic for secret leakage. <!-- t:m93v -->
+- [ ] Phase 6.5: Record residual risks, rollback procedure, and release approval. <!-- t:pw3y -->

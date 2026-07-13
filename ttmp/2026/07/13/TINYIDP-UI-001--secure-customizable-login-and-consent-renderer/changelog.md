@@ -1,0 +1,35 @@
+# Changelog
+
+## 2026-07-13
+
+- Initial workspace created
+
+
+## 2026-07-13
+
+Created an evidence-backed 1,500-line secure interaction renderer design, seven-source research packet, detailed diary, and 47-task implementation and assurance plan; runtime implementation remains pending approval.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Current strict rendering and authorization flow analyzed
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Proposed public renderer injection boundary
+
+
+## 2026-07-13
+
+Validated the ticket cleanly and delivered the index, design guide, diary, tasks, and changelog as a bundled PDF to /ai/2026/07/13/TINYIDP-UI-001 on reMarkable.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/design-doc/01-secure-interaction-rendering-analysis-design-and-implementation-guide.md — Primary delivered design
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/reference/01-investigation-diary.md — Delivery evidence and continuation log
+
+
+## 2026-07-13
+
+Step 5: Recorded explicit implementation approval and prepared the design and research ticket as a documentation-only baseline before runtime changes.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/reference/01-investigation-diary.md — Approval gate and baseline preparation
+
