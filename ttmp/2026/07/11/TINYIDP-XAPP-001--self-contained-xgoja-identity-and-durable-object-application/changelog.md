@@ -34,3 +34,11 @@ Added an intern-ready ownership map, security model, executable continuation pro
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/11/TINYIDP-XAPP-001--self-contained-xgoja-identity-and-durable-object-application/playbook/01-new-intern-handoff-and-continuation-playbook.md — Primary onboarding and continuation entry point
+
+## 2026-07-13
+
+Completed real-browser session lifecycle checkpoint: generic CSRF-protected POST-only logout (go-go-goja 73fd871), single secure XAPP session cookie, explicit logout UI, sanitized before/after evidence, and process-restart persistence proof (tiny-idp 99505d1).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/app/frontend/public/app.js — Product logout behavior and visible two-session semantics

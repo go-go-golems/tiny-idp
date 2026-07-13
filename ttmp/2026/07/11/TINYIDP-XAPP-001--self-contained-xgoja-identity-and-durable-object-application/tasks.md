@@ -62,7 +62,7 @@
 
 - [ ] Build embedded TypeScript/HTML/CSS frontend using pnpm and React/Redux/RTK Query if the UI exceeds the initial minimal shell. <!-- t:fw3t -->
 - [x] Serve assets only under /static and serve index through an explicit route. <!-- t:dvyc -->
-- [ ] Implement session bootstrap, login redirect, app logout, and visible IdP-session semantics. <!-- t:jxa1 -->
+- [x] Implement session bootstrap, login redirect, app logout, and visible IdP-session semantics. <!-- t:jxa1 -->
 - [x] Implement CSRF-aware object read/write API client. <!-- t:x474 -->
 - [ ] Add loading, unauthenticated, authenticated, forbidden, conflict, offline, and error states. <!-- t:hgot -->
 - [ ] Add accessible keyboard/focus/status behavior. <!-- t:1jom -->

@@ -15,6 +15,8 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/app/frontend/public/app.js
+      Note: CSRF-bearing logout UI and explicit retained-IdP-session state committed in 99505d1
     - Path: repo://cmd/tinyidp-xapp/production_app.go
       Note: Persistent product composition and application-versus-IdP cookie configuration exercised by the real server
     - Path: repo://cmd/tinyidp-xapp/serve_initialized.go
@@ -31,6 +33,7 @@ LastUpdated: 2026-07-11T19:05:00-04:00
 WhatFor: Reconstruct why the architecture and implementation took their present form, reproduce validation, and help a new contributor resume work safely.
 WhenToUse: Read before changing the product host, OIDC integration, subject-to-object binding, persistence layout, or generated xgoja package.
 ---
+
 
 
 
@@ -1615,3 +1618,297 @@ than ending at documentation.
   the harness against `https://127.0.0.1:19443`.
 - The documentation work does not complete browser task `j5ba`, isolation task
   `ihzp`, or fault task `uvhr`.
+
+## Step 38 — Complete the first real-Chromium product baseline
+
+The resumed browser run crossed the boundary that the previous checkpoint did
+not: system Chrome completed the rendered tiny-idp login, OIDC authorization
+code flow, application callback, frontend bootstrap, CSRF-protected object
+writes, persistent reloads, and two independent users' private objects against
+the actual TLS listener. No application behavior was changed to obtain this
+result; only Playwright's executable path changed.
+
+The successful run also produced two evidence-backed lifecycle findings. The
+generic OIDC logout endpoint revoked an application session on a POST without
+CSRF, and the Express host emitted an unused non-Secure
+`go_go_goja_session` cookie in addition to the intended secure application
+session. These observations now justify focused implementation work.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 37)
+
+**Assistant interpretation:** Continue from the stopped browser checkpoint and
+use the running product to determine the next concrete hardening work.
+
+**Inferred user intent:** Replace design-only confidence with real application
+evidence, then robustify security behavior revealed by that evidence.
+
+**Commit (code):** pending at the time this step was written.
+
+### What I did
+
+- Changed the draft harness's Chromium executable from the absent
+  Playwright-managed path to `/usr/bin/google-chrome`.
+- Verified the preserved initialized fixture, certificate, and two password
+  files still existed.
+- Killed any prior listener, removed any stale tmux session, and started the
+  real `serve-initialized` command in `tinyidp-xapp-e2e`.
+- Captured the server startup log and confirmed `/readyz` returned HTTP 200.
+- Ran the Python harness under `PYENV_VERSION=3.11.4` and Playwright 1.50.0.
+- Observed a complete passing harness result for its current assertions.
+- Traced the unexpected cookie to `pkg/gojahttp/session.go`: the Express host
+  creates a lightweight opaque request session by default for every planned
+  route, independently from hostauth's `xapp_session`.
+- Traced logout behavior to `pkg/gojahttp/auth/oidcauth/oidcauth.go` and native
+  route construction in `pkg/xgoja/hostauth/builder.go`.
+- Stored a sanitized pre-hardening result at
+  `reference/results/01-real-browser-baseline-before-lifecycle-hardening.json`.
+
+### Why
+
+- Selecting system Chrome was the single untried variable identified by Step
+  36. Keeping product code unchanged made the successful result interpretable.
+- Pre-fix evidence is necessary to show that later lifecycle tests detect real
+  behavior changes rather than merely encoding assumptions.
+- The structured result excludes secrets and stable identity material while
+  preserving statuses, cookie attributes, and equality/isolation facts needed
+  for review.
+
+### What worked
+
+- Alice and Bob normalized to distinct application users.
+- Alice's and Bob's JSON documents persisted and remained isolated.
+- A POST to `/api/object` without the application CSRF token returned 403.
+- The intended production cookies were Secure and HttpOnly with Lax SameSite:
+  `xapp_session` at `/`, and `xapp_idp_session` plus `xapp_idp_csrf` at
+  `/idp`.
+- POST `/auth/logout` revoked Alice's app session; `/auth/session` then returned
+  401.
+- The actual server remained ready during the browser flow.
+
+### What didn't work
+
+- Logout without a CSRF header returned 204 instead of failing closed.
+- GET logout remains registered as a state-changing native endpoint.
+- The browser received `go_go_goja_session` with `Secure=false`, path `/`,
+  HttpOnly, and SameSite=Lax. The XAPP does not use this separate lightweight
+  session for authentication or object identity.
+- The first readiness poll immediately after tmux launch printed
+  `curl: (7) Failed to connect`; the bounded loop succeeded on the next poll.
+  This is the expected process startup race, not a readiness failure.
+- The harness output still included opaque application user IDs on stdout even
+  though the persisted result removed them. The harness must stop emitting
+  those IDs before its output is captured directly as a release artifact.
+
+### What I learned
+
+- The composed product is usable for its central v1 story: two real users can
+  authenticate and operate isolated persistent objects through the embedded
+  frontend.
+- Hostauth application sessions and gojahttp lightweight request sessions are
+  separate mechanisms. Leaving both enabled created a redundant cookie with a
+  weaker transport attribute.
+- Logout is a generic hostauth lifecycle contract, so the fix belongs primarily
+  in go-go-goja and must be consumed by the XAPP frontend, not patched only at
+  the product mux.
+
+### What was tricky to build
+
+- Browser cookie inspection must preserve attributes without values. The
+  current result stores only names, paths, booleans, and SameSite modes.
+- Two-user isolation evidence must prove distinctness without publishing raw
+  subjects or object binding IDs. The sanitized artifact records boolean
+  distinctness and per-user document outcomes.
+- The unexpected cookie was not the insecure form of `xapp_session`; it was a
+  second session mechanism. Fixing the Secure bit alone would retain needless
+  state and obscure which session is authoritative. The product should disable
+  the unused lightweight session explicitly.
+
+### What warrants a second pair of eyes
+
+- Confirm that no trusted XAPP route consumes `ctx.request.session` before
+  disabling gojahttp lightweight sessions.
+- Review removal of GET logout as an intentional breaking security correction,
+  not a compatibility concern.
+- Review whether logout revocation errors should return 500 without clearing
+  the cookie, clear the browser cookie while reporting failure, or trigger a
+  stronger audit/incident response. The existing code ignores the error.
+- Confirm the frontend's logout transition after switching from a native form
+  POST to a CSRF-bearing fetch.
+
+### What should be done in the future
+
+- Disable the unused gojahttp session in XAPP composition and assert no
+  `go_go_goja_session` cookie is emitted.
+- Require current application-session CSRF on POST logout, remove GET logout,
+  handle revocation failure explicitly, and update the frontend.
+- Sanitize harness stdout, replace fixed waits, and persist the post-fix result.
+- Repeat after process restart before completing browser task `j5ba`.
+
+### Code review instructions
+
+- Reproduce with the exact server and browser commands in the intern playbook.
+- Inspect the sanitized JSON artifact; verify it contains no values for cookies,
+  passwords, codes, tokens, subjects, user IDs, or binding IDs.
+- Review `gojahttp.NewHost` construction in `composeApplication`, then read
+  `gojahttp/session.go`, `oidcauth.handleLogout`, and hostauth native route
+  registration.
+
+### Technical details
+
+- Browser: system Google Chrome, headless user-agent major 138.
+- Python: pyenv 3.11.4, Playwright 1.50.0.
+- Origin: `https://127.0.0.1:19443`.
+- Baseline statuses: readiness 200, missing-CSRF object POST 403,
+  missing-CSRF logout POST 204, post-logout session 401.
+- The server remains in tmux session `tinyidp-xapp-e2e` while lifecycle changes
+  are prepared; it must be restarted before validating compiled changes.
+
+## Step 39 — Commit the browser lifecycle hardening after misleading hook output
+
+The lifecycle hardening is now committed in both affected repositories. The
+go-go-goja pre-commit hook caused a misleading checkpoint: its large parallel
+lint/test output ended before the Git success line was displayed, so the turn
+reported that the commit had not been created. A later direct status check
+showed that the second commit attempt had in fact completed as `73fd871`.
+
+The remaining tiny-idp commit was intentionally made with `LEFTHOOK=0` after
+the user authorized skipping the redundant hook. This did not skip validation:
+the focused tests, generated-code check, complete tiny-idp suite, complete
+go-go-goja suite, vet, lint, browser baseline, and restart browser run had all
+already passed before the commit.
+
+### Prompt Context
+
+**User prompt (verbatim):** "why did it not create the commit? just LEFTHOOK=0 I guess to skip the checks"
+
+**Assistant interpretation:** Determine whether the hook actually prevented the
+commit, use the supported lefthook bypass for the already-validated remaining
+checkpoint, and preserve the explanation.
+
+**Inferred user intent:** Avoid repeating expensive successful checks merely
+because hook output handling was confusing, while still ending with durable,
+reviewable commits.
+
+**Commit (code):** `73fd871` — "HTTP: require CSRF for OIDC logout"
+
+**Commit (product and evidence):** `99505d1` — "App: harden browser session lifecycle"
+
+### What I did
+
+- Inspected `go-go-goja/lefthook.yml`. Its pre-commit hook runs `make lint` and
+  `make test` in parallel for staged Go changes.
+- Checked go-go-goja status and discovered that the staged set was clean and
+  HEAD was already `73fd871`.
+- Verified the commit contains the intended four generic OIDC/hostauth files.
+- Revalidated the tiny-idp browser harness syntax and all three structured JSON
+  evidence files.
+- Searched the harness and results for known password phrases, raw Set-Cookie
+  headers, bearer headers, and the old raw user-ID output shape.
+- Staged only XAPP source, generated assets, focused test, harness, and three
+  sanitized results. The unrelated OIDF source directories and the diary were
+  excluded.
+- Committed the already-validated tiny-idp staged set with:
+
+  ```text
+  LEFTHOOK=0 git commit -m "App: harden browser session lifecycle"
+  ```
+
+### Why
+
+- Repeating the same repository-wide hook after both full suites and lint had
+  passed would add time without new evidence.
+- Separating the generic hostauth commit from the product integration commit
+  preserves ownership: go-go-goja defines logout semantics; tiny-idp-xapp
+  consumes them, disables unused request sessions, presents UI state, and
+  stores browser evidence.
+
+### What worked
+
+- go-go-goja commit `73fd871` exists and contains 80 insertions and 8 deletions
+  across the OIDC handler and hostauth builder with focused tests.
+- tiny-idp commit `99505d1` was created immediately with hooks disabled and
+  contains the XAPP behavior, generated assets, test, harness, and sanitized
+  before/after/restart evidence.
+- No unrelated untracked source directory was staged.
+
+### What didn't work
+
+- The first go-go-goja commit attempt ran the lefthook lint stream but left the
+  changes staged. The captured output did not include a final error or exit
+  explanation, so the precise first-attempt cause is unknown.
+- The second attempt did create the commit, but the tool capture again ended at
+  the hook output and omitted Git's final commit line. The prior response
+  therefore incorrectly treated the second attempt as another failure.
+- A verification command run from tiny-idp attempted `git show 73fd871`; that
+  hash belongs to the sibling go-go-goja repository and was correctly reported
+  as unknown there. Using `git -C ../go-go-goja show 73fd871` verified it.
+
+### What I learned
+
+- Hook process output is not authoritative evidence of Git state when commands
+  are long and parallel. Always check `git status`, `git log -1`, and
+  `git rev-parse HEAD` after the hook process exits.
+- `LEFTHOOK=0` is appropriate when the same indexed content has already passed
+  the hook-equivalent checks and the bypass is explicit. It must not be used to
+  conceal a failing or unrun validation gate.
+
+### What was tricky to build
+
+- Three state machines overlapped: the tool cell, lefthook's parallel child
+  commands, and Git's commit transaction. A completed/truncated output cell did
+  not clearly show whether Git had advanced HEAD. Repository state, rather than
+  the last visible log line, resolved the ambiguity.
+- The product commit includes generated embedded assets. Both their source
+  files and generated copies had to be staged together after `go generate` so
+  the committed binary behavior matches the reviewed frontend source.
+
+### What warrants a second pair of eyes
+
+- Review `73fd871` for the policy choice that GET logout is removed, POST logout
+  requires the current session's CSRF token, and revocation failure returns 500
+  without clearing the cookie.
+- Review `99505d1` for the choice to disable the unused gojahttp lightweight
+  session completely rather than merely set its Secure bit.
+- Confirm the frontend's retained-IdP-session explanation is sufficient product
+  language and accessibility behavior.
+- Consider configuring lefthook or the execution wrapper to retain the final
+  exit status and commit tail for long parallel hooks.
+
+### What should be done in the future
+
+- Characterize disabled-user behavior with an already-active XAPP session.
+- Add expiry and forced-reauthentication browser scenarios before completing
+  browser task `j5ba`.
+- Begin deterministic IdP/app/object persistence and maintenance failure
+  scenarios only after recording the disabled-user contract.
+
+### Code review instructions
+
+- In go-go-goja:
+
+  ```text
+  git show 73fd871
+  go test ./pkg/gojahttp/auth/oidcauth ./pkg/xgoja/hostauth -count=1
+  ```
+
+- In tiny-idp:
+
+  ```text
+  git show 99505d1
+  go test ./cmd/tinyidp-xapp/... -count=1
+  ```
+
+- Re-run the browser harness with `--expect-existing` against the initialized
+  TLS tmux server and compare the output to
+  `reference/results/03-real-browser-after-process-restart.json`.
+
+### Technical details
+
+- Full suites passed before both commits:
+  - `go-go-goja: go test ./... -count=1`;
+  - `tiny-idp: go test ./... -count=1`.
+- Focused vet passed in both affected package groups.
+- The go-go-goja hook also reported golangci-lint `0 issues`.
+- The XAPP server was stopped and port 19443 released before committing.
