@@ -43,3 +43,12 @@ Step 6: Implemented and committed the dependency-light pkg/idpui contract, valid
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/default_renderer_test.go — Phase 1 verification evidence
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/renderer.go — Public rendering boundary
 
+
+## 2026-07-13
+
+Step 7: Integrated custom interaction rendering through the public embedding API, added bounded pre-commit rendering, strict action validation, recoverable retry pages, a reviewed same-origin-style CSP, and POST-to-303 redirect handling (commits 817fb15 and fdd008f).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/rendering.go — Typed page construction and bounded response rendering
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Public UI configuration boundary

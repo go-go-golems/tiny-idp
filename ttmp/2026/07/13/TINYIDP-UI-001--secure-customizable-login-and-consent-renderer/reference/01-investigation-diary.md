@@ -723,3 +723,167 @@ without granting the renderer protocol authority.
 The committed package contains 705 lines across seven files. `NewDefaultRenderer`
 parses its embedded template once, and `html/template.Template` is safe for
 concurrent execution after parsing.
+
+## Step 7: Integrate the renderer with the strict authorization provider
+
+Phases 2 and 3 moved presentation behind the public renderer contract without
+moving protocol authority. `pkg/embeddedidp` now accepts a renderer through its
+options, while the strict provider still creates and validates the interaction,
+owns headers and response status, authenticates credentials, enforces consent,
+and consumes the interaction exactly once.
+
+The integration deliberately made submitted actions stricter. A POST must carry
+an explicit `approve` or `deny` value corresponding to the rendered controls.
+There is no compatibility fallback for an omitted action. Existing test helpers
+were changed to model the button a browser actually submitted.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Complete the provider integration and retry/error
+behavior before beginning the xapp-specific visual renderer, with security
+regressions and a focused commit boundary.
+
+**Inferred user intent:** Make customization usable through the public embedding
+API without weakening forced-login, consent, CSRF, redirect, or interaction
+lifecycle invariants.
+
+**Commits (code):**
+
+- 817fb15 — "IdP: integrate customizable interaction rendering"
+- fdd008f — "IdP: enforce renderer output bound defensively"
+
+### What I did
+
+- Added `embeddedidp.UIConfig` and forwarded its renderer through the embedding
+  provider to `fositeadapter.Options`.
+- Defaulted a nil renderer to the built-in contextual template renderer.
+- Replaced scalar HTML construction with a typed interaction-page builder that
+  derives missing-session, `prompt=login`, `max_age`, consent, and step-up state.
+- Buffered rendered documents behind a 256 KiB writer and rejected failures,
+  empty output, and oversized output before committing HTML response headers.
+- Retained provider ownership of CSP, cache control, status, redirects, and audit
+  records. Render failures emit only a bounded reason code.
+- Re-rendered missing-credential and invalid-credential failures with generic
+  public errors. The normalized login may be retained; the model has no password
+  value field.
+- Required an explicit closed action value on resume and retained server-side
+  validation independent of whatever controls a custom renderer displays.
+- Converted successful authorization redirects following credential POSTs from
+  302 to 303.
+- Added recording, failing, oversized, retry, page-state, CSP, cache, redirect,
+  and public-construction tests.
+- Ran:
+
+  ```bash
+  go test ./pkg/idpui ./pkg/embeddedidp ./internal/fositeadapter ./internal/cmds -count=1
+  go test ./...
+  go test -race ./pkg/idpui ./pkg/embeddedidp ./internal/fositeadapter ./internal/cmds -count=1
+  ```
+
+### Why
+
+- A renderer is trusted to present a page, but it must never decide that an
+  authorization request is valid or that consent occurred.
+- Rendering into a bounded intermediate document prevents a template error from
+  producing a partially committed authentication page and limits memory use.
+- A 303 after a successful POST instructs the user agent to retrieve the client
+  redirect target with GET and avoids carrying POST semantics across the OAuth
+  redirect.
+- Retry pages improve user experience while preserving a generic credential
+  failure message and the same server-bound pending interaction.
+
+### What worked
+
+- Focused provider and embedding tests passed.
+- The complete repository suite passed, including xapp, production review
+  analyzers, verification scenarios, and external-consumer tests.
+- Race-enabled tests passed for all four packages touched by the integration.
+- Renderer errors and output-limit failures returned a generic plain-text 500;
+  neither template errors nor partially rendered HTML reached the response.
+- A custom renderer supplied through the public `embeddedidp.Options` path was
+  invoked by a real authorization request.
+
+### What didn't work
+
+- The first focused provider run produced repeated `invalid interaction action`
+  failures. The old test fixtures POSTed credentials without representing a
+  clicked submit button. I updated shared helpers to set `action=approve`; I did
+  not add a permissive production fallback.
+- A shared consent helper then changed two tests that intentionally exercise a
+  missing decision. One initial patch placed `form.Del("action")` in the adjacent
+  `prompt=none` test, causing that test to return 400 while the intended test
+  still reached a client redirect. I inspected the exact call sites, moved the
+  deletion to the production missing-consent test, and reran both packages.
+- The first full suite after provider tests passed found the same fixture issue
+  in `internal/cmds/TestStrictProviderHonorsSeededUserPassword`: expected 401 or
+  a redirect became 400. `fetchStrictCSRF` now explicitly submits `approve`.
+
+### What I learned
+
+- Test helpers for browser forms are part of the security model. Treating a
+  missing submit-button value as approval hid an ambiguity that production code
+  should reject.
+- A writer can ignore the error returned by a bounded destination. The provider
+  therefore records an overflow flag in addition to returning
+  `errInteractionDocumentTooLarge`, so even a faulty custom renderer cannot turn
+  a truncated page into a successful response.
+- Failure `Content-Type` must be selected after rendering succeeds. Setting HTML
+  before `http.Error` would label the generic failure body as HTML.
+
+### What was tricky to build
+
+Retryable failures must preserve the interaction handle and CSRF token while
+not recreating or consuming the interaction. Terminal failures such as invalid
+action, invalid binding, replay, expiry, and denial must continue through their
+existing fail-closed paths. The page builder is only invoked for the explicitly
+recoverable credential and consent branches.
+
+The 303 conversion also had to be narrowly scoped. It wraps only the Fosite
+authorize response writer for a POST; ordinary authorization GET redirects and
+all error handling retain their existing behavior.
+
+### What warrants a second pair of eyes
+
+- Confirm the retry status policy of 400 for missing credentials and 401 for
+  invalid credentials is appropriate for every reverse proxy and browser host.
+- Review whether retaining the normalized login after an invalid password is the
+  desired privacy/usability balance.
+- Review that a custom renderer which deliberately omits an action cannot create
+  a confusing loop; the provider correctly rejects the POST, but conformance
+  tooling should diagnose the page before deployment.
+- Confirm the 256 KiB bound and generic render-failure audit reasons are suitable
+  operational defaults.
+
+### What should be done in the future
+
+- Build the xapp-owned renderer and same-origin stylesheet.
+- Add reusable structural conformance tests and Go static analysis so downstream
+  renderers are checked for scripts, unsafe URLs, trusted-content wrappers, and
+  direct HTML construction.
+- Add bounded renderer metrics and browser-level CSP/accessibility evidence.
+
+### Code review instructions
+
+- Start at `pkg/embeddedidp/options.go`, then follow renderer forwarding into
+  `internal/fositeadapter/provider.go` and `rendering.go`.
+- Inspect `rendering_test.go` before reviewing the implementation; it documents
+  the intended trust boundary and response behavior.
+- Re-run:
+
+  ```bash
+  go test ./internal/fositeadapter ./pkg/embeddedidp ./internal/cmds -count=1
+  go test -race ./pkg/idpui ./pkg/embeddedidp ./internal/fositeadapter ./internal/cmds -count=1
+  ```
+
+### Technical details
+
+The provider's reviewed interaction CSP is:
+
+```text
+default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'
+```
+
+This permits only same-origin external CSS. Scripts, inline styles, images,
+fonts, frames, objects, and network connections remain denied by default.

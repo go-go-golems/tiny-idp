@@ -13,20 +13,20 @@
 - [x] Phase 1.3: Implement the embedded html/template default renderer without trusted-content wrapper types. <!-- t:fqn4 -->
 - [x] Phase 1.4: Add default-renderer unit tests for every page shape, dynamic-value escaping, and password omission. <!-- t:2yft -->
 - [x] Phase 1.5: Add semantic golden examples and public package documentation without exact-markup compatibility promises. <!-- t:wz4y -->
-- [ ] Phase 2.1: Add UIConfig to pkg/embeddedidp.Options and forward the renderer into fositeadapter.Options. <!-- t:0unn -->
-- [ ] Phase 2.2: Default nil UI configuration to the built-in renderer and add public construction tests. <!-- t:4cre -->
-- [ ] Phase 2.3: Replace scalar renderInteraction arguments with a typed page builder and defensive slice copies. <!-- t:fw0i -->
-- [ ] Phase 2.4: Buffer renderer output with a fixed size bound and fail before committing the HTTP response. <!-- t:uc1i -->
-- [ ] Phase 2.5: Keep headers, status codes, cookies, and redirects provider-owned and add sanitized render-failure observability. <!-- t:cymp -->
-- [ ] Phase 2.6: Add the reviewed interaction CSP for same-origin external CSS while retaining script denial and anti-framing. <!-- t:oz5y -->
-- [ ] Phase 2.7: Remove the manual string renderer and htmlEscape helper after all callers migrate. <!-- t:lgo2 -->
-- [ ] Phase 3.1: Classify interaction-resume failures into retryable, terminal, protocol, and unavailable categories. <!-- t:80fm -->
-- [ ] Phase 3.2: Rerender missing-login and invalid-credential failures with generic non-enumerating public errors. <!-- t:8r7i -->
-- [ ] Phase 3.3: Preserve no-password-retention and decide normalized-login repopulation policy. <!-- t:3sa2 -->
-- [ ] Phase 3.4: Model missing-session, prompt=login, max_age, consent-only, combined login/consent, and step-up page states. <!-- t:0bm9 -->
-- [ ] Phase 3.5: Validate submitted actions against server-required actions independent of rendered controls. <!-- t:3kqr -->
-- [ ] Phase 3.6: Resolve and test 303 versus 302 redirects after credential POSTs using RFC 9700 guidance. <!-- t:ac5j -->
-- [ ] Phase 3.7: Re-run replay, expiry, browser/session binding, client mutation, scope, redirect, and concurrent-terminal tests. <!-- t:8elq -->
+- [x] Phase 2.1: Add UIConfig to pkg/embeddedidp.Options and forward the renderer into fositeadapter.Options. <!-- t:0unn -->
+- [x] Phase 2.2: Default nil UI configuration to the built-in renderer and add public construction tests. <!-- t:4cre -->
+- [x] Phase 2.3: Replace scalar renderInteraction arguments with a typed page builder and defensive slice copies. <!-- t:fw0i -->
+- [x] Phase 2.4: Buffer renderer output with a fixed size bound and fail before committing the HTTP response. <!-- t:uc1i -->
+- [x] Phase 2.5: Keep headers, status codes, cookies, and redirects provider-owned and add sanitized render-failure observability. <!-- t:cymp -->
+- [x] Phase 2.6: Add the reviewed interaction CSP for same-origin external CSS while retaining script denial and anti-framing. <!-- t:oz5y -->
+- [x] Phase 2.7: Remove the manual string renderer and htmlEscape helper after all callers migrate. <!-- t:lgo2 -->
+- [x] Phase 3.1: Classify interaction-resume failures into retryable, terminal, protocol, and unavailable categories. <!-- t:80fm -->
+- [x] Phase 3.2: Rerender missing-login and invalid-credential failures with generic non-enumerating public errors. <!-- t:8r7i -->
+- [x] Phase 3.3: Preserve no-password-retention and decide normalized-login repopulation policy. <!-- t:3sa2 -->
+- [x] Phase 3.4: Model missing-session, prompt=login, max_age, consent-only, combined login/consent, and step-up page states. <!-- t:0bm9 -->
+- [x] Phase 3.5: Validate submitted actions against server-required actions independent of rendered controls. <!-- t:3kqr -->
+- [x] Phase 3.6: Resolve and test 303 versus 302 redirects after credential POSTs using RFC 9700 guidance. <!-- t:ac5j -->
+- [x] Phase 3.7: Re-run replay, expiry, browser/session binding, client mutation, scope, redirect, and concurrent-terminal tests. <!-- t:8elq -->
 - [ ] Phase 4.1: Create cmd/tinyidp-xapp/internal/loginui with a host-owned html/template renderer. <!-- t:021t -->
 - [ ] Phase 4.2: Embed the xapp login template and CSS into the application binary. <!-- t:2lzq -->
 - [ ] Phase 4.3: Mount themed assets under /static/tinyidp/ through the existing outer host. <!-- t:5fdi -->
