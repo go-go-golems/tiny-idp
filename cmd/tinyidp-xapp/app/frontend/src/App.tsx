@@ -31,6 +31,7 @@ function App() {
   const me = useGetMeQuery(undefined, { skip: !sessionReady });
   const board = useGetBoardQuery(undefined, { skip: !sessionReady });
   const [logout, logoutState] = useLogoutMutation();
+  const [logoutMode, setLogoutMode] = useState<"local" | "idp" | null>(null);
 
   useEffect(() => {
     if (session.data) {
@@ -38,13 +39,19 @@ function App() {
     }
   }, [dispatch, session.data]);
 
-  const handleLogout = async () => {
+  const handleLogout = async (mode: "local" | "idp") => {
+    setLogoutMode(mode);
     try {
       await logout().unwrap();
+      if (mode === "idp") {
+        window.location.assign(idpLogoutURL());
+        return;
+      }
       dispatch(sessionEnded());
       dispatch(bbsApi.util.resetApiState());
     } catch {
       // The visible mutation state below carries the server error.
+      setLogoutMode(null);
     }
   };
 
@@ -57,6 +64,9 @@ function App() {
   }
 
   if (isUnauthorized(session.error)) {
+    if (new URLSearchParams(window.location.search).get("state") === "signed-out-of-idp") {
+      return <IdPSessionEnded />;
+    }
     return <SignInRequired />;
   }
 
@@ -77,15 +87,20 @@ function App() {
         <div className="session-block">
           <span className="session-label">SIGNED IN</span>
           <strong data-testid="current-user">{displayName}</strong>
-          <button className="text-action accent-coral" type="button" onClick={handleLogout} disabled={logoutState.isLoading}>
-            {logoutState.isLoading ? "Ending session…" : "Log out"}
-          </button>
+          <div className="session-actions">
+            <button className="text-action" type="button" onClick={() => handleLogout("local")} disabled={logoutState.isLoading}>
+              {logoutState.isLoading && logoutMode === "local" ? "Ending app session…" : "Log out of Local Loop"}
+            </button>
+            <button className="text-action accent-coral" type="button" onClick={() => handleLogout("idp")} disabled={logoutState.isLoading}>
+              {logoutState.isLoading && logoutMode === "idp" ? "Ending both sessions…" : "Log out of Local Loop + tiny-idp"}
+            </button>
+          </div>
           {logoutState.error ? <span className="inline-error">{apiErrorMessage(logoutState.error)}</span> : null}
         </div>
       </header>
 
       <main className="container-fluid px-0">
-        <div className="row g-4">
+        <div className="row g-4 mx-0">
           <aside className="col-12 col-lg-4">
             <section className="intro-block" aria-labelledby="board-introduction">
               <p className="section-number">01 / BOARD</p>
@@ -264,8 +279,22 @@ function SessionEnded() {
     <div className="centered-notice" data-testid="session-ended">
       <p className="eyebrow accent-teal">SESSION ENDED</p>
       <h1>You are logged out of the application.</h1>
-      <p>Your tiny-idp identity-provider session may still be active. Starting again will create a new application session.</p>
-      <a className="primary-action d-inline-block" href="/auth/login?return_to=/">Sign in again</a>
+      <p>Your tiny-idp identity-provider session is still active. You can use it again without entering your password, or end it too.</p>
+      <div className="notice-actions">
+        <a className="primary-action d-inline-block" href="/auth/login?return_to=/">Sign in again</a>
+        <a className="text-action accent-coral" href={idpLogoutURL()}>End the tiny-idp session</a>
+      </div>
+    </div>
+  );
+}
+
+function IdPSessionEnded() {
+  return (
+    <div className="centered-notice" data-testid="idp-session-ended">
+      <p className="eyebrow accent-teal">BROWSER SESSIONS ENDED</p>
+      <h1>You are signed out of Local Loop and tiny-idp.</h1>
+      <p>This browser no longer has either session. Other applications and other devices manage their own sessions. Your password will be required here to sign in again.</p>
+      <a className="primary-action d-inline-block" href="/auth/login?return_to=/">Sign in</a>
     </div>
   );
 }
@@ -293,6 +322,15 @@ function formatTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit"
   }).format(date);
+}
+
+function idpLogoutURL(): string {
+  const parameters = new URLSearchParams({
+    client_id: "tinyidp-xapp",
+    post_logout_redirect_uri: new URL("/", window.location.origin).toString(),
+    state: "signed-out-of-idp"
+  });
+  return `/idp/end-session?${parameters.toString()}`;
 }
 
 export default App;

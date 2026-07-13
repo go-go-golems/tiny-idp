@@ -28,6 +28,10 @@ RelatedFiles:
       Note: Durable object persistence implementation
     - Path: ws://go-go-objects/pkg/xgoja/providers/durableobjects/durableobjects.go
       Note: Evidence separating in-process fetch from raw gateway mounting
+    - Path: repo://internal/fositeadapter/end_session.go
+      Note: Strict current-browser RP-initiated logout and redirect validation
+    - Path: repo://ttmp/2026/07/13/TINYIDP-BBS-001--shared-durable-object-bulletin-board/sources/01-openid-connect-rp-initiated-logout-1-0.md
+      Note: Defuddled OpenID Connect RP-Initiated Logout 1.0 standard
 ExternalSources: []
 Summary: Intern-ready architecture, API, security, state, frontend, implementation, and verification guide for the shared Durable Object bulletin board.
 LastUpdated: 2026-07-13T16:27:18.167445462-04:00
@@ -559,6 +563,48 @@ App
 └── ThreadList
     └── Thread: metadata, content, delete, replies, reply form
 ```
+
+### Logout semantics
+
+Local Loop exposes two different session operations because the application
+session and the embedded identity-provider browser session are distinct
+security objects:
+
+- **Log out of Local Loop** posts to `/auth/logout` with the application CSRF
+  token. It revokes and clears `xapp_session` only. A later authorization can
+  reuse tiny-idp SSO without asking for the password.
+- **Log out of Local Loop + tiny-idp** first performs that application logout,
+  then navigates to strict `/idp/end-session` with client ID
+  `tinyidp-xapp`, the exact registered application root as
+  `post_logout_redirect_uri`, and opaque return state. The provider revokes the
+  current server-side IdP browser session and clears the configured session and
+  CSRF cookies.
+
+The second operation is deliberately described as current-browser logout. It
+does not revoke application sessions already established at other relying
+parties, does not reach other devices, and does not perform front-channel or
+back-channel logout. After its redirect, Local Loop renders an explicit state
+and the next authorization shows the password form.
+
+```text
+application-only                 application + IdP browser
+       │                                     │
+POST /auth/logout + CSRF          POST /auth/logout + CSRF
+       │                                     │
+revoke xapp_session               revoke xapp_session
+       │                                     │
+render local ended state          GET /idp/end-session
+                                             │
+                                  validate registered redirect
+                                             │
+                                  revoke IdP session + clear cookies
+                                             │
+                                  redirect /?state=signed-out-of-idp
+```
+
+The end-session redirect is validated before revocation. An unregistered URI
+returns 400, emits a stable rejection audit reason, leaves the server session
+active, and emits no clearing cookie.
 
 ### Visual system
 

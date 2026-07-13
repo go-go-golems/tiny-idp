@@ -132,7 +132,12 @@ print cookies, CSRF tokens, passwords, OIDC subjects, or physical object IDs.
 6. The server restarts with the same state root.
 7. Alice sees the post and Bob's reply after restart.
 8. Alice deletes the thread and counters update.
-9. Logout invalidates the application session.
+9. Application-only logout invalidates `xapp_session` but permits tiny-idp SSO
+   reuse.
+10. Local Loop plus tiny-idp logout clears both IdP cookies and the next sign-in
+    displays the password form.
+11. A 390-pixel viewport has no horizontal overflow and Tab reaches a control
+    with a visible focus outline.
 
 ## 9. Persistence evidence
 
@@ -176,6 +181,10 @@ delivery evidence; a routine cloud listing is unnecessary.
 - Two users share state and have distinct deletion permissions.
 - State survives process restart.
 - Generated output is reproducible.
+- Strict discovery advertises the mounted `/idp/end-session` endpoint.
+- An unregistered post-logout redirect is rejected before session revocation.
+- The UI distinguishes application-only logout from current-browser IdP
+  logout and does not claim other devices or RP sessions were revoked.
 
 ## Purpose
 

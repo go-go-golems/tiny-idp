@@ -75,13 +75,17 @@ func TestDevelopmentApplicationLoadsIdentityAndTrustedRoutes(t *testing.T) {
 		t.Fatalf("discovery status = %d; body=%s", recorder.Code, recorder.Body.String())
 	}
 	var metadata struct {
-		Issuer string `json:"issuer"`
+		Issuer             string `json:"issuer"`
+		EndSessionEndpoint string `json:"end_session_endpoint"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &metadata); err != nil {
 		t.Fatal(err)
 	}
 	if metadata.Issuer != "http://127.0.0.1:8787/idp" {
 		t.Fatalf("issuer = %q", metadata.Issuer)
+	}
+	if metadata.EndSessionEndpoint != "http://127.0.0.1:8787/idp/end-session" {
+		t.Fatalf("end-session endpoint = %q", metadata.EndSessionEndpoint)
 	}
 }
 
@@ -236,6 +240,22 @@ func TestDevelopmentApplicationLoginToApplicationVerticalSlice(t *testing.T) {
 		t.Fatalf("missing CSRF status=%d body=%s", missingCSRFResponse.StatusCode, missingCSRFBody)
 	}
 
+	invalidPost, err := http.NewRequest(http.MethodPost, server.URL+"/api/bbs/posts", bytes.NewBufferString(`{"title":"Invalid","body":"Rejected","category":"private"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidPost.Header.Set("Content-Type", "application/json")
+	invalidPost.Header.Set("X-CSRF-Token", session.CSRFToken)
+	invalidPostResponse, err := client.Do(invalidPost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidPostBody, _ := io.ReadAll(invalidPostResponse.Body)
+	_ = invalidPostResponse.Body.Close()
+	if invalidPostResponse.StatusCode != http.StatusBadRequest || !bytes.Contains(invalidPostBody, []byte(`"invalid_category"`)) {
+		t.Fatalf("invalid post status=%d body=%s", invalidPostResponse.StatusCode, invalidPostBody)
+	}
+
 	createPost, err := http.NewRequest(http.MethodPost, server.URL+"/api/bbs/posts", bytes.NewBufferString(`{
 		"title":"Shared post",
 		"body":"Created through the trusted route",
@@ -263,7 +283,7 @@ func TestDevelopmentApplicationLoginToApplicationVerticalSlice(t *testing.T) {
 	if err := json.Unmarshal(createPostBody, &board); err != nil {
 		t.Fatal(err)
 	}
-	if len(board.Posts) != 1 || board.Posts[0].Author != "Alice" || !board.Posts[0].CanDelete {
+	if len(board.Posts) != 1 || board.Posts[0].ID != "post_000000000001" || board.Posts[0].Author != "Alice" || !board.Posts[0].CanDelete {
 		t.Fatalf("created board = %#v", board)
 	}
 	if bytes.Contains(createPostBody, []byte("attacker-selected")) || bytes.Contains(createPostBody, []byte("Mallory")) {

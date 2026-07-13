@@ -368,6 +368,7 @@ func (p *Provider) registerAt(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(prefix+"/authorize", p.authorize)
 	mux.HandleFunc(prefix+"/token", p.token)
 	mux.HandleFunc(prefix+"/userinfo", p.userinfo)
+	mux.HandleFunc(prefix+"/end-session", p.endSession)
 	mux.HandleFunc(prefix+"/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc(prefix+"/readyz", p.readyz)
 }

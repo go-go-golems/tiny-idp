@@ -34,3 +34,14 @@ Phase 3: replaced the placeholder page with the typed React/Redux/RTK Query appl
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/app/frontend/src/api.ts — Typed BBS API and CSRF-aware transport
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/app/frontend/src/styles.css — Early-Mac monochrome visual system
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-BBS-001--shared-durable-object-bulletin-board/scripts/01_real_browser_bbs.py — Two-user browser and restart harness
+
+
+## 2026-07-13
+
+Phase 4: added the BBS validation matrix, strict RP-initiated current-browser logout, distinct application/IdP logout UX, responsive and keyboard browser assertions, audit/storage inspection, race checks, full repository test/build, and workspace-aware lint gates.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/end_session.go — Strict current-browser RP-initiated logout
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/end_session_test.go — Redirect, revocation, cookie, and audit invariants
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-BBS-001--shared-durable-object-bulletin-board/sources/01-openid-connect-rp-initiated-logout-1-0.md — Defuddled official standard

@@ -18,10 +18,12 @@
 - [x] Phase 3.4: Implement the early-Mac monochrome visual system without Chicago, menu bars, title bars, window chrome, gradients, or decorative desktop simulation. <!-- t:11tz -->
 - [x] Phase 3.5: Use the pastel 1950s palette only for accessible foreground accents and verify responsive and keyboard behavior. <!-- t:wbrw -->
 - [x] Phase 3.6: Wire Vite dist into xgoja generation, regenerate checked-in assets, typecheck, build, and commit the frontend checkpoint. <!-- t:qblr -->
-- [ ] Phase 4.1: Add an executable HTTP integration harness for login, board reads, mutations, CSRF failures, validation, and persistence. <!-- t:drvz -->
-- [ ] Phase 4.2: Add an Alice/Bob real-browser harness proving shared visibility, trusted authorship, replies, authorization, logout, and restart persistence. <!-- t:ijd4 -->
-- [ ] Phase 4.3: Inspect audit events and Durable Object storage evidence without exposing subject identifiers or physical object names in the UI. <!-- t:opo2 -->
-- [ ] Phase 4.4: Run focused Go tests, race-sensitive tests where practical, frontend typecheck/build, generation checks, and full repository tests. <!-- t:bls2 -->
+- [x] Phase 3.7: Implement strict RP-initiated current-browser logout with exact registered redirect validation, durable IdP session revocation, configured cookie clearing, audit, discovery, and provider tests. <!-- t:qh1s -->
+- [x] Phase 3.8: Expose separate application-only and Local Loop plus tiny-idp logout choices, document their scope precisely, and prove password re-entry after IdP logout in the real browser. <!-- t:u1jn -->
+- [x] Phase 4.1: Add an executable HTTP integration harness for login, board reads, mutations, CSRF failures, validation, and persistence. <!-- t:drvz -->
+- [x] Phase 4.2: Add an Alice/Bob real-browser harness proving shared visibility, trusted authorship, replies, authorization, logout, and restart persistence. <!-- t:ijd4 -->
+- [x] Phase 4.3: Inspect audit events and Durable Object storage evidence without exposing subject identifiers or physical object names in the UI. <!-- t:opo2 -->
+- [x] Phase 4.4: Run focused Go tests, race-sensitive tests where practical, frontend typecheck/build, generation checks, and full repository tests. <!-- t:bls2 -->
 - [ ] Phase 4.5: Commit the verification checkpoint and document exact review and reproduction commands. <!-- t:uery -->
 - [ ] Phase 5.1: Start the final TLS application in tmux and capture-pane evidence for a clean startup. <!-- t:izjk -->
 - [ ] Phase 5.2: Complete ticket relationships, changelog, task statuses, diary, intern handoff, and docmgr doctor validation. <!-- t:eom4 -->

@@ -11,7 +11,7 @@ There are two engines, and picking the right one matters:
 
 > **Maturity, read this.** The `mock` engine and **`tinyidp serve` are for local/testing use** — bind to loopback (`127.0.0.1`) and never expose them to the internet. A **production deployment is the _strict_ engine embedded through `pkg/embeddedidp`** with a **persistent store** (for example `pkg/sqlitestore`), `ProductionMode`, secure cookies, a ≥32-byte token secret, and an active persistent signing key — these are enforced by `embeddedidp.Options.Validate(ctx)`. `serve --engine fosite` currently runs the strict engine in **dev mode with an in-memory store**, so it is a preview of strict behavior, not a production server. See [`docs/security-profile.md`](docs/security-profile.md).
 >
-> **Honest caveats.** The strict engine has passed a **hosted OpenID Foundation Basic OP conformance run with zero hard failures** (suite 5.2.0; discovery + static clients) — this is *not* a claim of formal certification. Still missing/in progress: a config-backed runtime store loader for `serve` (today the durable path is `admin` + `pkg/embeddedidp`), a token `/revoke` or `/introspect` HTTP route, and `/end-session`/device/DPoP in strict mode. `serve` uses plain `http.ListenAndServe`; production expects TLS to be terminated at a reverse proxy (the strict profile requires an `https://` issuer and secure cookies, not in-process TLS).
+> **Honest caveats.** The strict engine has passed a **hosted OpenID Foundation Basic OP conformance run with zero hard failures** (suite 5.2.0; discovery + static clients) — this is *not* a claim of formal certification. Still missing/in progress: a config-backed runtime store loader for `serve` (today the durable path is `admin` + `pkg/embeddedidp`), a token `/revoke` or `/introspect` HTTP route, and device/DPoP in strict mode. `serve` uses plain `http.ListenAndServe`; production expects TLS to be terminated at a reverse proxy (the strict profile requires an `https://` issuer and secure cookies, not in-process TLS).
 
 ---
 
@@ -361,13 +361,13 @@ The two engines expose **different route sets**. Shared by both:
 | `GET /authorize` | Authorization endpoint (login form → code). |
 | `POST /token` | Token endpoint (`authorization_code`, `refresh_token`; device-code in mock). |
 | `GET /userinfo` | UserInfo (bearer access token → claims). |
+| `GET /end-session` | RP-initiated current-browser logout with exact registered post-logout redirect validation. |
 | `GET /healthz` | Liveness. |
 
 Mock engine only:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /end-session` | RP-initiated logout. |
 | `POST /device_authorization` | OAuth device-code start endpoint. |
 | `GET/POST /device` | Browser approval/denial form for device-code requests. |
 | `GET/POST /debug/*` | Loopback-only introspection, reset, and JWKS failure-mode controls. |
@@ -378,7 +378,7 @@ Strict (fosite) engine only:
 |----------|---------|
 | `GET /readyz` | Readiness (store/migrations/active-key checks). |
 
-The strict engine deliberately does **not** serve `/device*`, `/debug/*`, or `/end-session` today, and there is **no** token `/revoke` or `/introspect` HTTP route yet (see [`docs/security-profile.md`](docs/security-profile.md)).
+The strict engine deliberately does **not** serve `/device*` or `/debug/*` today, and there is **no** token `/revoke` or `/introspect` HTTP route yet (see [`docs/security-profile.md`](docs/security-profile.md)). Strict `/end-session` revokes the session represented by the current browser cookie; it does not yet accept `id_token_hint` for subject-wide revocation or perform front-channel/back-channel logout at other relying parties.
 
 When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/token`, `/userinfo`, and `/jwks` endpoint URLs. Root routes remain available for simple local testing. Path-based issuers are URL-shape compatibility only; seeded-user claims stay provider-neutral.
 

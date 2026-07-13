@@ -103,6 +103,20 @@ footer {
   font-size: 1.1rem;
 }
 
+.session-actions,
+.notice-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.notice-actions {
+  justify-content: flex-start;
+  margin-top: 22px;
+}
+
 .intro-block,
 .composer-block,
 .thread {
@@ -291,6 +305,7 @@ textarea.form-control {
   font-size: clamp(1.45rem, 3vw, 2.05rem);
   font-weight: 780;
   letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
 }
 
 .post-body,

@@ -9,6 +9,7 @@ This document summarizes the production strict-engine baseline.
 - Exact redirect URI allow-listing through Fosite client metadata.
 - Durable SQLite Fosite protocol state when using the SQLite store.
 - Server-side IdP browser sessions with opaque cookies and hashed handles.
+- RP-initiated current-browser logout with server-side session revocation, exact client-scoped post-logout redirect matching, configured cookie clearing, and audit events.
 - CSRF token/cookie requirement on strict login and consent POSTs.
 - `HttpOnly`, `SameSite=Lax`, issuer-path-scoped cookies; production embedding validation requires secure cookies.
 - Security headers: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and restrictive CSP.

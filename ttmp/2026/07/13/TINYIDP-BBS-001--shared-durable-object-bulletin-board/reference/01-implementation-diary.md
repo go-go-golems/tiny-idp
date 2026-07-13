@@ -25,7 +25,7 @@ WhenToUse: Read before resuming or reviewing TINYIDP-BBS-001 and update after ev
 
 # Implementation Diary
 
-## Step 3 — Replace the placeholder page with the Local Loop React application
+## Detailed evidence for Step 3 — Replace the placeholder page with the Local Loop React application
 
 **Date:** 2026-07-13
 
@@ -199,7 +199,7 @@ hashed physical filename into the application, documentation API, or UI.
 6. Query audit records by aggregate only; do not paste subject IDs into review
    notes.
 
-## Goal
+## Chronological diary
 
 This diary records the design, implementation, testing, delivery, and lessons
 for the shared `BBS/community` Durable Object application. It is written so a
@@ -515,22 +515,171 @@ before frontend presentation work begins.
 - Mutations write newly constructed board documents.
 - Public projection omits `authorId` and returns `canDelete` for each post.
 
-## Goal
+## Step 3: Build and verify the Local Loop browser application
 
-<!-- What is the purpose of this reference document? -->
+The full commands, browser evidence, failures, and review instructions for this
+step are preserved in the detailed Step 3 evidence section at the beginning of
+this document. Commit `c3f7b37` is the frontend checkpoint.
 
-## Context
+## Step 4: Harden validation, distinguish logout scopes, and run release gates
 
-<!-- Provide background context needed to use this reference -->
+### Prompt context
 
-## Quick Reference
+The user observed that clicking “Sign in again” after logout did not request a
+password. I explained that `/auth/logout` revokes only the xapp session while
+the tiny-idp browser SSO session remains active. The user explicitly asked to
+implement the two distinct operations.
 
-<!-- Provide copy/paste-ready content, API contracts, or quick-look tables -->
+### What I changed
 
-## Usage Examples
+- Added a table-driven object validation matrix covering type, empty-value,
+  length, category, missing-post, malformed-route, and no-mutation invariants.
+- Added an authenticated HTTP invalid-category case and proved rejected input
+  does not consume the first post ID.
+- Implemented strict `GET /end-session` in `internal/fositeadapter`.
+- Added `end_session_endpoint` to strict discovery in the same change as the
+  mounted endpoint.
+- Required `client_id` when a post-logout redirect is requested and compared
+  the URI exactly against that client's durable allowlist.
+- Validated the redirect before revoking any session or emitting clearing
+  cookies. This avoids turning error handling into either an open redirect or
+  a surprising partial logout.
+- Revoked the server-side IdP session represented by the opaque configured
+  cookie handle, treating an already-absent session as idempotent success.
+- Cleared both configured IdP session and CSRF cookies with the issuer path,
+  HttpOnly, Secure, SameSite, expiration, and negative Max-Age attributes.
+- Added stable `logout.success` and rejection audit events and `no-store` on
+  the endpoint response.
+- Added provider tests for valid redirect/revocation/cookie/audit behavior and
+  invalid-redirect non-mutation behavior.
+- Replaced one ambiguous “Log out” control with two precise actions:
+  “Log out of Local Loop” and “Log out of Local Loop + tiny-idp.”
+- Kept the local ended-session page explicit that SSO remains active and added
+  a link to end the IdP session there too.
+- Added an IdP-ended page that states the scope accurately: this browser has
+  lost the Local Loop and tiny-idp sessions, but other applications and devices
+  own independent sessions.
+- Extended the browser harness to prove local SSO reuse followed by IdP logout
+  and mandatory password entry on the next authorization.
+- Added a 390-pixel layout assertion and keyboard-visible-focus assertion.
+- Updated README and strict security-profile claims so discovery, routes, and
+  documentation agree.
+- Saved the official OpenID Connect RP-Initiated Logout 1.0 text with Defuddle
+  under this ticket's `sources/` directory.
 
-<!-- Show how to use this reference in practice -->
+### Security model
 
-## Related
+The two operations are intentionally sequential for the larger scope:
 
-<!-- Link to related documents or resources -->
+```text
+Local only:
+  CSRF-protected POST /auth/logout
+  -> revoke xapp session
+  -> preserve tiny-idp SSO
+
+Local + tiny-idp in this browser:
+  CSRF-protected POST /auth/logout
+  -> GET /idp/end-session with registered RP redirect
+  -> validate client and exact redirect
+  -> revoke durable IdP browser session
+  -> clear both IdP cookies
+  -> redirect to explicit ended state
+```
+
+This is not front-channel logout, back-channel logout, device-wide logout, or
+revocation of other applications' already-established sessions. The UI and
+guide now state that limit.
+
+### Browser evidence
+
+The final create-mode result proved all of the following in one initialized TLS
+process:
+
+- secure cookies at their intended paths;
+- distinct Alice and Bob application identities;
+- missing-CSRF create status 403;
+- trusted author label `Alice Operator`;
+- Bob delete status 403;
+- literal hostile-markup rendering;
+- local logout and SSO reuse;
+- Local Loop plus tiny-idp logout and a password form on the next sign-in;
+- zero horizontal overflow at 390 pixels;
+- an interactive keyboard focus target with a visible outline.
+
+The process was then killed with `lsof-who`, relaunched in tmux against the
+same state root, and verify-restart mode proved that both checkpoint records
+survived before owner deletion. The preexisting user post titled `Hello` was
+preserved; aggregate storage inspection therefore correctly reported one
+remaining post after checkpoint cleanup.
+
+### Audit and storage evidence
+
+Aggregate application audit queries showed allowed/completed BBS reads,
+creates, replies, and deletes, missing-CSRF denials, and object-level 403 delete
+completions. The identity audit JSONL contained accepted `logout.success`
+records. Queries deliberately omitted actor IDs, resource IDs, cookie values,
+and physical object hashes.
+
+Exactly one Durable Object database contains the logical `board` key. The
+final aggregate query reported the baseline post count without copying the
+hashed physical database name into documentation or UI.
+
+### Failures and corrections
+
+1. Playwright's non-exact button lookup matched both logout labels. Adding
+   `exact=True` to the local-only selector fixed the harness without changing
+   UI semantics.
+2. The initial narrow-layout check found a two-pixel overflow. Live DOM bounds
+   identified Bootstrap row negative gutters as the cause. `mx-0` keeps the
+   row inside the page shell; long thread headings also receive
+   `overflow-wrap:anywhere`. The unchanged strict assertion then passed.
+3. `make lint` failed before analysis because the wrapper forces `GOWORK=off`
+   even though this checkout intentionally uses only the top-level workspace
+   module. The pinned linter was run directly with `go.work` enabled.
+4. The full lint run reported two preexisting `nonamedreturns` findings in
+   `development_app.go` and `production_app.go`. Neither file was changed in
+   this checkpoint. Running the same pinned linter with
+   `--new-from-rev c3f7b37` from the tiny-idp Git root reported `0 issues`.
+
+### Verification commands and results
+
+```bash
+pnpm --dir cmd/tinyidp-xapp/app/frontend run typecheck
+go generate ./cmd/tinyidp-xapp
+go test ./internal/fositeadapter ./internal/oidcmeta ./cmd/tinyidp-xapp -count=1
+go test -race ./internal/fositeadapter -run '^TestEndSession' -count=1
+go test -race ./cmd/tinyidp-xapp -run 'TestBBS|TestDevelopmentApplication' -count=1
+go test ./... -count=1
+go build ./...
+/tmp/golangci-lint-v2.12.2-go1.26.5 run -c .golangci.yml --new-from-rev c3f7b37 ./...
+go vet -vettool=/tmp/glazed-lint-v1.3.6-go1.26.5 \
+  -glazedclilint.allow-paths=cmd/tinyidp/main.go,internal/cmds/admin.go,internal/cmds/admin_backup.go,internal/cmds/admin_client.go,internal/cmds/admin_export.go,internal/cmds/admin_keys.go,internal/cmds/admin_ops.go,internal/cmds/config.go,internal/cmds/profiles.go \
+  ./cmd/... ./internal/... ./pkg/...
+```
+
+All commands above passed. The full unfiltered linter has only the two noted
+preexisting findings.
+
+### Review instructions
+
+1. Review `end_session.go` before the frontend. Redirect validation must remain
+   before session mutation.
+2. Confirm discovery and route registration change together.
+3. Confirm the larger logout always performs application CSRF logout first.
+4. Run invalid-redirect tests and verify the session remains active.
+5. Run both browser modes around a real process kill/restart.
+6. Read the saved RP-Initiated Logout specification and compare the current
+   current-browser subset with future `id_token_hint` and coordinated logout
+   work.
+
+### Residual work
+
+- The strict endpoint does not yet process a verified `id_token_hint`.
+- There is no front-channel or back-channel logout coordination.
+- Other devices and other applications' already-established sessions are not
+  revoked by current-browser logout.
+- The Makefile's forced `GOWORK=off` targets should be repaired in a separate
+  workspace-tooling change.
+- BBS capacity branches are bounded and implemented but are not filled to 200
+  posts/100 replies in this release test; configurable small limits would make
+  those tests inexpensive.

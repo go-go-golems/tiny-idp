@@ -143,6 +143,35 @@ def delete_through_ui(page: Page, title: str) -> None:
     thread.wait_for(state="detached")
 
 
+def assert_responsive_keyboard_surface(page: Page) -> None:
+    page.set_viewport_size({"width": 390, "height": 844})
+    dimensions = page.evaluate(
+        """() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth
+        })"""
+    )
+    require(
+        dimensions["scrollWidth"] <= dimensions["clientWidth"] + 1,
+        f"narrow layout overflows horizontally: {dimensions}",
+    )
+    page.locator("body").press("Tab")
+    focus = page.evaluate(
+        """() => {
+          const element = document.activeElement;
+          const style = window.getComputedStyle(element);
+          return {
+            tag: element && element.tagName,
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth
+          };
+        }"""
+    )
+    require(focus["tag"] in {"A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"}, f"Tab did not reach an interactive control: {focus}")
+    require(focus["outlineStyle"] != "none" and focus["outlineWidth"] != "0px", f"focused control has no visible outline: {focus}")
+    page.set_viewport_size({"width": 1280, "height": 720})
+
+
 def assert_logout_lifecycle(page: Page, base_url: str) -> None:
     rejected = page.request.post(base_url + "/auth/logout")
     require(rejected.status == 403, f"logout without CSRF status={rejected.status}")
@@ -150,13 +179,27 @@ def assert_logout_lifecycle(page: Page, base_url: str) -> None:
         lambda response: response.url.endswith("/auth/logout")
         and response.request.method == "POST"
     ) as response_info:
-        page.get_by_role("button", name="Log out").click()
+        page.get_by_role("button", name="Log out of Local Loop", exact=True).click()
     require(response_info.value.status == 204, "valid logout did not return 204")
     page.wait_for_selector('[data-testid="session-ended"]')
     require(page.request.get(base_url + "/auth/session").status == 401, "session survived logout")
     page.get_by_role("link", name="Sign in again").click()
     page.wait_for_url(base_url + "/")
     page.wait_for_selector('[data-testid="current-user"]')
+
+
+def assert_idp_logout_lifecycle(page: Page, context: BrowserContext, base_url: str) -> None:
+    with page.expect_response(lambda response: "/idp/end-session" in response.url) as response_info:
+        page.get_by_role("button", name="Log out of Local Loop + tiny-idp").click()
+    require(response_info.value.status == 302, f"end-session status={response_info.value.status}")
+    page.wait_for_selector('[data-testid="idp-session-ended"]')
+    require(page.request.get(base_url + "/auth/session").status == 401, "application session survived IdP logout")
+    remaining = {cookie["name"] for cookie in context.cookies()}
+    require("xapp_session" not in remaining, "application cookie survived global logout")
+    require("xapp_idp_session" not in remaining, "IdP session cookie survived global logout")
+    require("xapp_idp_csrf" not in remaining, "IdP CSRF cookie survived global logout")
+    page.get_by_role("link", name="Sign in", exact=True).click()
+    page.wait_for_selector('input[name="login"]')
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -224,10 +267,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             require(denied_delete.status == 403, f"Bob delete status={denied_delete.status}")
             alice.reload(wait_until="domcontentloaded")
             alice.get_by_text(reply_content, exact=True).wait_for()
+            assert_responsive_keyboard_surface(alice)
             if args.screenshot is not None:
                 args.screenshot.parent.mkdir(parents=True, exist_ok=True)
                 alice.screenshot(path=str(args.screenshot), full_page=True)
             assert_logout_lifecycle(alice, base_url)
+            assert_idp_logout_lifecycle(alice, alice_context, base_url)
             result = {
                 "mode": args.mode,
                 "title": title,
@@ -235,10 +280,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "distinctApplicationUsers": True,
                 "bobDeleteStatus": denied_delete.status,
                 "storedMarkupRenderedAsText": True,
+                "responsiveKeyboardSurfacePassed": True,
                 "trustedAuthorLabel": alice_display_name,
                 "postLeftForRestart": True,
                 "cookieSecurity": alice_cookies,
                 "logoutLifecyclePassed": True,
+                "idpLogoutRequiresCredentials": True,
             }
         else:
             persisted = find_post(board(alice, base_url), title)
