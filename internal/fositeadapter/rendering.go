@@ -102,6 +102,11 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
 		return
 	}
+	if buffer.overflowed {
+		p.recordRenderFailure(r, page, "document_too_large")
+		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
+		return
+	}
 	if buffer.Len() == 0 {
 		p.recordRenderFailure(r, page, "empty_document")
 		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
@@ -127,12 +132,14 @@ func (p *Provider) recordRenderFailure(r *http.Request, page idpui.InteractionPa
 
 type boundedInteractionBuffer struct {
 	bytes.Buffer
-	limit int
+	limit      int
+	overflowed bool
 }
 
 func (b *boundedInteractionBuffer) Write(contents []byte) (int, error) {
 	remaining := b.limit - b.Len()
 	if remaining <= 0 {
+		b.overflowed = true
 		return 0, errInteractionDocumentTooLarge
 	}
 	if len(contents) <= remaining {
@@ -142,6 +149,7 @@ func (b *boundedInteractionBuffer) Write(contents []byte) (int, error) {
 	if err != nil {
 		return written, err
 	}
+	b.overflowed = true
 	return written, errInteractionDocumentTooLarge
 }
 

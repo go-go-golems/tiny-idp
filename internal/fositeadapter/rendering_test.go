@@ -185,8 +185,10 @@ func TestRendererFailureAndSizeLimitFailBeforeHTMLCommit(t *testing.T) {
 	}{
 		{name: "failure", renderer: rendererFunc(func(context.Context, io.Writer, idpui.InteractionPage) error { return errors.New("template exploded") }), reason: "renderer_failed"},
 		{name: "oversize", renderer: rendererFunc(func(_ context.Context, dst io.Writer, _ idpui.InteractionPage) error {
-			_, err := dst.Write(bytes.Repeat([]byte("x"), 300<<10))
-			return err
+			// A custom renderer may accidentally discard the writer error. The
+			// provider must still observe that the fixed document bound was hit.
+			_, _ = dst.Write(bytes.Repeat([]byte("x"), 300<<10))
+			return nil
 		}), reason: "document_too_large"},
 	}
 	for _, tt := range tests {
