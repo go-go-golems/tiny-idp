@@ -24,8 +24,8 @@
 - [x] Phase 4.2: Add an Alice/Bob real-browser harness proving shared visibility, trusted authorship, replies, authorization, logout, and restart persistence. <!-- t:ijd4 -->
 - [x] Phase 4.3: Inspect audit events and Durable Object storage evidence without exposing subject identifiers or physical object names in the UI. <!-- t:opo2 -->
 - [x] Phase 4.4: Run focused Go tests, race-sensitive tests where practical, frontend typecheck/build, generation checks, and full repository tests. <!-- t:bls2 -->
-- [ ] Phase 4.5: Commit the verification checkpoint and document exact review and reproduction commands. <!-- t:uery -->
-- [ ] Phase 5.1: Start the final TLS application in tmux and capture-pane evidence for a clean startup. <!-- t:izjk -->
-- [ ] Phase 5.2: Complete ticket relationships, changelog, task statuses, diary, intern handoff, and docmgr doctor validation. <!-- t:eom4 -->
-- [ ] Phase 5.3: Upload the complete ticket documentation as one reMarkable bundle and record the remote destination. <!-- t:cq9v -->
-- [ ] Phase 5.4: Commit final documentation and provide a residual-risk handoff. <!-- t:4y4v -->
+- [x] Phase 4.5: Commit the verification checkpoint and document exact review and reproduction commands. <!-- t:uery -->
+- [x] Phase 5.1: Start the final TLS application in tmux and capture-pane evidence for a clean startup. <!-- t:izjk -->
+- [x] Phase 5.2: Complete ticket relationships, changelog, task statuses, diary, intern handoff, and docmgr doctor validation. <!-- t:eom4 -->
+- [x] Phase 5.3: Upload the complete ticket documentation as one reMarkable bundle and record the remote destination. <!-- t:cq9v -->
+- [x] Phase 5.4: Commit final documentation and provide a residual-risk handoff. <!-- t:4y4v -->

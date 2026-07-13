@@ -1,7 +1,7 @@
 ---
 Title: Shared Durable Object Bulletin Board
 Ticket: TINYIDP-BBS-001
-Status: active
+Status: complete
 Topics:
     - architecture
     - xgoja
@@ -11,13 +11,33 @@ Topics:
 DocType: index
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/app/frontend/src/App.tsx
+      Note: Typed browser UX and distinct logout scopes
+    - Path: repo://cmd/tinyidp-xapp/app/frontend/src/api.ts
+      Note: RTK Query transport and CSRF header policy
+    - Path: repo://cmd/tinyidp-xapp/app/frontend/src/styles.css
+      Note: Responsive early-Mac monochrome visual system
+    - Path: repo://cmd/tinyidp-xapp/app/objects/objects.js
+      Note: Shared persistent BBS state machine
+    - Path: repo://cmd/tinyidp-xapp/app/routes/site.js
+      Note: Trusted fixed-object BBS HTTP API and actor projection
+    - Path: repo://cmd/tinyidp-xapp/bbs_test.go
+      Note: Object validation ownership and restart invariants
+    - Path: repo://internal/fositeadapter/end_session.go
+      Note: Strict current-browser RP-initiated logout
+    - Path: repo://internal/fositeadapter/end_session_test.go
+      Note: Redirect revocation cookie and audit tests
+    - Path: repo://ttmp/2026/07/13/TINYIDP-BBS-001--shared-durable-object-bulletin-board/scripts/01_real_browser_bbs.py
+      Note: Two-user TLS browser restart and logout harness
 ExternalSources: []
-Summary: "Design and implementation of a shared, identity-aware bulletin board backed by one go-go-objects Durable Object and served by trusted xgoja routes."
-LastUpdated: 2026-07-13T16:27:18.015615966-04:00
-WhatFor: "Track the architecture, implementation, verification, and delivery of the tinyidp-xapp bulletin board feature."
-WhenToUse: "Use when changing the BBS API, shared-object boundary, board schema, React client, security tests, or deployment workflow."
+Summary: Design and implementation of a shared, identity-aware bulletin board backed by one go-go-objects Durable Object and served by trusted xgoja routes.
+LastUpdated: 2026-07-13T17:29:32.242051901-04:00
+WhatFor: Track the architecture, implementation, verification, and delivery of the tinyidp-xapp bulletin board feature.
+WhenToUse: Use when changing the BBS API, shared-object boundary, board schema, React client, security tests, or deployment workflow.
 ---
+
+
 
 # Shared Durable Object Bulletin Board
 

@@ -683,3 +683,57 @@ preexisting findings.
 - BBS capacity branches are bounded and implemented but are not filled to 200
   posts/100 replies in this release test; configurable small limits would make
   those tests inexpensive.
+
+## Step 5: Prepare the delivery bundle and final running handoff
+
+### What I did
+
+- Committed the validation, strict logout, browser hardening, official source,
+  and verification documentation as `110b008` (`Security: add scoped browser
+  logout`).
+- Related the nine primary route, object, frontend, provider, test, and harness
+  files to the ticket index with specific notes.
+- Marked Phase 4 complete after the checkpoint commit and recorded exact
+  reproduction commands above.
+- Terminated the old listener with `lsof-who -p 19443 -k`, recreated tmux
+  session `tinyidp-xapp-e2e`, and started the initialized TLS product from the
+  committed tree with the preserved state root.
+- Captured the startup line and queried readiness. Evidence was:
+
+  ```text
+  tinyidp-xapp initialized TLS server started listen=127.0.0.1:19443
+  {"status":"ready"}
+  ```
+
+- Ran `docmgr doctor --ticket TINYIDP-BBS-001 --stale-after 30`; all checks
+  passed before rendering the reMarkable bundle.
+
+### Current running process
+
+```text
+tmux session: tinyidp-xapp-e2e
+URL:          https://127.0.0.1:19443/
+state root:   /tmp/tinyidp-xapp-real-browser/state
+readiness:    https://127.0.0.1:19443/readyz
+```
+
+The local certificate is the preserved test fixture and is self-signed. The
+process is suitable for handoff and demonstration, not a claim that the `/tmp`
+fixture is production deployment state.
+
+### Delivery target
+
+The complete Markdown set, including the design guide, diary, playbook, ticket
+metadata, task ledger, changelog, and saved OpenID standard, is bundled as one
+PDF named `TINYIDP BBS 001 Shared Durable Object Bulletin Board` at:
+
+```text
+/ai/2026/07/13/TINYIDP-BBS-001
+```
+
+The dry run enumerated all eight Markdown documents and the subsequent upload
+completed with:
+
+```text
+OK: uploaded TINYIDP BBS 001 Shared Durable Object Bulletin Board.pdf -> /ai/2026/07/13/TINYIDP-BBS-001
+```

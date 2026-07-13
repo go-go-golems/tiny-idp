@@ -45,3 +45,14 @@ Phase 4: added the BBS validation matrix, strict RP-initiated current-browser lo
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/end_session.go — Strict current-browser RP-initiated logout
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/end_session_test.go — Redirect, revocation, cookie, and audit invariants
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-BBS-001--shared-durable-object-bulletin-board/sources/01-openid-connect-rp-initiated-logout-1-0.md — Defuddled official standard
+
+
+## 2026-07-13
+
+Verification checkpoint committed as `110b008`; final initialized TLS handoff restarted cleanly in tmux and returned ready status.
+
+Uploaded all eight ticket Markdown documents as one reMarkable PDF bundle to `/ai/2026/07/13/TINYIDP-BBS-001`.
+
+## 2026-07-13
+
+Implementation, verification, tmux handoff, and reMarkable bundle delivery complete.
