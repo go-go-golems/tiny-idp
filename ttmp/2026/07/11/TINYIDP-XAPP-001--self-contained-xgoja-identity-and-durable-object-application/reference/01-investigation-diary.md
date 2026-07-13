@@ -1470,3 +1470,148 @@ last repository commit is `efd2c52` (`Docs: plan layered backup and restore`).
   - unrelated and untracked: two OIDF source directories under
     `TINYIDP-PROD-001/sources/`.
 - No implementation source file was changed in this checkpoint.
+
+## Step 37 — Give the incoming intern a bounded first contribution
+
+The prior diary step is a complete chronological handoff, but chronology alone
+does not tell a new contributor where to invest attention. I created a separate
+intern playbook that reorganizes the same evidence around system ownership,
+security boundaries, executable procedures, review points, and a sequence of
+small contributions. The goal is to let the intern establish competence by
+producing real browser evidence before they are asked to change architecture.
+
+The playbook explicitly distinguishes facts already proven by the initialized
+TLS checkpoint from assertions that exist only in the draft browser harness. It
+also identifies decisions that require review, especially logout CSRF,
+disablement propagation, actor identity, proxy trust, and file permissions.
+
+### Prompt Context
+
+**User prompt (verbatim):** "make a document in the ticket so we can hand this over to a new intern that needs to find their mark, and then continue where you left off"
+
+**Assistant interpretation:** Create a self-contained intern onboarding and
+continuation document inside `TINYIDP-XAPP-001`, then resume the real TLS/browser
+work from the exact checkpoint recorded in Step 36.
+
+**Inferred user intent:** Let a new engineer become useful quickly, make a
+reviewable first security contribution, and preserve forward momentum rather
+than ending at documentation.
+
+**Commit (documentation):** pending at the time this step was written.
+
+### What I did
+
+- Added the docmgr playbook `New Intern Handoff and Continuation Playbook`.
+- Re-read the ticket design, task ledger, recent diary, production constructor,
+  TLS server, shared composition code, generated runtime specification,
+  JavaScript routes, object bundle, frontend, and draft browser harness.
+- Wrote an ownership map for tiny-idp, go-go-goja, and go-go-objects.
+- Documented the route tree, startup sequence, two-session model,
+  issuer/subject identity projection, actor-bound object derivation, and state
+  layout.
+- Preserved exact real-server evidence and separated it from browser assertions
+  that have not run.
+- Defined a first-day command sequence using tmux, `serve-initialized`, curl,
+  Python 3.11.4, system Chrome, cleanup, and validation.
+- Defined scenario contracts for logout CSRF, disabled users, forced
+  reauthentication, password-change-required, expiry, and two-user isolation.
+- Defined the later fault matrix and the exit criteria for browser/lifecycle and
+  fault-injection phases.
+- Related the playbook to seven material implementation and harness files using
+  absolute docmgr file notes.
+
+### Why
+
+- A chronological diary is optimized for reconstructing decisions; an intern
+  playbook must instead optimize reading order, repository navigation, first
+  commands, and review boundaries.
+- The next engineer needs a meaningful first contribution that does not require
+  broad architectural authority. Completing the real-browser baseline and
+  freezing one lifecycle invariant satisfies that requirement.
+- Explicitly separating observation, desired behavior, and open decisions
+  prevents a test harness from accidentally defining product policy.
+
+### What worked
+
+- docmgr created the playbook under the existing ticket with the controlled
+  `playbook` document type and ticket vocabulary.
+- All referenced paths were verified against the current repositories before
+  being included.
+- The handoff now provides both forms of continuity: Step 36 preserves exact
+  history, while the playbook provides a task-oriented entry point.
+
+### What didn't work
+
+- An exploratory read initially guessed `cmd/tinyidp-xapp/application.go` and
+  `app/routes/main.js`; neither exists. `rg --files` established the actual
+  ownership in `development_app.go` and `app/routes/site.js`. No modification
+  depended on the guessed paths.
+
+### What I learned
+
+- The current product is compact enough that an intern can trace the complete
+  request path without treating generated code as the primary source. The
+  decisive files are the state reconciler, two composition files, TLS command,
+  xgoja specification, site routes, object bundle, and generic hostauth OIDC
+  handler.
+- The best first mark is not new feature volume. It is a passing, sanitized,
+  reproducible proof across the real browser boundary, followed by one explicit
+  lifecycle invariant.
+
+### What was tricky to build
+
+- The playbook must be actionable without freezing unresolved policy. Logout
+  CSRF and disablement propagation are therefore written as scenario questions
+  and review gates rather than instructions to implement a predetermined
+  mechanism.
+- Repository ownership crosses three modules. The document distinguishes
+  product presentation in tiny-idp-xapp from generic OIDC/session semantics in
+  go-go-goja and actor/object semantics in go-go-objects, reducing the chance of
+  a product-only patch to a shared contract.
+- The preserved `/tmp` fixture is useful but contains known throwaway
+  credentials. The playbook permits one local replay, forbids reuse, and
+  requires eventual deletion without copying secret values into documentation.
+
+### What warrants a second pair of eyes
+
+- Review whether the recommended first invariant should be logout CSRF or
+  disabled-user propagation after the baseline passes.
+- Confirm that system Chrome is acceptable for local evidence or whether the
+  final CI gate must pin and install a Playwright-managed browser.
+- Review the stated per-file SQLite permission concern and the eventual
+  WAL/SHM/backup contract.
+- Confirm the playbook's contribution boundaries before assigning the intern
+  cross-repository write access.
+
+### What should be done in the future
+
+- Keep the playbook current when commands, route ownership, session semantics,
+  or the next incomplete phase changes.
+- Replace the handoff's “browser not yet proven” wording after preserving a
+  passing structured result.
+- Add links to focused lifecycle decision documents when logout and
+  disablement contracts are approved.
+
+### Code review instructions
+
+- Read the playbook from Purpose through First-Day Continuation Procedure, then
+  verify each path and command against the related files.
+- Run:
+
+  ```text
+  docmgr doctor --ticket TINYIDP-XAPP-001 --stale-after 30 --fail-on warning
+  git diff --check
+  ```
+
+- Confirm the new document contains no password, cookie value, token,
+  authorization code, subject, or binding-key material.
+
+### Technical details
+
+- Document:
+  `playbook/01-new-intern-handoff-and-continuation-playbook.md`
+- Next runtime experiment: select `/usr/bin/google-chrome` in
+  `scripts/01_real_browser_e2e.py`, start `serve-initialized` in tmux, and run
+  the harness against `https://127.0.0.1:19443`.
+- The documentation work does not complete browser task `j5ba`, isolation task
+  `ihzp`, or fault task `uvhr`.

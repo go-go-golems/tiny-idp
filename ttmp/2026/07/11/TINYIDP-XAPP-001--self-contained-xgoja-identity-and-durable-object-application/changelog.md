@@ -26,3 +26,11 @@ Recorded the real TLS application handoff: successful initialization/readiness, 
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/11/TINYIDP-XAPP-001--self-contained-xgoja-identity-and-durable-object-application/scripts/01_real_browser_e2e.py — Uncommitted browser checkpoint handed to the next engineer
+
+## 2026-07-12
+
+Added an intern-ready ownership map, security model, executable continuation procedure, scenario matrix, first-contribution sequence, and review boundaries; recorded Step 37 in the diary.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/11/TINYIDP-XAPP-001--self-contained-xgoja-identity-and-durable-object-application/playbook/01-new-intern-handoff-and-continuation-playbook.md — Primary onboarding and continuation entry point
