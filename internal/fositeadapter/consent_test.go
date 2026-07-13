@@ -158,6 +158,7 @@ func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 	form.Set("password", "alice-password-long")
 	csrf, csrfCookie := fetchCSRF(t, ts.URL, form)
 	form.Set("csrf_token", csrf)
+	form.Del("action")
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(csrfCookie)

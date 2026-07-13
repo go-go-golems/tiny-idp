@@ -33,6 +33,7 @@ import (
 	"github.com/manuel/tinyidp/internal/securitytrace"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/idpui"
 )
 
 var ProductionHandlerFactories = []string{
@@ -79,6 +80,7 @@ type Options struct {
 	// redemption and refresh-token rotation storage lifecycles.
 	TokenPersistenceHook func(point string) error
 	SecurityEvents       securitytrace.Sink
+	InteractionRenderer  idpui.InteractionRenderer
 }
 
 type Provider struct {
@@ -106,6 +108,7 @@ type Provider struct {
 	sessionTTL        time.Duration
 	interactionTTL    time.Duration
 	clock             func() time.Time
+	interactionUI     idpui.InteractionRenderer
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -167,6 +170,13 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	}
 	if opts.SecurityEvents == nil {
 		opts.SecurityEvents = securitytrace.NoopSink{}
+	}
+	if opts.InteractionRenderer == nil {
+		renderer, rendererErr := idpui.NewDefaultRenderer()
+		if rendererErr != nil {
+			return nil, fmt.Errorf("build default interaction renderer: %w", rendererErr)
+		}
+		opts.InteractionRenderer = renderer
 	}
 	if opts.Consent == nil {
 		if opts.Mode == idpstore.ProductionMode {
@@ -260,7 +270,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -357,7 +367,7 @@ func (p *Provider) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; form-action 'self' https:; base-uri 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -479,7 +489,8 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create authorization interaction failed", http.StatusInternalServerError)
 		return
 	}
-	p.renderInteraction(w, handle, csrfToken, needLogin, true, client.ID, []string(ar.GetRequestedScopes()))
+	page := p.newInteractionPage(handle, csrfToken, actions, ar.GetRequestForm(), true, client.ID, []string(ar.GetRequestedScopes()), strings.TrimSpace(ar.GetRequestForm().Get("login_hint")), nil)
+	p.renderInteraction(w, r, http.StatusOK, page)
 }
 
 func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
@@ -531,7 +542,12 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "signing key unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if r.PostForm.Get("action") == "deny" {
+	action := idpui.Action(r.PostForm.Get(idpui.ActionFieldName))
+	if action != idpui.ActionApprove && action != idpui.ActionDeny {
+		http.Error(w, "invalid interaction action", http.StatusBadRequest)
+		return
+	}
+	if action == idpui.ActionDeny {
 		if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeDenied); err != nil {
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
@@ -553,7 +569,8 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
 	if requiresLogin && login == "" {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "missing_login"})
-		http.Error(w, "login is required", http.StatusBadRequest)
+		page := p.newInteractionPage(handle, r.PostForm.Get(idpui.CSRFFieldName), record.RequiredActions, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", &idpui.PublicError{Code: idpui.ErrorMissingLogin, Field: idpui.FieldCredentials, Summary: "Enter your username and password."})
+		p.renderInteraction(w, r, http.StatusBadRequest, page)
 		return
 	}
 	if login != "" {
@@ -570,7 +587,8 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: authn.AuditReason(authErr)})
-			http.Error(w, "invalid login or password", http.StatusUnauthorized)
+			page := p.newInteractionPage(handle, r.PostForm.Get(idpui.CSRFFieldName), record.RequiredActions, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), login, &idpui.PublicError{Code: idpui.ErrorInvalidCredentials, Field: idpui.FieldCredentials, Summary: "Invalid login or password."})
+			p.renderInteraction(w, r, http.StatusUnauthorized, page)
 			return
 		}
 		u = result.User
@@ -597,9 +615,10 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "consent policy failed", http.StatusInternalServerError)
 		return
 	}
-	approved := r.PostForm.Get("action") == "approve"
+	approved := action == idpui.ActionApprove
 	if requireConsent && !approved {
-		http.Error(w, "an explicit consent decision is required", http.StatusBadRequest)
+		page := p.newInteractionPage(handle, r.PostForm.Get(idpui.CSRFFieldName), record.RequiredActions, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), login, &idpui.PublicError{Code: idpui.ErrorConsentRequired, Field: idpui.FieldConsent, Summary: "Approve or deny the requested access."})
+		p.renderInteraction(w, r, http.StatusBadRequest, page)
 		return
 	}
 	if requireConsent && approved {
@@ -901,11 +920,6 @@ func (p *Provider) clientAllowsRedirect(ctx context.Context, clientID, redirectU
 	return false
 }
 
-func htmlEscape(s string) string {
-	r := strings.NewReplacer("&", "&amp;", "\"", "&quot;", "<", "&lt;", ">", "&gt;")
-	return r.Replace(s)
-}
-
 func randomB64(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
@@ -936,26 +950,6 @@ func (p *Provider) emit(ctx context.Context, e idp.Event, ar fosite.AuthorizeReq
 		}
 	}
 	p.recordAudit(ctx, e)
-}
-
-func (p *Provider) renderInteraction(w http.ResponseWriter, interactionHandle, csrfToken string, needLogin, includeConsent bool, clientID string, scopes []string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	loginFields := ""
-	if needLogin {
-		loginFields = `<input name="login" autocomplete="username"><input name="password" type="password" autocomplete="current-password">`
-	}
-	actions := `<button type="submit" name="action" value="continue">Continue</button>`
-	disclosure := ""
-	if includeConsent {
-		var scopeList strings.Builder
-		for _, scope := range scopes {
-			_, _ = fmt.Fprintf(&scopeList, `<li><code>%s</code></li>`, htmlEscape(scope))
-		}
-		disclosure = fmt.Sprintf(`<section aria-label="Requested access"><p>Client: <strong>%s</strong></p><p>Requested scopes:</p><ul>%s</ul></section>`, htmlEscape(clientID), scopeList.String())
-		actions = `<button type="submit" name="action" value="approve">Approve</button><button type="submit" name="action" value="deny">Deny</button>`
-	}
-	_, _ = fmt.Fprintf(w, `<html><body><form method="post" action="%s">%s%s<input type="hidden" name="%s" value="%s"><input type="hidden" name="csrf_token" value="%s">%s</form></body></html>`, htmlEscape(p.issuer.Endpoint("/authorize")), disclosure, loginFields, interactionFieldName, htmlEscape(interactionHandle), htmlEscape(csrfToken), actions)
 }
 
 func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, u idpstore.User, authTime time.Time, consentApproved bool, interaction *idpstore.InteractionRecord) {
@@ -1018,5 +1012,9 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthorizationArtifactsDone, InteractionID: traceID, RequestID: ar.GetID(), ClientID: client.ID})
 	}
 	p.emit(r.Context(), idp.New("authorize.request.accepted"), ar, "accepted", "")
-	p.oauth2.WriteAuthorizeResponse(r.Context(), w, ar, response)
+	responseWriter := w
+	if r.Method == http.MethodPost {
+		responseWriter = seeOtherRedirectWriter{ResponseWriter: w}
+	}
+	p.oauth2.WriteAuthorizeResponse(r.Context(), responseWriter, ar, response)
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/manuel/tinyidp/internal/oidcmeta"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/idpui"
 )
 
 type Mode = idpstore.Mode
@@ -31,6 +32,10 @@ type CookieConfig struct {
 
 type TokenConfig struct {
 	SecretKey []byte
+}
+
+type UIConfig struct {
+	Renderer idpui.InteractionRenderer
 }
 
 // MaintenanceConfig makes retention and the host scheduling contract explicit.
@@ -56,6 +61,7 @@ type Options struct {
 	PasswordPolicy idp.PasswordAcceptancePolicy
 	PasswordWork   idp.PasswordWorkConfig
 	Maintenance    MaintenanceConfig
+	UI             UIConfig
 }
 
 func (o Options) Validate(ctx context.Context) error {

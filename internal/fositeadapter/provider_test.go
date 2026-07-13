@@ -304,6 +304,7 @@ func fetchCSRFNamed(t *testing.T, baseURL string, form url.Values, cookieName st
 		t.Fatalf("interaction handle not found in %s", body)
 	}
 	form.Set("interaction", interaction[1])
+	form.Set("action", "approve")
 	for _, c := range resp.Cookies() {
 		if c.Name == cookieName {
 			return m[1], c
@@ -471,9 +472,13 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("wrong password status = %d, want 401", resp.StatusCode)
+	}
+	if !strings.Contains(string(body), `role="alert"`) || !strings.Contains(string(body), `value="alice"`) || regexp.MustCompile(`name="password"[^>]*value=`).Match(body) {
+		t.Fatalf("wrong password did not render a safe retry form: %s", body)
 	}
 
 	form.Set("password", "alice-password-long")

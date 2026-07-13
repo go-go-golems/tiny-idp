@@ -176,6 +176,7 @@ func fetchStrictCSRF(t *testing.T, baseURL string, form url.Values) (string, *ht
 	interaction := regexp.MustCompile(`name="interaction" value="([^"]+)"`).FindStringSubmatch(string(body))
 	require.Len(t, interaction, 2, "interaction handle not found in %s", body)
 	form.Set("interaction", interaction[1])
+	form.Set("action", "approve")
 	for _, c := range resp.Cookies() {
 		if c.Name == "tinyidp_csrf" {
 			return m[1], c

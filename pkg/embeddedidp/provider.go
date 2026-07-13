@@ -57,7 +57,7 @@ func New(ctx context.Context, opts Options) (*Provider, error) {
 	if opts.Audit == nil {
 		opts.Audit = idp.NoopSink{}
 	}
-	adapter, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, CookieSameSite: opts.Cookie.SameSite, SessionCookieName: opts.Cookie.SessionName, CSRFCookieName: opts.Cookie.CSRFName, CookiePath: opts.Cookie.Path, Audit: opts.Audit, Consent: opts.Consent, RateLimiter: opts.RateLimiter, ClientAddress: opts.ClientAddress, Authenticator: opts.Authenticator, PasswordPolicy: opts.PasswordPolicy, PasswordWork: opts.PasswordWork})
+	adapter, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, CookieSameSite: opts.Cookie.SameSite, SessionCookieName: opts.Cookie.SessionName, CSRFCookieName: opts.Cookie.CSRFName, CookiePath: opts.Cookie.Path, Audit: opts.Audit, Consent: opts.Consent, RateLimiter: opts.RateLimiter, ClientAddress: opts.ClientAddress, Authenticator: opts.Authenticator, PasswordPolicy: opts.PasswordPolicy, PasswordWork: opts.PasswordWork, InteractionRenderer: opts.UI.Renderer})
 	if err != nil {
 		return nil, err
 	}

@@ -3,9 +3,12 @@ package embeddedidp_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,8 +17,19 @@ import (
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/idpui"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
+
+type recordingInteractionRenderer struct {
+	called   atomic.Bool
+	delegate idpui.InteractionRenderer
+}
+
+func (r *recordingInteractionRenderer) RenderInteraction(ctx context.Context, dst io.Writer, page idpui.InteractionPage) error {
+	r.called.Store(true)
+	return r.delegate.RenderInteraction(ctx, dst, page)
+}
 
 func TestProductionValidationRejectsMissingTokenSecret(t *testing.T) {
 	st := memory.New()
@@ -61,6 +75,46 @@ func TestDevProviderBuildsAndHasNoDebug(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("debug route status = %d", resp.StatusCode)
+	}
+}
+
+func TestCustomRendererFlowsThroughPublicOptions(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	if err := store.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("ui-key", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	delegate, err := idpui.NewDefaultRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer := &recordingInteractionRenderer{delegate: delegate}
+	provider, err := embeddedidp.New(ctx, embeddedidp.Options{Issuer: "http://127.0.0.1:5556/idp", Store: store, UI: embeddedidp.UIConfig{Renderer: renderer}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {"spa"},
+		"redirect_uri":          {"http://localhost/callback"},
+		"scope":                 {"openid"},
+		"state":                 {"state-1234567890"},
+		"nonce":                 {"nonce-1234567890"},
+		"code_challenge":        {"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"},
+		"code_challenge_method": {"S256"},
+	}
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:5556/idp/authorize?"+values.Encode(), nil)
+	recorder := httptest.NewRecorder()
+	provider.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !renderer.called.Load() {
+		t.Fatalf("status=%d rendererCalled=%v body=%s", recorder.Code, renderer.called.Load(), recorder.Body.String())
 	}
 }
 

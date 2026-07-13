@@ -1,0 +1,157 @@
+package fositeadapter
+
+import (
+	"bytes"
+	"errors"
+	"net/http"
+	"net/url"
+
+	"github.com/manuel/tinyidp/pkg/idp"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/idpui"
+)
+
+const maxInteractionDocumentBytes = 256 << 10
+
+var errInteractionDocumentTooLarge = errors.New("interaction document exceeds size limit")
+
+func (p *Provider) newInteractionPage(
+	interactionHandle string,
+	csrfToken string,
+	actions idpstore.InteractionRequiredAction,
+	request url.Values,
+	includeConsent bool,
+	clientID string,
+	scopes []string,
+	loginValue string,
+	publicError *idpui.PublicError,
+) idpui.InteractionPage {
+	needLogin := actions.Has(idpstore.InteractionRequireLogin) || actions.Has(idpstore.InteractionRequireFreshLogin) || actions.Has(idpstore.InteractionRequireStepUp)
+	formActions := []idpui.Action{idpui.ActionContinue}
+	if includeConsent {
+		formActions = []idpui.Action{idpui.ActionApprove, idpui.ActionDeny}
+	}
+	title := "Continue authorization"
+	if needLogin && includeConsent {
+		title = "Sign in and approve access"
+	} else if needLogin {
+		title = "Sign in"
+	} else if includeConsent {
+		title = "Approve access"
+	}
+	page := idpui.InteractionPage{
+		DocumentTitle: title,
+		Form: idpui.InteractionForm{
+			ActionURL:        p.issuer.Endpoint("/authorize"),
+			InteractionField: idpui.InteractionFieldName,
+			Interaction:      interactionHandle,
+			CSRFField:        idpui.CSRFFieldName,
+			CSRFToken:        csrfToken,
+			ActionField:      idpui.ActionFieldName,
+			Actions:          formActions,
+		},
+		Error: publicError,
+	}
+	if needLogin {
+		page.Login = &idpui.LoginPrompt{
+			Reason:        interactionLoginReason(actions, request),
+			LoginField:    idpui.LoginFieldName,
+			PasswordField: idpui.PasswordFieldName,
+			LoginValue:    loginValue,
+			Autofocus:     true,
+		}
+	}
+	if includeConsent {
+		prompt := &idpui.ConsentPrompt{ClientID: clientID, Scopes: make([]idpui.Scope, 0, len(scopes))}
+		for _, scope := range scopes {
+			prompt.Scopes = append(prompt.Scopes, idpui.Scope{Name: scope})
+		}
+		page.Consent = prompt
+	}
+	return page
+}
+
+func interactionLoginReason(actions idpstore.InteractionRequiredAction, request url.Values) idpui.LoginReason {
+	if actions.Has(idpstore.InteractionRequireStepUp) {
+		return idpui.LoginReasonStepUp
+	}
+	if actions.Has(idpstore.InteractionRequireFreshLogin) {
+		if promptHas(request.Get("prompt"), "login") {
+			return idpui.LoginReasonPromptLogin
+		}
+		return idpui.LoginReasonMaxAge
+	}
+	return idpui.LoginReasonSessionMissing
+}
+
+func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, status int, page idpui.InteractionPage) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	if err := page.Validate(); err != nil {
+		p.recordRenderFailure(r, page, "invalid_page")
+		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
+		return
+	}
+	buffer := &boundedInteractionBuffer{limit: maxInteractionDocumentBytes}
+	if err := p.interactionUI.RenderInteraction(r.Context(), buffer, page.Clone()); err != nil {
+		reason := "renderer_failed"
+		if errors.Is(err, errInteractionDocumentTooLarge) {
+			reason = "document_too_large"
+		}
+		p.recordRenderFailure(r, page, reason)
+		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if buffer.Len() == 0 {
+		p.recordRenderFailure(r, page, "empty_document")
+		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if _, err := w.Write(buffer.Bytes()); err != nil {
+		p.recordRenderFailure(r, page, "response_write_failed")
+	}
+}
+
+func (p *Provider) recordRenderFailure(r *http.Request, page idpui.InteractionPage, reason string) {
+	clientID := ""
+	if page.Consent != nil {
+		clientID = page.Consent.ClientID
+	}
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "interaction.render_failed", ClientID: clientID, Result: "rejected", Reason: reason})
+}
+
+type boundedInteractionBuffer struct {
+	bytes.Buffer
+	limit int
+}
+
+func (b *boundedInteractionBuffer) Write(contents []byte) (int, error) {
+	remaining := b.limit - b.Len()
+	if remaining <= 0 {
+		return 0, errInteractionDocumentTooLarge
+	}
+	if len(contents) <= remaining {
+		return b.Buffer.Write(contents)
+	}
+	written, err := b.Buffer.Write(contents[:remaining])
+	if err != nil {
+		return written, err
+	}
+	return written, errInteractionDocumentTooLarge
+}
+
+type seeOtherRedirectWriter struct {
+	http.ResponseWriter
+}
+
+func (w seeOtherRedirectWriter) WriteHeader(status int) {
+	if status == http.StatusFound {
+		status = http.StatusSeeOther
+	}
+	w.ResponseWriter.WriteHeader(status)
+}

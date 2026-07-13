@@ -98,9 +98,11 @@ func (d *strictScenarioDriver) Execute(_ context.Context, step verifyplan.Step) 
 		if parameters.Login != "" {
 			form.Set("login", parameters.Login)
 		}
-		if parameters.Action != "" {
-			form.Set("action", parameters.Action)
+		action := parameters.Action
+		if action == "" {
+			action = "approve"
 		}
+		form.Set("action", action)
 		for key, values := range parameters.Mutations {
 			form.Del(key)
 			for _, value := range values {

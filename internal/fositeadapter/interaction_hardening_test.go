@@ -20,6 +20,7 @@ import (
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/idpui"
 )
 
 type interactionFixture struct {
@@ -38,6 +39,14 @@ func newInteractionFixtureWithClock(t *testing.T, consentFactory func(*memory.St
 }
 
 func newInteractionFixtureConfigured(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy, clock func() time.Time, securityEvents securitytrace.Sink) *interactionFixture {
+	return newInteractionFixtureConfiguredWithRenderer(t, consentFactory, clock, securityEvents, nil)
+}
+
+func newInteractionFixtureWithRenderer(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy, renderer idpui.InteractionRenderer) *interactionFixture {
+	return newInteractionFixtureConfiguredWithRenderer(t, consentFactory, nil, nil, renderer)
+}
+
+func newInteractionFixtureConfiguredWithRenderer(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy, clock func() time.Time, securityEvents securitytrace.Sink, renderer idpui.InteractionRenderer) *interactionFixture {
 	t.Helper()
 	ctx := context.Background()
 	st := memory.New()
@@ -65,12 +74,13 @@ func newInteractionFixtureConfigured(t *testing.T, consentFactory func(*memory.S
 		consent = consentFactory(st)
 	}
 	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
-		Issuer:         "http://127.0.0.1:5556",
-		Store:          st,
-		SecretKey:      []byte("interaction-hardening-secret-key-32"),
-		Consent:        consent,
-		Clock:          clock,
-		SecurityEvents: securityEvents,
+		Issuer:              "http://127.0.0.1:5556",
+		Store:               st,
+		SecretKey:           []byte("interaction-hardening-secret-key-32"),
+		Consent:             consent,
+		Clock:               clock,
+		SecurityEvents:      securityEvents,
+		InteractionRenderer: renderer,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +127,9 @@ func (f *interactionFixture) begin(values url.Values) (url.Values, string, int) 
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return parseInteractionInputs(string(body)), string(body), resp.StatusCode
+	form := parseInteractionInputs(string(body))
+	form.Set("action", "approve")
+	return form, string(body), resp.StatusCode
 }
 
 func (f *interactionFixture) submit(values url.Values) *http.Response {
