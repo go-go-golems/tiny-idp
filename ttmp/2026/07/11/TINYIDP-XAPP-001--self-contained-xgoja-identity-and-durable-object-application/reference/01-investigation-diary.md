@@ -1912,3 +1912,166 @@ reviewable commits.
 - Focused vet passed in both affected package groups.
 - The go-go-goja hook also reported golangci-lint `0 issues`.
 - The XAPP server was stopped and port 19443 released before committing.
+
+## Step 40 — Define the bulletin board as a shared security resource
+
+The product is moving from a private JSON scratchpad to a multi-user bulletin
+board. This is not only a frontend change: the current `BoundDispatcher`
+deliberately maps each actor to a private object, while a BBS requires multiple
+authenticated actors to observe and mutate one shared resource. The design
+therefore adds a fixed host-selected board object without exposing raw Durable
+Object naming to browser or route input.
+
+The visual system is equally explicit. The React interface will use early
+Macintosh monochrome composition without Chicago, menu bars, title bars, fake
+window chrome, gradients, or ornamental desktop simulation. Black-and-white
+structure carries the interface; restrained 1950s pastel foreground accents
+identify categories, status, metadata, and actions.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, now make it look good, and make a useful durable object app (BBS)"
+
+**Additional user direction (verbatim):** "use a macos1 retro monochrome (no chicago font, no menu bar, no window chrome), use colors for font foreground accent when needed (pastel 50ies retro color palette) look"
+
+**Assistant interpretation:** Replace the proof-of-concept JSON editor with a
+production-shaped shared bulletin board and a polished React interface while
+preserving the single-binary xgoja embedding and existing identity/session
+security.
+
+**Inferred user intent:** Make the composed identity and Durable Object system
+visibly useful to real users and demonstrate secure shared state, not only
+private per-user persistence.
+
+**Commit (code):** pending at the time this step was written.
+
+### What I did
+
+- Read the embedded React/Vite workflow and its full playbook.
+- Inspected `BoundDispatcher`, the durableobjects xgoja provider, provider host
+  services, `Manager.Dispatch`, fetch envelopes, object server construction,
+  application session claims, and current frontend build command.
+- Confirmed raw Durable Object `fetch`/`rpc` APIs exist in the module but are
+  disabled in product mode; the BBS will not enable them.
+- Chose a single host-constructed `ObjectID` for namespace `BBS` and logical
+  name `community`.
+- Chose native Go BBS handlers as the trust boundary. They authenticate through
+  hostauth, verify application CSRF on unsafe methods, generate IDs and UTC
+  timestamps, attach trusted actor identity/display name, and then dispatch to
+  the fixed object.
+- Defined initial features: list threads, create a categorized post, reply,
+  project author-only deletion permission, delete an owned post, persist across
+  restart, and share visibility between Alice and Bob.
+- Chose React, TypeScript, Redux Toolkit, RTK Query, Vite, pnpm, and Bootstrap,
+  consistent with workspace web guidelines.
+- Added eight stable ticket tasks (`ojkr`, `ejpq`, `x51w`, `m06c`, `le8m`,
+  `s09k`, `pg4w`, and `z9v7`).
+- Stopped the old tmux server and verified port 19443 was released before
+  modifying generated/runtime code.
+
+### Why
+
+- Reusing `fetchForActor` would produce one private board per user and would not
+  be a BBS.
+- Enabling caller-selected raw object APIs would allow the browser or trusted
+  route code to choose physical object names, weakening the confinement already
+  established by the XAPP design.
+- A fixed host-owned shared object is the smallest secure extension: sharing is
+  intentional, object identity is not user input, and the Durable Object still
+  serializes all board mutations.
+- Native Go handlers can attach actor identity that browser JSON cannot forge.
+  The Durable Object can enforce ownership using the persisted actor ID while
+  returning only display-safe author data and `canDelete` projection.
+
+### What worked
+
+- The existing manager already supports direct fixed-ID dispatch without
+  exposing its raw HTTP gateway.
+- Application sessions retain `name` and `preferredUsername` claims suitable
+  for a public author label without using email or raw OIDC subject.
+- The xgoja asset pipeline can embed a Vite `dist` directory after pnpm builds
+  it; no second production listener or router is required.
+
+### What didn't work
+
+- The current frontend package is not yet a React project. Its only build step
+  copies Bootstrap CSS into a hand-authored `public` directory. This must be
+  replaced, not layered with a compatibility shell.
+- The current object bundle exports only `UserState`; there is no shared
+  namespace or board schema.
+
+### What I learned
+
+- A shared application resource and an actor-private object require different
+  naming authorities. The correct abstraction is not “turn off actor binding”;
+  it is “add a second, narrower fixed-resource boundary.”
+- The early-Mac visual request is compatible with Bootstrap when Bootstrap is
+  used for layout and accessibility utilities while custom CSS owns the
+  monochrome geometry and typography.
+
+### What was tricky to build
+
+- Authorship must cross Go and JavaScript without trusting request JSON. The Go
+  handler will replace, not merge, security-sensitive fields such as author ID,
+  author label, post ID, and timestamp before dispatch.
+- Board reads need viewer-relative `canDelete` flags without exposing persisted
+  internal actor IDs. The read request will include the trusted viewer ID, and
+  the object will project booleans while omitting internal IDs.
+- Vite normally serves assets under `/assets`; workspace policy requires
+  `/static/`. Vite's base and xgoja's static asset mount must both use
+  `/static/`.
+
+### What warrants a second pair of eyes
+
+- Review whether one global board is the right v1 resource boundary or whether
+  future board IDs require an allowlisted resource registry.
+- Review deletion semantics and whether moderator roles are needed before
+  extending beyond author-only deletion.
+- Review content limits, retention/capacity behavior, audit behavior, and HTML
+  rendering to prevent stored XSS.
+- Confirm the pastel accents remain foreground-only and meet accessible color
+  contrast on white backgrounds.
+
+### What should be done in the future
+
+- Introduce board registries or multiple boards only through a host-authorized
+  resource resolver, never direct object-name input.
+- Add moderation, pagination, search, and retention after the bounded single
+  board is tested under load.
+- Tie BBS fault scenarios into the existing model/static/runtime assurance
+  work after the functional browser path passes.
+
+### Code review instructions
+
+- Start with the new Go BBS handler and verify every `ObjectID` is constructed
+  from constants.
+- Verify every unsafe route calls hostauth CSRF before dispatch.
+- Inspect the object bundle to ensure persisted actor IDs are not returned.
+- Inspect built HTML/JS paths and confirm all static files are under `/static/`.
+- Run two browser contexts and prove shared visibility plus unauthorized delete
+  rejection.
+
+### Technical details
+
+- Shared object: namespace `BBS`, logical name `community`.
+- Planned API:
+  - `GET /api/bbs`;
+  - `POST /api/bbs/posts`;
+  - `POST /api/bbs/posts/{postID}/replies`;
+  - `DELETE /api/bbs/posts/{postID}`.
+- Production remains one `net/http` server and one xgoja-generated embedded
+  asset bundle.
+
+### Superseding correction recorded on 2026-07-13
+
+The native Go BBS handler decision in this step is superseded by
+`TINYIDP-BBS-001`. Subsequent source inspection established that
+`enableRawGateway: false` disables the externally mountable caller-selected
+HTTP gateway but does not disable trusted in-process
+`objects.fetch(namespace, name, request)`. The accepted implementation places
+the public API in planned xgoja routes, fixes `BBS/community` as literals, and
+keeps state and ownership rules in the Durable Object. The Go host remains a
+composition layer.
+
+The original reasoning is preserved above as investigation history. Reviewers
+should use the dedicated BBS design guide as the current decision record.

@@ -95,3 +95,11 @@
 - [ ] Load-test login, app sessions, actor startup, hot objects, eviction, and disk growth. <!-- t:4lia -->
 - [ ] Verify logs, traces, metrics, errors, and frontend never expose credentials, tokens, cookies, subjects, or object names. <!-- t:n8y4 -->
 - [ ] Complete canary, backup/restore drill, residual-risk review, and release approval. <!-- t:2smn -->
+- [x] Moved the BBS schema, API, and security contract to TINYIDP-BBS-001. <!-- t:ojkr -->
+- [x] Superseded native Go BBS handlers with trusted planned xgoja routes in TINYIDP-BBS-001. <!-- t:ejpq -->
+- [x] Moved BBS Durable Object implementation tracking to TINYIDP-BBS-001. <!-- t:x51w -->
+- [x] Moved the React frontend implementation to TINYIDP-BBS-001. <!-- t:m06c -->
+- [x] Moved the monochrome visual system to TINYIDP-BBS-001. <!-- t:le8m -->
+- [x] Moved BBS integration and security tests to TINYIDP-BBS-001. <!-- t:s09k -->
+- [x] Moved the Alice/Bob browser scenario to TINYIDP-BBS-001. <!-- t:pg4w -->
+- [x] Moved BBS generation, gates, documentation, and tmux delivery to TINYIDP-BBS-001. <!-- t:z9v7 -->

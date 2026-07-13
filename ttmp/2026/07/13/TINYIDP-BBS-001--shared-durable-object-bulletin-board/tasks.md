@@ -6,12 +6,12 @@
 - [x] Phase 1.2: Record the fixed shared-object trust boundary and supersede the native Go BBS façade decision. <!-- t:54r8 -->
 - [x] Phase 1.3: Specify the HTTP API, persisted schema, public projection, identity provenance, limits, errors, and audit events. <!-- t:sohz -->
 - [x] Phase 1.4: Write the intern-ready analysis, design, implementation guide, diary baseline, and verification playbook. <!-- t:d6ka -->
-- [ ] Phase 2.1: Remove the uncommitted native Go BBS handler and composition registration. <!-- t:qvgn -->
-- [ ] Phase 2.2: Implement authenticated and audited xgoja BBS read, create, reply, and delete routes with CSRF on mutations. <!-- t:au5n -->
-- [ ] Phase 2.3: Forward only route-selected object identity and session-derived actor identity into the BBS object. <!-- t:hmc0 -->
-- [ ] Phase 2.4: Implement the BBS Durable Object schema, identifiers, timestamps, validation, limits, persistence, projection, and author-only deletion. <!-- t:mm2j -->
-- [ ] Phase 2.5: Add object-level and route-level tests for success, validation, identity spoofing resistance, CSRF, and unauthorized deletion. <!-- t:ql0u -->
-- [ ] Phase 2.6: Commit the focused BBS backend checkpoint and record its evidence in the diary. <!-- t:xa9t -->
+- [x] Phase 2.1: Remove the uncommitted native Go BBS handler and composition registration. <!-- t:qvgn -->
+- [x] Phase 2.2: Implement authenticated and audited xgoja BBS read, create, reply, and delete routes with CSRF on mutations. <!-- t:au5n -->
+- [x] Phase 2.3: Forward only route-selected object identity and session-derived actor identity into the BBS object. <!-- t:hmc0 -->
+- [x] Phase 2.4: Implement the BBS Durable Object schema, identifiers, timestamps, validation, limits, persistence, projection, and author-only deletion. <!-- t:mm2j -->
+- [x] Phase 2.5: Add object-level and route-level tests for success, validation, identity spoofing resistance, CSRF, and unauthorized deletion. <!-- t:ql0u -->
+- [x] Phase 2.6: Commit the focused BBS backend checkpoint and record its evidence in the diary. <!-- t:xa9t -->
 - [ ] Phase 3.1: Convert the placeholder frontend to pnpm, Vite, React, TypeScript, Redux Toolkit, RTK Query, and Bootstrap. <!-- t:98is -->
 - [ ] Phase 3.2: Implement session bootstrap, CSRF-aware API base query, board queries, post/reply mutations, deletion, and logout. <!-- t:3b4q -->
 - [ ] Phase 3.3: Implement accessible post composition, board statistics, thread rendering, reply composition, empty/loading/error states, and ownership controls. <!-- t:l160 -->

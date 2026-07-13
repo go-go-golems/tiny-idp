@@ -16,10 +16,14 @@ RelatedFiles:
       Note: Shared BBS state machine and public projection
     - Path: repo://cmd/tinyidp-xapp/app/routes/site.js
       Note: Trusted planned BBS HTTP routes and actor boundary
+    - Path: repo://cmd/tinyidp-xapp/bbs_test.go
+      Note: Two-actor object ownership and restart verification
     - Path: repo://cmd/tinyidp-xapp/development_app.go
       Note: Go composition and host-service boundary
     - Path: repo://cmd/tinyidp-xapp/xgoja.yaml
       Note: Embedded route object and frontend source contract
+    - Path: ws://go-go-goja/pkg/gojahttp/auth/appauth/appauth.go
+      Note: Deny-by-default BBS action policy
     - Path: ws://go-go-objects/pkg/durableobjects/storage_sqlite.go
       Note: Durable object persistence implementation
     - Path: ws://go-go-objects/pkg/xgoja/providers/durableobjects/durableobjects.go
@@ -30,6 +34,7 @@ LastUpdated: 2026-07-13T16:27:18.167445462-04:00
 WhatFor: Explain why the BBS belongs in trusted xgoja routes and a shared Durable Object, then define the contracts required to implement and review it.
 WhenToUse: Read before implementing, reviewing, extending, debugging, or operating the BBS feature.
 ---
+
 
 
 # Shared Durable Object BBS Analysis Design and Implementation Guide

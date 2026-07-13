@@ -42,3 +42,12 @@ Completed real-browser session lifecycle checkpoint: generic CSRF-protected POST
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/app/frontend/public/app.js — Product logout behavior and visible two-session semantics
+
+## 2026-07-13
+
+Moved BBS work into TINYIDP-BBS-001 and superseded the uncommitted native Go facade with trusted xgoja named dispatch.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-BBS-001--shared-durable-object-bulletin-board/design-doc/01-shared-durable-object-bbs-analysis-design-and-implementation-guide.md — Current accepted BBS architecture
+

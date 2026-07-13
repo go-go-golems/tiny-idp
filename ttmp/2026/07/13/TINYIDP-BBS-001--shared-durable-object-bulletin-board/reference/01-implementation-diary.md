@@ -12,8 +12,6 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: repo://cmd/tinyidp-xapp/bbs.go
-      Note: Uncommitted native Go facade that the accepted design removes
     - Path: repo://ttmp/2026/07/11/TINYIDP-XAPP-001--self-contained-xgoja-identity-and-durable-object-application/reference/01-investigation-diary.md
       Note: Earlier BBS false start and original visual requirements
 ExternalSources: []
@@ -22,6 +20,7 @@ LastUpdated: 2026-07-13T16:27:18.315440162-04:00
 WhatFor: Preserve decisions, commands, failures, commits, review risks, and continuation state for the BBS feature.
 WhenToUse: Read before resuming or reviewing TINYIDP-BBS-001 and update after every meaningful implementation or verification interval.
 ---
+
 
 
 # Implementation Diary
@@ -182,6 +181,165 @@ docmgr doc add --ticket TINYIDP-BBS-001 --doc-type reference \
 docmgr doc add --ticket TINYIDP-BBS-001 --doc-type playbook \
   --title "BBS Verification and Operations Playbook"
 ```
+
+## Step 2: Implement trusted routes and the shared object state machine
+
+This step replaced the uncommitted native Go facade with four planned xgoja
+routes and completed the `BBS/community` Durable Object. The routes establish
+the coarse security boundary; the object establishes domain validation,
+mutation order, persistence, ownership, and public projection.
+
+The implementation tests the boundary twice. Direct object tests exercise two
+actors and a real SQLite restart. Full application tests perform the embedded
+OIDC login, prove CSRF rejection, send spoofed actor and object fields, and
+confirm the route still attributes content to the application session.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement Phase 2 exactly as specified, retain
+the fixed shared-object boundary, and commit the reusable policy change and BBS
+vertical slice separately.
+
+**Inferred user intent:** Obtain a secure and reviewable shared-state backend
+before frontend presentation work begins.
+
+**Commit (go-go-goja):** `f9dbf36` — "HTTP: authorize shared BBS route actions"
+
+**Commit (tiny-idp):** `0f5b907` — "Xapp: add shared durable object BBS"
+
+### What I did
+
+- Deleted the uncommitted native `bbs.go` facade and removed its mux
+  registration, returning `development_app.go` to composition-only behavior.
+- Added `GET /api/bbs`, post creation, reply creation, and deletion routes to
+  `app/routes/site.js`.
+- Declared authentication and audit on every route and CSRF on every mutation.
+- Selected `BBS/community` with literals and derived `actorId` and `actorName`
+  from `ctx.actor`.
+- Implemented schema V1, sequence IDs, UTC timestamps, validation, category and
+  capacity limits, immutable persistence, public projection, and author-only
+  deletion in `app/objects/objects.js`.
+- Added BBS actions to the deny-by-default appauth authorizer. These actions
+  allow an authenticated route only when it has no caller-selected resource;
+  post-level ownership remains in the object.
+- Added a direct two-actor object test with close/reopen persistence.
+- Extended the embedded application vertical slice with unauthenticated, raw
+  gateway, CSRF, spoofing, create, reply, and delete assertions.
+- Regenerated the embedded route and object assets.
+
+### Why
+
+- Trusted planned routes remove duplicated Go security and dispatch code.
+- Literal object coordinates preserve confinement without enabling the raw
+  gateway.
+- Object-generated IDs and timestamps prevent browser authority over domain
+  metadata.
+- Immutable value replacement works consistently for fresh JavaScript objects
+  and values decoded from SQLite through Go.
+- Explicit appauth actions preserve deny-by-default policy rather than reusing
+  semantically incorrect self-update actions.
+
+### What worked
+
+- Direct dispatch derived namespace `BBS` from the exported class and persisted
+  one shared board in SQLite.
+- Alice and Bob received different `canDelete` projections for the same post.
+- Bob's object-level deletion returned `403 not_post_author`.
+- Closing and reconstructing the object server with the same root preserved the
+  post and reply.
+- The application route ignored attacker-supplied actor, namespace, and object
+  fields and returned author `Alice` from the session.
+- Missing CSRF failed with 403 before object mutation.
+- The focused appauth and tiny-idp test suites passed.
+
+### What didn't work
+
+- The first direct reply test returned `201` but the projected reply list was
+  still empty:
+
+  ```text
+  development_app_test equivalent: replied board ... Replies:[] ...
+  --- FAIL: TestBBSSharedStateOwnershipAndRestart
+  ```
+
+  The stored board had been decoded through Go-backed values. Mutating the
+  nested `post.replies` array in place did not update the document subsequently
+  written by the test runtime. The implementation now builds a new post array
+  and a new board value for every mutation.
+
+- The first valid route create returned 403 after CSRF had succeeded:
+
+  ```text
+  development_app_test.go:246: create post status=403 body=Forbidden
+  ```
+
+  The host authorizer denies unknown action strings. Adding the four explicit
+  BBS action cases, plus allow and denial tests, resolved the failure.
+
+### What I learned
+
+- Durable Object JavaScript should treat values returned from storage as values
+  to replace, not mutable object graphs whose nested mutations are guaranteed
+  to propagate through Goja wrappers.
+- Planned `.allow()` names are executable policy inputs, not audit-only labels.
+  Adding a route action requires adding the corresponding deny-by-default host
+  policy decision.
+- Resource ownership can remain inside the object while the outer authorizer
+  controls the operation class. The absence of a caller-selected resource is a
+  useful policy invariant for this fixed board.
+
+### What was tricky to build
+
+- The route must accept title, body, and category while discarding forged
+  actor and object fields. The route selects only those public fields and adds
+  trusted identity last.
+- Expected validation errors must remain object responses. Trusted field or
+  stored schema failures throw and become execution failures.
+- The public-projection leak test must inspect the raw response body. Marshaling
+  a reduced Go test struct would hide leaked fields during unmarshal and create
+  a false assurance result.
+
+### What warrants a second pair of eyes
+
+- Review `fetchBoard` and confirm its only callers construct selected request
+  bodies; consider replacing the internal spread with explicit fields if this
+  helper grows.
+- Review the appauth action placement. The package already represents a small
+  explicit monolith policy, but a future general extension mechanism may be
+  preferable to adding application action constants.
+- Review stored schema validation depth and corruption behavior.
+- Review sequence exhaustion and document size assumptions even though V1
+  capacity makes practical exhaustion unreachable.
+
+### What should be done in the future
+
+- Add a test that fills configured small capacity limits if those constants are
+  made injectable for testing.
+- Consider an application-owned authorizer extension point before adding many
+  unrelated action families to the shared appauth package.
+
+### Code review instructions
+
+- Start with `app/routes/site.js`, then trace into class `BBS`.
+- Read `bbs_test.go` before the implementation to see the invariants expressed
+  as executable behavior.
+- Review the appauth switch and its positive and negative tests in go-go-goja.
+- Reproduce with:
+
+  ```bash
+  go test ../go-go-goja/pkg/gojahttp/auth/appauth -count=1
+  go test ./cmd/tinyidp-xapp -run 'TestBBS|TestDevelopmentApplicationLoginToApplicationVerticalSlice' -count=1 -v
+  ```
+
+### Technical details
+
+- Object identity: namespace `BBS`, logical name `community`.
+- IDs: `post_` or `reply_` plus a 12-digit sequence.
+- Storage key: `board`.
+- Mutations write newly constructed board documents.
+- Public projection omits `authorId` and returns `canDelete` for each post.
 
 ## Goal
 
