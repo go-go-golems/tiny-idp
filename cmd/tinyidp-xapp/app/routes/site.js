@@ -11,6 +11,23 @@ function site() {
   const objects = require("durableobjects");
   const app = express.app();
 
+  const actorDisplayName = (actor) => {
+    const claims = actor.claims || {};
+    const candidate = claims.name || claims.preferredUsername || "Member";
+    const normalized = String(candidate).trim();
+    return (normalized || "Member").slice(0, 80);
+  };
+
+  const fetchBoard = (ctx, request) => objects.fetch("BBS", "community", {
+    method: request.method,
+    path: request.path,
+    body: {
+      ...(request.body || {}),
+      actorId: ctx.actor.id,
+      actorName: actorDisplayName(ctx.actor)
+    }
+  });
+
   app.staticFromAssetsModule("/static", assets, "/app");
 
   app.get("/")
@@ -50,6 +67,60 @@ function site() {
         method: "POST",
         path: "/state",
         body: ctx.body || {}
+      });
+      res.status(result.status).json(result.body);
+    });
+
+  app.get("/api/bbs")
+    .auth(express.user().required())
+    .allow("bbs.read")
+    .audit("bbs.read")
+    .handle((ctx, res) => {
+      const result = fetchBoard(ctx, { method: "GET", path: "/board" });
+      res.status(result.status).json(result.body);
+    });
+
+  app.post("/api/bbs/posts")
+    .auth(express.user().required())
+    .csrf()
+    .allow("bbs.post.create")
+    .audit("bbs.post.created")
+    .handle((ctx, res) => {
+      const result = fetchBoard(ctx, {
+        method: "POST",
+        path: "/posts",
+        body: {
+          title: ctx.body && ctx.body.title,
+          body: ctx.body && ctx.body.body,
+          category: ctx.body && ctx.body.category
+        }
+      });
+      res.status(result.status).json(result.body);
+    });
+
+  app.post("/api/bbs/posts/:postId/replies")
+    .auth(express.user().required())
+    .csrf()
+    .allow("bbs.reply.create")
+    .audit("bbs.reply.created")
+    .handle((ctx, res) => {
+      const result = fetchBoard(ctx, {
+        method: "POST",
+        path: `/posts/${ctx.params.postId}/replies`,
+        body: { body: ctx.body && ctx.body.body }
+      });
+      res.status(result.status).json(result.body);
+    });
+
+  app.delete("/api/bbs/posts/:postId")
+    .auth(express.user().required())
+    .csrf()
+    .allow("bbs.post.delete")
+    .audit("bbs.post.deleted")
+    .handle((ctx, res) => {
+      const result = fetchBoard(ctx, {
+        method: "DELETE",
+        path: `/posts/${ctx.params.postId}`
       });
       res.status(result.status).json(result.body);
     });

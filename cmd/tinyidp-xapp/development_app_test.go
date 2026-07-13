@@ -41,7 +41,9 @@ func TestDevelopmentApplicationLoadsIdentityAndTrustedRoutes(t *testing.T) {
 		{path: "/static/app.js", want: http.StatusOK},
 		{path: "/api/me", want: http.StatusUnauthorized},
 		{path: "/api/object", want: http.StatusUnauthorized},
+		{path: "/api/bbs", want: http.StatusUnauthorized},
 		{path: "/rpc/USER_STATE/injected", want: http.StatusNotFound},
+		{path: "/fetch/BBS/community", want: http.StatusNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -101,7 +103,7 @@ func TestLoadOrCreateKeyRejectsLooseExistingPermissions(t *testing.T) {
 	}
 }
 
-func TestDevelopmentApplicationLoginToPrivateObjectVerticalSlice(t *testing.T) {
+func TestDevelopmentApplicationLoginToApplicationVerticalSlice(t *testing.T) {
 	server := httptest.NewUnstartedServer(nil)
 	publicBaseURL := "http://" + server.Listener.Addr().String()
 	app, err := NewDevelopmentApplication(context.Background(), DevelopmentApplicationConfig{
@@ -203,6 +205,86 @@ func TestDevelopmentApplicationLoginToPrivateObjectVerticalSlice(t *testing.T) {
 	}
 	if document["message"] != "private" {
 		t.Fatalf("stored document = %#v", document)
+	}
+
+	missingCSRF, err := http.NewRequest(http.MethodPost, server.URL+"/api/bbs/posts", bytes.NewBufferString(`{"title":"Denied","body":"No token","category":"general"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingCSRF.Header.Set("Content-Type", "application/json")
+	missingCSRFResponse, err := client.Do(missingCSRF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingCSRFBody, _ := io.ReadAll(missingCSRFResponse.Body)
+	_ = missingCSRFResponse.Body.Close()
+	if missingCSRFResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("missing CSRF status=%d body=%s", missingCSRFResponse.StatusCode, missingCSRFBody)
+	}
+
+	createPost, err := http.NewRequest(http.MethodPost, server.URL+"/api/bbs/posts", bytes.NewBufferString(`{
+		"title":"Shared post",
+		"body":"Created through the trusted route",
+		"category":"projects",
+		"actorId":"attacker-selected",
+		"actorName":"Mallory",
+		"namespace":"ADMIN",
+		"objectName":"other"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	createPost.Header.Set("Content-Type", "application/json")
+	createPost.Header.Set("X-CSRF-Token", session.CSRFToken)
+	createPostResponse, err := client.Do(createPost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createPostBody, _ := io.ReadAll(createPostResponse.Body)
+	_ = createPostResponse.Body.Close()
+	if createPostResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("create post status=%d body=%s", createPostResponse.StatusCode, createPostBody)
+	}
+	var board testBBSBoard
+	if err := json.Unmarshal(createPostBody, &board); err != nil {
+		t.Fatal(err)
+	}
+	if len(board.Posts) != 1 || board.Posts[0].Author != "Alice" || !board.Posts[0].CanDelete {
+		t.Fatalf("created board = %#v", board)
+	}
+	if bytes.Contains(createPostBody, []byte("attacker-selected")) || bytes.Contains(createPostBody, []byte("Mallory")) {
+		t.Fatalf("route accepted spoofed actor data: %s", createPostBody)
+	}
+
+	replyRequest, err := http.NewRequest(http.MethodPost, server.URL+"/api/bbs/posts/post_000000000001/replies", bytes.NewBufferString(`{"body":"A reply"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replyRequest.Header.Set("Content-Type", "application/json")
+	replyRequest.Header.Set("X-CSRF-Token", session.CSRFToken)
+	replyResponse, err := client.Do(replyRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replyBody, _ := io.ReadAll(replyResponse.Body)
+	_ = replyResponse.Body.Close()
+	if replyResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("reply status=%d body=%s", replyResponse.StatusCode, replyBody)
+	}
+
+	deleteRequest, err := http.NewRequest(http.MethodDelete, server.URL+"/api/bbs/posts/post_000000000001", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteRequest.Header.Set("X-CSRF-Token", session.CSRFToken)
+	deleteResponse, err := client.Do(deleteRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteBody, _ := io.ReadAll(deleteResponse.Body)
+	_ = deleteResponse.Body.Close()
+	if deleteResponse.StatusCode != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleteResponse.StatusCode, deleteBody)
 	}
 }
 
