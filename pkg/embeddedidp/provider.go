@@ -14,6 +14,7 @@ import (
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/idpui"
 )
 
 type Provider struct {
@@ -108,6 +109,13 @@ func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
 		return idp.PasswordWorkStats{}, false
 	}
 	return p.adapter.PasswordWorkStats()
+}
+
+func (p *Provider) InteractionRenderStats() idpui.RenderStats {
+	if p == nil || p.adapter == nil {
+		return idpui.RenderStats{}
+	}
+	return p.adapter.InteractionRenderStats()
 }
 
 func (p *Provider) Readiness(ctx context.Context) idp.ReadinessReport {

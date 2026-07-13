@@ -109,6 +109,7 @@ type Provider struct {
 	interactionTTL    time.Duration
 	clock             func() time.Time
 	interactionUI     idpui.InteractionRenderer
+	renderMetrics     interactionRenderMetrics
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -117,6 +118,15 @@ func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
 		return idp.PasswordWorkStats{}, false
 	}
 	return reporter.PasswordWorkStats(), true
+}
+
+// InteractionRenderStats reports process-local renderer health without
+// exposing interaction, user, client, or error text as metric labels.
+func (p *Provider) InteractionRenderStats() idpui.RenderStats {
+	if p == nil {
+		return idpui.RenderStats{}
+	}
+	return p.renderMetrics.snapshot()
 }
 
 func (p *Provider) AuditDeliveryFailures() uint64 { return p.auditFailures.Load() }

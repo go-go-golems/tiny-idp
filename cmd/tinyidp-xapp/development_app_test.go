@@ -90,6 +90,26 @@ func TestDevelopmentApplicationLoadsIdentityAndTrustedRoutes(t *testing.T) {
 	}
 }
 
+func TestDevelopmentApplicationInteractionDoctor(t *testing.T) {
+	app, err := NewDevelopmentApplication(context.Background(), DevelopmentApplicationConfig{
+		PublicBaseURL: "http://127.0.0.1:8787",
+		StateRoot:     t.TempDir(),
+		Login:         "alice",
+		Password:      "correct horse battery staple",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Close(context.Background()) })
+	health, err := app.CheckInteractionUI(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.HTMLBytes == 0 || health.CSSBytes == 0 {
+		t.Fatalf("interaction health=%#v", health)
+	}
+}
+
 func TestLoadOrCreateKeyIsStableAndOwnerOnly(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "secrets", "binding.key")
 	first, err := loadOrCreateKey(file)

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"sync/atomic"
+	"time"
 
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
@@ -85,6 +87,12 @@ func interactionLoginReason(actions idpstore.InteractionRequiredAction, request 
 }
 
 func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, status int, page idpui.InteractionPage) {
+	started := time.Now()
+	p.renderMetrics.attempts.Add(1)
+	succeeded := false
+	defer func() {
+		p.renderMetrics.observe(time.Since(started), succeeded)
+	}()
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	if err := page.Validate(); err != nil {
@@ -97,17 +105,20 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 		reason := "renderer_failed"
 		if errors.Is(err, errInteractionDocumentTooLarge) {
 			reason = "document_too_large"
+			p.renderMetrics.oversizedDocuments.Add(1)
 		}
 		p.recordRenderFailure(r, page, reason)
 		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
 		return
 	}
 	if buffer.overflowed {
+		p.renderMetrics.oversizedDocuments.Add(1)
 		p.recordRenderFailure(r, page, "document_too_large")
 		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
 		return
 	}
 	if buffer.Len() == 0 {
+		p.renderMetrics.emptyDocuments.Add(1)
 		p.recordRenderFailure(r, page, "empty_document")
 		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
 		return
@@ -117,9 +128,12 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if _, err := w.Write(buffer.Bytes()); err != nil {
+	if written, err := w.Write(buffer.Bytes()); err != nil || written != buffer.Len() {
+		p.renderMetrics.responseWriteFailures.Add(1)
 		p.recordRenderFailure(r, page, "response_write_failed")
+		return
 	}
+	succeeded = true
 }
 
 func (p *Provider) recordRenderFailure(r *http.Request, page idpui.InteractionPage, reason string) {
@@ -137,6 +151,9 @@ type boundedInteractionBuffer struct {
 }
 
 func (b *boundedInteractionBuffer) Write(contents []byte) (int, error) {
+	if len(contents) == 0 {
+		return 0, nil
+	}
 	remaining := b.limit - b.Len()
 	if remaining <= 0 {
 		b.overflowed = true
@@ -155,6 +172,42 @@ func (b *boundedInteractionBuffer) Write(contents []byte) (int, error) {
 
 type seeOtherRedirectWriter struct {
 	http.ResponseWriter
+}
+
+type interactionRenderMetrics struct {
+	attempts              atomic.Uint64
+	successes             atomic.Uint64
+	failures              atomic.Uint64
+	oversizedDocuments    atomic.Uint64
+	emptyDocuments        atomic.Uint64
+	responseWriteFailures atomic.Uint64
+	totalLatencyNanos     atomic.Uint64
+	maxLatencyNanos       atomic.Uint64
+}
+
+func (m *interactionRenderMetrics) observe(elapsed time.Duration, succeeded bool) {
+	nanos := uint64(max(elapsed.Nanoseconds(), 0))
+	m.totalLatencyNanos.Add(nanos)
+	for current := m.maxLatencyNanos.Load(); nanos > current && !m.maxLatencyNanos.CompareAndSwap(current, nanos); current = m.maxLatencyNanos.Load() {
+	}
+	if succeeded {
+		m.successes.Add(1)
+	} else {
+		m.failures.Add(1)
+	}
+}
+
+func (m *interactionRenderMetrics) snapshot() idpui.RenderStats {
+	return idpui.RenderStats{
+		Attempts:              m.attempts.Load(),
+		Successes:             m.successes.Load(),
+		Failures:              m.failures.Load(),
+		OversizedDocuments:    m.oversizedDocuments.Load(),
+		EmptyDocuments:        m.emptyDocuments.Load(),
+		ResponseWriteFailures: m.responseWriteFailures.Load(),
+		TotalLatency:          time.Duration(m.totalLatencyNanos.Load()),
+		MaxLatency:            time.Duration(m.maxLatencyNanos.Load()),
+	}
 }
 
 func (w seeOtherRedirectWriter) WriteHeader(status int) {

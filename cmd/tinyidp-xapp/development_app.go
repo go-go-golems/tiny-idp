@@ -39,21 +39,24 @@ const (
 )
 
 type DevelopmentApplicationConfig struct {
-	PublicBaseURL string
-	StateRoot     string
-	Login         string
-	Password      string
+	PublicBaseURL  string
+	StateRoot      string
+	Login          string
+	Password       string
+	SecondLogin    string
+	SecondPassword string
 }
 
 type DevelopmentApplication struct {
-	handler http.Handler
-	runtime *engine.Runtime
-	idp     *embeddedidp.Provider
-	objects *durableobjects.Server
-	auth    *hostauth.Services
-	oidc    *observedRoundTripper
-	loginUI *loginui.Renderer
-	extras  []func(context.Context) error
+	handler       http.Handler
+	publicBaseURL string
+	runtime       *engine.Runtime
+	idp           *embeddedidp.Provider
+	objects       *durableobjects.Server
+	auth          *hostauth.Services
+	oidc          *observedRoundTripper
+	loginUI       *loginui.Renderer
+	extras        []func(context.Context) error
 }
 
 func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationConfig) (_ *DevelopmentApplication, retErr error) {
@@ -62,6 +65,9 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	}
 	if cfg.PublicBaseURL == "" || cfg.StateRoot == "" || cfg.Login == "" || cfg.Password == "" {
 		return nil, errors.New("public base URL, state root, login, and password are required")
+	}
+	if (cfg.SecondLogin == "") != (cfg.SecondPassword == "") {
+		return nil, errors.New("second development login and password must be provided together")
 	}
 	if err := os.MkdirAll(cfg.StateRoot, 0o700); err != nil {
 		return nil, errors.Wrap(err, "create development state root")
@@ -87,17 +93,17 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	if err := store.PutClient(ctx, client); err != nil {
 		return nil, errors.Wrap(err, "seed development OIDC client")
 	}
-	user := idpstore.User{ID: "dev-alice", Sub: "dev-alice-subject", Email: "alice@example.test", EmailVerified: true, Name: "Alice", PreferredUsername: cfg.Login, CreatedAt: now, UpdatedAt: now}
 	passwords, err := authn.NewPasswordService(store, authn.Options{})
 	if err != nil {
 		return nil, errors.Wrap(err, "create development password service")
 	}
-	credential, err := passwords.HashCredential(ctx, user.ID, cfg.Login, []byte(cfg.Password), now)
-	if err != nil {
-		return nil, errors.Wrap(err, "hash development credential")
+	if err := seedDevelopmentUser(ctx, store, passwords, developmentUser{ID: "dev-alice", Subject: "dev-alice-subject", Login: cfg.Login, Password: cfg.Password, Name: "Alice", Email: "alice@example.test"}, now); err != nil {
+		return nil, err
 	}
-	if err := store.CreateUserWithCredential(ctx, cfg.Login, user, credential); err != nil {
-		return nil, errors.Wrap(err, "seed development user")
+	if cfg.SecondLogin != "" {
+		if err := seedDevelopmentUser(ctx, store, passwords, developmentUser{ID: "dev-bob", Subject: "dev-bob-subject", Login: cfg.SecondLogin, Password: cfg.SecondPassword, Name: "Bob", Email: "bob@example.test"}, now); err != nil {
+			return nil, err
+		}
 	}
 	signingKey, err := keys.GenerateRSA("xapp-dev-signing-key", now)
 	if err != nil {
@@ -129,7 +135,7 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	if err != nil {
 		return nil, errors.Wrap(err, "create embedded development IdP")
 	}
-	app := &DevelopmentApplication{idp: idpProvider, loginUI: interactionUI}
+	app := &DevelopmentApplication{idp: idpProvider, loginUI: interactionUI, publicBaseURL: cfg.PublicBaseURL}
 	defer func() {
 		if retErr != nil {
 			_ = app.Close(context.Background())
@@ -171,6 +177,27 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 		return nil, err
 	}
 	return app, nil
+}
+
+type developmentUser struct {
+	ID       string
+	Subject  string
+	Login    string
+	Password string
+	Name     string
+	Email    string
+}
+
+func seedDevelopmentUser(ctx context.Context, store *memory.Store, passwords *authn.PasswordService, seed developmentUser, now time.Time) error {
+	user := idpstore.User{ID: seed.ID, Sub: seed.Subject, Email: seed.Email, EmailVerified: true, Name: seed.Name, PreferredUsername: seed.Login, CreatedAt: now, UpdatedAt: now}
+	credential, err := passwords.HashCredential(ctx, user.ID, seed.Login, []byte(seed.Password), now)
+	if err != nil {
+		return errors.Wrap(err, "hash development credential")
+	}
+	if err := store.CreateUserWithCredential(ctx, seed.Login, user, credential); err != nil {
+		return errors.Wrap(err, "seed development user")
+	}
+	return nil
 }
 
 func composeApplication(ctx context.Context, app *DevelopmentApplication, authFactory hostauth.ServiceFactory, stateRoot string) error {

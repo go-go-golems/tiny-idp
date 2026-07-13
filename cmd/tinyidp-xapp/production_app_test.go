@@ -45,6 +45,13 @@ func TestInitializedApplicationUsesPersistentStoresAndIsReady(t *testing.T) {
 	if err := app.Ready(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	interactionHealth, err := app.CheckInteractionUI(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if interactionHealth.HTMLBytes == 0 || interactionHealth.CSSBytes == 0 {
+		t.Fatalf("interaction health=%#v", interactionHealth)
+	}
 	for path, want := range map[string]int{"/healthz": http.StatusOK, "/readyz": http.StatusOK} {
 		recorder := httptest.NewRecorder()
 		initializedHandler(app, 1024).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://app.example.test"+path, nil))

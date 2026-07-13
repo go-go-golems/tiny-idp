@@ -184,6 +184,7 @@ func TestRendererFailureAndSizeLimitFailBeforeHTMLCommit(t *testing.T) {
 		reason   string
 	}{
 		{name: "failure", renderer: rendererFunc(func(context.Context, io.Writer, idpui.InteractionPage) error { return errors.New("template exploded") }), reason: "renderer_failed"},
+		{name: "empty", renderer: rendererFunc(func(context.Context, io.Writer, idpui.InteractionPage) error { return nil }), reason: "empty_document"},
 		{name: "oversize", renderer: rendererFunc(func(_ context.Context, dst io.Writer, _ idpui.InteractionPage) error {
 			// A custom renderer may accidentally discard the writer error. The
 			// provider must still observe that the fixed document bound was hit.
@@ -211,6 +212,16 @@ func TestRendererFailureAndSizeLimitFailBeforeHTMLCommit(t *testing.T) {
 			if len(events) == 0 || events[len(events)-1].Name != "interaction.render_failed" || events[len(events)-1].Reason != tt.reason {
 				t.Fatalf("audit events=%#v", events)
 			}
+			stats := provider.InteractionRenderStats()
+			if stats.Attempts != 1 || stats.Successes != 0 || stats.Failures != 1 || stats.TotalLatency <= 0 || stats.MaxLatency <= 0 {
+				t.Fatalf("render stats=%#v", stats)
+			}
+			if tt.reason == "document_too_large" && stats.OversizedDocuments != 1 {
+				t.Fatalf("oversized render stats=%#v", stats)
+			}
+			if tt.reason == "empty_document" && stats.EmptyDocuments != 1 {
+				t.Fatalf("empty render stats=%#v", stats)
+			}
 		})
 	}
 }
@@ -227,6 +238,33 @@ func TestInteractionCSPAllowsOnlySameOriginStyles(t *testing.T) {
 	if recorder.Header().Get("Cache-Control") != "no-store" || recorder.Header().Get("Pragma") != "no-cache" {
 		t.Fatalf("cache headers=%v", recorder.Header())
 	}
+	stats := provider.InteractionRenderStats()
+	if stats.Attempts != 1 || stats.Successes != 1 || stats.Failures != 0 || stats.TotalLatency <= 0 {
+		t.Fatalf("successful render stats=%#v", stats)
+	}
+}
+
+func TestInteractionRenderResponseWriteFailureIsCounted(t *testing.T) {
+	provider := newRendererTestProvider(t, idp.NewMemorySink(), nil)
+	request := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	request.Del("login")
+	httpRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:5556/authorize?"+request.Encode(), nil)
+	writer := &failingResponseWriter{header: make(http.Header)}
+	provider.Handler().ServeHTTP(writer, httpRequest)
+	stats := provider.InteractionRenderStats()
+	if stats.Attempts != 1 || stats.Successes != 0 || stats.Failures != 1 || stats.ResponseWriteFailures != 1 {
+		t.Fatalf("response write render stats=%#v", stats)
+	}
+}
+
+type failingResponseWriter struct {
+	header http.Header
+}
+
+func (w *failingResponseWriter) Header() http.Header { return w.header }
+func (*failingResponseWriter) WriteHeader(int)       {}
+func (*failingResponseWriter) Write([]byte) (int, error) {
+	return 0, errors.New("response disconnected")
 }
 
 func newRendererTestProvider(t *testing.T, audit idp.Sink, renderer idpui.InteractionRenderer) *fositeadapter.Provider {

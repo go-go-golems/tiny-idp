@@ -2,6 +2,7 @@ package fositeadapter
 
 import (
 	"errors"
+	"html/template"
 	"net/http"
 	"net/url"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
+
+var signedOutTemplate = template.Must(template.New("signed-out").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Signed out</title></head><body><main><h1>Signed out</h1><p>Your tiny-idp browser session has ended.</p></main></body></html>`))
 
 // endSession implements the current-browser portion of OIDC RP-Initiated
 // Logout. The relying party supplies its client ID and, optionally, an exact
@@ -54,7 +57,7 @@ func (p *Provider) endSession(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Signed out</title></head><body><h1>Signed out</h1><p>Your tiny-idp browser session has ended.</p></body></html>"))
+	_ = signedOutTemplate.Execute(w, nil)
 }
 
 func (p *Provider) clientAllowsPostLogoutRedirect(r *http.Request, clientID, redirectURI string) bool {

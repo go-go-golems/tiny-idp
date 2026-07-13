@@ -21,11 +21,13 @@ type ServeCommand struct {
 }
 
 type ServeSettings struct {
-	Listen        string `glazed:"listen"`
-	PublicBaseURL string `glazed:"public-base-url"`
-	StateRoot     string `glazed:"state-root"`
-	Login         string `glazed:"login"`
-	Password      string `glazed:"password"`
+	Listen         string `glazed:"listen"`
+	PublicBaseURL  string `glazed:"public-base-url"`
+	StateRoot      string `glazed:"state-root"`
+	Login          string `glazed:"login"`
+	Password       string `glazed:"password"`
+	SecondLogin    string `glazed:"second-login"`
+	SecondPassword string `glazed:"second-password"`
 }
 
 var _ cmds.BareCommand = (*ServeCommand)(nil)
@@ -44,6 +46,8 @@ initialization and persistent identity/auth stores are added in later phases.`),
 			fields.New("state-root", fields.TypeString, fields.WithDefault("./var/tinyidp-xapp-dev"), fields.WithHelp("Development object and secret state root")),
 			fields.New("login", fields.TypeString, fields.WithDefault("alice"), fields.WithHelp("Seed development login")),
 			fields.New("password", fields.TypeString, fields.WithDefault("correct horse battery staple"), fields.WithHelp("Seed development password; do not use this command for production")),
+			fields.New("second-login", fields.TypeString, fields.WithDefault(""), fields.WithHelp("Optional second development login for account-isolation testing")),
+			fields.New("second-password", fields.TypeString, fields.WithDefault(""), fields.WithHelp("Optional second development password; do not use this command for production")),
 		),
 	)}, nil
 }
@@ -54,10 +58,12 @@ func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
 		return errors.Wrap(err, "decode serve settings")
 	}
 	application, err := NewDevelopmentApplication(ctx, DevelopmentApplicationConfig{
-		PublicBaseURL: settings.PublicBaseURL,
-		StateRoot:     settings.StateRoot,
-		Login:         settings.Login,
-		Password:      settings.Password,
+		PublicBaseURL:  settings.PublicBaseURL,
+		StateRoot:      settings.StateRoot,
+		Login:          settings.Login,
+		Password:       settings.Password,
+		SecondLogin:    settings.SecondLogin,
+		SecondPassword: settings.SecondPassword,
 	})
 	if err != nil {
 		return err

@@ -1,4 +1,4 @@
-.PHONY: test build lint lintmax fmt-check vuln verify logcopter-generate logcopter-check glazed-lint-build glazed-lint bump-go-go-golems
+.PHONY: test build lint lintmax fmt-check vuln verify logcopter-generate logcopter-check glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems
 
 GO_PACKAGES ?= ./...
 LOGCOPTER_PACKAGES ?= ./cmd/... ./internal/... ./pkg/...
@@ -18,6 +18,9 @@ GLAZED_VERSION ?= $(shell GOWORK=off go list -m -f '{{.Version}}' github.com/go-
 GLAZED_LINT_TOOL_VERSION ?= $(if $(GLAZED_VERSION),$(GLAZED_VERSION),latest)
 GLAZED_LINT_DIRS ?= ./cmd/... ./internal/... ./pkg/...
 GLAZED_LINT_FLAGS ?= -glazedclilint.allow-paths=cmd/tinyidp/main.go,internal/cmds/admin.go,internal/cmds/admin_backup.go,internal/cmds/admin_client.go,internal/cmds/admin_export.go,internal/cmds/admin_keys.go,internal/cmds/admin_ops.go,internal/cmds/config.go,internal/cmds/profiles.go
+IDPUI_ANALYZER_BIN ?= /tmp/tinyidp-idpui-analyzer
+IDPUI_ANALYZER_PKG ?= ./ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/scripts/idpui_analyzer/cmd/idpui-analyzer
+IDPUI_ANALYZER_DIRS ?= ./pkg/idpui/... ./internal/fositeadapter ./cmd/tinyidp-xapp/internal/loginui
 
 test:
 	GOWORK=off go test $(GO_PACKAGES)
@@ -42,9 +45,10 @@ $(GOLANGCI_LINT_BIN):
 
 golangci-lint-install: $(GOLANGCI_LINT_BIN)
 
-lint: glazed-lint-build golangci-lint-install
+lint: glazed-lint-build golangci-lint-install idpui-analyzer-build
 	GOWORK=off $(GOLANGCI_LINT_BIN) run -v
 	GOWORK=off go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)
+	GOWORK=off go vet -vettool=$(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_DIRS)
 
 lintmax: glazed-lint-build golangci-lint-install
 	GOWORK=off $(GOLANGCI_LINT_BIN) run -v --max-same-issues=100
@@ -74,6 +78,12 @@ glazed-lint-build:
 
 glazed-lint: glazed-lint-build
 	GOWORK=off go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)
+
+idpui-analyzer-build:
+	GOWORK=off go build -o $(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_PKG)
+
+idpui-analyzer: idpui-analyzer-build
+	GOWORK=off go vet -vettool=$(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_DIRS)
 
 bump-go-go-golems:
 	@deps="$$(awk '/^require[[:space:]]+github\.com\/go-go-golems\// { print $$2 } /^[[:space:]]*github\.com\/go-go-golems\// { print $$1 }' go.mod | sort -u)"; \

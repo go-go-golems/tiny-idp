@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/manuel/tinyidp/pkg/idpui/idpuitest"
 )
 
 func TestRendererProducesThemedAccessibleInteraction(t *testing.T) {
@@ -149,6 +150,22 @@ func TestStylesheetURLValidation(t *testing.T) {
 	}
 	if _, err := New(Options{StylesheetURL: "/static/brand/login.css"}); err != nil {
 		t.Fatalf("New rejected safe stylesheet URL: %v", err)
+	}
+}
+
+func TestRendererConformsToTinyIDPTrustBoundary(t *testing.T) {
+	renderer, err := New(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := testPage()
+	page.Login = &idpui.LoginPrompt{Reason: idpui.LoginReasonSessionMissing, LoginField: idpui.LoginFieldName, PasswordField: idpui.PasswordFieldName}
+	_, violations, err := idpuitest.RenderAndCheck(context.Background(), renderer, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("xapp renderer violations: %v", violations)
 	}
 }
 

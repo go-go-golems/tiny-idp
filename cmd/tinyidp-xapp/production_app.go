@@ -33,6 +33,7 @@ func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *Develo
 		return nil, errors.Wrap(err, "open initialized audit log")
 	}
 	app := &DevelopmentApplication{
+		publicBaseURL: manifest.PublicBaseURL,
 		extras: []func(context.Context) error{
 			func(context.Context) error { return audit.Close() },
 			func(context.Context) error { return store.Close() },
