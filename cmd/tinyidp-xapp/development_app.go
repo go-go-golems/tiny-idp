@@ -170,7 +170,11 @@ func composeApplication(ctx context.Context, app *DevelopmentApplication, authFa
 	if app == nil || app.idp == nil || app.auth == nil {
 		return errors.New("identity and application auth services are required")
 	}
-	httpHost := gojahttp.NewHost(gojahttp.HostOptions{Auth: app.auth.AuthOptions, RejectRawRoutes: true})
+	httpHost := gojahttp.NewHost(gojahttp.HostOptions{
+		Auth:            app.auth.AuthOptions,
+		Sessions:        gojahttp.SessionOptions{Disabled: true},
+		RejectRawRoutes: true,
+	})
 	var configureErr error
 	bundle, err := xgojaruntime.NewBundle(xgojaruntime.Options{ConfigureServices: func(services *xgojaapp.HostServices) {
 		if configureErr != nil {

@@ -3,6 +3,7 @@
   const app = document.querySelector("#app");
   const userID = document.querySelector("#user-id");
   const editor = document.querySelector("#document");
+  const login = document.querySelector("#login");
   let csrfToken = "";
 
   async function request(path, options = {}) {
@@ -16,6 +17,7 @@
       throw new Error("authentication required");
     }
     if (!response.ok) throw new Error(`request failed: ${response.status}`);
+    if (response.status === 204) return null;
     return response.json();
   }
 
@@ -50,6 +52,19 @@
       editor.value = JSON.stringify(saved, null, 2);
       status.textContent = "Saved";
       status.className = "alert alert-success";
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  document.querySelector("#logout").addEventListener("click", async () => {
+    try {
+      await request("/auth/logout", { method: "POST" });
+      csrfToken = "";
+      app.classList.add("d-none");
+      status.textContent = "Application session ended. Your identity-provider session may still be active.";
+      status.className = "alert alert-info";
+      login.classList.remove("d-none");
     } catch (error) {
       showError(error);
     }

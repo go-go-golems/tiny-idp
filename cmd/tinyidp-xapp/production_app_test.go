@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -55,6 +56,9 @@ func TestInitializedApplicationUsesPersistentStoresAndIsReady(t *testing.T) {
 	app.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "https://app.example.test/", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("root status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Header().Get("Set-Cookie"), "go_go_goja_session=") {
+		t.Fatal("initialized product emitted unused gojahttp lightweight session cookie")
 	}
 	if err := app.Close(context.Background()); err != nil {
 		t.Fatal(err)

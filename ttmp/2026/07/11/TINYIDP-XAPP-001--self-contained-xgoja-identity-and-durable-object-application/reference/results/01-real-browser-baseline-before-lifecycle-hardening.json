@@ -1,0 +1,56 @@
+{
+  "browser": {
+    "engine": "system Google Chrome",
+    "headlessUserAgentMajor": 138,
+    "playwrightPythonVersion": "1.50.0"
+  },
+  "origin": "https://127.0.0.1:19443",
+  "readinessStatus": 200,
+  "twoDistinctApplicationUsers": true,
+  "aliceDocumentPersisted": true,
+  "bobDocumentPersisted": true,
+  "crossUserIsolationHeld": true,
+  "missingCsrfObjectWriteStatus": 403,
+  "logoutWithoutCsrfStatus": 204,
+  "sessionAfterLogoutStatus": 401,
+  "cookieAttributes": [
+    {
+      "name": "xapp_idp_csrf",
+      "path": "/idp",
+      "secure": true,
+      "httpOnly": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "xapp_idp_session",
+      "path": "/idp",
+      "secure": true,
+      "httpOnly": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "go_go_goja_session",
+      "path": "/",
+      "secure": false,
+      "httpOnly": true,
+      "sameSite": "Lax",
+      "finding": "unexpected unused lightweight request-session cookie"
+    },
+    {
+      "name": "xapp_session",
+      "path": "/",
+      "secure": true,
+      "httpOnly": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "sanitization": {
+    "passwordsStored": false,
+    "cookieValuesStored": false,
+    "tokensStored": false,
+    "authorizationCodesStored": false,
+    "subjectsStored": false,
+    "applicationUserIdsStored": false,
+    "objectBindingIdsStored": false
+  }
+}

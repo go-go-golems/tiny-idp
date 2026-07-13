@@ -1,0 +1,45 @@
+{
+  "aliceDocument": {
+    "owner": "alice",
+    "sequence": 1
+  },
+  "aliceValuePresentBeforeWrite": true,
+  "baseUrl": "https://127.0.0.1:19443",
+  "bobDocument": {
+    "owner": "bob",
+    "sequence": 2
+  },
+  "bobValuePresentBeforeWrite": true,
+  "cookies": [
+    {
+      "httpOnly": true,
+      "name": "xapp_idp_csrf",
+      "path": "/idp",
+      "sameSite": "Lax",
+      "secure": true
+    },
+    {
+      "httpOnly": true,
+      "name": "xapp_idp_session",
+      "path": "/idp",
+      "sameSite": "Lax",
+      "secure": true
+    },
+    {
+      "httpOnly": true,
+      "name": "xapp_session",
+      "path": "/",
+      "sameSite": "Lax",
+      "secure": true
+    }
+  ],
+  "distinctApplicationUsers": true,
+  "finalSessionStatus": 401,
+  "logoutWithCsrfStatus": 204,
+  "logoutWithoutCsrfStatus": 403,
+  "missingCsrfObjectWriteStatus": 403,
+  "postLogoutUIVisible": true,
+  "retainedIdPSessionCompletedExplicitSignIn": true,
+  "sessionAfterLogoutStatus": 401,
+  "sessionAfterRejectedLogoutStatus": 200
+}
