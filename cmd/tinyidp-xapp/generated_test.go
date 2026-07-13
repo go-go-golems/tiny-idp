@@ -20,6 +20,7 @@ func TestGeneratedBundleContainsActorBoundProductSurface(t *testing.T) {
 		`declare module "durableobjects"`,
 		"rpcForActor",
 		"fetchForActor",
+		"fetch(namespace",
 		`declare module "express"`,
 		`declare module "fs:assets"`,
 	} {

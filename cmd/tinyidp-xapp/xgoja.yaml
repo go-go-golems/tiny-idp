@@ -60,7 +60,7 @@ sources:
   - id: frontend-assets
     kind: assets
     from:
-      dir: ./app/frontend/public
+      dir: ./app/frontend/dist
   - id: object-bundle
     kind: assets
     from:

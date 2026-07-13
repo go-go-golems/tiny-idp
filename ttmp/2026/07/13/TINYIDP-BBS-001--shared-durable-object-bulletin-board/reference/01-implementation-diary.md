@@ -25,6 +25,180 @@ WhenToUse: Read before resuming or reviewing TINYIDP-BBS-001 and update after ev
 
 # Implementation Diary
 
+## Step 3 — Replace the placeholder page with the Local Loop React application
+
+**Date:** 2026-07-13
+
+**Goal:** Build the real browser client, connect it to the xgoja route surface,
+and prove the design against the initialized TLS product before treating the
+frontend as complete.
+
+**Inferred user intent:** The demonstration must be a usable application, not a
+static mockup. Identity, CSRF, shared storage, ownership, restart persistence,
+and visual presentation must all meet at the same browser boundary.
+
+### What I did
+
+- Replaced the three-file placeholder frontend with a pnpm-managed Vite,
+  React, TypeScript, Redux Toolkit, RTK Query, and Bootstrap application.
+- Added typed session, current-user, board, post, and reply contracts.
+- Added RTK Query operations for session bootstrap, current-user projection,
+  board reads, post creation, replies, owner deletion, and logout.
+- Kept the CSRF token only in Redux memory and installed it as
+  `X-CSRF-Token` only on unsafe methods.
+- Implemented loading, unauthenticated, logged-out, error, empty-board,
+  composition, thread, reply, statistics, and ownership states.
+- Implemented the requested early-Mac monochrome visual language with ordinary
+  system sans and monospace fonts, strict line work, no menu bar, no title bar,
+  no window chrome, no gradient, and no desktop simulation.
+- Used blue, teal, and coral only as foreground accents. Structural surfaces
+  remain black, white, and warm gray.
+- Updated xgoja's asset source from `public` to Vite `dist`.
+- Made `go generate` build the frontend and invoke xgoja generation with
+  `--clean`. This makes the embedded asset tree a mirror rather than an
+  append-only collection of old content hashes.
+- Updated generated-asset tests to discover the hashed JS and CSS references
+  in `index.html` and request both through the embedded application.
+- Added an executable Playwright harness under the ticket's `scripts/`
+  directory. It drives the system Chrome binary through the real TLS,
+  password, OIDC authorization-code, PKCE, application-session, BBS, and
+  logout paths.
+- Ran the harness with separate Alice and Bob browser contexts. It created a
+  hostile-markup checkpoint post, replied as Bob, denied Bob's deletion,
+  restarted the process with the same state root, verified the post and reply,
+  and deleted them as Alice.
+- Inspected the full-page screenshot rather than relying only on DOM tests.
+
+### Exact verification commands
+
+```bash
+pnpm --dir cmd/tinyidp-xapp/app/frontend run typecheck
+pnpm --dir cmd/tinyidp-xapp/app/frontend run build
+go generate ./cmd/tinyidp-xapp
+go test ./cmd/tinyidp-xapp -count=1
+
+PYENV_VERSION=3.11.4 python \
+  ttmp/2026/07/13/TINYIDP-BBS-001--shared-durable-object-bulletin-board/scripts/01_real_browser_bbs.py \
+  --base-url https://127.0.0.1:19443 \
+  --alice-password-file /tmp/tinyidp-xapp-real-browser/operator/alice-password \
+  --bob-password-file /tmp/tinyidp-xapp-real-browser/operator/bob-password \
+  --mode create \
+  --marker TINYIDP-BBS-001 \
+  --screenshot /tmp/tinyidp-bbs-alice.png
+
+lsof-who -p 19443 -k
+# Restart serve-initialized in tmux with the same --state-root, then:
+PYENV_VERSION=3.11.4 python \
+  ttmp/2026/07/13/TINYIDP-BBS-001--shared-durable-object-bulletin-board/scripts/01_real_browser_bbs.py \
+  --base-url https://127.0.0.1:19443 \
+  --alice-password-file /tmp/tinyidp-xapp-real-browser/operator/alice-password \
+  --bob-password-file /tmp/tinyidp-xapp-real-browser/operator/bob-password \
+  --mode verify-restart \
+  --marker TINYIDP-BBS-001
+```
+
+### What worked
+
+- TypeScript typechecking, Vite production build, generation, and focused Go
+  tests passed.
+- Repeated generation produced the same three-file embedded asset set: one
+  index, one hashed stylesheet, and one hashed JavaScript bundle.
+- The unauthenticated page rendered a sign-in state and did not attempt board
+  mutations.
+- Both Alice and Bob completed the actual password and OIDC redirect flow.
+- All three cookies were Secure, HttpOnly, SameSite=Lax, and had the intended
+  `/` or `/idp` path boundary.
+- A post without CSRF returned 403. The valid RTK Query mutation returned 201.
+- The stored author matched the display name derived from the authenticated
+  `/api/me` projection: `Alice Operator`.
+- Alice and Bob had distinct application-user IDs; Bob saw the shared post and
+  added a reply.
+- Bob had no delete control, and a handcrafted authenticated DELETE returned
+  403 at the object ownership boundary.
+- `<img src=x onerror=alert(1)>` remained text. No image element was created.
+- Logout without CSRF returned 403. UI logout returned 204, removed the
+  application session, and rendered the explicit ended-session state.
+- A full process stop and reopen preserved the post and reply. Alice's final
+  deletion removed both.
+
+### What did not work, in chronological order
+
+1. Running the script with the shell's default Python failed because that
+   interpreter did not contain Playwright. The installed and previously
+   verified harness environment is selected explicitly with
+   `PYENV_VERSION=3.11.4`.
+2. The initial unauthenticated view displayed
+   `Request failed (PARSING_ERROR)`. `fetchBaseQuery` attempted to parse the
+   host's plain-text 401 response, so RTK Query represented it as
+   `PARSING_ERROR` with `originalStatus: 401`. `isUnauthorized` now accepts
+   both the direct 401 and this documented parse-error shape.
+3. The first successful create pass compared the trusted author to the
+   hard-coded string `Alice`. The persistent fixture was initialized with the
+   name `Alice Operator`. The harness now computes the expected display label
+   from the separately authenticated `/api/me` response and compares it to the
+   BBS projection. This is a stronger provenance invariant than a fixture
+   literal.
+4. Regeneration initially left an older hashed JavaScript file beside the new
+   one. xgoja already provides `generate --clean`; adding that flag to the
+   generation directive removed stale executable assets without changing the
+   generator.
+5. The first audit aggregation query used the guessed column name
+   `event_type`; the real schema calls it `event`. Inspecting `.schema
+   auth_audit_records` supplied the correct query. A storage-size query
+   similarly guessed `value`; the Durable Object table uses `value_json`.
+   These were read-only inspection mistakes and did not affect application
+   state.
+
+### Audit and persistence evidence
+
+The application audit database contained paired policy and completion records
+for `bbs.read`, `bbs.post.created`, `bbs.reply.created`, and
+`bbs.post.deleted`. It also contained 403 completion evidence for Bob's denied
+delete and denied records for missing-CSRF creates. The inspection grouped by
+event, outcome, and status and intentionally omitted actor and resource IDs.
+
+Exactly one physical Durable Object database contained the logical `board`
+key. The inspection reported only `BBS board key present`; it did not copy the
+hashed physical filename into the application, documentation API, or UI.
+
+### What I learned
+
+- An HTTP status and a client-library error discriminant are not always the
+  same value. Authentication bootstraps should normalize transport/parser
+  representations before choosing the unauthenticated UI.
+- Identity assertions in integration tests should compare two trusted server
+  projections or compare a trusted projection with a user-visible result. A
+  hard-coded display string tests fixture spelling rather than provenance.
+- Content-hashed build output requires replacement semantics at the embed
+  boundary. Copying a new tree over an old tree is not deterministic cleanup.
+- Browser evidence is necessary here because it joins cookie flags, redirects,
+  JavaScript escaping, CSRF headers, conditional controls, and state refreshes
+  that direct object tests cannot observe.
+
+### What warrants a second pair of eyes
+
+- Review whether Bootstrap's complete CSS payload is acceptable for this small
+  application or whether a later production optimization should compile only
+  the used modules.
+- Review the logged-out wording: the application session is definitely gone,
+  while the IdP session may remain active by design.
+- Review the display-name fallback (`preferredUsername`, then `Member`) and
+  decide whether a production community should expose a configured profile
+  name instead.
+- Inspect the narrow-screen presentation with additional real devices even
+  though the layout is responsive and uses ordinary document flow.
+
+### Code review instructions
+
+1. Start at `src/api.ts` and verify which requests receive CSRF.
+2. Read `src/App.tsx` as a finite set of session and board states.
+3. Inspect `src/styles.css` for the absence of decorative desktop chrome and
+   for visible `:focus-visible` treatment.
+4. Trace `dist/index.html` through `xgoja.yaml` into generated embedded assets.
+5. Run both browser modes around a real tmux restart.
+6. Query audit records by aggregate only; do not paste subject IDs into review
+   notes.
+
 ## Goal
 
 This diary records the design, implementation, testing, delivery, and lessons

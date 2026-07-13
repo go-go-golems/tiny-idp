@@ -38,12 +38,26 @@ func TestDevelopmentApplicationLoadsIdentityAndTrustedRoutes(t *testing.T) {
 		want int
 	}{
 		{path: "/", want: http.StatusOK},
-		{path: "/static/app.js", want: http.StatusOK},
 		{path: "/api/me", want: http.StatusUnauthorized},
 		{path: "/api/object", want: http.StatusUnauthorized},
 		{path: "/api/bbs", want: http.StatusUnauthorized},
 		{path: "/rpc/USER_STATE/injected", want: http.StatusNotFound},
 		{path: "/fetch/BBS/community", want: http.StatusNotFound},
+	}
+
+	indexRecorder := httptest.NewRecorder()
+	app.Handler().ServeHTTP(indexRecorder, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/", nil))
+	assetPattern := regexp.MustCompile(`/static/assets/[^"']+\.(?:js|css)`)
+	assets := assetPattern.FindAllString(indexRecorder.Body.String(), -1)
+	if len(assets) < 2 {
+		t.Fatalf("generated index does not reference JS and CSS assets: %s", indexRecorder.Body.String())
+	}
+	for _, asset := range assets {
+		assetRecorder := httptest.NewRecorder()
+		app.Handler().ServeHTTP(assetRecorder, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+asset, nil))
+		if assetRecorder.Code != http.StatusOK {
+			t.Fatalf("asset %s status=%d body=%s", asset, assetRecorder.Code, assetRecorder.Body.String())
+		}
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
