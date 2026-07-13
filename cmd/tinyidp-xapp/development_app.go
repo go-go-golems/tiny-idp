@@ -23,6 +23,7 @@ import (
 	httpprovider "github.com/go-go-golems/go-go-goja/pkg/xgoja/providers/http"
 	"github.com/go-go-golems/go-go-objects/pkg/durableobjects"
 	durableobjectsprovider "github.com/go-go-golems/go-go-objects/pkg/xgoja/providers/durableobjects"
+	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/xgojaruntime"
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/keys"
@@ -51,6 +52,7 @@ type DevelopmentApplication struct {
 	objects *durableobjects.Server
 	auth    *hostauth.Services
 	oidc    *observedRoundTripper
+	loginUI *loginui.Renderer
 	extras  []func(context.Context) error
 }
 
@@ -108,6 +110,10 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	if err != nil {
 		return nil, err
 	}
+	interactionUI, err := loginui.New(loginui.Options{})
+	if err != nil {
+		return nil, errors.Wrap(err, "create development interaction renderer")
+	}
 	idpProvider, err := embeddedidp.New(ctx, embeddedidp.Options{
 		Issuer:        issuer,
 		Mode:          embeddedidp.DevMode,
@@ -118,11 +124,12 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 			CSRFName:    "xapp_idp_csrf",
 		},
 		Token: embeddedidp.TokenConfig{SecretKey: tokenSecret},
+		UI:    embeddedidp.UIConfig{Renderer: interactionUI},
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "create embedded development IdP")
 	}
-	app := &DevelopmentApplication{idp: idpProvider}
+	app := &DevelopmentApplication{idp: idpProvider, loginUI: interactionUI}
 	defer func() {
 		if retErr != nil {
 			_ = app.Close(context.Background())
@@ -167,7 +174,7 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 }
 
 func composeApplication(ctx context.Context, app *DevelopmentApplication, authFactory hostauth.ServiceFactory, stateRoot string) error {
-	if app == nil || app.idp == nil || app.auth == nil {
+	if app == nil || app.idp == nil || app.auth == nil || app.loginUI == nil {
 		return errors.New("identity and application auth services are required")
 	}
 	httpHost := gojahttp.NewHost(gojahttp.HostOptions{
@@ -234,6 +241,7 @@ func composeApplication(ctx context.Context, app *DevelopmentApplication, authFa
 
 	mux := http.NewServeMux()
 	mux.Handle("/idp/", app.idp.Handler())
+	mux.Handle("GET /static/tinyidp/", app.loginUI.AssetsHandler())
 	for _, native := range app.auth.NativeHandlers {
 		mux.Handle(native.Method+" "+native.Path, native.Handler)
 	}

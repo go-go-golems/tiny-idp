@@ -60,6 +60,11 @@ func TestInitializedApplicationUsesPersistentStoresAndIsReady(t *testing.T) {
 	if strings.Contains(recorder.Header().Get("Set-Cookie"), "go_go_goja_session=") {
 		t.Fatal("initialized product emitted unused gojahttp lightweight session cookie")
 	}
+	stylesheetRecorder := httptest.NewRecorder()
+	app.Handler().ServeHTTP(stylesheetRecorder, httptest.NewRequest(http.MethodGet, "https://app.example.test/static/tinyidp/login.css", nil))
+	if stylesheetRecorder.Code != http.StatusOK || !strings.HasPrefix(stylesheetRecorder.Header().Get("Content-Type"), "text/css") {
+		t.Fatalf("production login stylesheet status=%d headers=%v", stylesheetRecorder.Code, stylesheetRecorder.Header())
+	}
 	if err := app.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-go-golems/go-go-goja/pkg/gojahttp/auth/oidcauth"
 	"github.com/go-go-golems/go-go-goja/pkg/xgoja/hostauth"
+	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
 	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
@@ -42,6 +43,11 @@ func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *Develo
 			_ = app.Close(context.Background())
 		}
 	}()
+	interactionUI, err := loginui.New(loginui.Options{})
+	if err != nil {
+		return nil, errors.Wrap(err, "create production interaction renderer")
+	}
+	app.loginUI = interactionUI
 	passwords, err := authn.NewPasswordService(store, authn.Options{Audit: audit})
 	if err != nil {
 		return nil, errors.Wrap(err, "create production password service")
@@ -70,6 +76,7 @@ func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *Develo
 		Audit:         audit,
 		RateLimiter:   idp.NewFixedWindowRateLimiter(30, time.Minute),
 		ClientAddress: idp.DirectClientAddressResolver{},
+		UI:            embeddedidp.UIConfig{Renderer: interactionUI},
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "construct production embedded IdP")

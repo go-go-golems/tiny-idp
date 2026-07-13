@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -155,6 +156,22 @@ func TestDevelopmentApplicationLoginToApplicationVerticalSlice(t *testing.T) {
 	_ = loginPage.Body.Close()
 	if loginPage.StatusCode != http.StatusOK {
 		t.Fatalf("login page status = %d; body=%s", loginPage.StatusCode, loginHTML)
+	}
+	if !bytes.Contains(loginHTML, []byte(`href="/static/tinyidp/login.css"`)) || !bytes.Contains(loginHTML, []byte(`Tiny BBS identity service`)) {
+		t.Fatalf("login page did not use the xapp renderer: %s", loginHTML)
+	}
+	wantCSP := "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
+	if got := loginPage.Header.Get("Content-Security-Policy"); got != wantCSP {
+		t.Fatalf("login CSP=%q want=%q", got, wantCSP)
+	}
+	stylesheetResponse, err := client.Get(server.URL + "/static/tinyidp/login.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stylesheet, _ := io.ReadAll(stylesheetResponse.Body)
+	_ = stylesheetResponse.Body.Close()
+	if stylesheetResponse.StatusCode != http.StatusOK || !strings.HasPrefix(stylesheetResponse.Header.Get("Content-Type"), "text/css") || !bytes.Contains(stylesheet, []byte("--mint")) {
+		t.Fatalf("login stylesheet status=%d content-type=%q body=%s", stylesheetResponse.StatusCode, stylesheetResponse.Header.Get("Content-Type"), stylesheet)
 	}
 	form := hiddenFormValues(string(loginHTML))
 	form.Set("login", "alice")
