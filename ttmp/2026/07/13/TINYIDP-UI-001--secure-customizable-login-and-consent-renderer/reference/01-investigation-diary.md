@@ -1000,3 +1000,295 @@ error associations from stable public field identifiers.
 The stylesheet is served only for GET and HEAD at the validated configured path
 with `text/css; charset=utf-8` and a five-minute public cache. The authorization
 document itself remains `no-store` and carries the provider-owned CSP.
+
+## Step 9: Build the assurance toolchain and run a real-browser canary
+
+Phase 5 converted the design's safety properties into reusable tests, static
+analysis, fuzzing, metrics, an operational doctor, and a real Chromium probe.
+The work also found and removed a pre-existing raw HTML write in the logout page.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Complete the implementation phases with
+professional static and runtime assurance, preserve every tool under the ticket,
+and gather evidence from the actual xapp rather than an isolated template.
+
+**Inferred user intent:** Leave a maintainable security engineering system that
+future renderers and hosts can run repeatedly, not only a one-time visual change.
+
+**Commit (code):** 8e51f4b — "IdP: add interaction renderer assurance tooling"
+
+### What I did
+
+- Added `pkg/idpui/idpuitest`, a parsed-DOM conformance checker reusable by
+  downstream hosts.
+- Added rules for active content, scripts, style elements, inline style,
+  event-handler attributes, dangerous URL schemes, external origins, meta
+  refresh, protocol hidden fields, form action/method, action matrices, deny
+  behavior, password retention, labels, autocomplete, and error alerts.
+- Ran the conformance package against both the built-in renderer and the xapp
+  renderer.
+- Added a Go `analysis` analyzer under the ticket `scripts/` directory. It
+  rejects `text/template`, trusted-content conversions, direct raw HTML writes,
+  and `RenderInteraction` APIs that accept `http.ResponseWriter` or
+  `*http.Request`.
+- Added `analysistest` safe/unsafe fixtures and a command-line entry point.
+- Added `make idpui-analyzer` and included the analyzer in `make lint`.
+- Migrated the raw logout success page from a byte-string write to a compiled
+  `html/template` after the new analyzer found it.
+- Added fuzz targets for hostile and Unicode renderer values, parsed-DOM
+  conformance input, and bounded-writer chunk/limit combinations.
+- Preserved the first fuzz-found whitespace-only public-error corpus as a
+  regression seed.
+- Added process-local renderer counters and latency aggregates with no sensitive
+  or high-cardinality labels, exposed through both adapter and embedding APIs.
+- Added tests for successful, failed, oversized, empty, and response-write-failed
+  metric outcomes.
+- Added a production interaction doctor that follows the real in-process login
+  initiation, validates same-origin redirection, CSP, `no-store`, output bounds,
+  the declared `/static/` stylesheet, status, and media type, without returning
+  page or token values.
+- Updated the xapp doctor source checks to the current React and login renderer
+  paths and added optional initialized-state interaction health checks.
+- Added optional second development credentials so browser assurance can test
+  two distinct subjects without adding an account chooser or changing
+  production identity behavior.
+- Wrote and ran a Playwright/Chromium browser probe against a disposable xapp
+  canary in tmux on port 8790.
+- Inspected the screenshot from `/tmp`; it contained no secret and was not
+  committed.
+
+### Why
+
+- Template escaping addresses dynamic text, while DOM conformance addresses the
+  renderer's entire output structure and protocol-field fidelity.
+- Go AST/type-aware analysis catches unsafe implementation intent before the
+  renderer executes.
+- Fuzzing explores parser and escaping boundaries that curated hostile strings
+  do not cover, including invalid UTF-8 and long Unicode input.
+- Real-browser evidence is required for CSP, framing, computed focus/contrast,
+  resource loading, reflow, password-manager metadata, and the actual OIDC
+  redirect chain.
+- Metrics and doctor checks make the feature operable after release rather than
+  test-only.
+
+### What worked
+
+- Both production renderers passed the reusable conformance harness with zero
+  violations.
+- The analyzer fixtures passed and `make idpui-analyzer` completed against the
+  real renderer/provider packages.
+- Three three-second fuzz runs completed successfully after the regression fix:
+  approximately 13,993 renderer executions, 61,242 parser executions, and
+  13,873 bounded-writer executions were observed in the recorded runs.
+- The full repository suite passed after the assurance implementation.
+- Race-enabled tests passed for `pkg/idpui/...`, `pkg/embeddedidp`,
+  `internal/fositeadapter`, and `cmd/tinyidp-xapp`.
+- Explicit model, linearizability, and verification scenario tests passed.
+- The real Chromium canary loaded only its own origin, loaded the CSS as
+  `text/css`, contained zero scripts/inline styles/event handlers/password value
+  attributes, and was blocked from a frame.
+- Keyboard order was username, password, approve, deny. The focused username
+  had a solid four-pixel outline.
+- There was no horizontal overflow at 320 CSS pixels or at 200% zoom.
+- Browser-measured contrast ranged from 6.94:1 to 14.12:1 across all sampled
+  normal text.
+- Two isolated browser contexts authenticated as distinct subjects and each
+  completed the OIDC callback to the application.
+
+### What didn't work
+
+- The negative conformance test initially expected an `inline-style` violation
+  but included only a `<style>` element, which correctly produced
+  `active-content`. I added a separate `style` attribute so every expected rule
+  had a direct fixture.
+- The first renderer fuzz run found a whitespace-only error summary. The fuzz
+  setup replaced only an empty string, while `InteractionPage.Validate` rejects
+  trimmed emptiness. I changed seed normalization to use `strings.TrimSpace` and
+  retained the generated corpus file.
+- The first real-browser framing assertion treated the Chrome-generated error
+  document's own heading as framed IdP content. The child URL was already
+  `chrome-error://chromewebdata/`, proving blocking. The probe now classifies the
+  child frame URL and fails only if the configured origin actually loads.
+- An intermediate zoom check combined a 320-pixel viewport with two-times CSS
+  zoom, effectively testing a much narrower layout than the stated 200% desktop
+  condition. The probe now tests 320-pixel reflow separately and 200% zoom in a
+  1280-pixel viewport; both pass.
+- The first multi-user seed used the display name `Primary user`, causing the
+  existing BBS test to report an unexpected author. I restored the original
+  `Alice` display name. I also preserved the original `dev-alice` user ID and
+  subject so existing development Durable Object actor state remains reachable.
+
+### What I learned
+
+- Static analysis is most valuable when it is allowed to fail on existing code.
+  The first real run found the logout raw HTML write; suppressing it would have
+  normalized two rendering policies inside the same provider.
+- Fuzz harness validity is itself part of the test. Generated inputs may violate
+  model preconditions before exercising the intended escaping property, so the
+  harness must normalize only the prerequisite while preserving hostile data.
+- Browser frame blocking creates a Chrome error document inside the child frame.
+  Assertions must distinguish browser error UI from target-origin content.
+- Identity test data has persistence semantics. Even development-only user IDs
+  can key durable objects, so browser-test support must preserve the established
+  primary subject.
+- A doctor can exercise the entire browser-facing document without leaking it:
+  parse only enough structure to locate a validated stylesheet, return bounded
+  byte counts, and discard cookies and HTML locally.
+
+### What was tricky to build
+
+The conformance checker must allow the provider's absolute form action while
+rejecting every other external origin. It must also inspect the parsed DOM, not
+raw source, because browsers repair malformed HTML and normalize attributes.
+
+The metrics path has to count failure after a response disconnect without
+recording a request label or raw error. Atomics provide a lock-free snapshot;
+latency uses total and maximum nanoseconds rather than unbounded histograms or
+labels.
+
+The browser probe deliberately does not print HTML, cookies, hidden values,
+session values, or user IDs. For the two-account check it compares subject IDs in
+memory and emits only `distinct_authenticated_subjects: true`.
+
+### What warrants a second pair of eyes
+
+- Review the analyzer's HTML-literal heuristic for false negatives in custom
+  write wrappers and false positives in unrelated renderer-adjacent packages.
+- Review whether the conservative conformance ban on SVG and images should
+  remain permanent or become an explicitly reviewed future CSP profile.
+- Review the doctor redirect/cookie emulation against every supported external
+  host topology.
+- Perform a human screen-reader pass even though labels, alert roles, keyboard,
+  focus, zoom, contrast, and autocomplete are automated.
+- Confirm operations can export `InteractionRenderStats` into the chosen metrics
+  system without adding sensitive labels.
+
+### What should be done in the future
+
+- Run a production canary behind its real TLS and reverse proxy.
+- Record named identity, host, frontend, accessibility, security, and operations
+  approvals.
+- Consider checking custom writer wrappers with SSA/dataflow analysis in the
+  broader static-analysis ticket.
+
+### Code review instructions
+
+- Review `pkg/idpui/idpuitest/conformance.go` rule by rule against the design
+  trust boundary.
+- Review the analyzer and both analysistest fixtures before its Makefile gate.
+- Review `interaction_doctor.go` specifically for absence of token/page output.
+- Run:
+
+  ```bash
+  make idpui-analyzer
+  go test ./pkg/idpui/... ./pkg/embeddedidp ./internal/fositeadapter ./cmd/tinyidp-xapp -count=1
+  go test -race ./pkg/idpui/... ./pkg/embeddedidp ./internal/fositeadapter ./cmd/tinyidp-xapp -count=1
+  ```
+
+### Technical details
+
+The local canary used a fresh temporary state root and was killed with
+`lsof-who -p 8790 -k` before its tmux session was removed. The long-running user
+xapp on port 8787 was not disturbed during assurance work.
+
+## Step 10: Publish operator documentation and refresh the reMarkable bundle
+
+Phase 6 documentation now describes the public rendering API, CSP and asset
+contract, reverse-proxy requirements, conformance tooling, metrics, production
+doctor, canary procedure, leakage review, residual risks, and rollback paths.
+The ticket bundle was rebuilt with all implementation documents and preserved
+research sources.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Deliver the implemented feature as a reviewable
+and operable system, while leaving external production deployment and human
+approval gates visibly open.
+
+**Inferred user intent:** Ensure another engineer can release or roll back the
+feature without reconstructing design decisions from commits.
+
+### What I did
+
+- Added `docs/interaction-rendering.md` with public API examples, field/action
+  contracts, safe template guidance, CSP, static assets, caching, reverse proxy,
+  conformance, analyzer, metrics, doctor, production verification, and rollback.
+- Added a sanitized browser/accessibility/local-canary evidence reference.
+- Added a production release and rollback runbook with preflight, fuzz, doctor,
+  canary, metrics, audit, headers, page source, triggers, rollback, risks, and
+  approval records.
+- Related every ticket document to its code/tool files with docmgr file notes.
+- Updated the ticket index and tasks to reflect completed implementation versus
+  remaining external release gates.
+- Ran `docmgr doctor --ticket TINYIDP-UI-001`; all checks passed.
+- Used the reMarkable bundle workflow to upload the 14,107-line packet,
+  including the primary design, public guide, full diary, browser evidence,
+  runbook, tasks, changelog, and all seven preserved source documents.
+
+### Why
+
+- Release documentation must state both what is automated and what still
+  requires a human or production environment.
+- A presentation-only rollback is safer than reverting protocol hardening; the
+  operator needs that distinction before an incident.
+- Including preserved sources lets a reviewer trace implementation rules back
+  to the exact research packet without repository access.
+
+### What worked
+
+- Ticket validation passed after file notes were added.
+- The reMarkable upload completed successfully in one upload operation:
+
+  ```text
+  OK: uploaded TINYIDP UI 001 Secure Interaction Renderer.pdf -> /ai/2026/07/13/TINYIDP-UI-001
+  ```
+
+### What didn't work
+
+- The first `docmgr doctor` after adding the two reference documents warned that
+  their related files lacked notes. I used `docmgr doc relate --file-note` for
+  all six paths and validation then passed.
+
+### What I learned
+
+- The original ticket index still described runtime implementation as not
+  started. Long-running tickets need explicit index refreshes at major phase
+  boundaries; task checkboxes and diaries alone are not sufficient orientation.
+- Release approval is not implied by successful local evidence. Production
+  topology and named human ownership remain distinct gates.
+
+### What was tricky to build
+
+The release packet must be complete without accidentally treating standards
+copies as implementation claims. The evidence and runbook distinguish local
+browser facts, automated structural properties, residual risks, and future
+production observations.
+
+### What warrants a second pair of eyes
+
+- Review the public guide for API naming and long-term compatibility promises.
+- Review the production runbook against the actual deployment platform.
+- Confirm whether overwriting the reMarkable bundle should preserve annotations
+  through a separately named revision in future deliveries.
+
+### What should be done in the future
+
+- Execute Task 6.3 in the real production canary topology and attach sanitized
+  evidence.
+- Execute Task 6.5 by recording named reviewer and operator approval.
+
+### Code review instructions
+
+- Read `docs/interaction-rendering.md` as the external contract.
+- Use `reference/03-interaction-ui-release-and-rollback-runbook.md` for rollout.
+- Do not mark the two remaining tasks complete from local test evidence alone.
+
+### Technical details
+
+The uploaded bundle name and remote directory intentionally match the earlier
+design delivery; `--force` replaced it with the implementation-complete packet.

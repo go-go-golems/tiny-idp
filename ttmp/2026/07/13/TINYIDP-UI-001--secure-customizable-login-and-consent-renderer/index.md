@@ -36,13 +36,17 @@ the original OAuth request, cookies, or stored interaction records. The xapp
 will serve embedded theme assets under `/static/`; the provider will enforce a
 fixed CSP and continue to reject scripts and framing.
 
-The design phase is complete and implementation is awaiting architecture and
-security approval.
+The renderer, provider integration, xapp theme, conformance harness, static
+analyzer, fuzzing, metrics, doctor check, and local browser canary are complete.
+The remaining release gates are a production canary in its real TLS/proxy
+topology and named human approval.
 
 ## Key Links
 
 - [Primary analysis, design, and implementation guide](./design-doc/01-secure-interaction-rendering-analysis-design-and-implementation-guide.md)
 - [Investigation diary](./reference/01-investigation-diary.md)
+- [Browser, accessibility, and local canary evidence](./reference/02-browser-accessibility-and-canary-evidence.md)
+- [Release and rollback runbook](./reference/03-interaction-ui-release-and-rollback-runbook.md)
 - [Detailed tasks](./tasks.md)
 - [Preserved sources](./sources/)
 
@@ -50,10 +54,10 @@ security approval.
 
 Current status: **active**
 
-- Phase 0 evidence and design: complete except stakeholder approval and final
-  delivery bookkeeping.
-- Phase 1 implementation: not started.
-- Runtime code changed by this ticket so far: none.
+- Phases 0–5: complete.
+- Phase 6 implementation, documentation, doctor, and leakage review: complete.
+- Phase 6 external production canary and named release approval: pending.
+- Latest implementation checkpoint: `8e51f4b`.
 
 ## Topics
 

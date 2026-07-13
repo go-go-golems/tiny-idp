@@ -34,18 +34,18 @@
 - [x] Phase 4.5: Implement accessible responsive login, forced-login, consent, deny, and error presentations. <!-- t:v9g1 -->
 - [x] Phase 4.6: Wire the renderer into both development and production xapp construction. <!-- t:9vhb -->
 - [x] Phase 4.7: Add an HTTP smoke test for themed HTML, CSS reachability, media type, and CSP compatibility. <!-- t:tyzo -->
-- [ ] Phase 5.1: Build a reusable structural renderer-conformance harness for downstream hosts. <!-- t:ktfo -->
-- [ ] Phase 5.2: Detect scripts, event handlers, inline styles, dangerous URLs, protocol hidden fields, and external origins. <!-- t:jeb4 -->
-- [ ] Phase 5.3: Add go/analysis checks for text/template, trusted-content wrappers, direct HTML string construction, and broad renderer HTTP APIs. <!-- t:mqle -->
-- [ ] Phase 5.4: Add analysistest positive and negative fixtures and integrate the analyzer with repository gates. <!-- t:iyed -->
-- [ ] Phase 5.5: Fuzz renderer escaping, conformance parsing, bounded writes, action matrices, Unicode, invalid UTF-8, and long values. <!-- t:74ok -->
-- [ ] Phase 5.6: Add full provider state-matrix integration tests with recording and failing renderers. <!-- t:cui3 -->
-- [ ] Phase 5.7: Add real-browser CSP, framing, third-party-request, password-manager, and two-account scenarios. <!-- t:mwnv -->
-- [ ] Phase 5.8: Run automated and manual accessibility review for labels, errors, focus, keyboard, zoom, contrast, and authentication. <!-- t:x0i2 -->
-- [ ] Phase 5.9: Add bounded render latency, failure, and oversized-document metrics without sensitive labels. <!-- t:1m8k -->
-- [ ] Phase 5.10: Run full Go tests, race tests, fuzz budgets, static analysis, and existing verification/model scenarios. <!-- t:g971 -->
-- [ ] Phase 6.1: Publish public API, custom-renderer, CSP, static-asset, caching, and reverse-proxy documentation. <!-- t:mcb1 -->
-- [ ] Phase 6.2: Add a production doctor check for interaction HTML and stylesheet health without token logging. <!-- t:2to7 -->
+- [x] Phase 5.1: Build a reusable structural renderer-conformance harness for downstream hosts. <!-- t:ktfo -->
+- [x] Phase 5.2: Detect scripts, event handlers, inline styles, dangerous URLs, protocol hidden fields, and external origins. <!-- t:jeb4 -->
+- [x] Phase 5.3: Add go/analysis checks for text/template, trusted-content wrappers, direct HTML string construction, and broad renderer HTTP APIs. <!-- t:mqle -->
+- [x] Phase 5.4: Add analysistest positive and negative fixtures and integrate the analyzer with repository gates. <!-- t:iyed -->
+- [x] Phase 5.5: Fuzz renderer escaping, conformance parsing, bounded writes, action matrices, Unicode, invalid UTF-8, and long values. <!-- t:74ok -->
+- [x] Phase 5.6: Add full provider state-matrix integration tests with recording and failing renderers. <!-- t:cui3 -->
+- [x] Phase 5.7: Add real-browser CSP, framing, third-party-request, password-manager, and two-account scenarios. <!-- t:mwnv -->
+- [x] Phase 5.8: Run automated and manual accessibility review for labels, errors, focus, keyboard, zoom, contrast, and authentication. <!-- t:x0i2 -->
+- [x] Phase 5.9: Add bounded render latency, failure, and oversized-document metrics without sensitive labels. <!-- t:1m8k -->
+- [x] Phase 5.10: Run full Go tests, race tests, fuzz budgets, static analysis, and existing verification/model scenarios. <!-- t:g971 -->
+- [x] Phase 6.1: Publish public API, custom-renderer, CSP, static-asset, caching, and reverse-proxy documentation. <!-- t:mcb1 -->
+- [x] Phase 6.2: Add a production doctor check for interaction HTML and stylesheet health without token logging. <!-- t:2to7 -->
 - [ ] Phase 6.3: Capture safe visual-review evidence and execute a canary deployment. <!-- t:mfov -->
-- [ ] Phase 6.4: Review page source, headers, redirects, audit events, logs, and browser network traffic for secret leakage. <!-- t:m93v -->
+- [x] Phase 6.4: Review page source, headers, redirects, audit events, logs, and browser network traffic for secret leakage. <!-- t:m93v -->
 - [ ] Phase 6.5: Record residual risks, rollback procedure, and release approval. <!-- t:pw3y -->

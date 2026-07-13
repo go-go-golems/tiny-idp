@@ -62,3 +62,24 @@ Step 8: Added and wired the xapp-owned themed interaction renderer, embedded sam
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/internal/loginui/renderer.go — Host-owned renderer and asset handler
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/internal/loginui/static/login.css — Product interaction theme
+
+
+## 2026-07-13
+
+Step 9: Added reusable DOM conformance, a Go analysis gate and fixtures, fuzz harnesses, bounded render metrics, initialized-state interaction doctor, real Chromium CSP/accessibility/two-account probe, and local canary evidence (commit 8e51f4b).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/idpuitest/conformance.go — Reusable renderer trust-boundary checks
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/scripts/idpui_analyzer/analyzer.go — Go AST and analysis enforcement
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/interaction_doctor.go — Secret-free operational interaction check
+
+
+## 2026-07-13
+
+Step 10: Published the public rendering guide, browser/canary evidence, production release and rollback runbook, refreshed ticket status, validated docmgr metadata, and replaced the reMarkable bundle with the implementation-complete 14,107-line packet.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/docs/interaction-rendering.md — Public API and operations documentation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/reference/03-interaction-ui-release-and-rollback-runbook.md — Production rollout and rollback procedure
