@@ -117,6 +117,17 @@ func (p *Provider) browserSessionHash(r *http.Request) []byte {
 	return idpstore.HashSecret(p.csrfKey, cookie.Value)
 }
 
+func (p *Provider) browserContextHash(r *http.Request) []byte {
+	if !p.chooser.Enabled {
+		return nil
+	}
+	cookie, err := r.Cookie(p.chooser.ContextCookieName)
+	if err != nil || cookie.Value == "" {
+		return nil
+	}
+	return idpstore.HashSecret(p.csrfKey, cookie.Value)
+}
+
 func (p *Provider) browserBindingHash(r *http.Request) []byte {
 	cookie, err := r.Cookie(p.csrfCookieName)
 	if err != nil || cookie.Value == "" {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -489,6 +490,12 @@ func (s *Store) ListRememberedBrowserSessions(_ context.Context, contextHash []b
 		}
 		entries = append(entries, cloneRememberedBrowserSession(remembered))
 	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].LastUsedAt.Equal(entries[j].LastUsedAt) {
+			return bytes.Compare(entries[i].IDHash, entries[j].IDHash) < 0
+		}
+		return entries[i].LastUsedAt.After(entries[j].LastUsedAt)
+	})
 	return entries, nil
 }
 

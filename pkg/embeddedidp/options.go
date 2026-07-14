@@ -38,6 +38,19 @@ type UIConfig struct {
 	Renderer idpui.InteractionRenderer
 }
 
+// AccountChooserConfig opts a host into provider-owned remembered-account
+// state. Remembering stays disabled unless explicitly selected because labels
+// can reveal prior browser use. When remembering is enabled, DisplayLabel must
+// return a deliberate, safe label for each user.
+type AccountChooserConfig struct {
+	Enabled                 bool
+	ContextCookieName       string
+	ContextTTL              time.Duration
+	MaxRememberedAccounts   int
+	RememberOnPasswordLogin bool
+	DisplayLabel            func(idpstore.User) (string, error)
+}
+
 // MaintenanceConfig makes retention and the host scheduling contract explicit.
 // Zero values select conservative defaults derived from client token lifetimes.
 type MaintenanceConfig struct {
@@ -62,6 +75,7 @@ type Options struct {
 	PasswordWork   idp.PasswordWorkConfig
 	Maintenance    MaintenanceConfig
 	UI             UIConfig
+	AccountChooser AccountChooserConfig
 }
 
 func (o Options) Validate(ctx context.Context) error {
@@ -89,6 +103,9 @@ func (o Options) Validate(ctx context.Context) error {
 		return fmt.Errorf("store is required")
 	}
 	if err := validateCookieConfig(o.Cookie); err != nil {
+		return err
+	}
+	if err := validateAccountChooserConfig(o.Cookie, o.AccountChooser); err != nil {
 		return err
 	}
 	clients, err := o.Store.ListClients(ctx)
@@ -231,6 +248,38 @@ func validateCookieConfig(cfg CookieConfig) error {
 	}
 	if cfg.Path != "" && (!strings.HasPrefix(cfg.Path, "/") || strings.ContainsAny(cfg.Path, "\x00\r\n;")) {
 		return fmt.Errorf("cookie path must be an absolute HTTP path")
+	}
+	return nil
+}
+
+func validateAccountChooserConfig(cookie CookieConfig, cfg AccountChooserConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	sessionName := cookie.SessionName
+	if sessionName == "" {
+		sessionName = "tinyidp_session"
+	}
+	csrfName := cookie.CSRFName
+	if csrfName == "" {
+		csrfName = "tinyidp_csrf"
+	}
+	if cfg.ContextCookieName != "" {
+		if strings.TrimSpace(cfg.ContextCookieName) != cfg.ContextCookieName || strings.ContainsAny(cfg.ContextCookieName, "\x00\r\n\t ;,=") {
+			return fmt.Errorf("browser context cookie name is invalid")
+		}
+		if cfg.ContextCookieName == sessionName || cfg.ContextCookieName == csrfName {
+			return fmt.Errorf("browser context cookie name must differ from session and csrf cookie names")
+		}
+	}
+	if cfg.ContextTTL < 0 {
+		return fmt.Errorf("browser context TTL must be positive")
+	}
+	if cfg.MaxRememberedAccounts < 0 || cfg.MaxRememberedAccounts > 20 {
+		return fmt.Errorf("maximum remembered accounts must be between 1 and 20")
+	}
+	if cfg.RememberOnPasswordLogin && cfg.DisplayLabel == nil {
+		return fmt.Errorf("remembered password logins require an account display-label policy")
 	}
 	return nil
 }

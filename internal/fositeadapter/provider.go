@@ -66,6 +66,7 @@ type Options struct {
 	SessionCookieName string
 	CSRFCookieName    string
 	CookiePath        string
+	AccountChooser    AccountChooserConfig
 	Audit             idp.Sink
 	Consent           idp.ConsentPolicy
 	RateLimiter       idp.RateLimiter
@@ -96,6 +97,7 @@ type Provider struct {
 	cookieSameSite    http.SameSite
 	sessionCookieName string
 	csrfCookieName    string
+	chooser           AccountChooserConfig
 	cookiePathValue   string
 	audit             idp.Sink
 	securityEvents    securitytrace.Sink
@@ -249,7 +251,10 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if opts.CSRFCookieName == "" {
 		opts.CSRFCookieName = defaultCSRFCookieName
 	}
-	if !validCookieName(opts.SessionCookieName) || !validCookieName(opts.CSRFCookieName) || opts.SessionCookieName == opts.CSRFCookieName {
+	if err := opts.AccountChooser.normalize(); err != nil {
+		return nil, err
+	}
+	if !validCookieName(opts.SessionCookieName) || !validCookieName(opts.CSRFCookieName) || opts.SessionCookieName == opts.CSRFCookieName || (opts.AccountChooser.Enabled && (opts.AccountChooser.ContextCookieName == opts.SessionCookieName || opts.AccountChooser.ContextCookieName == opts.CSRFCookieName)) {
 		return nil, fmt.Errorf("fositeadapter: session and csrf cookie names must be distinct valid cookie names")
 	}
 	if opts.CookiePath != "" && (!strings.HasPrefix(opts.CookiePath, "/") || strings.ContainsAny(opts.CookiePath, "\x00\r\n;")) {
@@ -280,7 +285,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)

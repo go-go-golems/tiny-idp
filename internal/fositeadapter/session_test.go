@@ -203,6 +203,98 @@ func TestConfiguredCookiesCoexistWithHostApplicationCookie(t *testing.T) {
 	}
 }
 
+func TestOptInPasswordLoginCreatesRememberedBrowserSession(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	if err := store.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Name: "Alice Example"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("chooser-key", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	secret := []byte("account-chooser-secret-key-32-bytes")
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+		Issuer:    "http://127.0.0.1:5556",
+		Store:     store,
+		SecretKey: secret,
+		AccountChooser: fositeadapter.AccountChooserConfig{
+			Enabled:                 true,
+			RememberOnPasswordLogin: true,
+			DisplayLabel: func(user idpstore.User) (string, error) {
+				return user.Name, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+
+	form := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	csrf, csrfCookie := fetchCSRF(t, server.URL, form)
+	form.Set("csrf_token", csrf)
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/authorize", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.AddCookie(csrfCookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusFound && response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login status=%d", response.StatusCode)
+	}
+	var contextCookie *http.Cookie
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == "tinyidp_browser_context" {
+			contextCookie = cookie
+		}
+	}
+	if contextCookie == nil || !contextCookie.HttpOnly || contextCookie.Value == "" {
+		t.Fatalf("browser context cookie missing or unsafe: %#v", contextCookie)
+	}
+	entries, err := store.ListRememberedBrowserSessions(ctx, idpstore.HashSecret(secret, contextCookie.Value), time.Now().UTC())
+	if err != nil || len(entries) != 1 || entries[0].DisplayLabel != "Alice Example" || entries[0].UserID != "u1" {
+		t.Fatalf("remembered entries=%#v err=%v", entries, err)
+	}
+}
+
+func TestAccountChooserRememberingRequiresLabelPolicy(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	key, err := keys.GenerateRSA("chooser-config-key", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	_, err = fositeadapter.NewProvider(ctx, fositeadapter.Options{
+		Issuer:    "http://127.0.0.1:5556",
+		Store:     store,
+		SecretKey: []byte("account-chooser-secret-key-32-bytes"),
+		AccountChooser: fositeadapter.AccountChooserConfig{
+			Enabled:                 true,
+			RememberOnPasswordLogin: true,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected missing display-label policy rejection")
+	}
+}
+
 func authorizeForm(verifier string) url.Values {
 	return url.Values{"response_type": {"code"}, "client_id": {"spa"}, "redirect_uri": {"http://localhost/callback"}, "scope": {"openid"}, "state": {"state-1234567890"}, "nonce": {"nonce-1234567890"}, "code_challenge": {s256(verifier)}, "code_challenge_method": {"S256"}, "login": {"alice"}}
 }

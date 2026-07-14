@@ -124,3 +124,65 @@ func TestEndSessionRejectsUnregisteredRedirectBeforeRevocation(t *testing.T) {
 		t.Fatalf("invalid redirect cleared cookies: %#v", recorder.Result().Cookies())
 	}
 }
+
+func TestEndSessionRevokesBrowserContextAndClearsItsCookie(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	key, err := keys.GenerateRSA("chooser-logout-key", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	secret := []byte("account-chooser-logout-secret-key-32")
+	sessionHandle := "active-browser-session"
+	contextHandle := "browser-context"
+	sessionHash := idpstore.HashSecret(secret, sessionHandle)
+	contextHash := idpstore.HashSecret(secret, contextHandle)
+	now := time.Now().UTC()
+	if err := store.CreateSession(ctx, idpstore.Session{IDHash: sessionHash, UserID: "u1", ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateBrowserContext(ctx, idpstore.BrowserContext{IDHash: contextHash, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+		Issuer:    "https://issuer.example.test/idp",
+		Store:     store,
+		SecretKey: secret,
+		AccountChooser: fositeadapter.AccountChooserConfig{
+			Enabled: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "https://issuer.example.test/idp/end-session", nil)
+	request.AddCookie(&http.Cookie{Name: "tinyidp_session", Value: sessionHandle})
+	request.AddCookie(&http.Cookie{Name: "tinyidp_browser_context", Value: contextHandle})
+	recorder := httptest.NewRecorder()
+	provider.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	session, err := store.GetSession(ctx, sessionHash)
+	if err != nil || session.RevokedAt == nil {
+		t.Fatalf("session not revoked: %#v err=%v", session, err)
+	}
+	browserContext, err := store.GetBrowserContext(ctx, contextHash)
+	if err != nil || browserContext.RevokedAt == nil {
+		t.Fatalf("browser context not revoked: %#v err=%v", browserContext, err)
+	}
+	cleared := map[string]bool{}
+	for _, cookie := range recorder.Result().Cookies() {
+		if cookie.MaxAge < 0 {
+			cleared[cookie.Name] = true
+		}
+	}
+	for _, name := range []string{"tinyidp_session", "tinyidp_csrf", "tinyidp_browser_context"} {
+		if !cleared[name] {
+			t.Fatalf("logout did not clear %q: %#v", name, recorder.Result().Cookies())
+		}
+	}
+}

@@ -292,6 +292,26 @@ func TestCookieConfigurationValidation(t *testing.T) {
 	}
 }
 
+func TestAccountChooserConfigurationValidation(t *testing.T) {
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		cfg  embeddedidp.AccountChooserConfig
+	}{
+		{name: "remembering needs label policy", cfg: embeddedidp.AccountChooserConfig{Enabled: true, RememberOnPasswordLogin: true}},
+		{name: "default session cookie collision", cfg: embeddedidp.AccountChooserConfig{Enabled: true, ContextCookieName: "tinyidp_session"}},
+		{name: "negative TTL", cfg: embeddedidp.AccountChooserConfig{Enabled: true, ContextTTL: -time.Hour}},
+		{name: "too many accounts", cfg: embeddedidp.AccountChooserConfig{Enabled: true, MaxRememberedAccounts: 21}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := embeddedidp.Options{Issuer: "http://127.0.0.1:5556", Store: memory.New(), AccountChooser: tt.cfg}
+			if err := opts.Validate(ctx); err == nil {
+				t.Fatal("expected account chooser configuration rejection")
+			}
+		})
+	}
+}
+
 func TestCookiePathMayBroadenIssuerPathForCombinedHost(t *testing.T) {
 	store := memory.New()
 	p, err := embeddedidp.New(context.Background(), embeddedidp.Options{

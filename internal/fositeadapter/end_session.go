@@ -37,8 +37,21 @@ func (p *Provider) endSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionHash := p.browserSessionHash(r)
-	if len(sessionHash) != 0 {
-		if err := p.store.RevokeSession(r.Context(), sessionHash, p.now()); err != nil && !errors.Is(err, idpstore.ErrNotFound) {
+	contextHash := p.browserContextHash(r)
+	if len(sessionHash) != 0 || len(contextHash) != 0 {
+		if err := p.store.Update(r.Context(), func(tx idpstore.TxStore) error {
+			if len(sessionHash) != 0 {
+				if err := tx.RevokeSession(r.Context(), sessionHash, p.now()); err != nil && !errors.Is(err, idpstore.ErrNotFound) {
+					return err
+				}
+			}
+			if len(contextHash) != 0 {
+				if err := tx.RevokeBrowserContext(r.Context(), contextHash, p.now()); err != nil && !errors.Is(err, idpstore.ErrNotFound) {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "logout.request.rejected", ClientID: clientID, Result: "rejected", Reason: "session_store_unavailable"})
 			http.Error(w, "revoke browser session", http.StatusInternalServerError)
 			return
@@ -77,7 +90,11 @@ func (p *Provider) clientAllowsPostLogoutRedirect(r *http.Request, clientID, red
 }
 
 func (p *Provider) clearBrowserCookies(w http.ResponseWriter) {
-	for _, name := range []string{p.sessionCookieName, p.csrfCookieName} {
+	names := []string{p.sessionCookieName, p.csrfCookieName}
+	if p.chooser.Enabled {
+		names = append(names, p.chooser.ContextCookieName)
+	}
+	for _, name := range names {
 		http.SetCookie(w, &http.Cookie{
 			Name:     name,
 			Value:    "",
