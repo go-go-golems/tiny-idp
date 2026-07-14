@@ -24,8 +24,8 @@
 - [x] Phase 3: Implement durable registration attempts with atomic consume <!-- t:j891 -->
 - [x] Phase 3: Implement message insert, stable cursor pagination, and append-only ownership model <!-- t:flqi -->
 - [x] Phase 3: Add migration, permission, restart, concurrency, cleanup, and repository tests <!-- t:vuy8 -->
-- [ ] Phase 4: Build OIDC discovery and verifier over NewInProcessIssuerTransport <!-- t:npwn -->
-- [ ] Phase 4: Implement begin-login with local return path, state, nonce, and PKCE S256 <!-- t:tjzi -->
+- [x] Phase 4: Build OIDC discovery and verifier over NewInProcessIssuerTransport <!-- t:npwn -->
+- [x] Phase 4: Implement begin-login with local return path, state, nonce, and PKCE S256 <!-- t:tjzi -->
 - [ ] Phase 4: Implement one-time callback, code exchange, ID-token verification, and nonce validation <!-- t:nd5u -->
 - [ ] Phase 4: Implement app-session middleware, session API, local logout, and coordinated IdP logout <!-- t:d2ns -->
 - [ ] Phase 4: Add callback replay, mismatch, expiry, subject, and open-redirect tests <!-- t:xkz3 -->

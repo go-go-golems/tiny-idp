@@ -24,6 +24,10 @@ RelatedFiles:
       Note: Atomic durable OAuth state consumption (commit 2603c18)
     - Path: repo://examples/tinyidp-message-app/login_attempts_test.go
       Note: Replay, expiry, and concurrent single-winner tests
+    - Path: repo://examples/tinyidp-message-app/oidc_client.go
+      Note: OIDC discovery, durable PKCE, callback verification core (commit 36c1727)
+    - Path: repo://examples/tinyidp-message-app/oidc_client_integration_test.go
+      Note: Exact in-process issuer discovery evidence
     - Path: repo://examples/tinyidp-message-app/state.go
       Note: Phase 3 state-root paths, manifest, secrets, and atomic publication (commit 9f4a4e2)
     - Path: repo://examples/tinyidp-message-app/state_test.go
@@ -50,6 +54,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -1262,3 +1267,69 @@ recently consumed record is retained even though it can no longer be used.
 Phase 3 persistence is complete. Begin Phase 4 by composing the embedded
 provider and OIDC discovery/verifier over the exact in-process transport, then
 implement begin-login and callback against the durable repositories.
+
+## Step 15: Add the standards-based OIDC PKCE client
+
+The message application now has a protocol client that uses the ticket's
+selected public libraries: `github.com/coreos/go-oidc/v3` for discovery and ID
+token verification, and `golang.org/x/oauth2` for authorization URL, code
+exchange, and S256 PKCE options. It keeps browser state in the durable
+application database rather than in a transient in-memory map.
+
+**Commit (code):** `36c1727` — "feat(msgapp): add OIDC PKCE client"
+
+### What I did
+
+- Added the two direct module dependencies at the shared graph's resolved
+  versions: go-oidc v3.19.0 and x/oauth2 v0.36.0.
+- Constructed discovery and a verifier using a caller-supplied HTTP client.
+- Implemented durable state, nonce, PKCE verifier creation and S256 redirect.
+- Implemented callback core: consume state, exchange code with verifier,
+  verify ID token, compare nonce, and create a separate opaque app session.
+- Added strict local `return_to` normalization.
+- Added discovery integration coverage against a real embedded provider through
+  `NewInProcessIssuerTransport`.
+
+Commands:
+
+```text
+go test ./examples/tinyidp-message-app -run 'Test(BeginLogin|ReturnTo|OIDCClient)' -count=1
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app 0.171s
+```
+
+### What didn't work
+
+`go mod tidy` attempted to rewrite the entire shared module graph, upgraded
+unrelated xapp dependencies, and changed 67 `go.mod` lines plus 525 `go.sum`
+lines. I restored those two agent-modified files, then added only the direct
+OIDC dependencies manually. The final commit changes three `go.mod` lines and
+two `go.sum` lines.
+
+### What was tricky to build
+
+The callback consumes the login attempt before token exchange. A downstream
+exchange failure therefore cannot make an authorization response replayable.
+This is intentional: an OAuth authorization code is one-time, and retrying
+after an uncertain exchange risks an ambiguous security state.
+
+### What warrants a second pair of eyes
+
+- Review whether callback exchange failures should have a dedicated operator
+  audit event without revealing code or token material.
+- Review the eight-hour absolute app session lifetime before production mode.
+
+### What should be done in the future
+
+- Bind `finishLogin` to HTTP handlers and test a full browser/IdP callback.
+- Add a test asserting nonce mismatch does not establish a session.
+
+### Code review instructions
+
+- Start with `newOIDCClient`, `beginLogin`, then `finishLogin`.
+- Review the in-process discovery test and the return-path adversarial cases.
+- Run the focused command above.
+
+## Continuation point
+
+Add HTTP handlers for `/auth/login`, `/auth/callback`, session middleware, and
+local logout. Then drive a full IdP login form in a same-process test.

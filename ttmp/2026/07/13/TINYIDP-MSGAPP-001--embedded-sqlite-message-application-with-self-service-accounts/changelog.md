@@ -106,3 +106,12 @@ Added one-time registration attempts (db24682), stable append-only messages (b58
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/messages.go — Message persistence and stable cursor
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/registration_attempts.go — Anonymous pre-session boundary
 
+
+## 2026-07-14 - Phase 4 OIDC protocol client
+
+Added go-oidc and OAuth2-based discovery, durable PKCE state/nonce flow, callback verification core, and exact in-process discovery tests (commit 36c1727).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/oidc_client.go — Public OIDC relying-party boundary
+
