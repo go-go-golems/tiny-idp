@@ -7,12 +7,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/keys"
+	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/idpstore"
@@ -122,10 +120,6 @@ func InitializeState(ctx context.Context, cfg InitializeStateConfig) (_ StateMan
 			retErr = errors.Wrap(err, "close initialization audit")
 		}
 	}()
-	service, err := admin.NewService(store, admin.Options{Audit: audit})
-	if err != nil {
-		return StateManifest{}, errors.Wrap(err, "create initialization service")
-	}
 	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: audit})
 	if err != nil {
 		return StateManifest{}, errors.Wrap(err, "create account lifecycle service")
@@ -137,13 +131,20 @@ func InitializeState(ctx context.Context, cfg InitializeStateConfig) (_ StateMan
 	if _, err := loadOrCreateKey(paths.ObjectBindingKey); err != nil {
 		return StateManifest{}, errors.Wrap(err, "initialize object binding key")
 	}
-	if err := reconcileRPClient(ctx, service, desired); err != nil {
-		return StateManifest{}, err
+	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{
+		Mode: embeddedidp.ProductionMode,
+		Clients: []embeddedidp.ClientSpec{embeddedidp.BrowserClient(
+			desired.ClientID,
+			[]string{desired.PublicBaseURL + "/auth/callback"},
+			[]string{desired.PublicBaseURL + "/"},
+			[]string{"openid", "profile", "email"},
+		)},
+		SigningKeyID: "xapp-initial-signing-key",
+		Audit:        audit,
+	}); err != nil {
+		return StateManifest{}, errors.Wrap(err, "bootstrap embedded identity provider")
 	}
 	if err := reconcileFirstUser(ctx, store, accounts, cfg); err != nil {
-		return StateManifest{}, err
-	}
-	if err := reconcileSigningKey(ctx, store); err != nil {
 		return StateManifest{}, err
 	}
 	if desired.CreatedAt.IsZero() {
@@ -169,45 +170,6 @@ func normalizeProductionBaseURL(raw string) (string, error) {
 	return "https://" + parsed.Host, nil
 }
 
-func reconcileRPClient(ctx context.Context, service *admin.Service, manifest StateManifest) error {
-	desired := idpstore.Client{
-		ID:                     manifest.ClientID,
-		Public:                 true,
-		RedirectURIs:           []string{manifest.PublicBaseURL + "/auth/callback"},
-		PostLogoutRedirectURIs: []string{manifest.PublicBaseURL + "/"},
-		AllowedScopes:          []string{"openid", "profile", "email"},
-		RequirePKCE:            true,
-		AccessTokenTTL:         time.Hour,
-		IDTokenTTL:             time.Hour,
-		RefreshTokenTTL:        24 * time.Hour,
-	}
-	existing, err := service.GetClient(ctx, manifest.ClientID)
-	if err == nil {
-		if existing.Public != desired.Public || existing.RequirePKCE != desired.RequirePKCE || existing.Disabled ||
-			!reflect.DeepEqual(existing.RedirectURIs, desired.RedirectURIs) ||
-			!reflect.DeepEqual(existing.PostLogoutRedirectURIs, desired.PostLogoutRedirectURIs) ||
-			!reflect.DeepEqual(existing.AllowedScopes, desired.AllowedScopes) {
-			return errors.New("existing relying-party client conflicts with initialized product contract")
-		}
-		return nil
-	}
-	if !errors.Is(err, idpstore.ErrNotFound) {
-		return errors.Wrap(err, "read relying-party client")
-	}
-	_, _, err = service.CreateClient(ctx, admin.CreateClientRequest{
-		ID:                     desired.ID,
-		Public:                 true,
-		RedirectURIs:           desired.RedirectURIs,
-		PostLogoutRedirectURIs: desired.PostLogoutRedirectURIs,
-		AllowedScopes:          desired.AllowedScopes,
-		RequirePKCE:            true,
-		AccessTokenTTL:         desired.AccessTokenTTL,
-		IDTokenTTL:             desired.IDTokenTTL,
-		RefreshTokenTTL:        desired.RefreshTokenTTL,
-	})
-	return errors.Wrap(err, "create relying-party client")
-}
-
 func reconcileFirstUser(ctx context.Context, store idpstore.Store, accounts *idpaccounts.Service, cfg InitializeStateConfig) error {
 	existing, err := store.GetUserByLogin(ctx, cfg.Login)
 	if err == nil {
@@ -228,19 +190,6 @@ func reconcileFirstUser(ctx context.Context, store idpstore.Store, accounts *idp
 		PreferredUsername: cfg.Login,
 	})
 	return errors.Wrap(err, "create first user")
-}
-
-func reconcileSigningKey(ctx context.Context, store idpstore.Store) error {
-	if _, err := store.ActiveSigningKey(ctx); err == nil {
-		return nil
-	} else if !errors.Is(err, idpstore.ErrNotFound) {
-		return errors.Wrap(err, "read active signing key")
-	}
-	key, err := keys.GenerateRSA("xapp-initial-signing-key", time.Now().UTC())
-	if err != nil {
-		return errors.Wrap(err, "generate signing key")
-	}
-	return errors.Wrap(store.CreateSigningKey(ctx, key), "create signing key")
 }
 
 func ReadStateManifest(file string) (StateManifest, error) {

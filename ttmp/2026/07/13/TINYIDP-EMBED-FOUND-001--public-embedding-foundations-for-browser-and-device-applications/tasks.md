@@ -9,10 +9,10 @@
 - [x] Phase 1: expose atomic account creation and password replacement through public types <!-- t:msvu -->
 - [x] Phase 1: migrate provider, admin, xapp, tests, and ticket tooling without compatibility adapters <!-- t:8olw -->
 - [x] Phase 1: run focused, race, and full-repository verification and commit <!-- t:hkiv -->
-- [ ] Phase 2: define generic bootstrap client specifications for browser and device clients <!-- t:ztj7 -->
-- [ ] Phase 2: implement conservative client reconciliation and active signing-key provisioning <!-- t:uhbt -->
-- [ ] Phase 2: add idempotency, conflict, cancellation, audit, browser-profile, and device-profile tests <!-- t:nv3b -->
-- [ ] Phase 2: migrate xapp initialization to the public bootstrap API and commit <!-- t:2l58 -->
+- [x] Phase 2: define generic bootstrap client specifications for browser and device clients <!-- t:ztj7 -->
+- [x] Phase 2: implement conservative client reconciliation and active signing-key provisioning <!-- t:uhbt -->
+- [x] Phase 2: add idempotency, conflict, cancellation, audit, browser-profile, and device-profile tests <!-- t:nv3b -->
+- [x] Phase 2: migrate xapp initialization to the public bootstrap API and commit <!-- t:2l58 -->
 - [ ] Phase 3: implement exact-match in-process issuer RoundTripper <!-- t:9wau -->
 - [ ] Phase 3: test issuer matching, prefix handling, request bodies, response bounds, fallback, and cancellation <!-- t:zw90 -->
 - [ ] Phase 3: migrate xapp OIDC discovery and token exchange to the tiny-idp public transport and commit <!-- t:kpra -->

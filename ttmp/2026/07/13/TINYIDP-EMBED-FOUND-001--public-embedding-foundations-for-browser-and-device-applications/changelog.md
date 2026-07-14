@@ -22,3 +22,12 @@ Implemented Phase 1 public account lifecycle API, removed internal/authn, migrat
 - internal/admin/service.go — Administration boundary after extraction
 - pkg/idpaccounts/accounts.go — Public atomic account lifecycle
 - pkg/idpaccounts/password.go — Public password authenticator and work reporter
+
+## 2026-07-13
+
+Implemented Phase 2 declarative browser/device/generic client bootstrap, semantic drift detection, initial signing-key provisioning, and xapp initialization migration; focused, race, and full tests pass.
+
+### Related Files
+
+- cmd/tinyidp-xapp/state.go — Xapp consumes bootstrap API
+- pkg/embeddedidp/bootstrap.go — Public bootstrap API

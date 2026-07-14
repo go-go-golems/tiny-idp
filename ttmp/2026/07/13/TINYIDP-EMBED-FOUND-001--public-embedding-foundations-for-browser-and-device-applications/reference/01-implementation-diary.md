@@ -20,6 +20,10 @@ RelatedFiles:
       Note: Production provider migrated to the public account authentication service
     - Path: repo://internal/server/device.go
       Note: Current device grant evidence used to prevent browser-only bootstrap assumptions.
+    - Path: repo://pkg/embeddedidp/bootstrap.go
+      Note: Declarative browser/device client and signing-key bootstrap implementation
+    - Path: repo://pkg/embeddedidp/bootstrap_test.go
+      Note: Idempotency drift device profile key and audit regression coverage
     - Path: repo://pkg/idpaccounts/accounts.go
       Note: Public atomic account creation and password replacement implemented in Phase 1
     - Path: repo://pkg/idpaccounts/password.go
@@ -34,6 +38,7 @@ LastUpdated: 2026-07-13T21:36:00-04:00
 WhatFor: Use this diary to review completed work and resume implementation without repeating investigation.
 WhenToUse: Read before working on TINYIDP-EMBED-FOUND-001 or changing the public account, bootstrap, or in-process issuer APIs.
 ---
+
 
 
 
@@ -408,12 +413,128 @@ Atomic replacement primitive: idpstore.Store.ReplacePasswordAndSecurityState
 Post-commit audit signal: idp.ErrAuditDelivery
 ```
 
+## Step 5: Verify and commit the public account service
+
+The Phase 1 checkpoint passed package tests, selected race tests, the complete repository suite, docmgr validation, staged whitespace checks, and staged-file review. It was committed independently of bootstrap work.
+
+### What I did
+
+- Ran `go test -race ./pkg/idpaccounts ./internal/admin`.
+- Ran `go test ./...` and verified every repository package and archived executable probe compiled.
+- Removed the generated `internal/authn/logcopter.go` file so the obsolete package disappeared entirely.
+- Replaced the external public-constructor test's internal memory store with public `pkg/sqlitestore` to represent a real out-of-module consumer surface.
+- Updated four Phase 1 tasks, related implementation files, the changelog, and doctor findings.
+- Staged explicit paths and excluded the two unrelated OIDF source directories.
+
+### What worked
+
+- Race tests and full tests passed.
+- `docmgr doctor` passed after replacing the design's relation to the removed internal password file with the new public file.
+- The staged diff recognized `internal/authn/password.go` to `pkg/idpaccounts/password.go` as an 80 percent rename, preserving useful review history.
+
+### What didn't work
+
+- The first doctor pass correctly warned that the design still related the deleted `internal/authn/password.go`. The relation was replaced with `pkg/idpaccounts/password.go`.
+- `docmgr changelog update` added a blank line at EOF; a mechanical EOF normalization resolved `git diff --check`.
+
+### Commit
+
+```text
+edd1479 Feat: publish account lifecycle service
+```
+
+### Code review instructions
+
+- Review `git show --stat edd1479` and confirm no bootstrap implementation is mixed into Phase 1.
+- Confirm the two unrelated `TINYIDP-PROD-001` OIDF directories remain untracked.
+
+## Step 6: Implement declarative browser and device bootstrap
+
+Phase 2 introduced `embeddedidp.Bootstrap`, typed client profiles, semantic conflict detection, ordered reports, audit-after-commit behavior, and initial RSA signing-key provisioning. The xapp initializer now consumes this API instead of maintaining private client and key reconciliation.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Build bootstrap for the immediate browser application without encoding browser-only assumptions that would block the later device authorization example.
+
+**Inferred user intent:** Make client/key prerequisites reusable, declarative, drift-detecting, and ready for three examples over time.
+
+### What I did
+
+- Added `ClientProfileBrowser`, `ClientProfileDevice`, and `ClientProfileGeneric`.
+- Added `BrowserClient`, which declares a public PKCE client with exact browser redirects and requires `openid`.
+- Added `DeviceClient`, which declares a public client with no redirect URIs and retains the current stored-client PKCE invariant.
+- Added normalized, sorted, duplicate-free scopes and URIs plus default token lifetimes.
+- Added `ClientConflictError` with stable field names and no secret contents.
+- Validated all specifications and duplicate IDs before the first write.
+- Reconciled clients in stable ID order and returned created versus validated IDs.
+- Retained a valid active RS256 key, rejected unusable active keys, or created one initial 2048-bit RSA key.
+- Emitted `identity.bootstrap.client_created` and `identity.bootstrap.signing_key_created` after persistence.
+- Migrated `InitializeState` to bootstrap its browser client and key, then use `idpaccounts.Service` for the first account.
+
+### Why
+
+- Browser callbacks and device authorization have different client shapes.
+- A typed profile makes an empty device redirect list intentional rather than accidental.
+- Existing configuration drift must stop initialization instead of being overwritten.
+- A report is necessary because the store contract cannot atomically commit an arbitrary client set and key in one transaction.
+
+### What worked
+
+- Focused tests passed for browser, device, generic, idempotency, order normalization, conflicts, active keys, audit failure, and cancellation.
+- Selected race tests passed for both `pkg/embeddedidp` and the xapp.
+- `go test ./...` passed after xapp migration.
+- The second bootstrap call reports clients as validated and retains the original signing key.
+
+### What didn't work
+
+- N/A. The first implementation and focused test pass compiled and passed.
+
+### What I learned
+
+- The stored public-client invariant currently requires `RequirePKCE=true` even for a no-redirect device client. The device constructor preserves that invariant without claiming the strict provider implements device endpoints.
+- Existing-client timestamps and list ordering are declaration noise, while every security-relevant client field is drift.
+- Key bootstrap can safely create only the first active key; repair and rotation remain administrative workflows.
+
+### What was tricky to build
+
+Bootstrap audit delivery occurs after persistence. On failure, `BootstrapReport` must already contain the committed client or key. This makes the error operationally honest and allows callers to reconcile rather than assume rollback.
+
+### What warrants a second pair of eyes
+
+- Review whether device profiles should require `openid` now or allow OAuth-only future device clients. The current constructor accepts caller scopes, matching the accepted design.
+- Review the exact list of fields in `clientConflictFields`.
+- Review generated key-ID policy and whether operators should always configure a stable ID in production.
+- Confirm an existing zero TTL should semantically equal the documented default; current normalization treats it that way.
+
+### What should be done in the future
+
+- Add explicit allowed grant capabilities when implementing strict provider device authorization.
+- Keep key rotation and corrupt-key repair out of bootstrap.
+- Implement the bounded in-process issuer transport next.
+
+### Code review instructions
+
+- Start at `pkg/embeddedidp/bootstrap.go` and its table-driven tests.
+- Verify validation finishes before writes and reconciliation order is stable.
+- Inspect `cmd/tinyidp-xapp/state.go` for removal of handwritten reconciliation.
+- Run `go test -race ./pkg/embeddedidp ./cmd/tinyidp-xapp` and `go test ./...`.
+
+### Technical details
+
+```text
+Browser: public + PKCE + redirects + openid
+Device: public + PKCE invariant + no redirects
+Generic: caller shape + ordinary idpstore validation
+Conflict sentinel: embeddedidp.ErrBootstrapConflict
+```
+
 ## Continuation point
 
-Phase 1 implementation and focused tests are complete but not yet committed. The next steps are:
+Phase 2 implementation and verification are complete but not yet committed. Next:
 
-1. run selected race tests and `go test ./...`;
-2. inspect the final diff and public API;
-3. update ticket tasks, relationships, and changelog;
-4. commit Phase 1;
-5. begin declarative browser/device bootstrap.
+1. update Phase 2 tasks, relationships, and changelog;
+2. run docmgr doctor and staged-diff checks;
+3. commit bootstrap independently;
+4. implement the bounded fail-closed in-process issuer transport.
