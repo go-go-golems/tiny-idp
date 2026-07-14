@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"mime"
 	"net/http"
 	"strconv"
@@ -19,6 +21,9 @@ import (
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/pkg/errors"
 )
+
+//go:embed static/app/*
+var messageAppAssets embed.FS
 
 const (
 	registrationAttemptLifetime = 10 * time.Minute
@@ -58,10 +63,37 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 	app.mux.HandleFunc("POST /api/messages", app.handleCreateMessage)
 	app.mux.HandleFunc("POST /api/accounts", app.handleCreateAccount)
 	app.mux.HandleFunc("POST /auth/logout", app.handleLogout)
+	app.mux.Handle("GET /static/app/", http.StripPrefix("/static/app/", http.FileServer(http.FS(messageAppAssetFS()))))
+	// The root fallback must not be method-qualified: /idp/ accepts both GET
+	// and POST, and ServeMux rejects an overlapping GET-only root pattern.
+	app.mux.HandleFunc("/", app.handleIndex)
 	if provider != nil {
 		app.mux.Handle("/idp/", provider)
 	}
 	return app
+}
+
+func messageAppAssetFS() fs.FS {
+	assets, err := fs.Sub(messageAppAssets, "static/app")
+	if err != nil {
+		panic(err)
+	}
+	return assets
+}
+
+func (a *messageApp) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	contents, err := fs.ReadFile(messageAppAssetFS(), "index.html")
+	if err != nil {
+		http.Error(w, "application UI is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	_, _ = w.Write(contents)
 }
 
 func (a *messageApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {

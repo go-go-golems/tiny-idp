@@ -142,6 +142,30 @@ func TestMessageFeedUsesCursorAndDoesNotExposeSubject(t *testing.T) {
 	}
 }
 
+func TestMessageAppServesEmbeddedRetroFrontendOnlyAtStaticPrefix(t *testing.T) {
+	store, err := openAppStore(context.Background(), filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := newMessageApp(store, nil, nil, nil, false)
+	root := httptest.NewRecorder()
+	app.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "/", nil))
+	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), `id="root"`) || !strings.Contains(root.Header().Get("Content-Security-Policy"), "default-src 'none'") {
+		t.Fatalf("root = %d: %s", root.Code, root.Body.String())
+	}
+	asset := httptest.NewRecorder()
+	app.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/static/app/assets/main.js", nil))
+	if asset.Code != http.StatusOK || !strings.Contains(asset.Header().Get("Content-Type"), "javascript") {
+		t.Fatalf("frontend asset = %d content-type=%q", asset.Code, asset.Header().Get("Content-Type"))
+	}
+	notFound := httptest.NewRecorder()
+	app.ServeHTTP(notFound, httptest.NewRequest(http.MethodGet, "/not-a-ui-route", nil))
+	if notFound.Code != http.StatusNotFound {
+		t.Fatalf("non-root UI route = %d", notFound.Code)
+	}
+}
+
 func TestCreateMessageUsesVerifiedSessionAuthorAndCSRF(t *testing.T) {
 	ctx := context.Background()
 	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))

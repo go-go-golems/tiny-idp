@@ -1,0 +1,10 @@
+{
+  "name": "tinyidp-message-app-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {"build": "tsc --noEmit -p tsconfig.app.json && vite build", "typecheck": "tsc --noEmit -p tsconfig.app.json", "dev": "vite"},
+  "dependencies": {"@reduxjs/toolkit": "2.8.2", "bootstrap": "5.3.7", "react": "19.1.0", "react-dom": "19.1.0", "react-redux": "9.2.0"},
+  "devDependencies": {"@types/react": "19.1.8", "@types/react-dom": "19.1.6", "@vitejs/plugin-react": "4.6.0", "typescript": "5.8.3", "vite": "6.3.5"},
+  "packageManager": "pnpm@10.15.1"
+}
