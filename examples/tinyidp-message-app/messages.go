@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,6 +22,36 @@ type message struct {
 type messageCursor struct {
 	CreatedAt time.Time
 	ID        int64
+}
+
+func encodeMessageCursor(cursor messageCursor) (string, error) {
+	if cursor.CreatedAt.IsZero() || cursor.ID < 1 {
+		return "", errors.New("message cursor is invalid")
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(formatAppTime(cursor.CreatedAt) + "|" + strconv.FormatInt(cursor.ID, 10))), nil
+}
+
+func decodeMessageCursor(raw string) (*messageCursor, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil || len(decoded) > 256 {
+		return nil, errors.New("message cursor is invalid")
+	}
+	parts := strings.Split(string(decoded), "|")
+	if len(parts) != 2 {
+		return nil, errors.New("message cursor is invalid")
+	}
+	createdAt, err := parseAppTime(parts[0])
+	if err != nil {
+		return nil, errors.New("message cursor is invalid")
+	}
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || id < 1 {
+		return nil, errors.New("message cursor is invalid")
+	}
+	return &messageCursor{CreatedAt: createdAt, ID: id}, nil
 }
 
 func (s *appStore) createMessage(ctx context.Context, value message) (message, error) {

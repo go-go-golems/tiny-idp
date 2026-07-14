@@ -112,6 +112,36 @@ func TestRegistrationEndpointCreatesOneTimePreSession(t *testing.T) {
 	}
 }
 
+func TestMessageFeedUsesCursorAndDoesNotExposeSubject(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	stamp := time.Now().UTC()
+	for _, body := range []string{"first", "second", "third"} {
+		if _, err := store.createMessage(ctx, message{AuthorSubject: "private-subject", AuthorName: "Alice", Body: body, CreatedAt: stamp}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := newMessageApp(store, nil, nil, nil, false)
+	first := httptest.NewRecorder()
+	app.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/messages?limit=2", nil))
+	var page struct {
+		Messages   []messageResponse `json:"messages"`
+		NextCursor string            `json:"nextCursor"`
+	}
+	if first.Code != http.StatusOK || json.Unmarshal(first.Body.Bytes(), &page) != nil || len(page.Messages) != 2 || page.Messages[0].Body != "third" || page.NextCursor == "" || strings.Contains(first.Body.String(), "private-subject") {
+		t.Fatalf("first page = %d: %s", first.Code, first.Body.String())
+	}
+	second := httptest.NewRecorder()
+	app.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/messages?before="+url.QueryEscape(page.NextCursor)+"&limit=2", nil))
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), `"body":"first"`) {
+		t.Fatalf("second page = %d: %s", second.Code, second.Body.String())
+	}
+}
+
 func TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService(t *testing.T) {
 	ctx := context.Background()
 	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))

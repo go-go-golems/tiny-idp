@@ -54,6 +54,7 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 	app.mux.HandleFunc("GET /auth/callback", app.handleCallback)
 	app.mux.HandleFunc("GET /api/session", app.handleSession)
 	app.mux.HandleFunc("GET /api/registration", app.handleRegistration)
+	app.mux.HandleFunc("GET /api/messages", app.handleListMessages)
 	app.mux.HandleFunc("POST /api/accounts", app.handleCreateAccount)
 	app.mux.HandleFunc("POST /auth/logout", app.handleLogout)
 	if provider != nil {
@@ -131,6 +132,51 @@ func (a *messageApp) handleRegistration(w http.ResponseWriter, r *http.Request) 
 		Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(registrationAttemptLifetime.Seconds())})
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"csrfToken": base64.RawURLEncoding.EncodeToString(csrfSecret)})
+}
+
+type messageResponse struct {
+	ID         int64     `json:"id"`
+	AuthorName string    `json:"authorName"`
+	Body       string    `json:"body"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+func (a *messageApp) handleListMessages(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 1 || parsed > 100 {
+			http.Error(w, "invalid message page", http.StatusBadRequest)
+			return
+		}
+		limit = parsed
+	}
+	before, err := decodeMessageCursor(r.URL.Query().Get("before"))
+	if err != nil {
+		http.Error(w, "invalid message page", http.StatusBadRequest)
+		return
+	}
+	values, err := a.store.listMessages(r.Context(), before, limit)
+	if err != nil {
+		http.Error(w, "messages are temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	response := struct {
+		Messages   []messageResponse `json:"messages"`
+		NextCursor string            `json:"nextCursor,omitempty"`
+	}{Messages: make([]messageResponse, 0, len(values))}
+	for _, value := range values {
+		response.Messages = append(response.Messages, messageResponse{ID: value.ID, AuthorName: value.AuthorName, Body: value.Body, CreatedAt: value.CreatedAt})
+	}
+	if len(values) == limit {
+		response.NextCursor, err = encodeMessageCursor(messageCursor{CreatedAt: values[len(values)-1].CreatedAt, ID: values[len(values)-1].ID})
+		if err != nil {
+			http.Error(w, "messages are temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 type createAccountRequest struct {

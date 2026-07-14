@@ -63,6 +63,26 @@ func TestMessageValidationAndNormalization(t *testing.T) {
 	}
 }
 
+func TestMessageCursorCodecRejectsMalformedValues(t *testing.T) {
+	stamp := time.Now().UTC().Truncate(time.Microsecond)
+	raw, err := encodeMessageCursor(messageCursor{CreatedAt: stamp, ID: 42})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeMessageCursor(raw)
+	if err != nil || !decoded.CreatedAt.Equal(stamp) || decoded.ID != 42 {
+		t.Fatalf("decoded cursor = %#v, %v", decoded, err)
+	}
+	for _, malformed := range []string{"%", "YWJj", ""} {
+		if malformed == "" {
+			continue
+		}
+		if _, err := decodeMessageCursor(malformed); err == nil {
+			t.Errorf("decodeMessageCursor(%q) succeeded", malformed)
+		}
+	}
+}
+
 func TestConcurrentMessageInsertionsHaveDistinctIDs(t *testing.T) {
 	ctx := context.Background()
 	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
