@@ -21,6 +21,7 @@ const loginAttemptLifetime = 5 * time.Minute
 type oidcClient struct {
 	config   oauth2.Config
 	verifier *oidc.IDTokenVerifier
+	http     *http.Client
 	now      func() time.Time
 }
 
@@ -47,7 +48,7 @@ func newOIDCClient(ctx context.Context, issuer, publicBaseURL string, client *ht
 		ClientID: clientID, Endpoint: provider.Endpoint(), RedirectURL: publicBaseURL + callbackPath,
 		Scopes: []string{oidc.ScopeOpenID, "profile"},
 	}
-	return &oidcClient{config: config, verifier: provider.Verifier(&oidc.Config{ClientID: clientID}), now: time.Now}, nil
+	return &oidcClient{config: config, verifier: provider.Verifier(&oidc.Config{ClientID: clientID}), http: client, now: time.Now}, nil
 }
 
 func (c *oidcClient) beginLogin(ctx context.Context, store *appStore, rawReturnTo string) (string, error) {
@@ -70,6 +71,7 @@ func (c *oidcClient) beginLogin(ctx context.Context, store *appStore, rawReturnT
 	if err != nil {
 		return "", err
 	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.http)
 	now := c.now().UTC()
 	if err := store.createLoginAttempt(ctx, state, loginAttempt{
 		Nonce: nonce, PKCEVerifier: verifier, ReturnTo: returnTo,
