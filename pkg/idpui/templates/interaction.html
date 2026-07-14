@@ -21,6 +21,18 @@
     </section>
     {{end}}
     <form method="post" action="{{.Page.Form.ActionURL}}">
+      {{with .Page.AccountChooser}}
+      {{$chooser := .}}
+      <fieldset>
+        <legend>Choose an account</legend>
+        {{range .Entries}}
+        <p>
+          <input id="tinyidp-account-{{.Value}}" type="radio" name="{{$chooser.AccountField}}" value="{{.Value}}" required>
+          <label for="tinyidp-account-{{.Value}}">{{.Label}}</label>
+        </p>
+        {{end}}
+      </fieldset>
+      {{end}}
       {{with .Page.Login}}
       <p>
         <label for="tinyidp-login">Username</label>

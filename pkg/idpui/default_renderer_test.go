@@ -95,6 +95,33 @@ func TestDefaultRendererNeverPopulatesPassword(t *testing.T) {
 	}
 }
 
+func TestDefaultRendererRendersAccountChooser(t *testing.T) {
+	t.Parallel()
+	page := loginPage()
+	page.DocumentTitle = "Choose an account"
+	page.Login = nil
+	page.AccountChooser = &idpui.AccountChooserPrompt{
+		AccountField: idpui.AccountFieldName,
+		Entries: []idpui.AccountChooserEntry{
+			{Value: "opaque-entry-one", Label: "First account"},
+			{Value: "opaque-entry-two", Label: "Second account"},
+		},
+	}
+	document := render(t, page)
+	choices := findElements(document, "input", "name", idpui.AccountFieldName)
+	if len(choices) != 2 {
+		t.Fatalf("account choices=%d", len(choices))
+	}
+	for _, choice := range choices {
+		if attr(choice, "type") != "radio" || !hasAttr(choice, "required") {
+			t.Fatalf("unsafe chooser input: %#v", choice.Attr)
+		}
+		if _, ok := findLabelFor(document, attr(choice, "id")); !ok {
+			t.Fatalf("chooser input %q has no label", attr(choice, "id"))
+		}
+	}
+}
+
 // TestCombinedGoldenSemantics keeps the checked-in review example aligned with
 // the contract without making whitespace or exact markup a compatibility API.
 func TestCombinedGoldenSemantics(t *testing.T) {
@@ -257,6 +284,13 @@ func findElements(root *html.Node, tag, attribute, value string) []*html.Node {
 		}
 	})
 	return found
+}
+
+func findLabelFor(root *html.Node, target string) (*html.Node, bool) {
+	for _, label := range findElements(root, "label", "for", target) {
+		return label, true
+	}
+	return nil, false
 }
 
 func walk(node *html.Node, visit func(*html.Node)) {

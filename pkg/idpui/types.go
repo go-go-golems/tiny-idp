@@ -12,6 +12,7 @@ const (
 	ActionFieldName      = "action"
 	LoginFieldName       = "login"
 	PasswordFieldName    = "password"
+	AccountFieldName     = "account"
 )
 
 // Action is a browser-submitted interaction decision. The provider validates
@@ -128,11 +129,12 @@ func (f FieldName) Valid() bool {
 // interaction. It contains no password, cookie, redirect URI, authorization
 // code, original OAuth request, or stored interaction record.
 type InteractionPage struct {
-	DocumentTitle string
-	Form          InteractionForm
-	Login         *LoginPrompt
-	Consent       *ConsentPrompt
-	Error         *PublicError
+	DocumentTitle  string
+	Form           InteractionForm
+	Login          *LoginPrompt
+	Consent        *ConsentPrompt
+	AccountChooser *AccountChooserPrompt
+	Error          *PublicError
 }
 
 type InteractionForm struct {
@@ -156,6 +158,19 @@ type LoginPrompt struct {
 type ConsentPrompt struct {
 	ClientID string
 	Scopes   []Scope
+}
+
+// AccountChooserPrompt is a presentation-only list of server-selected opaque
+// entry selectors. An entry value is never user identity or session evidence;
+// the provider validates it against the context-bound interaction on POST.
+type AccountChooserPrompt struct {
+	AccountField string
+	Entries      []AccountChooserEntry
+}
+
+type AccountChooserEntry struct {
+	Value string
+	Label string
 }
 
 type Scope struct {
@@ -188,7 +203,25 @@ func (p InteractionPage) Validate() error {
 	if p.Consent != nil && strings.TrimSpace(p.Consent.ClientID) == "" {
 		return fmt.Errorf("consent client ID is required")
 	}
-	if p.Login == nil && p.Consent == nil {
+	if p.AccountChooser != nil {
+		if p.AccountChooser.AccountField != AccountFieldName {
+			return fmt.Errorf("account chooser field must use the provider contract")
+		}
+		if len(p.AccountChooser.Entries) == 0 {
+			return fmt.Errorf("account chooser requires at least one entry")
+		}
+		seen := make(map[string]struct{}, len(p.AccountChooser.Entries))
+		for _, entry := range p.AccountChooser.Entries {
+			if strings.TrimSpace(entry.Value) == "" || strings.TrimSpace(entry.Label) == "" {
+				return fmt.Errorf("account chooser entries require value and label")
+			}
+			if _, ok := seen[entry.Value]; ok {
+				return fmt.Errorf("duplicate account chooser entry")
+			}
+			seen[entry.Value] = struct{}{}
+		}
+	}
+	if p.Login == nil && p.Consent == nil && p.AccountChooser == nil {
 		return fmt.Errorf("at least one interaction prompt is required")
 	}
 	if p.Error != nil {
@@ -247,6 +280,11 @@ func (p InteractionPage) Clone() InteractionPage {
 		consent := *p.Consent
 		consent.Scopes = append([]Scope(nil), p.Consent.Scopes...)
 		clone.Consent = &consent
+	}
+	if p.AccountChooser != nil {
+		chooser := *p.AccountChooser
+		chooser.Entries = append([]AccountChooserEntry(nil), p.AccountChooser.Entries...)
+		clone.AccountChooser = &chooser
 	}
 	if p.Error != nil {
 		publicError := *p.Error
