@@ -211,6 +211,7 @@ const (
 	InteractionRequireFreshLogin
 	InteractionRequireConsent
 	InteractionRequireStepUp
+	InteractionRequireAccountSelection
 )
 
 func (a InteractionRequiredAction) Has(want InteractionRequiredAction) bool { return a&want != 0 }
@@ -246,6 +247,7 @@ type InteractionRecord struct {
 	RequiredActions    InteractionRequiredAction
 	BrowserBindingHash []byte
 	SessionIDHash      []byte
+	BrowserContextHash []byte
 	GenerationHash     []byte
 	CreatedAt          time.Time
 	ExpiresAt          time.Time

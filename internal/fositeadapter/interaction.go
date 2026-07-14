@@ -24,6 +24,7 @@ var transientAuthorizeFields = map[string]struct{}{
 	"csrf_token":         {},
 	"login":              {},
 	"password":           {},
+	"account":            {},
 }
 
 func canonicalAuthorizeForm(ar fosite.AuthorizeRequester) url.Values {
@@ -82,8 +83,12 @@ func (p *Provider) createInteraction(w http.ResponseWriter, r *http.Request, ar 
 	canonical := canonicalAuthorizeForm(ar)
 	now := p.now()
 	var sessionIDHash []byte
+	var browserContextHash []byte
 	if !actions.Has(idpstore.InteractionRequireLogin) {
 		sessionIDHash = p.browserSessionHash(r)
+	}
+	if actions.Has(idpstore.InteractionRequireAccountSelection) {
+		browserContextHash = p.browserContextHash(r)
 	}
 	record := idpstore.InteractionRecord{
 		IDHash:             idpstore.HashSecret(p.csrfKey, handle),
@@ -94,6 +99,7 @@ func (p *Provider) createInteraction(w http.ResponseWriter, r *http.Request, ar 
 		RequiredActions:    actions,
 		BrowserBindingHash: bindingHash,
 		SessionIDHash:      sessionIDHash,
+		BrowserContextHash: browserContextHash,
 		GenerationHash:     clientGenerationHash(client),
 		CreatedAt:          now,
 		ExpiresAt:          now.Add(p.interactionTTL),

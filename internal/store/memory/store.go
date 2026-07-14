@@ -646,6 +646,7 @@ func cloneInteraction(interaction idpstore.InteractionRecord) idpstore.Interacti
 	interaction.RequestDigest = append([]byte(nil), interaction.RequestDigest...)
 	interaction.BrowserBindingHash = append([]byte(nil), interaction.BrowserBindingHash...)
 	interaction.SessionIDHash = append([]byte(nil), interaction.SessionIDHash...)
+	interaction.BrowserContextHash = append([]byte(nil), interaction.BrowserContextHash...)
 	interaction.GenerationHash = append([]byte(nil), interaction.GenerationHash...)
 	request := make(map[string][]string, len(interaction.CanonicalRequest))
 	for key, values := range interaction.CanonicalRequest {

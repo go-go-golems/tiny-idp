@@ -474,8 +474,26 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown or disabled client", http.StatusBadRequest)
 		return
 	}
+	selectAccount := p.chooser.Enabled && promptHas(ar.GetRequestForm().Get("prompt"), "select_account") && !needLogin
+	var chooserEntries []idpstore.RememberedBrowserSession
+	if selectAccount {
+		contextHash := p.browserContextHash(r)
+		if len(contextHash) != 0 {
+			chooserEntries, err = p.store.ListRememberedBrowserSessions(r.Context(), contextHash, p.now())
+			if err != nil && !errors.Is(err, idpstore.ErrNotFound) {
+				http.Error(w, "browser context storage unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		if len(chooserEntries) == 0 {
+			needLogin = true
+			actions |= idpstore.InteractionRequireLogin
+		} else {
+			actions |= idpstore.InteractionRequireAccountSelection
+		}
+	}
 	requireConsent := false
-	if hasSession && !needLogin {
+	if hasSession && !needLogin && !actions.Has(idpstore.InteractionRequireAccountSelection) {
 		requireConsent, err = p.consent.RequireConsent(r.Context(), u, client, []string(ar.GetRequestedScopes()))
 		if err != nil {
 			http.Error(w, "consent policy failed", http.StatusInternalServerError)
@@ -486,6 +504,10 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if promptHas(ar.GetRequestForm().Get("prompt"), "none") {
+		if actions.Has(idpstore.InteractionRequireAccountSelection) || (selectAccount && needLogin) {
+			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, accountSelectionRequiredError())
+			return
+		}
 		if needLogin {
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrLoginRequired)
 			return
@@ -495,7 +517,7 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !needLogin && !requireConsent {
+	if !needLogin && !requireConsent && !actions.Has(idpstore.InteractionRequireAccountSelection) {
 		p.finishAuthorize(w, r, ar, u, sess.AuthTime, false, nil)
 		return
 	}
@@ -504,8 +526,24 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create authorization interaction failed", http.StatusInternalServerError)
 		return
 	}
-	page := p.newInteractionPage(handle, csrfToken, actions, ar.GetRequestForm(), true, client.ID, []string(ar.GetRequestedScopes()), strings.TrimSpace(ar.GetRequestForm().Get("login_hint")), nil)
+	page := p.newInteractionPage(handle, csrfToken, actions, ar.GetRequestForm(), !actions.Has(idpstore.InteractionRequireAccountSelection), client.ID, []string(ar.GetRequestedScopes()), strings.TrimSpace(ar.GetRequestForm().Get("login_hint")), nil)
+	if actions.Has(idpstore.InteractionRequireAccountSelection) {
+		page.DocumentTitle = "Choose an account"
+		page.AccountChooser = chooserPrompt(chooserEntries)
+	}
 	p.renderInteraction(w, r, http.StatusOK, page)
+}
+
+func accountSelectionRequiredError() *fosite.RFC6749Error {
+	return &fosite.RFC6749Error{ErrorField: "account_selection_required", DescriptionField: "The Authorization Server requires End-User account selection.", CodeField: http.StatusBadRequest}
+}
+
+func chooserPrompt(entries []idpstore.RememberedBrowserSession) *idpui.AccountChooserPrompt {
+	prompt := &idpui.AccountChooserPrompt{AccountField: idpui.AccountFieldName, Entries: make([]idpui.AccountChooserEntry, 0, len(entries))}
+	for _, entry := range entries {
+		prompt.Entries = append(prompt.Entries, idpui.AccountChooserEntry{Value: base64.RawURLEncoding.EncodeToString(entry.IDHash), Label: entry.DisplayLabel})
+	}
+	return prompt
 }
 
 func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
@@ -542,6 +580,10 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "authorization interaction session mismatch", http.StatusBadRequest)
 		return
 	}
+	if len(record.BrowserContextHash) != 0 && !equalBytes(record.BrowserContextHash, p.browserContextHash(r)) {
+		http.Error(w, "authorization interaction browser context mismatch", http.StatusBadRequest)
+		return
+	}
 	ar, err := p.reconstructAuthorizeRequest(r, record)
 	if err != nil {
 		p.emit(r.Context(), idp.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
@@ -558,7 +600,8 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := idpui.Action(r.PostForm.Get(idpui.ActionFieldName))
-	if action != idpui.ActionApprove && action != idpui.ActionDeny {
+	selectionRequired := record.RequiredActions.Has(idpstore.InteractionRequireAccountSelection)
+	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionDeny) || (!selectionRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
 		http.Error(w, "invalid interaction action", http.StatusBadRequest)
 		return
 	}
@@ -580,6 +623,27 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	hasSession := sessionState == browserSessionActive
 	authTime := sess.AuthTime
+	if selectionRequired {
+		entryHash, decodeErr := base64.RawURLEncoding.DecodeString(r.PostForm.Get(idpui.AccountFieldName))
+		if decodeErr != nil || len(entryHash) == 0 {
+			http.Error(w, "invalid account selection", http.StatusBadRequest)
+			return
+		}
+		newHandle, randomErr := randomB64(32)
+		if randomErr != nil {
+			http.Error(w, "create browser session failed", http.StatusInternalServerError)
+			return
+		}
+		selectedSession, selectedUser, activateErr := p.store.ActivateRememberedSession(r.Context(), p.browserContextHash(r), entryHash, idpstore.HashSecret(p.csrfKey, newHandle), p.now())
+		if activateErr != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account_selection.rejected", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "invalid_selection"})
+			http.Error(w, "invalid account selection", http.StatusBadRequest)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: p.sessionCookieName, Value: newHandle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.sessionTTL.Seconds())})
+		u, sess, hasSession, authTime = selectedUser, selectedSession, true, selectedSession.AuthTime
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account_selection.success", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
+	}
 	requiresLogin := record.RequiredActions.Has(idpstore.InteractionRequireLogin) || record.RequiredActions.Has(idpstore.InteractionRequireFreshLogin)
 	login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))
 	if requiresLogin && login == "" {
