@@ -1,7 +1,7 @@
 ---
 Title: Public Embedding Foundations for Browser and Device Applications
 Ticket: TINYIDP-EMBED-FOUND-001
-Status: active
+Status: complete
 Topics:
     - go
     - identity
@@ -11,13 +11,31 @@ Topics:
 DocType: index
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://.github/workflows/ci.yml
+      Note: CI execution of repository-specific analyzers
+    - Path: repo://Makefile
+      Note: Workspace-aware verification and analyzer entry point
+    - Path: repo://cmd/tinyidp-xapp/development_app.go
+      Note: Persistent public SQLite embedding consumer and seed reconciliation
+    - Path: repo://cmd/tinyidp-xapp/development_app_test.go
+      Note: Restart idempotency and credential drift regression
+    - Path: repo://docs/embedding-foundations.md
+      Note: Supported host composition and production handoff guide
+    - Path: repo://examples/embedded/main.go
+      Note: Runnable public API browser composition
+    - Path: repo://pkg/embeddedidp/example_test.go
+      Note: Executable external-package browser and device examples
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint/main.go
+      Note: Go analysis public embedding import guard
 ExternalSources: []
 Summary: Implement reusable public account provisioning, browser/device client bootstrap, signing-key provisioning, and bounded in-process issuer transport APIs for tiny-idp embedding hosts.
-LastUpdated: 2026-07-13T21:36:38.515723911-04:00
+LastUpdated: 2026-07-14T12:50:01.044606501-04:00
 WhatFor: Track design, implementation, verification, commits, and delivery for tiny-idp's shared application embedding foundations.
 WhenToUse: Start here when reviewing or resuming TINYIDP-EMBED-FOUND-001.
 ---
+
+
 
 # Public Embedding Foundations for Browser and Device Applications
 
@@ -43,9 +61,9 @@ bootstrap does not require a browser callback.
 
 ## Status
 
-Current status: **active**. Phase 0 design is complete. Implementation proceeds
-through public accounts, bootstrap, transport, consumer migration, and final
-assurance.
+Current status: **complete**. Public accounts, declarative bootstrap, bounded
+in-process transport, consumer migration, documentation, static import guards,
+release-quality verification, and delivery bookkeeping are complete.
 
 ## Topics
 

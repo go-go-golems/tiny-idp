@@ -16,9 +16,9 @@
 - [x] Phase 3: implement exact-match in-process issuer RoundTripper <!-- t:9wau -->
 - [x] Phase 3: test issuer matching, prefix handling, request bodies, response bounds, fallback, and cancellation <!-- t:zw90 -->
 - [x] Phase 3: migrate xapp OIDC discovery and token exchange to the tiny-idp public transport and commit <!-- t:kpra -->
-- [ ] Phase 4: publish package documentation and executable browser/device composition examples <!-- t:qymr -->
-- [ ] Phase 4: add static public-import guards and security regression tests <!-- t:5b64 -->
-- [ ] Phase 4: run gofmt, go test, race-selected tests, build, lint, and static analysis <!-- t:7tll -->
-- [ ] Phase 4: update diary, relationships, changelog, and implementation handoff <!-- t:sxsb -->
-- [ ] Phase 4: run docmgr doctor and resolve all findings <!-- t:arn3 -->
-- [ ] Phase 4: upload the final ticket bundle to reMarkable <!-- t:z9e6 -->
+- [x] Phase 4: publish package documentation and executable browser/device composition examples <!-- t:qymr -->
+- [x] Phase 4: add static public-import guards and security regression tests <!-- t:5b64 -->
+- [x] Phase 4: run gofmt, go test, race-selected tests, build, lint, and static analysis <!-- t:7tll -->
+- [x] Phase 4: update diary, relationships, changelog, and implementation handoff <!-- t:sxsb -->
+- [x] Phase 4: run docmgr doctor and resolve all findings <!-- t:arn3 -->
+- [x] Phase 4: upload the final ticket bundle to reMarkable <!-- t:z9e6 -->

@@ -1,7 +1,7 @@
 ---
 Title: Implementation Diary
 Ticket: TINYIDP-EMBED-FOUND-001
-Status: active
+Status: complete
 Topics:
     - go
     - identity
@@ -42,7 +42,7 @@ RelatedFiles:
       Note: Primary contract and phase design whose implementation this diary records.
 ExternalSources: []
 Summary: Chronological design, implementation, verification, commit, and delivery record for tiny-idp's public embedding foundations.
-LastUpdated: 2026-07-13T21:36:00-04:00
+LastUpdated: 2026-07-14T13:05:00-04:00
 WhatFor: Use this diary to review completed work and resume implementation without repeating investigation.
 WhenToUse: Read before working on TINYIDP-EMBED-FOUND-001 or changing the public account, bootstrap, or in-process issuer APIs.
 ---
@@ -623,11 +623,347 @@ Allowed path: issuer path exactly, or issuer path + "/" + descendant
 Fallback transport: none
 ```
 
-## Continuation point
+## Step 8: Record the Phase 3 checkpoint
 
-Phase 3 implementation and verification are complete but not yet committed. Next:
+The bounded transport and xapp migration described in Step 7 were committed as their own checkpoint before Phase 4 began.
 
-1. update Phase 3 tasks, relations, changelog, and doctor;
-2. commit the transport and xapp migration;
-3. add public composition documentation, import guards, and security regression checks;
-4. run the final release-quality verification matrix.
+### Commit
+
+```text
+3e17e79 Feat: add bounded in-process issuer transport
+```
+
+### What the checkpoint established
+
+- tiny-idp owns the in-process OIDC back-channel primitive used by its consumers.
+- The xapp no longer imports the go-go-goja OIDC transport implementation.
+- Exact issuer-origin and issuer-path containment, response bounds, request cancellation, and request-body ownership are executable contracts.
+- Browser composition can use a public provider and a public networkless transport without exposing listener startup ordering to the OIDC client.
+
+### Review instructions
+
+Review this commit independently from Phase 4. In particular, compare the negative URL cases in `pkg/embeddedidp/inprocess_transport_test.go` with the canonicalization and segment-boundary logic in `inprocess_transport.go`. Confirm that rejected requests cannot fall back to a network transport.
+
+## Step 9: Publish the composition guide and executable examples
+
+Phase 4 converted the implemented APIs into a supported consumer path. The work added an intern-oriented guide, runnable examples, external-package examples, and README navigation. It also converted the existing development example from a build-ignored internal prototype into a public-API consumer.
+
+### What I did
+
+- Added `docs/embedding-foundations.md`, a 488-line guide covering package ownership, construction order, browser and device client profiles, account lifecycle, idempotent bootstrap, in-process transport policy, lifecycle ordering, production controls, failure interpretation, and verification commands.
+- Made `examples/embedded/main.go` runnable with `go run ./examples/embedded`.
+- Replaced its internal memory store, internal key generation, and internal account construction with `pkg/sqlitestore`, `pkg/idpaccounts`, and `embeddedidp.Bootstrap`.
+- Added explicit HTTP read-header, read, write, and idle timeouts.
+- Added package-external executable examples for browser composition and device-client bootstrap in `pkg/embeddedidp/example_test.go`.
+- Linked the guide from the root README and expanded `examples/embedded/README.md` with run instructions, credentials, security scope, and device limitations.
+
+### Why
+
+An API is not production-usable merely because it compiles. A new host author needs one authoritative construction order and needs to know which resources it owns, which failures imply committed state, which callbacks must be exact, and which device behavior is preparation rather than a supported grant endpoint.
+
+The examples deliberately import the packages as an external consumer would. This turns documentation into a compile-time compatibility test and prevents examples from depending on repository-private packages.
+
+### Executable construction sequence
+
+```text
+open SQLite store
+  -> construct account service
+  -> create or reconcile account
+  -> reconcile clients and initial signing key
+  -> construct provider
+  -> construct exact-issuer in-process transport
+  -> construct relying-party OIDC client
+  -> mount provider handler
+  -> serve
+```
+
+### What worked
+
+- Both external examples execute as part of `go test ./pkg/embeddedidp` and produce stable output.
+- The browser example demonstrates discovery over the public in-process transport.
+- The device example demonstrates the intended no-redirect public client without claiming device-grant endpoint support.
+- Focused tests for `pkg/idpaccounts`, `pkg/embeddedidp`, `cmd/tinyidp-xapp`, and `examples/embedded` passed.
+
+### What warrants a second pair of eyes
+
+- The runnable example uses a documented development token secret and HTTP issuer. It is explicitly a development example, but reviewers should ensure no production prose implies those defaults are safe.
+- The guide says strict device authorization remains a gap. Keep that statement synchronized when the future device ticket is implemented.
+- The public account service currently exposes privileged claims in account creation. Host applications must place authorization in front of that operation.
+
+## Step 10: Add a static public-import boundary
+
+The existing Go AST/analysis multichecker gained an `embedding-imports` analyzer. It inspects application and example packages, permits an application's own nested `internal` packages, and rejects direct imports of tiny-idp's private identity implementation.
+
+### Intended invariant
+
+```pseudocode
+for each compiled package in cmd/tinyidp-xapp and examples:
+    if package is a synthetic test package:
+        continue
+    for each import:
+        if import is cmd/tinyidp-xapp/internal/...:
+            allow
+        else if import is tiny-idp/internal identity implementation:
+            report diagnostic
+```
+
+### What I did
+
+- Added the analyzer to the existing multichecker rather than creating a separate binary.
+- Added analysistest fixtures containing one allowed xapp-owned internal import and one forbidden root identity import.
+- Added analyzer directives to the public bootstrap and password-service declarations so the checker can reason about known public construction functions.
+- Added `make auditlint`, covering `pkg`, `internal`, `cmd/tinyidp-xapp`, and `examples`.
+- Added the target to `make verify` and changed CI to call the target.
+- Improved the older atomicity diagnostic to print classified call names.
+- Excluded `html/template.Template.Execute` from the older transaction heuristic because it is output rendering, not a persistence operation.
+
+### Analyzer debugging diary
+
+The first analyzer edit left the multichecker `main` function without its closing brace. The compiler reported a syntax error at the next declaration. I inspected the surrounding source, restored the closing brace, formatted the file, and reran the analyzer tests.
+
+The first Make target passed all package patterns to the multichecker in one invocation. In this workspace, `go/packages` reported that the combined patterns matched no packages even though individual patterns resolved normally. Adding `-buildvcs=false` addressed linked-worktree VCS stamping but not the multiple-pattern behavior. The robust target now invokes the analyzer once per package pattern and stops on the first error:
+
+```make
+for package in $(AUDITLINT_DIRS); do
+    GOFLAGS=-buildvcs=false go run $(AUDITLINT_PKG) "$$package" || exit $$?
+done
+```
+
+Running one pattern at a time exposed an older false positive in `endSession`: the atomicity analyzer grouped `RevokeSession` with `template.Execute` because it classified every method beginning with `Exec` as persistence. Excluding the fully qualified template method fixed the model while retaining database `Exec` detection. The diagnostic now includes call names so a future false positive is easier to understand.
+
+The import guard initially reported the synthetic `cmd/tinyidp-xapp.test` package. That package is generated by the Go test driver and is not application source, so the analyzer now skips package paths ending in `.test`.
+
+### What worked
+
+- `go test` for the auditlint package and fixtures passed.
+- `make auditlint` passed on the real repository.
+- CI and `make verify` now execute the same repository-specific analyzer command.
+- The fixture proves xapp may use its own implementation packages while root private identity imports fail.
+
+### What warrants a second pair of eyes
+
+- The deny list is deliberately narrow and identity-focused. If additional public packages replace private subsystems, extend the rule with a failing fixture first.
+- The analyzer uses package import paths rather than filesystem strings, which is correct for Go but means generated or alternate module paths need explicit tests.
+- The one-pattern loop is a compatibility measure for the current multichecker environment, not a semantic property of the analyzer.
+
+## Step 11: Migrate the xapp development host off private identity packages
+
+The new guard found a real violation: `cmd/tinyidp-xapp/development_app.go` still constructed an internal memory store and generated signing keys through `internal/keys`. This was the exact architectural regression the rule was intended to expose.
+
+### What I did
+
+- Replaced the development identity store with public SQLite at `StateRoot/identity/development.sqlite`.
+- Constructed `idpaccounts.Service` and used `embeddedidp.Bootstrap` for the xapp client and signing key.
+- Added the SQLite close function to application-owned cleanup.
+- Preserved partial-construction cleanup through a named `retErr` observed by a deferred closure.
+- Made development-user seeding idempotent across process restarts.
+- Added a persistence regression test that constructs and closes the application twice with the same credentials, then verifies a changed configured password fails with an explicit drift error.
+
+### Seed reconciliation behavior
+
+```pseudocode
+result = accounts.Create(declared user and password)
+if result succeeds:
+    return
+if error is not duplicate:
+    return error
+
+stored = store.GetUserByLogin(login)
+if stable identity fields differ:
+    return configuration drift
+auth = accounts.AuthenticatePassword(login, configured password)
+if auth fails or subject differs:
+    return credential drift
+return success
+```
+
+### Why
+
+Blindly accepting `ErrDuplicate` would let a configuration change silently retain an old password or identity. Overwriting an existing credential during startup would be worse: it would make restarts an implicit password-reset mechanism. Reconciliation verifies the existing state and refuses drift.
+
+### What worked
+
+- Focused xapp tests passed.
+- The new restart test passed for same-state reconciliation and expected credential drift.
+- The public-import analyzer passed after migration.
+- No compatibility adapter or private-package exception was introduced.
+
+### What was tricky to build
+
+The host must close a store if construction fails before ownership transfers to the returned application, but must close it exactly once after successful construction. The named error result is intentional: a deferred cleanup closure can observe whether initialization failed. `golangci-lint` flags named returns by default, so the two constructors now carry narrowly justified `nonamedreturns` directives.
+
+### What warrants a second pair of eyes
+
+- Confirm a persistent development SQLite database is the desired local experience. It is necessary for realistic restart behavior, but it differs from the former ephemeral identity state.
+- Review the stable identity fields used in reconciliation and decide whether email/name changes should remain drift or become an explicit development migration operation.
+- Confirm state-root permissions and backup policy include the new development identity database.
+
+## Step 12: Align repository tooling with the workspace
+
+The user explicitly confirmed that the repository should use the top-level `go.work` normally. The Makefile still forced `GOWORK=off` for build, test, lint, vulnerability, generation, and analyzer commands. I removed those overrides from repository operations while retaining them for isolated tool installation and dependency-version lookup.
+
+### Why tool installation remains isolated
+
+Pinned tool installation should resolve the requested tool module, not replace it with a workspace module. Commands such as `go install tool@version` and the standalone Glazed version lookup therefore retain `GOWORK=off`. Application compilation, tests, analysis, and generation now use the workspace.
+
+### What didn't work
+
+The first sandboxed `make lint` attempt tried to install the pinned Glazed analyzer and failed DNS resolution because network access was restricted:
+
+```text
+Get "https://proxy.golang.org/...": dial udp 127.0.0.53:53: socket: operation not permitted
+```
+
+The same command with approved network access installed the pinned helper and completed with zero lint issues.
+
+The initial sandboxed `make verify` could not read linked-worktree VCS metadata and failed Go build stamping:
+
+```text
+error obtaining VCS status: exit status 128
+Use -buildvcs=false to disable VCS stamping.
+```
+
+Running the repository gate with normal linked-worktree access resolved the environmental failure. The analyzer Make target itself retains `-buildvcs=false` because analysis does not consume VCS stamping and this makes its per-package invocations stable.
+
+### Logging generation
+
+`make logcopter-check` found generated package loggers missing from several packages. I ran `make logcopter-generate`, which also rebuilt the embedded frontend and validated/regenerated the xgoja plan. I reviewed the result: the only repository changes were standard generated `logcopter.go` files. A second `make logcopter-check` passed.
+
+## Step 13: Run the release-quality verification matrix
+
+Phase 4 was validated at several levels rather than treating one green test command as complete evidence.
+
+### Commands and results
+
+```bash
+go test ./pkg/idpaccounts ./pkg/embeddedidp ./cmd/tinyidp-xapp ./examples/embedded
+# PASS
+
+go test -race ./pkg/idpaccounts ./pkg/embeddedidp ./cmd/tinyidp-xapp
+# PASS
+
+make lint
+# golangci-lint: 0 issues
+# glazed analyzer: PASS
+# idpui analyzer: PASS
+
+make auditlint
+# PASS for pkg, internal, xapp, and examples
+
+make fmt-check
+# PASS
+
+make logcopter-check
+# PASS after regeneration
+
+make verify
+# build, complete tests, lint, auditlint, and govulncheck PASS
+
+git diff --check
+# PASS
+```
+
+### Lint fixes found by the gate
+
+The first source-complete lint pass reported four concrete categories:
+
+- unchecked temporary-directory cleanup in executable examples;
+- a missing explicit `LoginReasonSessionMissing` switch arm;
+- intentional named returns in development construction;
+- the same intentional named return in initialized production construction.
+
+Cleanup now explicitly ignores the best-effort removal error in a closure, the switch has an explicit session-missing arm, and the constructors have narrow explanations for their cleanup-driven named result.
+
+### Vulnerability gate and workspace toolchain
+
+The first `make verify` reached `govulncheck` and reported reachable `GO-2026-5856` in `crypto/tls`, fixed in Go 1.26.5. The tiny-idp module and CI were already pinned to 1.26.5, but the top-level workspace declared Go 1.26.4, which selected the vulnerable standard library despite the module toolchain directive.
+
+I updated the unversioned workspace file `/home/manuel/workspaces/2026-07-07/prod-tiny-idp/go.work` from `go 1.26.4` to `go 1.26.5`. `go version` then reported `go1.26.5`, and the repeat vulnerability scan reported:
+
+```text
+No vulnerabilities found.
+Your code is affected by 0 vulnerabilities.
+```
+
+This workspace file is outside the tiny-idp Git repository and therefore is not part of commit `519a4cf`; it is nevertheless required for faithful local verification.
+
+### Gosec triage
+
+A repository-wide `gosec ./...` pass found 41 diagnostics, including deliberate analyzer fixtures and research scripts. A second production-source-only pass over `./cmd/... ./internal/... ./pkg/...` found 28 diagnostics. These are a pre-existing review backlog, not Phase 4 regressions. Categories include:
+
+- bounded counter and parsed-length conversions (`G115`);
+- configurable development cookie security that the scanner cannot infer (`G124`);
+- caller-selected administrative file paths (`G304`);
+- validated OAuth redirect flows that require manual taint review (`G710`);
+- two low-confidence hardcoded-credential string false positives (`G101`);
+- a directory permission misclassification (`G302` on mode `0700`).
+
+The structured production result was saved temporarily at `/tmp/tinyidp-gosec.json` for analysis. This ticket does not suppress or bulk-edit those findings. They should be reviewed rule by rule in the production-hardening backlog; the important result here is that the new public import boundary, examples, and xapp migration introduced no new scanner category.
+
+### Live HTTP smoke in tmux
+
+Following the repository process instructions, I started `go run ./examples/embedded` in a disposable tmux session, captured its startup log, and interacted with the live server.
+
+The discovery request returned HTTP 200 and advertised the expected issuer, authorization, token, userinfo, JWKS, end-session, code response, authorization-code and refresh grants, and S256 PKCE metadata.
+
+The first authorization request intentionally used `state=smoke`. The server returned an OAuth error redirect explaining that state must be at least eight characters, demonstrating strict request validation. Repeating with `state=smoke-state-123456`, a registered exact callback, and an S256 challenge returned HTTP 200 after the internal interaction redirect. The rendered page contained:
+
+```text
+Sign in and approve access
+name="interaction"
+name="csrf_token"
+```
+
+I stopped the listener with `lsof-who -p 5556 -k`. The process had created three untracked SQLite files in the repository root because `go -C` changes the executed program's working directory; I removed those known smoke artifacts and verified no session remained.
+
+## Step 14: Commit the Phase 4 implementation
+
+I staged an explicit file list and reviewed name status, diff statistics, staged whitespace, and repository status. The two unrelated OIDF source directories were not staged. The implementation checkpoint is:
+
+```text
+519a4cf Feat: enforce public embedding boundary
+```
+
+The commit contains the guide and examples, import analyzer and fixture, xapp public-store migration and restart test, CI/Make wiring, lint fixes, and generated package loggers. It does not contain this ticket's final diary/bookkeeping so that the engineering diff remains independently reviewable.
+
+### Review order
+
+1. Read `docs/embedding-foundations.md` for the intended consumer contract.
+2. Review `pkg/embeddedidp/example_test.go` and `examples/embedded/main.go` as external consumers.
+3. Review `embeddingImportAnalyzer` and its allowed/forbidden fixture pair.
+4. Review the development SQLite ownership and seed reconciliation in `development_app.go` together with the restart test.
+5. Review Makefile/CI parity and generated logging files.
+6. Re-run `make verify` using Go 1.26.5 or newer.
+
+## Step 15: Finalize docmgr state and prepare delivery
+
+The final bookkeeping pass checked all six Phase 4 tasks, related eight implementation and assurance files to the ticket index using absolute source paths, appended the Phase 4 changelog evidence, and ran strict validation:
+
+```bash
+docmgr doctor --ticket TINYIDP-EMBED-FOUND-001 --fail-on warning
+```
+
+Result:
+
+```text
+Doctor Report (1 findings)
+TINYIDP-EMBED-FOUND-001
+All checks passed
+```
+
+After the doctor pass, task `arn3` was checked. The delivery task was checked immediately before preparing the committed bundle; if the single upload command fails, this state must be reverted and the ticket reopened rather than claiming a delivery that did not happen.
+
+The ticket was closed with `docmgr ticket close`, changing its status from `active` to `complete` and updating its changelog. The bundle contains every Markdown document in the ticket:
+
+1. `README.md`;
+2. `index.md`;
+3. the 1,311-line analysis/design/implementation guide;
+4. the detailed implementation diary;
+5. `tasks.md` with all 20 tasks checked;
+6. `changelog.md`.
+
+The planned delivery is one non-interactive `remarquee upload bundle` call named `TINYIDP EMBED FOUND 001 Public Embedding Foundations`, with a generated table of contents and destination `/ai/2026/07/14/TINYIDP-EMBED-FOUND-001`. Per the upload workflow, no cloud listing or status probe is performed before or after the call.
+
+## Final state
+
+The ticket is complete. The reusable public embedding foundations are implemented, documented, statically guarded, exercised by external-package examples, consumed by the xapp, verified against the patched Go toolchain, and committed in reviewable phases. The strict provider's device authorization grant endpoint remains intentionally out of scope and is the prerequisite for the later third example.
