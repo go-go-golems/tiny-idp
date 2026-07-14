@@ -130,6 +130,8 @@ func TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService(t *testi
 	}
 	app := newMessageApp(appStore, nil, accounts, nil, false)
 	app.publicOrigin = registrationTestOrigin
+	audit := idp.NewMemorySink()
+	app.audit = audit
 	noPreSession := httptest.NewRecorder()
 	app.ServeHTTP(noPreSession, newAccountRequest(t, createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}, "", nil))
 	if noPreSession.Code != http.StatusForbidden {
@@ -148,6 +150,16 @@ func TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService(t *testi
 	for _, setCookie := range created.Result().Cookies() {
 		if setCookie.Name == appCookieName {
 			t.Fatal("registration unexpectedly created an application session")
+		}
+	}
+	events := audit.Events()
+	if len(events) != 2 || events[0].Name != "account.self_registration" || events[0].Result != "rejected" || events[0].Reason != "csrf_rejected" ||
+		events[1].Name != "account.self_registration" || events[1].Result != "accepted" || events[1].Reason != "" || events[1].Subject == "" {
+		t.Fatalf("registration audit events = %#v", events)
+	}
+	for _, event := range events {
+		if len(event.Fields) != 0 {
+			t.Fatalf("registration audit fields leak request data: %#v", event)
 		}
 	}
 }
@@ -304,9 +316,6 @@ func TestBrowserLoginCompletesAgainstEmbeddedProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := accounts.Create(ctx, idpaccounts.CreateRequest{Login: "alice", Password: []byte("correct horse battery staple"), Name: "Alice"}); err != nil {
-		t.Fatal(err)
-	}
 	issuer := baseURL + issuerPath
 	if _, err := embeddedidp.Bootstrap(ctx, identityStore, embeddedidp.BootstrapConfig{Mode: embeddedidp.DevMode,
 		Clients:      []embeddedidp.ClientSpec{embeddedidp.BrowserClient(clientID, []string{baseURL + callbackPath}, []string{baseURL + "/"}, []string{"openid", "profile"})},
@@ -342,6 +351,39 @@ func TestBrowserLoginCompletesAgainstEmbeddedProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	browser := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	registrationResponse, err := browser.Get(server.URL + "/api/registration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registration struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(registrationResponse.Body).Decode(&registration); err != nil {
+		registrationResponse.Body.Close()
+		t.Fatal(err)
+	}
+	registrationResponse.Body.Close()
+	registrationBody, err := json.Marshal(createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "correct horse battery staple 2026", PasswordConfirmation: "correct horse battery staple 2026"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrationRequest, err := http.NewRequest(http.MethodPost, server.URL+"/api/accounts", bytes.NewReader(registrationBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrationRequest.Header.Set("Content-Type", "application/json")
+	registrationRequest.Header.Set("Origin", server.URL)
+	registrationRequest.Header.Set("X-CSRF-Token", registration.CSRFToken)
+	registrationResponse, err = browser.Do(registrationRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registrationResponse.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(registrationResponse.Body)
+		registrationResponse.Body.Close()
+		t.Fatalf("registration status = %d: %s", registrationResponse.StatusCode, body)
+	}
+	registrationResponse.Body.Close()
 	loginResponse, err := browser.Get(server.URL + "/auth/login?return_to=/messages")
 	if err != nil {
 		t.Fatal(err)
@@ -367,7 +409,7 @@ func TestBrowserLoginCompletesAgainstEmbeddedProvider(t *testing.T) {
 	if pageResponse.StatusCode != http.StatusOK {
 		t.Fatalf("authorize page status = %d: %s", pageResponse.StatusCode, page)
 	}
-	form := url.Values{"login": {"alice"}, "password": {"correct horse battery staple"}, "action": {"approve"}}
+	form := url.Values{"login": {"alice"}, "password": {"correct horse battery staple 2026"}, "action": {"approve"}}
 	form.Set("csrf_token", hiddenFormValue(t, page, "csrf_token"))
 	form.Set("interaction", hiddenFormValue(t, page, "interaction"))
 	postResponse, err := browser.PostForm(issuer+"/authorize", form)

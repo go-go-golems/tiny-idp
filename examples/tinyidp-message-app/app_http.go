@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -33,6 +34,7 @@ type messageApp struct {
 	publicOrigin        string
 	addressResolver     idp.ClientAddressResolver
 	registrationLimiter idp.RateLimiter
+	audit               idp.Sink
 	cookieSecure        bool
 	now                 func() time.Time
 	mux                 *http.ServeMux
@@ -47,7 +49,7 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 	}
 	app := &messageApp{store: store, oidc: oidcClient, accounts: accounts, provider: provider, publicOrigin: publicOrigin,
 		addressResolver: idp.DirectClientAddressResolver{}, registrationLimiter: idp.NewFixedWindowRateLimiter(5, time.Minute),
-		cookieSecure: cookieSecure, now: time.Now, mux: http.NewServeMux()}
+		audit: idp.NoopSink{}, cookieSecure: cookieSecure, now: time.Now, mux: http.NewServeMux()}
 	app.mux.HandleFunc("GET /auth/login", app.handleLogin)
 	app.mux.HandleFunc("GET /auth/callback", app.handleCallback)
 	app.mux.HandleFunc("GET /api/session", app.handleSession)
@@ -140,45 +142,60 @@ type createAccountRequest struct {
 
 func (a *messageApp) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	if a.accounts == nil {
+		a.recordRegistration(r.Context(), "rejected", "unavailable", "")
 		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	if !a.isSameOriginRegistrationRequest(r) {
+		a.recordRegistration(r.Context(), "rejected", "origin_rejected", "")
 		http.Error(w, "invalid registration request", http.StatusForbidden)
 		return
 	}
 	attempt, ok := a.currentRegistrationAttempt(r)
 	if !ok || !csrfEqual(r.Header.Get("X-CSRF-Token"), attempt.CSRFSecret) {
+		a.recordRegistration(r.Context(), "rejected", "csrf_rejected", "")
 		http.Error(w, "invalid registration request", http.StatusForbidden)
 		return
 	}
 	request, err := decodeCreateAccountRequest(w, r)
 	if err != nil || strings.TrimSpace(request.Login) == "" || strings.TrimSpace(request.DisplayName) == "" || request.Password != request.PasswordConfirmation {
+		a.recordRegistration(r.Context(), "rejected", "invalid_request", "")
 		writeAccountCreationError(w, http.StatusUnprocessableEntity)
 		return
 	}
 	if !a.allowRegistration(r, request.Login) {
+		a.recordRegistration(r.Context(), "rejected", "rate_limited", "")
 		w.Header().Set("Retry-After", strconv.Itoa(registrationRetryAfter))
 		writeAccountCreationError(w, http.StatusTooManyRequests)
 		return
 	}
 	password := []byte(request.Password)
 	defer clearBytes(password)
-	_, err = a.accounts.Create(r.Context(), idpaccounts.CreateRequest{
+	user, err := a.accounts.Create(r.Context(), idpaccounts.CreateRequest{
 		Login: request.Login, Name: request.DisplayName, PreferredUsername: request.Login, Password: password,
 	})
 	if err != nil {
 		if errors.Is(err, idpstore.ErrDuplicate) || errors.Is(err, idp.ErrPasswordRejected) {
+			a.recordRegistration(r.Context(), "rejected", "account_rejected", "")
 			writeAccountCreationError(w, http.StatusUnprocessableEntity)
 			return
 		}
+		a.recordRegistration(r.Context(), "rejected", "unavailable", "")
 		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	a.recordRegistration(r.Context(), "accepted", "", user.Sub)
 	http.SetCookie(w, &http.Cookie{Name: registerCookie, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: a.cookieSecure})
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]string{"next": "/auth/login"})
+}
+
+func (a *messageApp) recordRegistration(ctx context.Context, result, reason, subject string) {
+	if a.audit == nil {
+		return
+	}
+	_ = a.audit.Emit(ctx, idp.Event{Time: a.now().UTC(), Name: "account.self_registration", Subject: subject, Result: result, Reason: reason})
 }
 
 func (a *messageApp) isSameOriginRegistrationRequest(r *http.Request) bool {
