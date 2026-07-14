@@ -49,3 +49,13 @@ Rendered and uploaded the ticket index, design, diary, tasks, and changelog as a
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/design-doc/01-embedded-tiny-idp-sqlite-message-application-analysis-design-and-implementation-guide.md — Primary document in the uploaded design bundle.
+
+## 2026-07-14 - Phase 0 contract reconciliation
+
+Reconciled the original plan with landed embedding foundations, added 36 implementation tasks, accepted the recommended design decisions, and added an executable external-import and route contract.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/contracts.go — Frozen application contract
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/reference/02-implementation-contract-and-task-map.md — Accepted decisions and task reconciliation
+

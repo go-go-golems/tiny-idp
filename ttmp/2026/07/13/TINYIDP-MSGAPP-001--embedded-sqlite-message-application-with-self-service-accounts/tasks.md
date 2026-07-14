@@ -12,3 +12,39 @@
 - [x] Write phased implementation, testing, security, and operational plans <!-- t:1dbd -->
 - [x] Validate ticket relationships, frontmatter, tasks, and diary with docmgr doctor <!-- t:ko9r -->
 - [x] Upload design and diary bundle to reMarkable <!-- t:toe2 -->
+- [x] Phase 0: Freeze example path, binary name, route table, state layout, and public PKCE profile <!-- t:u08a -->
+- [x] Phase 0: Record accepted decisions for sessions, registration errors, append-only messages, and transport isolation <!-- t:11gn -->
+- [x] Phase 0: Add external-import guard and named security invariant test inventory <!-- t:b5kk -->
+- [x] Phase 1 inherited: Verify public idpaccounts creation, authentication, password replacement, audit, rollback, and work bounds <!-- t:xfg9 -->
+- [x] Phase 2 inherited: Verify conservative Bootstrap and exact in-process issuer transport against MSGAPP requirements <!-- t:5yit -->
+- [ ] Phase 3: Create message-app state paths, manifest validation, owner-only secrets, and atomic writes <!-- t:sgv1 -->
+- [ ] Phase 3: Implement application SQLite opening, WAL pragmas, schema ledger, checksum, and migrations <!-- t:mhk9 -->
+- [ ] Phase 3: Implement durable one-time OIDC login attempts with atomic consume <!-- t:x6kf -->
+- [ ] Phase 3: Implement hashed application sessions with CSRF material, revocation, and expiry <!-- t:8yok -->
+- [ ] Phase 3: Implement durable registration attempts with atomic consume <!-- t:j891 -->
+- [ ] Phase 3: Implement message insert, stable cursor pagination, and append-only ownership model <!-- t:flqi -->
+- [ ] Phase 3: Add migration, permission, restart, concurrency, cleanup, and repository tests <!-- t:vuy8 -->
+- [ ] Phase 4: Build OIDC discovery and verifier over NewInProcessIssuerTransport <!-- t:npwn -->
+- [ ] Phase 4: Implement begin-login with local return path, state, nonce, and PKCE S256 <!-- t:tjzi -->
+- [ ] Phase 4: Implement one-time callback, code exchange, ID-token verification, and nonce validation <!-- t:nd5u -->
+- [ ] Phase 4: Implement app-session middleware, session API, local logout, and coordinated IdP logout <!-- t:d2ns -->
+- [ ] Phase 4: Add callback replay, mismatch, expiry, subject, and open-redirect tests <!-- t:xkz3 -->
+- [ ] Phase 5: Implement registration pre-session and anonymous CSRF endpoint <!-- t:7606 -->
+- [ ] Phase 5: Implement strict bounded account creation JSON and password-buffer clearing <!-- t:jhes -->
+- [ ] Phase 5: Add Origin, Fetch Metadata, address, login-key, and password-work abuse controls <!-- t:3we3 -->
+- [ ] Phase 5: Add generic registration errors, fixed audit reasons, and successful-login tests <!-- t:z9he -->
+- [ ] Phase 6: Implement public cursor-paginated message reads <!-- t:oq2h -->
+- [ ] Phase 6: Implement authenticated CSRF-protected message creation with subject derived from session <!-- t:h3gp -->
+- [ ] Phase 6: Add normalization, bounds, spoofing, authorization, and concurrent insertion tests <!-- t:drrc -->
+- [ ] Phase 7: Scaffold pnpm React TypeScript Redux Toolkit RTK Query and Bootstrap frontend <!-- t:g584 -->
+- [ ] Phase 7: Implement session, registration, feed, composer, logout, loading, empty, and error states <!-- t:43iv -->
+- [ ] Phase 7: Build deterministic assets and embed only below /static/app/ <!-- t:lytc -->
+- [ ] Phase 7: Implement compatible styled tiny-idp interaction renderer under /static/tinyidp/ <!-- t:zsw6 -->
+- [ ] Phase 7: Add component, static route, CSP, literal-message, keyboard, reflow, and accessibility tests <!-- t:4ydv -->
+- [ ] Phase 8: Implement Glazed init command without requiring an initial user <!-- t:jb5w -->
+- [ ] Phase 8: Implement Glazed serve command with zerolog and --log-level <!-- t:t32b -->
+- [ ] Phase 8: Implement Glazed doctor command with structured non-secret checks <!-- t:h7zu -->
+- [ ] Phase 8: Add errgroup lifecycle, startup maintenance, health, readiness, and graceful shutdown <!-- t:zj98 -->
+- [ ] Phase 8: Add backup, restore, upgrade, rollback, and operator documentation <!-- t:ohd8 -->
+- [ ] Phase 8: Run full, race, lint, analyzer, fuzz-smoke, tmux, and browser canary gates <!-- t:tsjj -->
+- [ ] Phase 8: Complete implementation diary, docmgr audit, and final delivery report <!-- t:h3f8 -->

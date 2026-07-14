@@ -12,6 +12,10 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-message-app/contracts.go
+      Note: Phase 0 executable route, cookie, and invariant contract
+    - Path: repo://examples/tinyidp-message-app/contracts_test.go
+      Note: Public consumer import-boundary enforcement
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/design-doc/01-embedded-tiny-idp-sqlite-message-application-analysis-design-and-implementation-guide.md
       Note: Primary design artifact whose evidence and construction are recorded in this diary.
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/sources/01-go-oidc-package.md
@@ -34,6 +38,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -667,6 +672,115 @@ Table of contents depth: 2
 Upload exit status: 0
 ```
 
+## Step 7: Reconcile the implementation plan and freeze the contract
+
+Implementation resumed after the public embedding-foundations ticket had landed.
+The first step compared the 2026-07-13 design against current source and Git
+history. This established that the originally proposed account, bootstrap, and
+in-process transport work already exists and is tested. Reimplementing those
+phases would create duplication and violate the repository's no-adapter rule.
+
+The application contract is now executable in
+`examples/tinyidp-message-app/contracts.go`. It fixes the example path, client
+ID, issuer mount, application routes, cookie names, and named security-invariant
+test inventory. A Go AST import-boundary test prevents the example from using
+tiny-idp internal packages merely because it shares the module.
+
+### What I did
+
+- Read the complete diary template and existing ticket diary before editing.
+- Read the phased plan and all open questions in Sections 29 through 34.
+- Inspected current `pkg/idpaccounts`, `embeddedidp.Bootstrap`, and
+  `NewInProcessIssuerTransport` implementations and their Git commits.
+- Added 36 phase-tagged implementation tasks to `tasks.md`.
+- Created `reference/02-implementation-contract-and-task-map.md`.
+- Added `contracts.go` and `contracts_test.go` in the new example directory.
+- Accepted the recommended design defaults, including public PKCE, absolute
+  eight-hour app sessions, append-only messages, and a no-fallback transport.
+
+Commands:
+
+```bash
+rg --files examples cmd pkg | rg 'message|idpaccounts|embeddedidp/(bootstrap|inprocess)'
+git log --oneline -12
+gofmt -w examples/tinyidp-message-app/contracts.go \
+  examples/tinyidp-message-app/contracts_test.go
+go test ./examples/tinyidp-message-app ./pkg/idpaccounts ./pkg/embeddedidp
+```
+
+Result:
+
+```text
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app
+ok github.com/manuel/tinyidp/pkg/idpaccounts
+ok github.com/manuel/tinyidp/pkg/embeddedidp
+```
+
+### Why
+
+- Implementation tasks must be independently checkable over multiple sessions.
+- Public foundation work is a prerequisite, not application-owned code.
+- Freezing names and routes before schema work prevents backend, frontend, and
+  documentation from drifting independently.
+- The AST guard makes copyability a continuously tested property.
+
+### What worked
+
+- The focused public-package suites passed without modification.
+- A package containing only contract source and tests compiles normally under
+  `go test`; the application entry point can be added later.
+- The new tasks map directly to the eight design phases.
+
+### What didn't work
+
+- The first broad ticket read exceeded the tool output limit and was truncated.
+  I repeated the read using line counts, section headings, and targeted chunks,
+  including the complete phased plan and continuation point.
+
+### What I learned
+
+- Commits `edd1479`, `7481ee1`, and `3e17e79` satisfy the original Phase 1 and
+  Phase 2 architectural gaps.
+- The previously completed `examples/embedded` relying party is useful protocol
+  evidence, but MSGAPP still needs durable login attempts and app sessions.
+- The ticket's original ten tasks describe research delivery only, so phase
+  implementation could not be tracked precisely until now.
+
+### What was tricky to build
+
+The main risk was confusing chronological ticket ownership with code ownership.
+The foundational APIs were motivated by MSGAPP but implemented in a later,
+shared ticket. The correct action is to verify and cite those commits, not copy
+their behavior into the example or mark them as new MSGAPP code.
+
+### What warrants a second pair of eyes
+
+- Confirm `examples/tinyidp-message-app` is the desired long-term example name.
+- Confirm append-only messages remain the preferred first release.
+- Review the public PKCE choice before a future confidential-client variant is
+  introduced.
+
+### What should be done in the future
+
+- Each invariant name in `securityInvariantTests` must acquire an actual test as
+  its owning phase lands.
+- Keep the no-internal-import test even after the example is moved or copied.
+
+### Code review instructions
+
+- Start at `reference/02-implementation-contract-and-task-map.md`.
+- Review constants and inventories in `examples/tinyidp-message-app/contracts.go`.
+- Review AST enforcement in `contracts_test.go`.
+- Run the focused test command above.
+
+### Technical details
+
+The next unchecked task is Phase 3 state-root and manifest implementation,
+followed by the application SQLite migration ledger and repositories.
+
 ## Continuation point
 
-The research and design turn is complete. Implementation should resume at Phase 0 in the primary guide, resolve the open API decisions, and then begin Phase 1 with `pkg/idpaccounts`. Every implementation task should add a new diary step with commit hashes, exact test commands, failures, and review instructions.
+Phase 0 and the inherited public foundations are reconciled. Continue with
+Phase 3 in `examples/tinyidp-message-app`: state paths, owner-only secrets,
+application SQLite migrations, login attempts, sessions, registration attempts,
+messages, cleanup, restart, and concurrency tests.
