@@ -964,6 +964,16 @@ The ticket was closed with `docmgr ticket close`, changing its status from `acti
 
 The planned delivery is one non-interactive `remarquee upload bundle` call named `TINYIDP EMBED FOUND 001 Public Embedding Foundations`, with a generated table of contents and destination `/ai/2026/07/14/TINYIDP-EMBED-FOUND-001`. Per the upload workflow, no cloud listing or status probe is performed before or after the call.
 
+### Post-delivery receipt
+
+The single upload call completed successfully after documentation commit `772d86d` and returned:
+
+```text
+OK: uploaded TINYIDP EMBED FOUND 001 Public Embedding Foundations.pdf -> /ai/2026/07/14/TINYIDP-EMBED-FOUND-001
+```
+
+No cloud status or listing command was run. This receipt is a post-delivery local audit note; the uploaded PDF is the validated six-document state from commit `772d86d`.
+
 ## Final state
 
 The ticket is complete. The reusable public embedding foundations are implemented, documented, statically guarded, exercised by external-package examples, consumed by the xapp, verified against the patched Go toolchain, and committed in reviewable phases. The strict provider's device authorization grant endpoint remains intentionally out of scope and is the prerequisite for the later third example.
