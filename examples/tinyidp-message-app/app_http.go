@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -8,6 +10,8 @@ import (
 	"strings"
 	"time"
 )
+
+const registrationAttemptLifetime = 10 * time.Minute
 
 type messageApp struct {
 	store        *appStore
@@ -25,6 +29,7 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, provider http.Handle
 	app.mux.HandleFunc("GET /auth/login", app.handleLogin)
 	app.mux.HandleFunc("GET /auth/callback", app.handleCallback)
 	app.mux.HandleFunc("GET /api/session", app.handleSession)
+	app.mux.HandleFunc("GET /api/registration", app.handleRegistration)
 	app.mux.HandleFunc("POST /auth/logout", app.handleLogout)
 	if provider != nil {
 		app.mux.Handle("/idp/", provider)
@@ -77,6 +82,30 @@ func (a *messageApp) handleSession(w http.ResponseWriter, r *http.Request) {
 		"authenticated": true, "subject": session.Subject, "displayName": session.DisplayName,
 		"csrfToken": base64.RawURLEncoding.EncodeToString(session.CSRFSecret),
 	})
+}
+
+func (a *messageApp) handleRegistration(w http.ResponseWriter, r *http.Request) {
+	token, err := randomURLToken(32)
+	if err != nil {
+		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	csrfSecret := make([]byte, sha256.Size)
+	if _, err := rand.Read(csrfSecret); err != nil {
+		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	now := a.now().UTC()
+	if err := a.store.createRegistrationAttempt(r.Context(), token, registrationAttempt{
+		CSRFSecret: csrfSecret, CreatedAt: now, ExpiresAt: now.Add(registrationAttemptLifetime),
+	}); err != nil {
+		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: registerCookie, Value: token, Path: "/", HttpOnly: true,
+		Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(registrationAttemptLifetime.Seconds())})
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"csrfToken": base64.RawURLEncoding.EncodeToString(csrfSecret)})
 }
 
 func (a *messageApp) handleLogout(w http.ResponseWriter, r *http.Request) {

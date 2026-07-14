@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -67,6 +68,44 @@ func TestLoginRejectsAmbiguousReturnTo(t *testing.T) {
 	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/auth/login?return_to=//attacker.test", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("login status = %d", response.Code)
+	}
+}
+
+func TestRegistrationEndpointCreatesOneTimePreSession(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	app := newMessageApp(store, nil, nil, false)
+	app.now = func() time.Time { return now }
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/registration", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("registration status = %d: %s", response.Code, response.Body.String())
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != registerCookie || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].Value == "" {
+		t.Fatalf("registration cookie = %#v", cookies)
+	}
+	var payload struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	csrf, err := base64.RawURLEncoding.DecodeString(payload.CSRFToken)
+	if err != nil || len(csrf) != sha256.Size {
+		t.Fatalf("registration CSRF = %q, %v", payload.CSRFToken, err)
+	}
+	attempt, err := store.consumeRegistrationAttempt(ctx, cookies[0].Value, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(attempt.CSRFSecret, csrf) || !attempt.ExpiresAt.Equal(now.Add(registrationAttemptLifetime)) {
+		t.Fatalf("stored registration attempt = %#v", attempt)
 	}
 }
 
