@@ -12,8 +12,20 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://internal/fositeadapter/account_chooser.go
+      Note: Opt-in privacy and capacity configuration.
+    - Path: repo://internal/fositeadapter/account_chooser_test.go
+      Note: Deduplication and capacity lifecycle test.
+    - Path: repo://internal/fositeadapter/end_session.go
+      Note: Atomic provider logout of active session and context.
+    - Path: repo://internal/fositeadapter/session.go
+      Note: Atomic context/session/membership lifecycle.
     - Path: repo://internal/store/memory/store.go
       Note: Reference in-memory atomic activation implementation.
+    - Path: repo://pkg/embeddedidp/options.go
+      Note: Public embedding configuration validation.
+    - Path: repo://pkg/embeddedidp/provider.go
+      Note: Public configuration forwarding.
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Defines atomic activation and lifecycle store contract.
     - Path: repo://pkg/idpstore/testsuite.go
@@ -28,12 +40,15 @@ RelatedFiles:
       Note: Durable SQLite activation implementation.
     - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/01-store-contract.sh
       Note: Repeatable focused store test command.
+    - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/02-browser-context-lifecycle.sh
+      Note: Repeatable lifecycle validation.
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-14T17:53:02.926941303-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 # Investigation Diary
@@ -281,4 +296,153 @@ active := clone(sourceSession)
 active.IDHash = newRandomHandleHash
 active.CreatedAt, active.LastSeenAt = now, now
 CreateSession(active) // inside the same transaction
+```
+
+## Step 3: Add opt-in browser-context lifecycle and global logout
+
+The persistence layer is now exercised by the provider. Hosts can opt in to
+remembering password-authenticated accounts, must supply a label policy, and
+receive a separate HttpOnly browser-context cookie. A repeat login refreshes
+that account’s membership; a bounded context removes the oldest membership,
+not its underlying session. This makes the pending chooser safe to build on
+without changing default single-session behavior.
+
+RP-Initiated Logout now treats the browser context as part of global provider
+logout. In one store transaction it revokes the active session and context,
+then clears session, CSRF, and context cookies. The Message Desk’s paused
+application-specific logout changes remain deliberately outside this commit:
+an RP deciding whether to end its own session or perform provider-wide logout
+is a host UX decision.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Continue the implementation after the durable
+store contract, keeping each behavior increment auditable and testable.
+
+**Inferred user intent:** Make multi-account support a provider capability
+with explicit privacy controls and correct logout semantics before exposing a
+chooser to applications.
+
+**Commit (code):** `7b19d58014e60a92fa3a7d49a9de62a374e9dd7c` — "feat(idp): add remembered browser contexts"
+
+### What I did
+
+- Added the opt-in `AccountChooserConfig` to the Fosite adapter and public
+  `embeddedidp.Options`, with context-cookie naming, TTL, bounded account
+  count, optional remembering, and a host label callback.
+- Required an explicit non-empty, bounded label policy when password logins
+  are remembered; kept the whole feature disabled by default.
+- Changed password-session creation to create/reuse a context and attach a
+  remembered membership atomically with the new active session.
+- Made remembered entries deterministic newest-first in memory to match
+  SQLite; refreshes remove previous membership for the same subject, and a
+  full list removes only the oldest membership.
+- Extended end-session processing to atomically revoke the active browser
+  session and context, then clear the context cookie.
+- Added lifecycle tests and `scripts/02-browser-context-lifecycle.sh`.
+
+### Why
+
+- Remembered labels are privacy-sensitive. A host must actively choose their
+  content rather than tiny-idp accidentally displaying login names or email.
+- The browser context must not be a second active session. It is a selector
+  container, and its cookie is cleared/revoked when provider logout occurs.
+- A “remove account” operation must remove only the browser membership; it
+  should not silently revoke a valid server session belonging to a different
+  browser or future feature.
+
+### What worked
+
+- The lifecycle script passed:
+  - opt-in password login emits an HttpOnly context cookie and remembered entry;
+  - missing label policy and invalid public configuration are rejected;
+  - relogin deduplicates a subject and bounded replacement preserves source
+    sessions;
+  - end-session revokes both state objects and clears all provider cookies.
+- Focused adapter and embedded API suites passed after the change.
+- A full `go test ./... -count=1` invocation completed without a reported
+  failure; the focused scripts provide the detailed, retraceable result lines.
+
+### What didn't work
+
+- A first new test called `memory.Store.PutClient` with an obsolete extra login
+  argument and failed with
+  `too many arguments in call to store.PutClient`; correcting it to the public
+  `PutClient(context.Context, Client)` signature made the test pass.
+- A combined multi-package `go test` display returned only one package line in
+  this execution environment despite later focused tests passing. The ticket
+  scripts therefore retain package-specific commands and verbose output for
+  reviewers.
+
+### What I learned
+
+- The remembered-entry ID can safely be a transmitted opaque *hash selector*:
+  it is never authentication evidence, and context cookie, CSRF, and server
+  membership checks remain mandatory. This avoids persisting a recoverable raw
+  entry handle.
+- Context capacity is a membership policy. Removing its oldest entry must not
+  call `RevokeSession`, because the session is independent provider security
+  state.
+- A public embedding API must validate its default cookie names as well as
+  explicitly supplied names; otherwise a collision would be rejected later by
+  the adapter with a less useful error.
+
+### What was tricky to build
+
+Session creation has to serve two paths. With the feature disabled it keeps the
+old direct `CreateSession` behavior. With remembering enabled it runs a store
+transaction that rechecks the candidate context, creates one if absent or
+revoked, creates the active session, removes stale duplicate membership for the
+subject, applies the capacity policy, and creates the new membership. The raw
+context handle is sent only after that transaction commits. If it rolls back,
+no cookie authorizes an absent server record.
+
+### What warrants a second pair of eyes
+
+- The host-supplied display-label callback executes in the login request. It
+  should remain deterministic, low-latency, and avoid sensitive values on
+  shared devices.
+- “Global logout” now means active-cookie plus remembered browser context.
+  Deliberate revocation of all source sessions should be a separately named
+  administrative/security operation, not an accidental RP logout side effect.
+- Phase 4 must bind a chooser interaction to `browserContextHash`, not merely
+  the existing session hash, because selection can intentionally replace the
+  active session.
+
+### What should be done in the future
+
+- Add explicit chooser POST actions for selecting and removing entries; the
+  existing store operation is ready but no UI/API invokes it yet.
+- Implement OIDC `prompt=select_account`, including silent
+  `account_selection_required` handling and precedence with `login`/`max_age`.
+- Add Playwright flows only after a renderer contains usable chooser controls.
+
+### Code review instructions
+
+- Read `internal/fositeadapter/account_chooser.go` for default-off privacy and
+  configuration invariants.
+- Trace `createBrowserSession` and `persistBrowserSession` in `session.go`;
+  review where cookies are emitted relative to transactions.
+- Review `end_session.go` with the new end-session test to confirm atomic
+  revocation and every cleared cookie.
+- Run `scripts/02-browser-context-lifecycle.sh` and then the full Go suite.
+
+### Technical details
+
+```text
+password success
+  -> label policy
+  -> Store.Update {
+       validate/reuse context OR create fresh context
+       create fresh active session
+       remove same-subject entry; evict oldest if over bound
+       create remembered membership
+     }
+  -> Set-Cookie(active session [, new browser context])
+
+end-session
+  -> Store.Update { revoke active session; revoke browser context }
+  -> clear active, CSRF, and browser-context cookies
 ```
