@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
+	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 	"golang.org/x/oauth2"
@@ -35,7 +36,7 @@ func TestSessionEndpointAndLogoutUseIndependentAppSession(t *testing.T) {
 	if err := store.createAppSession(ctx, "browser-token", appSession{Subject: "subject", DisplayName: "Alice", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	app := newMessageApp(store, nil, nil, false)
+	app := newMessageApp(store, nil, nil, nil, false)
 	app.now = func() time.Time { return now }
 	request := httptest.NewRequest(http.MethodGet, "/api/session", nil)
 	request.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
@@ -63,7 +64,7 @@ func TestLoginRejectsAmbiguousReturnTo(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	app := newMessageApp(store, &oidcClient{config: oauth2.Config{Endpoint: oauth2.Endpoint{AuthURL: "http://issuer/authorize"}}, now: time.Now}, nil, false)
+	app := newMessageApp(store, &oidcClient{config: oauth2.Config{Endpoint: oauth2.Endpoint{AuthURL: "http://issuer/authorize"}}, now: time.Now}, nil, nil, false)
 	response := httptest.NewRecorder()
 	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/auth/login?return_to=//attacker.test", nil))
 	if response.Code != http.StatusBadRequest {
@@ -79,7 +80,7 @@ func TestRegistrationEndpointCreatesOneTimePreSession(t *testing.T) {
 	}
 	defer store.Close()
 	now := time.Now().UTC()
-	app := newMessageApp(store, nil, nil, false)
+	app := newMessageApp(store, nil, nil, nil, false)
 	app.now = func() time.Time { return now }
 	response := httptest.NewRecorder()
 	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/registration", nil))
@@ -107,6 +108,118 @@ func TestRegistrationEndpointCreatesOneTimePreSession(t *testing.T) {
 	if !bytes.Equal(attempt.CSRFSecret, csrf) || !attempt.ExpiresAt.Equal(now.Add(registrationAttemptLifetime)) {
 		t.Fatalf("stored registration attempt = %#v", attempt)
 	}
+}
+
+func TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService(t *testing.T) {
+	ctx := context.Background()
+	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appStore.Close()
+	identityStore, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "identity.sqlite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer identityStore.Close()
+	accounts, err := idpaccounts.NewService(identityStore, idpaccounts.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(appStore, nil, accounts, nil, false)
+	noPreSession := httptest.NewRecorder()
+	app.ServeHTTP(noPreSession, newAccountRequest(t, createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}, "", nil))
+	if noPreSession.Code != http.StatusForbidden {
+		t.Fatalf("account creation without pre-session = %d", noPreSession.Code)
+	}
+
+	cookie, csrf := registrationContext(t, app)
+	created := httptest.NewRecorder()
+	app.ServeHTTP(created, newAccountRequest(t, createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}, csrf, cookie))
+	if created.Code != http.StatusCreated || !strings.Contains(created.Body.String(), `"next":"/auth/login"`) {
+		t.Fatalf("account creation = %d: %s", created.Code, created.Body.String())
+	}
+	if _, err := accounts.AuthenticatePassword(ctx, "alice", "this is a long enough password", idp.LoginMetadata{}); err != nil {
+		t.Fatalf("new account cannot authenticate: %v", err)
+	}
+	for _, setCookie := range created.Result().Cookies() {
+		if setCookie.Name == appCookieName {
+			t.Fatal("registration unexpectedly created an application session")
+		}
+	}
+}
+
+func TestCreateAccountRejectsUnknownAndMultipleJSONValues(t *testing.T) {
+	ctx := context.Background()
+	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appStore.Close()
+	identityStore, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "identity.sqlite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer identityStore.Close()
+	accounts, err := idpaccounts.NewService(identityStore, idpaccounts.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(appStore, nil, accounts, nil, false)
+	for name, body := range map[string]string{
+		"unknown field": `{"login":"alice","displayName":"Alice","password":"this is a long enough password","passwordConfirmation":"this is a long enough password","admin":true}`,
+		"two values":    `{"login":"alice","displayName":"Alice","password":"this is a long enough password","passwordConfirmation":"this is a long enough password"} {}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			cookie, csrf := registrationContext(t, app)
+			request := httptest.NewRequest(http.MethodPost, "/api/accounts", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("X-CSRF-Token", csrf)
+			request.AddCookie(cookie)
+			response := httptest.NewRecorder()
+			app.ServeHTTP(response, request)
+			if response.Code != http.StatusUnprocessableEntity || response.Body.String() != "{\"error\":\"account could not be created\"}\n" {
+				t.Fatalf("account creation = %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func registrationContext(t *testing.T, app *messageApp) (*http.Cookie, string) {
+	t.Helper()
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/registration", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("registration context status = %d", response.Code)
+	}
+	var payload struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("registration cookies = %#v", cookies)
+	}
+	return cookies[0], payload.CSRFToken
+}
+
+func newAccountRequest(t *testing.T, payload createAccountRequest, csrf string, cookie *http.Cookie) *http.Request {
+	t.Helper()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/accounts", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	if csrf != "" {
+		request.Header.Set("X-CSRF-Token", csrf)
+	}
+	if cookie != nil {
+		request.AddCookie(cookie)
+	}
+	return request
 }
 
 func TestBrowserLoginCompletesAgainstEmbeddedProvider(t *testing.T) {
@@ -151,7 +264,7 @@ func TestBrowserLoginCompletesAgainstEmbeddedProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer appStore.Close()
-	app := newMessageApp(appStore, oidc, provider.Handler(), false)
+	app := newMessageApp(appStore, oidc, accounts, provider.Handler(), false)
 	server.Config.Handler = app
 	server.Start()
 	defer server.Close()
