@@ -156,7 +156,9 @@ func TestMessageAppServesEmbeddedRetroFrontendOnlyAtStaticPrefix(t *testing.T) {
 	}
 	asset := httptest.NewRecorder()
 	app.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/static/app/assets/main.js", nil))
-	if asset.Code != http.StatusOK || !strings.Contains(asset.Header().Get("Content-Type"), "javascript") {
+	if asset.Code != http.StatusOK || !strings.Contains(asset.Header().Get("Content-Type"), "javascript") ||
+		!strings.Contains(asset.Body.String(), "Passwords need at least 15 characters") ||
+		!strings.Contains(asset.Body.String(), "this form has been refreshed for a new attempt") {
 		t.Fatalf("frontend asset = %d content-type=%q", asset.Code, asset.Header().Get("Content-Type"))
 	}
 	loginStyles := httptest.NewRecorder()

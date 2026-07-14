@@ -216,3 +216,13 @@ Added the Glazed init/serve/doctor host, durable runtime composition, health/rea
 - examples/tinyidp-message-app/commands.go — Operational runtime host
 - ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/reference/03-phase-8-operations-and-verification-guide.md — Operator runbook
 
+
+## 2026-07-14 - Make registration rejection visible and retryable
+
+Added password-policy guidance, accessible explanatory generic failure state, and automatic registration pre-session refresh after a rejected account submission; the compiled embedded frontend asset is regression-tested.
+
+### Related Files
+
+- examples/tinyidp-message-app/app_http_test.go — Shipped asset regression evidence
+- examples/tinyidp-message-app/ui/src/App.tsx — Registration retry UX
+

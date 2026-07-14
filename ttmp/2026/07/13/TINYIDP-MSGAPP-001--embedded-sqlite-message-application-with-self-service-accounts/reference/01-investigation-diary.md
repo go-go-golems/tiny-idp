@@ -28,6 +28,7 @@ RelatedFiles:
         Tests registration CSRF, strict JSON, normal authentication, and absence of auto-login
         HTTP registration followed by genuine embedded provider login
         Mutation authorization, spoofing, and stored-author regression coverage
+        Compiled embedded frontend regression assertion
     - Path: repo://examples/tinyidp-message-app/appstore.go
       Note: Checksummed app schema and SQLite envelope (commit c41ba0b)
     - Path: repo://examples/tinyidp-message-app/appstore_test.go
@@ -65,9 +66,13 @@ RelatedFiles:
     - Path: repo://examples/tinyidp-message-app/state_test.go
       Note: Permission, conflict, idempotency, and damage tests
     - Path: repo://examples/tinyidp-message-app/ui/src/App.tsx
-      Note: React application states for guest registration, login, feed, composer, and logout
+      Note: |-
+        React application states for guest registration, login, feed, composer, and logout
+        Accessible explanatory registration failure and fresh pre-session retry
     - Path: repo://examples/tinyidp-message-app/ui/src/styles.css
-      Note: Retro paper-and-ink visual system without menu bar, window chrome, or Chicago font
+      Note: |-
+        Retro paper-and-ink visual system without menu bar, window chrome, or Chicago font
+        Visible policy guidance and registration alert styling
     - Path: repo://pkg/idpaccounts/accounts.go
       Note: Public canonical login normalization for embedding-safe rate-limit keys
     - Path: repo://pkg/idpaccounts/password.go
@@ -98,6 +103,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -2858,4 +2864,129 @@ tmux server -> /healthz + /readyz -> manual browser canary
        |
        v
 operator guide + diary + task state + docmgr doctor
+```
+
+## Step 28: Make registration rejection actionable without weakening the public error contract
+
+Browser testing exposed a real usability failure in the registration path. A
+password-policy rejection returned the intentionally generic 422 response,
+then the one-time registration pre-session was consumed. The next submission
+therefore returned a CSRF 403, even when the user corrected the password. The
+audit stream made the sequence visible to an operator, but the browser gave no
+useful explanation to its user.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, the errors sohuld be more visible and explanatory to the user. Otherwise there is no way to know what is going on."
+
+**Assistant interpretation:** Preserve non-enumerating server error responses,
+but make the normal UI communicate the stable password requirements and ensure
+a rejected form is immediately usable for a corrected retry.
+
+**Inferred user intent:** A person should be able to recover from an expected
+registration validation failure without inspecting developer tools, audit logs,
+or CSRF implementation details.
+
+**Commit (code):** Pending registration UX follow-up commit.
+
+### What I did
+
+- Refactored the Message Desk React component enough to give registration its
+  own visible error state rather than relying on RTK Query's opaque mutation
+  error alone.
+- Added pre-submit password guidance: at least fifteen characters and not the
+  login value. Browser `minLength=15` prevents the most common short-password
+  submission before a network request.
+- Added a high-contrast `role="alert"` response after any rejected account
+  submission. It explains the password rule, notes that a login may already
+  be in use without asserting that it is, and says that a fresh form is ready.
+- On mutation failure, refetched `GET /api/registration` before re-enabling
+  the form. That rotates the one-time pre-session cookie and CSRF token so a
+  corrected retry does not receive a stale-token 403.
+- Rebuilt the committed Vite assets and extended the Go static-asset route
+  regression test to require both explanatory strings in the shipped JavaScript
+  bundle.
+
+### Why
+
+The server deliberately maps password-policy and duplicate-login outcomes to
+the same stable 422 shape. Revealing a raw internal rejection reason would
+unnecessarily create a password-policy oracle and would make future duplicate
+handling harder to evolve. The UI already knows the invariant that every
+account must meet, however, so it can present a safe explanation covering the
+common remediation without claiming which sensitive condition occurred.
+
+The pre-session remains one-time. The UI requests a fresh pre-session after a
+failure rather than relaxing replay protection or attempting to reuse a token
+whose terminal state is already recorded.
+
+### What worked
+
+```text
+pnpm -C examples/tinyidp-message-app/ui run build
+✓ 46 modules transformed.
+✓ built successfully
+
+go test ./examples/tinyidp-message-app
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 9.287s
+```
+
+The regression test fetches `/static/app/assets/main.js` from the Go handler,
+not the source file, and asserts that the 15-character instruction and fresh
+attempt explanation are actually present in the embedded binary asset.
+
+### What didn't work
+
+The first multi-file patch used an exact one-line CSS replacement that did not
+match the minified stylesheet byte-for-byte. No files were modified by that
+failed atomic patch. A second patch replaced the component and stylesheet as
+whole files, then the TypeScript build and Go test confirmed the result.
+
+### What I learned
+
+The audit records for the observed sequence were:
+
+```text
+account.self_registration rejected account_rejected  -> 422
+account.self_registration rejected csrf_rejected     -> 403 retry
+```
+
+This is correct server behavior for a consumed pre-session, but it is not an
+adequate user experience. Security observability and user-facing remediation
+need distinct representations of the same event.
+
+### What warrants a second pair of eyes
+
+- The generic explanation says a login *may* be in use. That is compatible
+  with the documented immediate-activation behavior, but product owners may
+  prefer an explicit account-existence policy in a later release.
+- More detailed field-level password feedback would require a deliberate
+  review of what policy information is safe to expose. The current text stays
+  at the stable public rule level.
+
+### What should be done in the future
+
+- Add an actual browser-level interaction test that submits a bad password,
+  verifies the alert, corrects it, and creates an account without a page
+  reload.
+- Include the registration policy in a product help page if the example gains
+  a larger account lifecycle.
+
+### Code review instructions
+
+- Review `ui/src/App.tsx`'s `Welcome.submit` catch path and confirm it awaits
+  `registration.refetch()` before presenting the retry-ready alert.
+- Review `ui/src/styles.css` for visible contrast and `role="alert"` in the
+  markup for assistive technology.
+- Review `TestMessageAppServesEmbeddedRetroFrontendOnlyAtStaticPrefix` to
+  ensure the compiled, embedded artifact—not only TypeScript source—is tested.
+
+### Technical details
+
+```text
+POST /api/accounts -> 422 generic response
+  -> RTK Query mutation rejects
+  -> GET /api/registration creates fresh one-time pre-session + cookie
+  -> alert explains safe retry conditions
+  -> corrected POST uses fresh CSRF token
 ```
