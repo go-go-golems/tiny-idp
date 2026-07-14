@@ -13,11 +13,14 @@ Intent: long-term
 Owners: []
 RelatedFiles:
     - Path: repo://examples/tinyidp-message-app/app_http.go
-      Note: Issues anonymous registration pre-sessions and CSRF material
+      Note: |-
+        Issues anonymous registration pre-sessions and CSRF material
+        Strict bounded registration decoding, one-time CSRF consumption, account-service delegation, and password-byte clearing
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
       Note: |-
         Exercises the browser-visible login form and complete callback flow
         Validates cookie and durable one-time registration state
+        Tests registration CSRF, strict JSON, normal authentication, and absence of auto-login
     - Path: repo://examples/tinyidp-message-app/appstore.go
       Note: Checksummed app schema and SQLite envelope (commit c41ba0b)
     - Path: repo://examples/tinyidp-message-app/appstore_test.go
@@ -62,6 +65,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -1684,3 +1688,165 @@ GET /api/registration
 The next unsafe request must present both final arrows' values. The response
 does not include an account identifier, an IdP cookie, an app session token, or
 a password-related field.
+
+## Step 19: Create accounts through the public identity service
+
+`POST /api/accounts` now consumes the anonymous registration pre-session and
+uses the public `idpaccounts.Service` to create the identity record and password
+credential. The handler is intentionally an relying-party boundary rather than
+a second identity implementation: it never writes identity tables directly and
+it passes through the same password policy, Argon2 work bound, normalization,
+and audit behavior used by tiny-idp login.
+
+The endpoint accepts only a single bounded JSON object with the four documented
+fields. It rejects unknown fields and trailing JSON, requires the one-time
+cookie plus matching CSRF header, uses a stable public error for invalid or
+duplicate requests, clears its mutable password byte copy, and returns only the
+next login route. Successful registration creates no browser or app session.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 17)
+
+**Assistant interpretation:** Implement the next planned registration task with strict request handling and a demonstrable supported tiny-idp integration boundary.
+
+**Inferred user intent:** Let a visitor create a durable account safely, while preserving the architectural rule that the embedded provider owns authentication and the relying party owns only its own session after OIDC login.
+
+**Commit (code):** `f4a57ce` — "feat(msgapp): add bounded account creation"
+
+### What I did
+
+- Added the `accounts *idpaccounts.Service` dependency to the application
+  composition constructor and passed it through the full embedded-login test.
+- Added `POST /api/accounts` and `createAccountRequest` with login, display
+  name, password, and password confirmation only.
+- Required `application/json`, applied `http.MaxBytesReader` at 64 KiB,
+  enabled `json.Decoder.DisallowUnknownFields`, and rejected a second JSON
+  value.
+- Consumed the registration token once, checked its independent CSRF secret
+  with the existing constant-time comparison, and rejected absent/invalid
+  pre-sessions with `403`.
+- Copied the password string into a mutable byte slice, deferred clearing that
+  slice, and passed it to `idpaccounts.Service.Create`.
+- Returned the same `422 {"error":"account could not be created"}` JSON for
+  validation, duplicate-login, and password-policy rejection; unexpected
+  storage or account-service errors become `503`.
+- Deleted the anonymous registration cookie on success and returned
+  `201 {"next":"/auth/login"}` without an app-session cookie.
+- Added focused tests for missing pre-session/CSRF, successful normal
+  authentication after registration, unknown fields, and multiple JSON values.
+
+### Why
+
+The identity service already contains the security-sensitive implementation of
+user normalization, password acceptance, bounded Argon2 work, credential
+storage, and account-creation audit. Reimplementing any of that in the example
+would create divergent authentication behavior and teach consumers an internal
+or unsafe integration path. The example's responsibility is to validate its
+public HTTP protocol and call that service once.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app -run 'TestCreateAccount' -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 0.524s
+
+go test ./examples/tinyidp-message-app -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 1.687s
+```
+
+The successful-path test calls `AuthenticatePassword` through the same public
+service after HTTP registration. This shows the persisted account is usable by
+the provider API, rather than merely asserting a local database row.
+
+### What didn't work
+
+N/A. The focused account-creation tests passed on their first implementation
+run.
+
+### What I learned
+
+- `idpaccounts.Service.Create` exposes the right narrow abstraction for
+  registration: the app supplies public profile fields and a password buffer;
+  the service owns generated identity IDs, credential hashing, and atomic
+  persistence.
+- `json.Decoder.DisallowUnknownFields` alone does not prove a request contains
+  exactly one value. A second `Decode` must explicitly require `io.EOF`.
+- Buffer clearing is necessarily partial at a Go HTTP/JSON boundary because
+  JSON string values are immutable strings; copying to a dedicated mutable
+  password slice limits the clearable secret-bearing lifetime before hashing.
+
+### What was tricky to build
+
+The registration attempt must become terminal before calling expensive password
+work. `currentRegistrationAttempt` performs the atomic SQL consume and only
+then the handler checks the CSRF header and decodes the request. This means a
+failed malformed or forged submission spends that one pre-session, which is
+intentional replay resistance and matches the ticket algorithm. The frontend
+can obtain a replacement pre-session before retrying a local validation error.
+
+### What warrants a second pair of eyes
+
+- Review the account-service error taxonomy as it evolves. The handler maps
+  `idpstore.ErrDuplicate` and `idp.ErrPasswordRejected` to stable 422 output;
+  a future new expected public rejection type should be deliberately classified
+  rather than silently treated as `503`.
+- Review whether the visible display-name limits should be enforced at the HTTP
+  boundary in addition to `idpstore.User.Validate`; current behavior delegates
+  final identity-profile validation to the public service.
+- Review the remaining abuse controls before exposing the route publicly:
+  Origin/Fetch Metadata validation and address/login-key limits are the next
+  task and are not implied by the CSRF token alone.
+
+### What should be done in the future
+
+- Add strict same-origin and cross-site Fetch Metadata rejection before token
+  consumption, then add independent fixed-window address and normalized-login
+  rate limits.
+- Add fixed audit reason codes and tests for duplicate, capacity saturation,
+  and provider login after account creation through the complete browser flow.
+- Decide and document registration retry UX after a consumed invalid attempt.
+
+### Code review instructions
+
+- Read `handleCreateAccount`, `currentRegistrationAttempt`, and
+  `decodeCreateAccountRequest` in
+  `examples/tinyidp-message-app/app_http.go` in that order.
+- Verify the only identity mutation is
+  `a.accounts.Create(... idpaccounts.CreateRequest ...)`; there are no identity
+  database SQL statements in the example.
+- Review `TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService`
+  and `TestCreateAccountRejectsUnknownAndMultipleJSONValues`.
+- Validate with:
+
+  ```text
+  go test ./examples/tinyidp-message-app -run 'TestCreateAccount' -count=1
+  go test ./examples/tinyidp-message-app -count=1
+  ```
+
+### Technical details
+
+```text
+POST /api/accounts
+  cookie tinymsg_registration
+  + X-CSRF-Token
+       |
+       v
+atomic consume registration_attempts row
+       |
+       +-- no row / bad CSRF --> 403
+       |
+       v
+bounded strict JSON -> mutable password []byte -> deferred zero
+       |
+       v
+idpaccounts.Service.Create
+       |
+       +-- duplicate / policy --> generic 422
+       +-- unavailable --------> 503
+       +-- success ------------> 201 next=/auth/login, expire registration cookie
+```
+
+The endpoint deliberately stops before any call to `/idp/authorize`. The
+visitor must still authenticate through the provider-owned form, preserving the
+separation between registration and login.
