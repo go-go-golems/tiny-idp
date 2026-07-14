@@ -20,7 +20,7 @@
 - [x] Phase 3: Create message-app state paths, manifest validation, owner-only secrets, and atomic writes <!-- t:sgv1 -->
 - [x] Phase 3: Implement application SQLite opening, WAL pragmas, schema ledger, checksum, and migrations <!-- t:mhk9 -->
 - [x] Phase 3: Implement durable one-time OIDC login attempts with atomic consume <!-- t:x6kf -->
-- [ ] Phase 3: Implement hashed application sessions with CSRF material, revocation, and expiry <!-- t:8yok -->
+- [x] Phase 3: Implement hashed application sessions with CSRF material, revocation, and expiry <!-- t:8yok -->
 - [ ] Phase 3: Implement durable registration attempts with atomic consume <!-- t:j891 -->
 - [ ] Phase 3: Implement message insert, stable cursor pagination, and append-only ownership model <!-- t:flqi -->
 - [ ] Phase 3: Add migration, permission, restart, concurrency, cleanup, and repository tests <!-- t:vuy8 -->

@@ -1050,3 +1050,79 @@ invalid. This boundary is intentional and covered explicitly.
 
 Implement hashed application sessions with independent CSRF secrets, lookup,
 revocation, expiry, and restart tests.
+
+## Step 11: Add durable, independently revocable application sessions
+
+This task implemented the relying party's own session boundary. The raw browser
+token is accepted only at the repository API and reduced to SHA-256 before
+persistence. The row contains verified subject and display name snapshots plus
+an independent 32-byte CSRF secret, absolute expiry, revocation time, and
+bounded last-seen metadata.
+
+**Commit (code):** `cf25884` — "feat(msgapp): add durable app sessions"
+
+### What I did
+
+- Added session creation, lookup, optimistic last-seen touch, and revocation.
+- Made revoked, expired, unknown, malformed, and replayed session tokens share a
+  stable unavailable error.
+- Added tests proving only the token hash is stored, exact expiry is rejected,
+  revocation is immediate, and a session survives store restart.
+
+Command and result:
+
+```text
+go test ./examples/tinyidp-message-app -run 'TestSession|TestApplicationSession' -count=1
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app 0.019s
+```
+
+### Why
+
+- The application cannot use the IdP's private browser cookie as authorization.
+- Hash-only storage reduces direct bearer-cookie exposure from an application
+  database disclosure.
+- Local revocation and lifetime remain relying-party policy.
+
+### What worked
+
+- Lookup after close/reopen succeeded.
+- Revoked and exactly expired sessions failed consistently.
+- The persisted token bytes matched SHA-256 and not the raw token.
+
+### What didn't work
+
+- N/A. Focused tests passed on the first run.
+
+### What I learned
+
+- Session CSRF material is not a browser bearer credential and must remain
+  available to the server after restart, unlike the raw session token.
+
+### What was tricky to build
+
+Last-seen updates use the prior timestamp in the SQL predicate. This prevents
+concurrent requests from moving metadata backward or blindly overwriting a more
+recent touch without turning reads into mandatory writes.
+
+### What warrants a second pair of eyes
+
+- Review whether SHA-256 token hashes should instead be keyed with the app
+  session secret; the raw token already has high entropy, so offline guessing is
+  not practical, but domain separation may improve uniformity.
+- Review the future bounded touch frequency in middleware.
+
+### What should be done in the future
+
+- Middleware must cap cookie length before lookup and never expose CSRF secret
+  outside the authenticated session endpoint.
+- Cleanup must remove expired/revoked sessions according to retention policy.
+
+### Code review instructions
+
+- Review `createAppSession`, `getAppSession`, and `revokeAppSession`.
+- Run the focused command above and the Phase 3 race gate later.
+
+## Continuation point
+
+Implement durable one-time registration attempts with independent anonymous
+CSRF material next.

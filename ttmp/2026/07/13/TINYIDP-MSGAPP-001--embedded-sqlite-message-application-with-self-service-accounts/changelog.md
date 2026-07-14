@@ -86,3 +86,12 @@ Persisted only hashed OAuth state and added an atomic one-time consume transitio
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/login_attempts.go — Durable callback replay boundary
 
+
+## 2026-07-14 - Phase 3 application sessions
+
+Added hash-only durable application sessions with independent CSRF material, absolute expiry, revocation, optimistic touch, and restart tests (commit cf25884).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/sessions.go — Relying-party session boundary
+
