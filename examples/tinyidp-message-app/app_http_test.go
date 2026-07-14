@@ -159,6 +159,11 @@ func TestMessageAppServesEmbeddedRetroFrontendOnlyAtStaticPrefix(t *testing.T) {
 	if asset.Code != http.StatusOK || !strings.Contains(asset.Header().Get("Content-Type"), "javascript") {
 		t.Fatalf("frontend asset = %d content-type=%q", asset.Code, asset.Header().Get("Content-Type"))
 	}
+	loginStyles := httptest.NewRecorder()
+	app.ServeHTTP(loginStyles, httptest.NewRequest(http.MethodGet, "/static/tinyidp/login.css", nil))
+	if loginStyles.Code != http.StatusOK || strings.Contains(strings.ToLower(loginStyles.Body.String()), "chicago") {
+		t.Fatalf("login styles = %d", loginStyles.Code)
+	}
 	notFound := httptest.NewRecorder()
 	app.ServeHTTP(notFound, httptest.NewRequest(http.MethodGet, "/not-a-ui-route", nil))
 	if notFound.Code != http.StatusNotFound {

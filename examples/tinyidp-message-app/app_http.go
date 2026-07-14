@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/manuel/tinyidp/examples/tinyidp-message-app/loginui"
 	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
@@ -40,6 +41,7 @@ type messageApp struct {
 	addressResolver     idp.ClientAddressResolver
 	registrationLimiter idp.RateLimiter
 	audit               idp.Sink
+	interactionUI       *loginui.Renderer
 	cookieSecure        bool
 	now                 func() time.Time
 	mux                 *http.ServeMux
@@ -52,7 +54,11 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 	if oidcClient != nil {
 		publicOrigin = oidcClient.publicOrigin
 	}
-	app := &messageApp{store: store, oidc: oidcClient, accounts: accounts, provider: provider, publicOrigin: publicOrigin,
+	interactionUI, err := loginui.New()
+	if err != nil {
+		panic(err)
+	}
+	app := &messageApp{store: store, oidc: oidcClient, accounts: accounts, provider: provider, publicOrigin: publicOrigin, interactionUI: interactionUI,
 		addressResolver: idp.DirectClientAddressResolver{}, registrationLimiter: idp.NewFixedWindowRateLimiter(5, time.Minute),
 		audit: idp.NoopSink{}, cookieSecure: cookieSecure, now: time.Now, mux: http.NewServeMux()}
 	app.mux.HandleFunc("GET /auth/login", app.handleLogin)
@@ -64,6 +70,7 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 	app.mux.HandleFunc("POST /api/accounts", app.handleCreateAccount)
 	app.mux.HandleFunc("POST /auth/logout", app.handleLogout)
 	app.mux.Handle("GET /static/app/", http.StripPrefix("/static/app/", http.FileServer(http.FS(messageAppAssetFS()))))
+	app.mux.Handle("/static/tinyidp/", interactionUI.AssetsHandler())
 	// The root fallback must not be method-qualified: /idp/ accepts both GET
 	// and POST, and ServeMux rejects an overlapping GET-only root pattern.
 	app.mux.HandleFunc("/", app.handleIndex)
