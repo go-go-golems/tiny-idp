@@ -12,8 +12,12 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-message-app/app_http.go
+      Note: Issues anonymous registration pre-sessions and CSRF material
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
-      Note: Exercises the browser-visible login form and complete callback flow
+      Note: |-
+        Exercises the browser-visible login form and complete callback flow
+        Validates cookie and durable one-time registration state
     - Path: repo://examples/tinyidp-message-app/appstore.go
       Note: Checksummed app schema and SQLite envelope (commit c41ba0b)
     - Path: repo://examples/tinyidp-message-app/appstore_test.go
@@ -58,6 +62,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -1549,3 +1554,133 @@ GET /api/session
 The exact redirect URI is registered through
 `embeddedidp.BrowserClient(clientID, []string{baseURL + callbackPath}, ...)`;
 the app never relaxes that provider validation merely to simplify tests.
+
+## Step 18: Issue anonymous registration pre-sessions
+
+Phase 5 now exposes its first public registration route: `GET
+/api/registration`. It creates a fresh short-lived durable attempt, places only
+the opaque random token in an `HttpOnly`, `SameSite=Lax` cookie, and returns the
+independent CSRF value to same-origin JavaScript as JSON. No user, browser
+session, or application session is created by this endpoint.
+
+Keeping issuance separate from account creation makes the registration state
+machine explicit and reviewable. The following POST increment can consume this
+single-use record before invoking password work, rather than accepting a
+cookie-only account-creation request.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 17)
+
+**Assistant interpretation:** Continue the next planned registration task as a small independently testable implementation unit.
+
+**Inferred user intent:** Ensure account creation will begin with a durable anti-CSRF precondition rather than a loose anonymous form submission.
+
+**Commit (code):** `44f2fda` — "feat(msgapp): issue registration pre-sessions"
+
+### What I did
+
+- Added `registrationAttemptLifetime`, currently ten minutes.
+- Registered `GET /api/registration` before any account-creation handler.
+- Generated an opaque 32-byte registration token and a separate 32-byte CSRF
+  secret with `crypto/rand`.
+- Stored only the token hash through `createRegistrationAttempt` and set the
+  opaque token as an `HttpOnly`, Lax, path-root cookie.
+- Returned the CSRF secret base64url-encoded in a JSON response while the
+  outer handler supplies `Cache-Control: no-store`.
+- Added a test that reads the cookie and JSON response, atomically consumes
+  the corresponding durable attempt, and checks its secret and expiry.
+
+### Why
+
+Registration changes identity state but occurs before the visitor has an app
+session. A dedicated one-time pre-session gives it a CSRF boundary that is
+independent of both the application session and tiny-idp's authorization-form
+CSRF mechanism. It also gives later rate-limit and audit code a durable
+attempt-level result to associate with the request.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app -run 'TestRegistrationEndpointCreatesOneTimePreSession' -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 0.030s
+```
+
+The test proves the client sees no raw database identifier, the cookie is not
+available to JavaScript, the CSRF response is 32 bytes after decoding, and the
+server can retrieve its exact durable counterpart once.
+
+### What didn't work
+
+The first test compilation omitted `encoding/json` from the test imports:
+
+```text
+examples/tinyidp-message-app/app_http_test.go:95:12: undefined: json
+```
+
+I added that single import and reran the focused test successfully. This was a
+test-only build omission; no runtime design changed.
+
+### What I learned
+
+- The registration cookie need not contain CSRF material. Keeping the two
+  values independent means a cookie theft alone is not enough for a forged
+  same-origin request header, while an exposed JSON response alone is not
+  enough without the `HttpOnly` token cookie.
+- The existing repository's SHA-256 token-at-rest convention applies directly
+  to anonymous pre-sessions and keeps the database from becoming a bearer-token
+  recovery source.
+
+### What was tricky to build
+
+The CSRF value has two representations: a fixed-size raw byte slice required
+by the SQLite record and a base64url string required by the JSON/header
+protocol. The handler creates raw random bytes, stores those bytes unchanged,
+and encodes only at the response boundary; the test decodes and compares the
+raw values. This avoids an accidental double-encoding or variable-length
+database secret.
+
+### What warrants a second pair of eyes
+
+- Review the ten-minute lifetime against the eventual frontend's form
+  behavior; a timeout should lead to a clean request for a replacement
+  pre-session, not a confused retry.
+- Review whether a new registration GET should invalidate prior anonymous
+  attempts in the same browser. The current intentionally simple model allows
+  independently issued short-lived attempts; the POST remains one-time.
+
+### What should be done in the future
+
+- Add `POST /api/accounts` with strict bounded JSON decoding, token consumption,
+  constant-time CSRF comparison, and password-buffer clearing.
+- Add origin and Fetch Metadata checks before consuming registration state, then
+  add independent address and normalized-login rate limits.
+- Ensure successful account creation returns a login next-step and never
+  manufactures an IdP or app session.
+
+### Code review instructions
+
+- Review `handleRegistration` in
+  `examples/tinyidp-message-app/app_http.go`, especially the separation between
+  token, CSRF secret, durable store, cookie, and JSON response.
+- Review `TestRegistrationEndpointCreatesOneTimePreSession` in
+  `examples/tinyidp-message-app/app_http_test.go`.
+- Validate with:
+
+  ```text
+  go test ./examples/tinyidp-message-app -run 'TestRegistrationEndpointCreatesOneTimePreSession' -count=1
+  ```
+
+### Technical details
+
+```text
+GET /api/registration
+  raw registration token --SHA-256--> registration_attempts.token_hash
+  raw CSRF secret ------------------> registration_attempts.csrf_secret
+  raw registration token -----------> HttpOnly tinymsg_registration cookie
+  base64url(CSRF secret) -----------> {"csrfToken":"..."}
+```
+
+The next unsafe request must present both final arrows' values. The response
+does not include an account identifier, an IdP cookie, an app session token, or
+a password-related field.

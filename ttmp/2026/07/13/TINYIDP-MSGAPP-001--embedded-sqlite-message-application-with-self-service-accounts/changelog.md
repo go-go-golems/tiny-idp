@@ -133,3 +133,12 @@ Phase 4: verified full browser-to-embedded-IdP callback flow and explicit back-c
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http_test.go — Same-process end-to-end browser regression test
 
+
+## 2026-07-14
+
+Phase 5: added one-time anonymous registration pre-session and CSRF issuance (commit 44f2fda)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Registration GET endpoint
+

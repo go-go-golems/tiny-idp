@@ -29,7 +29,7 @@
 - [x] Phase 4: Implement one-time callback, code exchange, ID-token verification, and nonce validation <!-- t:nd5u -->
 - [x] Phase 4: Implement app-session middleware, session API, local logout, and coordinated IdP logout <!-- t:d2ns -->
 - [ ] Phase 4: Add callback replay, mismatch, expiry, subject, and open-redirect tests <!-- t:xkz3 -->
-- [ ] Phase 5: Implement registration pre-session and anonymous CSRF endpoint <!-- t:7606 -->
+- [x] Phase 5: Implement registration pre-session and anonymous CSRF endpoint <!-- t:7606 -->
 - [ ] Phase 5: Implement strict bounded account creation JSON and password-buffer clearing <!-- t:jhes -->
 - [ ] Phase 5: Add Origin, Fetch Metadata, address, login-key, and password-work abuse controls <!-- t:3we3 -->
 - [ ] Phase 5: Add generic registration errors, fixed audit reasons, and successful-login tests <!-- t:z9he -->
