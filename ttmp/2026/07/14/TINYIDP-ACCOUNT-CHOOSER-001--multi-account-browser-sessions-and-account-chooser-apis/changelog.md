@@ -29,3 +29,12 @@ Implemented provider lifecycle slice: opt-in opaque browser contexts, host label
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/end_session.go — Global logout
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/session.go — Atomic lifecycle
 
+
+## 2026-07-14
+
+Added typed, renderer-safe account chooser prompt contract with opaque entry values, validation, default accessible radio rendering, and focused UI tests (commit 01e96adf026aa972e854702bcd860b554baf09b5).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/types.go — Public chooser UI model
+

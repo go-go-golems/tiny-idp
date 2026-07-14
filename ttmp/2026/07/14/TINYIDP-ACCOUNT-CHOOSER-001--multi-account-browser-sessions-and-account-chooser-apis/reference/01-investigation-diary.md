@@ -32,6 +32,12 @@ RelatedFiles:
       Note: Cross-store account chooser invariant tests.
     - Path: repo://pkg/idpstore/types.go
       Note: Defines opaque browser contexts and remembered account membership.
+    - Path: repo://pkg/idpui/default_renderer_test.go
+      Note: Chooser renderer coverage.
+    - Path: repo://pkg/idpui/templates/interaction.html
+      Note: Default accessible chooser controls.
+    - Path: repo://pkg/idpui/types.go
+      Note: Chooser prompt presentation contract and validation.
     - Path: repo://pkg/sqlitestore/maintenance.go
       Note: Retention and orphan cleanup.
     - Path: repo://pkg/sqlitestore/migrations/007_browser_contexts.sql
@@ -42,12 +48,15 @@ RelatedFiles:
       Note: Repeatable focused store test command.
     - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/02-browser-context-lifecycle.sh
       Note: Repeatable lifecycle validation.
+    - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/03-chooser-ui-contract.sh
+      Note: Repeatable UI contract test.
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-14T17:53:02.926941303-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -445,4 +454,100 @@ password success
 end-session
   -> Store.Update { revoke active session; revoke browser context }
   -> clear active, CSRF, and browser-context cookies
+```
+
+## Step 4: Define a renderer-safe chooser presentation contract
+
+The provider now has a typed way to hand a renderer an account-selection page
+without handing it identity authority. `idpui.AccountChooserPrompt` contains
+only a provider-generated opaque selector and a deliberately stored display
+label. The default renderer produces one labelled, required radio control per
+entry, while the provider remains responsible for membership validation and
+session activation.
+
+This is intentionally a separate commit from the upcoming OIDC state-machine
+work. A host can review and customize the UI contract now, and the next change
+will connect it only after context binding and standard prompt semantics are
+enforced.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the next safe implementation increment
+from the account-chooser ticket, retaining tests, scripts, diary entries, and
+small reviewable commits.
+
+**Inferred user intent:** Build the chooser as an auditable identity toolbox
+instead of conflating untrusted renderer inputs with authentication decisions.
+
+**Commit (code):** `01e96adf026aa972e854702bcd860b554baf09b5` — "feat(idpui): add account chooser prompt contract"
+
+### What I did
+
+- Added `AccountChooserPrompt` and `AccountChooserEntry` to `idpui` with a
+  fixed `account` field contract.
+- Extended `InteractionPage.Validate` to require non-empty, unique opaque
+  values and non-empty labels; chooser-only pages are now valid prompts.
+- Extended cloning so custom renderers cannot mutate a provider-owned prompt.
+- Updated the default HTML template to render labelled required radio inputs.
+- Added default-renderer coverage and `scripts/03-chooser-ui-contract.sh`.
+
+### Why
+
+- Rendering an account list must not require an application renderer to infer
+  account identity, construct continuation data, or decide which entry is
+  valid.
+- Unique opaque values make the forthcoming POST shape explicit while avoiding
+  browser-visible user IDs and session cookie handles.
+
+### What worked
+
+- `go test ./pkg/idpui ./pkg/idpui/idpuitest -count=1` passed.
+- The default renderer test verifies two radio inputs, required selection, and
+  explicit labels without loosening the existing form/CSRF contract.
+
+### What didn't work
+
+- No implementation failure occurred in this increment.
+
+### What I learned
+
+- The existing renderer contract is already a strong boundary: it validates
+  action URL, hidden fields, typed actions, and defensive copies before host
+  code runs. The chooser fits it without a separate template subsystem.
+
+### What was tricky to build
+
+The radio input IDs are derived from opaque values only for label association.
+The security boundary does not depend on those IDs or the selected value: the
+forthcoming provider path will decode the value, bind it to the interaction’s
+browser context, and atomically validate it in storage.
+
+### What warrants a second pair of eyes
+
+- If a host uses a custom renderer, it must preserve the `account` field and
+  submit exactly one opaque entry value. Phase 6 conformance checks should be
+  extended to assert this mechanically.
+- Label length is bounded at lifecycle configuration time; consider whether
+  an additional renderer-visible character policy is needed for all hosts.
+
+### What should be done in the future
+
+- Add the account field to renderer conformance checks.
+- Implement standard `prompt=select_account` and the server-side selection
+  handler before treating the page as usable.
+- Add a Playwright scenario after the provider emits this page.
+
+### Code review instructions
+
+- Review `pkg/idpui/types.go` validation and clone behavior.
+- Inspect the default template and its test together.
+- Run `scripts/03-chooser-ui-contract.sh`.
+
+### Technical details
+
+```text
+provider-owned remembered entry hash --> base64 opaque value --> HTML radio
+browser POST value ------------------> provider context binding + store lookup
 ```
