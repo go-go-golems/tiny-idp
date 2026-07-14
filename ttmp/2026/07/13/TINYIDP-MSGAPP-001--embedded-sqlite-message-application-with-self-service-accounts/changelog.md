@@ -151,3 +151,12 @@ Phase 5: implemented bounded one-time-CSRF account creation through public idpac
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — POST /api/accounts
 
+
+## 2026-07-14
+
+Phase 5: added same-origin, Fetch Metadata, address, and canonical-login registration abuse controls (commit ed64768)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Registration perimeter controls
+

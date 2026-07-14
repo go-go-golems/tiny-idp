@@ -16,6 +16,7 @@ RelatedFiles:
       Note: |-
         Issues anonymous registration pre-sessions and CSRF material
         Strict bounded registration decoding, one-time CSRF consumption, account-service delegation, and password-byte clearing
+        Origin, Fetch Metadata, trusted address, and canonical-login registration boundary
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
       Note: |-
         Exercises the browser-visible login form and complete callback flow
@@ -43,6 +44,10 @@ RelatedFiles:
       Note: Phase 3 state-root paths, manifest, secrets, and atomic publication (commit 9f4a4e2)
     - Path: repo://examples/tinyidp-message-app/state_test.go
       Note: Permission, conflict, idempotency, and damage tests
+    - Path: repo://pkg/idpaccounts/accounts.go
+      Note: Public canonical login normalization for embedding-safe rate-limit keys
+    - Path: repo://pkg/idpaccounts/password.go
+      Note: Authentication now shares the exported canonical-login function
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/design-doc/01-embedded-tiny-idp-sqlite-message-application-analysis-design-and-implementation-guide.md
       Note: Primary design artifact whose evidence and construction are recorded in this diary.
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/sources/01-go-oidc-package.md
@@ -65,6 +70,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -1850,3 +1856,154 @@ idpaccounts.Service.Create
 The endpoint deliberately stops before any call to `/idp/authorize`. The
 visitor must still authenticate through the provider-owned form, preserving the
 separation between registration and login.
+
+## Step 20: Add origin and abuse controls to the registration perimeter
+
+The account-creation path now rejects cross-origin browser requests before it
+spends the one-time registration attempt. It requires the configured exact
+public Origin, rejects `Sec-Fetch-Site: cross-site`, and applies fixed-window
+limits to both the resolved client address and a hash of tiny-idp's canonical
+login form. These controls are additive to, not substitutes for, the existing
+cookie-plus-CSRF proof.
+
+This work also made a small public embedding API improvement. The application
+must not invent its own username canonicalization for a security key, so
+`idpaccounts.NormalizeLogin` now exposes the exact normalization shared by
+account creation and password authentication. It returns a canonical value for
+non-secret correlation such as a rate-limit key; it is not an account-existence
+oracle.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 17)
+
+**Assistant interpretation:** Complete the registration abuse-control phase using the public tiny-idp API, with tests that make ordering and canonicalization properties visible.
+
+**Inferred user intent:** Make anonymous account creation defensible against cross-site forgery and inexpensive high-volume abuse before considering the example usable.
+
+**Commit (code):** `ed64768` — "feat(msgapp): harden registration boundary"
+
+### What I did
+
+- Retained the normalized public origin in `oidcClient` and copy it into the
+  message app at composition time; a missing origin fails closed for account
+  creation.
+- Required `Origin` to exactly equal that configured origin for
+  `POST /api/accounts`, and rejected `Sec-Fetch-Site: cross-site`.
+- Performed those checks before `currentRegistrationAttempt` atomically spends
+  the pre-session, allowing a normal same-origin retry after a rejected foreign
+  browser request.
+- Added a direct-address resolver and fixed-window limiter defaults for the
+  single-process example. Requests must pass both
+  `registration:address:<address>` and
+  `registration:login:<base64url(sha256(canonical-login))>` keys.
+- Returned a generic JSON body with `429` and `Retry-After: 60` when either
+  limiter rejects a request.
+- Added the exported `idpaccounts.NormalizeLogin`, and changed both account
+  creation and password authentication to use it.
+- Added tests for foreign Origin, cross-site Fetch Metadata, pre-session
+  preservation after those rejections, address limits, and equivalent
+  `"Alice"`/`" alice "` login keys.
+
+### Why
+
+The CSRF token protects a cookie-authenticated state transition, but it does
+not bound attempts made by a legitimate same-origin client or a script with its
+own registration pre-session. Origin and Fetch Metadata cheaply reject a class
+of cross-site requests before durable state changes; address and canonical-login
+keys limit two independent attack dimensions. The OWASP CSRF and authentication
+references stored in this ticket support this layered approach.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app ./pkg/idpaccounts -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 1.745s
+ok   github.com/manuel/tinyidp/pkg/idpaccounts 0.245s
+```
+
+The foreign-Origin and `Sec-Fetch-Site: cross-site` cases return `403`; the
+same cookie and CSRF token can subsequently produce a successful account,
+demonstrating that rejection occurs before atomic consumption. The limiter test
+shows that canonical login spelling shares a key even when its client address
+changes, and that a changed login still shares the address key.
+
+### What didn't work
+
+N/A. The first focused implementation and package test run passed.
+
+### What I learned
+
+- A relying party cannot safely derive a login-based security key using an
+  approximation if the identity service owns Unicode/case normalization. A
+  narrow public normalization API prevents policy drift without exposing
+  storage internals.
+- `Origin` validation must use the configured external origin, not a Host
+  header reconstructed from the incoming request, because a Host header is not
+  the application's deployment configuration.
+- The ordering is security-relevant: cheap cross-site checks precede durable
+  token consumption, whereas a same-origin malformed request intentionally
+  still consumes its token before expensive password work.
+
+### What was tricky to build
+
+There are two rate keys but one `RateLimiter.Allow` interface. The handler
+must require both independently: a login-only key lets an attacker distribute
+attempts over addresses, while an address-only key lets them distribute attempts
+over usernames. The implementation first resolves the address through the
+public resolver, canonicalizes the login through `idpaccounts.NormalizeLogin`,
+hashes that non-secret canonical value, then requires both keys to admit the
+operation. It uses no raw password or raw username in the limiter key.
+
+### What warrants a second pair of eyes
+
+- The in-process fixed-window limiter is appropriate only for this
+  single-process example. The Phase 8 production composition must make the
+  limiter and trusted-proxy resolver explicit configuration and require a
+  shared production implementation when horizontally scaled.
+- Review the deliberate Origin requirement for non-browser API clients. This
+  example is a browser-oriented application; a separately authenticated native
+  registration API would need a different anti-CSRF model rather than weakening
+  this check.
+- Consider a bounded cleanup strategy for the in-memory limiter's bucket map
+  as part of long-running operational work.
+
+### What should be done in the future
+
+- Add fixed registration audit reason codes and an end-to-end test that
+  registers through HTTP and subsequently signs in through the provider form.
+- Make endpoint-specific rate limits and trusted-proxy policy explicit in the
+  future Glazed `serve` command rather than relying on example defaults.
+- Add message-API protections using the same exact-origin helper but the
+  authenticated app-session CSRF secret.
+
+### Code review instructions
+
+- Start at `handleCreateAccount` in
+  `examples/tinyidp-message-app/app_http.go`; verify the Origin/Fetch Metadata
+  check is above token consumption and limiter use is below strict decoding.
+- Review `isSameOriginRegistrationRequest` and `allowRegistration`; check that
+  keys contain only resolved address and a hash, never raw login or password.
+- Review `idpaccounts.NormalizeLogin` and its use in both `Create` and
+  `AuthenticatePassword`.
+- Validate with:
+
+  ```text
+  go test ./examples/tinyidp-message-app ./pkg/idpaccounts -count=1
+  ```
+
+### Technical details
+
+```text
+POST /api/accounts
+  exact Origin? --- no ---> 403; registration attempt remains pending
+  Fetch Metadata cross-site? -> 403; registration attempt remains pending
+  one-time cookie + CSRF? --- no ---> 403
+  strict JSON? ------------ no ---> generic 422; attempt is terminal
+  address key admitted? --- no ---> generic 429 + Retry-After: 60
+  canonical-login key? ---- no ---> generic 429 + Retry-After: 60
+  account service create ------> normal generic result mapping
+```
+
+The canonical login is SHA-256 hashed and base64url encoded only as a limiter
+key component. It is neither logged by this handler nor returned to the caller.
