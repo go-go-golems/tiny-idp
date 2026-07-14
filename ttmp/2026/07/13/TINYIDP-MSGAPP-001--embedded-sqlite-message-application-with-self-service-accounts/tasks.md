@@ -41,10 +41,10 @@
 - [x] Phase 7: Build deterministic assets and embed only below /static/app/ <!-- t:lytc -->
 - [x] Phase 7: Implement compatible styled tiny-idp interaction renderer under /static/tinyidp/ <!-- t:zsw6 -->
 - [ ] Phase 7: Add component, static route, CSP, literal-message, keyboard, reflow, and accessibility tests <!-- t:4ydv -->
-- [ ] Phase 8: Implement Glazed init command without requiring an initial user <!-- t:jb5w -->
-- [ ] Phase 8: Implement Glazed serve command with zerolog and --log-level <!-- t:t32b -->
-- [ ] Phase 8: Implement Glazed doctor command with structured non-secret checks <!-- t:h7zu -->
-- [ ] Phase 8: Add errgroup lifecycle, startup maintenance, health, readiness, and graceful shutdown <!-- t:zj98 -->
-- [ ] Phase 8: Add backup, restore, upgrade, rollback, and operator documentation <!-- t:ohd8 -->
+- [x] Phase 8: Implement Glazed init command without requiring an initial user <!-- t:jb5w -->
+- [x] Phase 8: Implement Glazed serve command with zerolog and --log-level <!-- t:t32b -->
+- [x] Phase 8: Implement Glazed doctor command with structured non-secret checks <!-- t:h7zu -->
+- [x] Phase 8: Add errgroup lifecycle, startup maintenance, health, readiness, and graceful shutdown <!-- t:zj98 -->
+- [x] Phase 8: Add backup, restore, upgrade, rollback, and operator documentation <!-- t:ohd8 -->
 - [ ] Phase 8: Run full, race, lint, analyzer, fuzz-smoke, tmux, and browser canary gates <!-- t:tsjj -->
-- [ ] Phase 8: Complete implementation diary, docmgr audit, and final delivery report <!-- t:h3f8 -->
+- [x] Phase 8: Complete implementation diary, docmgr audit, and final delivery report <!-- t:h3f8 -->

@@ -205,3 +205,14 @@ Phase 7: added conformant Message Desk tiny-idp interaction renderer and /static
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/loginui/renderer.go — Provider presentation component
 
+
+## 2026-07-14 - Phase 8 executable, operations, and verification
+
+Added the Glazed init/serve/doctor host, durable runtime composition, health/readiness, lifecycle maintenance, TLS-origin invariant, fuzz coverage, operator guide, and live tmux canary. The audit analyzer found and drove remediation of explicit audit-failure readiness behavior.
+
+### Related Files
+
+- examples/tinyidp-message-app/app_http.go — Application readiness and audit delivery behavior
+- examples/tinyidp-message-app/commands.go — Operational runtime host
+- ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/reference/03-phase-8-operations-and-verification-guide.md — Operator runbook
+

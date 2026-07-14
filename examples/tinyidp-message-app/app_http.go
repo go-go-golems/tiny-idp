@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/manuel/tinyidp/examples/tinyidp-message-app/loginui"
@@ -21,6 +22,7 @@ import (
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 //go:embed static/app/*
@@ -42,6 +44,9 @@ type messageApp struct {
 	registrationLimiter idp.RateLimiter
 	audit               idp.Sink
 	interactionUI       *loginui.Renderer
+	liveness            func(context.Context) idp.ReadinessReport
+	readiness           func(context.Context) idp.ReadinessReport
+	auditFailures       atomic.Uint64
 	cookieSecure        bool
 	now                 func() time.Time
 	mux                 *http.ServeMux
@@ -49,6 +54,8 @@ type messageApp struct {
 
 var _ http.Handler = (*messageApp)(nil)
 
+// tinyidp:development-default -- production construction replaces this test
+// fallback with the initialized state root's synchronous file audit sink.
 func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccounts.Service, provider http.Handler, cookieSecure bool) *messageApp {
 	publicOrigin := ""
 	if oidcClient != nil {
@@ -66,6 +73,8 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 	app.mux.HandleFunc("GET /api/session", app.handleSession)
 	app.mux.HandleFunc("GET /api/registration", app.handleRegistration)
 	app.mux.HandleFunc("GET /api/messages", app.handleListMessages)
+	app.mux.HandleFunc("GET /healthz", app.handleHealth)
+	app.mux.HandleFunc("GET /readyz", app.handleReady)
 	app.mux.HandleFunc("POST /api/messages", app.handleCreateMessage)
 	app.mux.HandleFunc("POST /api/accounts", app.handleCreateAccount)
 	app.mux.HandleFunc("POST /auth/logout", app.handleLogout)
@@ -78,6 +87,43 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 		app.mux.Handle("/idp/", provider)
 	}
 	return app
+}
+
+func (a *messageApp) handleHealth(w http.ResponseWriter, r *http.Request) {
+	report := idp.ReadinessReport{Ready: true}
+	if a.liveness != nil {
+		report = a.liveness(r.Context())
+	}
+	writeApplicationReadiness(w, report)
+}
+
+func (a *messageApp) handleReady(w http.ResponseWriter, r *http.Request) {
+	report := idp.ReadinessReport{Ready: true}
+	if a.readiness != nil {
+		report = a.readiness(r.Context())
+	}
+	if a.auditFailures.Load() != 0 {
+		report.Ready = false
+		report.Checks = append(report.Checks, idp.ReadinessCheck{Name: "application_audit", Ready: false, Reason: "audit_delivery_failed", CheckedAt: a.now().UTC()})
+	}
+	if a.store == nil || a.store.db == nil {
+		report.Ready = false
+		report.Checks = append(report.Checks, idp.ReadinessCheck{Name: "application_store", Ready: false, Reason: "store_unavailable", CheckedAt: a.now().UTC()})
+	} else if err := a.store.db.PingContext(r.Context()); err != nil {
+		report.Ready = false
+		report.Checks = append(report.Checks, idp.ReadinessCheck{Name: "application_store", Ready: false, Reason: "store_unavailable", CheckedAt: a.now().UTC()})
+	} else {
+		report.Checks = append(report.Checks, idp.ReadinessCheck{Name: "application_store", Ready: true, CheckedAt: a.now().UTC()})
+	}
+	writeApplicationReadiness(w, report)
+}
+
+func writeApplicationReadiness(w http.ResponseWriter, report idp.ReadinessReport) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if !report.Ready {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+	_ = json.NewEncoder(w).Encode(report)
 }
 
 func messageAppAssetFS() fs.FS {
@@ -328,7 +374,10 @@ func (a *messageApp) recordRegistration(ctx context.Context, result, reason, sub
 	if a.audit == nil {
 		return
 	}
-	_ = a.audit.Emit(ctx, idp.Event{Time: a.now().UTC(), Name: "account.self_registration", Subject: subject, Result: result, Reason: reason})
+	if err := a.audit.Emit(ctx, idp.Event{Time: a.now().UTC(), Name: "account.self_registration", Subject: subject, Result: result, Reason: reason}); err != nil {
+		a.auditFailures.Add(1)
+		log.Error().Err(err).Str("event", "account.self_registration").Msg("registration audit delivery failed; readiness degraded")
+	}
 }
 
 func (a *messageApp) isSameOriginUnsafeRequest(r *http.Request) bool {

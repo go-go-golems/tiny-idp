@@ -32,10 +32,16 @@ RelatedFiles:
       Note: Checksummed app schema and SQLite envelope (commit c41ba0b)
     - Path: repo://examples/tinyidp-message-app/appstore_test.go
       Note: Migration, checksum, permissions, and pragma evidence
+    - Path: repo://examples/tinyidp-message-app/commands.go
+      Note: State-root runtime composition, operations commands, lifecycle, and TLS invariant
+    - Path: repo://examples/tinyidp-message-app/commands_test.go
+      Note: Initialized-runtime health/readiness evidence
     - Path: repo://examples/tinyidp-message-app/contracts.go
       Note: Phase 0 executable route, cookie, and invariant contract
     - Path: repo://examples/tinyidp-message-app/contracts_test.go
       Note: Public consumer import-boundary enforcement
+    - Path: repo://examples/tinyidp-message-app/fuzz_test.go
+      Note: Phase 8 return-path and JSON decoder fuzz smoke
     - Path: repo://examples/tinyidp-message-app/login_attempts.go
       Note: Atomic durable OAuth state consumption (commit 2603c18)
     - Path: repo://examples/tinyidp-message-app/login_attempts_test.go
@@ -44,6 +50,8 @@ RelatedFiles:
       Note: Presentation-only tiny-idp interaction renderer and static stylesheet handler
     - Path: repo://examples/tinyidp-message-app/loginui/renderer_test.go
       Note: Reusable tiny-idp interaction conformance harness evidence
+    - Path: repo://examples/tinyidp-message-app/main.go
+      Note: Glazed executable root and signal lifecycle
     - Path: repo://examples/tinyidp-message-app/messages.go
       Note: Opaque cursor codec for stable message-feed continuation
     - Path: repo://examples/tinyidp-message-app/oidc_client.go
@@ -66,6 +74,10 @@ RelatedFiles:
       Note: Authentication now shares the exported canonical-login function
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/design-doc/01-embedded-tiny-idp-sqlite-message-application-analysis-design-and-implementation-guide.md
       Note: Primary design artifact whose evidence and construction are recorded in this diary.
+    - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/reference/03-phase-8-operations-and-verification-guide.md
+      Note: Operator handoff for local canary and lifecycle
+    - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/reference/04-phase-8-delivery-report.md
+      Note: Evidence-backed Phase 8 handoff and live canary instructions
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/sources/01-go-oidc-package.md
       Note: Stored OIDC package reference used to design discovery and ID token verification.
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/sources/02-go-oauth2-package.md
@@ -86,6 +98,8 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
+
 
 
 
@@ -2554,4 +2568,294 @@ This maintains accessible error association without adding hidden client logic.
 embeddedidp.Options.UI.Renderer -> loginui.Renderer.RenderInteraction
 provider-owned InteractionPage -> one complete HTML document
 GET /static/tinyidp/login.css -> Message Desk provider stylesheet
+```
+
+## Step 26: Construct the real Phase 8 executable and runtime host
+
+The example is now an executable rather than an in-memory collection of route
+and repository tests. `examples/tinyidp-message-app/main.go` composes a Glazed
+root command with `init`, `serve`, and `doctor` subcommands. `commands.go`
+opens the versioned state root, creates the two SQLite stores and synchronous
+audit sink, bootstraps the exact public PKCE client plus active signing key,
+constructs the account service and embedded provider, creates the issuer-only
+back-channel client, and mounts one browser-visible application handler.
+
+### Prompt Context
+
+**User prompt (verbatim):** "do phase 8. then, can i test it somehow for real?"
+
+**Assistant interpretation:** Finish the planned operational phase rather
+than merely describing it, then run a local browser-reachable instance that
+the user can exercise.
+
+**Inferred user intent:** The Message Desk should become a real self-contained
+demonstration of tiny-idp embedding, with an operator-quality startup path and
+observability rather than a test-only fixture.
+
+**Commit (code):** Pending final Phase 8 commit.
+
+### What I did
+
+- Added a Glazed/Cobra executable with the root logging section, signal-aware
+  root context, and `--log-level` support from Glazed.
+- Added `init --state-root --public-base-url`, which creates the owner-only
+  manifest and key material without requiring or inventing an initial user.
+- Added `serve`, which opens durable state, reconciles the public browser
+  client, configures the account service, supplies the Message Desk renderer
+  through `embeddedidp.Options.UI`, performs startup maintenance, and owns
+  server/maintenance/shutdown work through an `errgroup`.
+- Added `doctor`, which validates the state root and opens both databases,
+  provider, audit stream, and application database without printing secrets.
+- Added root `/healthz` and `/readyz`. Readiness combines tiny-idp's durable
+  checks with an application SQLite ping; liveness remains process-oriented.
+- Required TLS certificate/key arguments exactly when the manifest's public
+  origin is HTTPS. The existing state validator continues to allow HTTP only
+  for loopback development origins.
+- Added runtime construction coverage and duration-validation coverage.
+
+### Why
+
+The IdP and message application have different persistence and protocol
+responsibilities, but a deployer needs one host to construct them in the right
+order. The host must be explicit about its canonical origin before registering
+redirect URLs, must use the durable audit sink before provider construction,
+and must run maintenance before declaring itself ready. Folding those facts
+into a test helper would make the product hard to operate and easy to deploy
+incorrectly.
+
+### What worked
+
+```text
+go run ./examples/tinyidp-message-app --help
+Available Commands:
+  doctor      Inspect an initialized message application state root
+  init        Initialize an owner-only message application state root
+  serve       Run the initialized self-contained message application
+
+go run ./examples/tinyidp-message-app init \
+  --state-root /tmp/tinyidp-message-app-phase8 \
+  --public-base-url http://127.0.0.1:8090
+INF message application state initialized issuer=http://127.0.0.1:8090/idp
+
+go run ./examples/tinyidp-message-app doctor \
+  --state-root /tmp/tinyidp-message-app-phase8
+INF message application doctor passed issuer=http://127.0.0.1:8090/idp
+```
+
+The tmux process announced the expected one-origin listener, and both health
+endpoints reported green readiness after startup maintenance:
+
+```text
+INF message application listening addr=127.0.0.1:8090 origin=http://127.0.0.1:8090
+GET /healthz -> {"ready":true,...}
+GET /readyz  -> lifecycle, store, schema, signing_key, token_secret,
+                 audit, rate_limiter, maintenance, application_store all ready
+```
+
+### What didn't work
+
+The first package test invocation inside the filesystem sandbox failed at an
+existing browser integration test because `httptest` could not bind an IPv6
+loopback socket:
+
+```text
+httptest: failed to listen on a port: listen tcp6 [::1]:0: operation not permitted
+```
+
+The test itself was not faulty. A normal host-network retry passed. Similarly,
+the initial fuzz-smoke invocation could not read the ordinary Go build cache
+from the restricted sandbox. It was rerun with normal cache access and
+completed. Neither retry created a separate cache, consistent with the active
+`go.work` instruction.
+
+Restarting tmux after the final code change first reported a duplicate named
+session immediately after the listener process was terminated. The exited
+session then disappeared; recreating it and capturing the pane confirmed the
+new process was live. This was expected process cleanup, not an application
+startup error.
+
+### What I learned
+
+- A browser reaches the embedded provider through the public handler, while
+  discovery, token exchange, and JWKS checks run on an explicit in-process
+  client. Both paths are necessary and deliberately have different routing.
+- Provider readiness includes signing-key, audit, schema, and maintenance
+  checks. The host must add application-store health because tiny-idp correctly
+  cannot know the relying party's database.
+- A secure origin cannot be served correctly with an HTTP listener. Failing
+  startup on a TLS/origin mismatch is safer than issuing secure cookies to a
+  browser endpoint that cannot satisfy the configured origin.
+
+### What was tricky to build
+
+The same `messageApp` constructor supports focused HTTP tests, where a
+no-op audit sink is useful, and runtime construction, where a durable file
+sink is mandatory. The repository audit analyzer correctly objected to an
+unmarked fallback and a silently ignored audit error. The final implementation
+marks the fallback as `tinyidp:development-default`; runtime replaces it with
+the state-root file sink. `recordRegistration` now counts and logs a delivery
+failure, and readiness reports `application_audit` as unhealthy thereafter.
+The registration state mutation can already have committed when a synchronous
+audit write fails, so pretending that a client-side retry repairs evidence
+would be misleading; the correct response is visible operational degradation.
+
+### What warrants a second pair of eyes
+
+- `secrets/app-session.key` is created and protected by the existing state
+  contract but is not yet consumed by the hash-only application-session store.
+  Either key the session-token hash with it in a planned migration or remove
+  the unused material in a separately reviewed contract change; do not leave
+  its intended role implicit.
+- The current production-like address policy trusts the immediate TCP peer.
+  A reverse-proxy deployment needs explicit trusted-proxy configuration rather
+  than a generic forwarded-header assumption.
+- The application has an explicit offline coordinated backup procedure, but
+  online application-database backup plus a cross-database manifest remains a
+  future enhancement and is not claimed complete.
+
+### What should be done in the future
+
+- Complete the remaining Phase 4 explicit callback mismatch/expiry coverage
+  and Phase 7 browser/component/accessibility coverage.
+- Add a deliberate two-database online backup command and signed/verified
+  backup manifest if short offline maintenance windows are unacceptable.
+- Consider an operator-facing metrics endpoint only after defining
+  low-cardinality labels and access control.
+
+### Code review instructions
+
+- Read `main.go`, then `commands.go:openInitializedMessageApplication`, then
+  `commands.go:runMessageApplication`.
+- Confirm `Bootstrap` precedes `embeddedidp.New`, the renderer is passed by
+  public interface, and the RP OIDC client uses only the in-process transport.
+- Confirm `/readyz` incorporates both provider and application conditions.
+- Validate with the command sequence in
+  `reference/03-phase-8-operations-and-verification-guide.md`.
+
+### Technical details
+
+```text
+init
+  -> state.json + secrets (owner-only; no user creation)
+
+serve
+  -> validate -> SQLite + audit -> account service -> Bootstrap
+  -> provider(UI renderer) -> issuer-only OIDC client -> HTTP handler
+  -> maintenance + cleanup -> readiness -> listener
+
+SIGINT/SIGTERM
+  -> root context cancellation -> errgroup
+  -> server.Shutdown(timeout) -> provider/audit/SQLite Close
+```
+
+## Step 27: Run Phase 8 quality gates and document operations
+
+Phase 8 has an operator reference that makes the live runtime reproducible and
+states the remaining operational limitations without hiding them. The quality
+pass also exercised the project-specific static analyzers, race detector,
+fuzz smoke, frontend build, dependent public packages, and repository-wide
+tests.
+
+### Prompt Context
+
+**User prompt (verbatim):** "let me test it too while it's running, btw (when you get there)"
+
+**Assistant interpretation:** Keep the live loopback process available while
+performing non-destructive verification and record a handoff-quality procedure.
+
+**Inferred user intent:** The implementation should be inspectable and safe to
+operate by another engineer, not only demonstrated by a one-off local command.
+
+**Commit (documentation):** Pending final Phase 8 documentation commit.
+
+### What I did
+
+- Added `reference/03-phase-8-operations-and-verification-guide.md` covering
+  state layout, local canary, HTTPS behavior, lifecycle, offline coordinated
+  backup, restore, upgrade, rollback, and release gate.
+- Added fuzz targets for `normalizeReturnTo` and the strict JSON message
+  decoder, then executed short fuzz smoke runs.
+- Ran the project IdP UI analyzer against the Message Desk renderer and the
+  repository audit analyzer against example code.
+- Fixed the audit analyzer's two findings instead of suppressing them.
+- Kept `tinyidp-message-app` running in tmux on `127.0.0.1:8090`, restarting
+  it after the final source change and checking `/readyz`.
+
+### What worked
+
+```text
+go test -race ./examples/tinyidp-message-app
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app
+
+go vet ./examples/tinyidp-message-app
+pnpm -C examples/tinyidp-message-app/ui run build
+✓ built in 1.51s
+
+make auditlint
+go vet -vettool=/tmp/tinyidp-idpui-analyzer \
+  ./examples/tinyidp-message-app/loginui
+
+go test ./...
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app
+ok   github.com/manuel/tinyidp/cmd/tinyidp-xapp
+ok   github.com/manuel/tinyidp/internal/cmds
+```
+
+The local service is currently available at `http://127.0.0.1:8090/` in tmux
+session `tinyidp-message-app`. It uses an existing durable `/tmp` state root;
+users can register independently through the browser form.
+
+### What didn't work
+
+The first auditlint pass rejected the newly introduced fallback/audit error as
+described in Step 26. This was a useful static-analysis result, not noise. The
+next pass passed after the code established explicit development and failure
+semantics.
+
+### What I learned
+
+Static analyzers are most useful when their result changes the runtime design.
+In this case, the analyzer turned an otherwise easy-to-miss observability gap
+into a readiness invariant: once registration audit delivery fails, an
+operator sees an unhealthy readiness endpoint instead of a superficially
+healthy service with incomplete security evidence.
+
+### What warrants a second pair of eyes
+
+- The manual browser canary remains a human interaction gate: create account,
+  sign in through the styled IdP, post a message, refresh, and log out. The
+  live process is intentionally left running so the user can perform it.
+- `make lint` ran the configured repository linters. It does not automatically
+  include this example in the Makefile's Glazed analyzer directory set, so
+  ordinary `go vet` and explicit command review complement it.
+
+### What should be done in the future
+
+- Add an automated real-browser canary in a stable CI browser environment,
+  including keyboard, 320-pixel reflow, literal message rendering, and
+  network-origin assertions.
+- Promote the two new fuzzers into longer CI fuzz budgets as execution
+  resources permit.
+
+### Code review instructions
+
+- Review the operator guide against the actual command flags and state paths.
+- Ensure every claimed green gate in this step has the matching command and
+  output above.
+- Use `tmux capture-pane -pt tinyidp-message-app:0.0 -S -100` and `curl
+  http://127.0.0.1:8090/readyz` to verify the handoff process.
+
+### Technical details
+
+```text
+source review + static analyzers
+       |
+       v
+focused test -> race -> fuzz smoke -> frontend build -> full test suite
+       |
+       v
+tmux server -> /healthz + /readyz -> manual browser canary
+       |
+       v
+operator guide + diary + task state + docmgr doctor
 ```
