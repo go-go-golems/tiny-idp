@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-go-golems/go-go-goja/pkg/gojahttp/auth/oidcauth"
 	"github.com/go-go-golems/go-go-goja/pkg/xgoja/hostauth"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
@@ -87,7 +86,7 @@ func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *Develo
 		return nil, errors.Wrap(err, "run initial retention maintenance")
 	}
 
-	transport, err := oidcauth.NewInProcessIssuerTransport(manifest.Issuer, provider.Handler())
+	transport, err := embeddedidp.NewInProcessIssuerTransport(manifest.Issuer, provider.Handler(), embeddedidp.InProcessTransportOptions{})
 	if err != nil {
 		return nil, errors.Wrap(err, "create production in-process issuer transport")
 	}

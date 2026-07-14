@@ -13,9 +13,9 @@
 - [x] Phase 2: implement conservative client reconciliation and active signing-key provisioning <!-- t:uhbt -->
 - [x] Phase 2: add idempotency, conflict, cancellation, audit, browser-profile, and device-profile tests <!-- t:nv3b -->
 - [x] Phase 2: migrate xapp initialization to the public bootstrap API and commit <!-- t:2l58 -->
-- [ ] Phase 3: implement exact-match in-process issuer RoundTripper <!-- t:9wau -->
-- [ ] Phase 3: test issuer matching, prefix handling, request bodies, response bounds, fallback, and cancellation <!-- t:zw90 -->
-- [ ] Phase 3: migrate xapp OIDC discovery and token exchange to the tiny-idp public transport and commit <!-- t:kpra -->
+- [x] Phase 3: implement exact-match in-process issuer RoundTripper <!-- t:9wau -->
+- [x] Phase 3: test issuer matching, prefix handling, request bodies, response bounds, fallback, and cancellation <!-- t:zw90 -->
+- [x] Phase 3: migrate xapp OIDC discovery and token exchange to the tiny-idp public transport and commit <!-- t:kpra -->
 - [ ] Phase 4: publish package documentation and executable browser/device composition examples <!-- t:qymr -->
 - [ ] Phase 4: add static public-import guards and security regression tests <!-- t:5b64 -->
 - [ ] Phase 4: run gofmt, go test, race-selected tests, build, lint, and static analysis <!-- t:7tll -->

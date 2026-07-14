@@ -17,7 +17,6 @@ import (
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/go-go-goja/pkg/engine"
 	"github.com/go-go-golems/go-go-goja/pkg/gojahttp"
-	"github.com/go-go-golems/go-go-goja/pkg/gojahttp/auth/oidcauth"
 	xgojaapp "github.com/go-go-golems/go-go-goja/pkg/xgoja/app"
 	"github.com/go-go-golems/go-go-goja/pkg/xgoja/hostauth"
 	httpprovider "github.com/go-go-golems/go-go-goja/pkg/xgoja/providers/http"
@@ -142,7 +141,7 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 		}
 	}()
 
-	transport, err := oidcauth.NewInProcessIssuerTransport(issuer, idpProvider.Handler())
+	transport, err := embeddedidp.NewInProcessIssuerTransport(issuer, idpProvider.Handler(), embeddedidp.InProcessTransportOptions{})
 	if err != nil {
 		return nil, errors.Wrap(err, "create in-process issuer transport")
 	}

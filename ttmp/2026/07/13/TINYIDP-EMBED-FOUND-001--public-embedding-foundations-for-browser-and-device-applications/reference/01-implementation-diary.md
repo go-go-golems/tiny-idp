@@ -12,6 +12,10 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/development_app.go
+      Note: Development OIDC client migrated to tiny-idp transport
+    - Path: repo://cmd/tinyidp-xapp/production_app.go
+      Note: Production OIDC client migrated to tiny-idp transport
     - Path: repo://cmd/tinyidp-xapp/state.go
       Note: Composition root now constructs account and administrative services explicitly
     - Path: repo://internal/admin/service.go
@@ -24,6 +28,10 @@ RelatedFiles:
       Note: Declarative browser/device client and signing-key bootstrap implementation
     - Path: repo://pkg/embeddedidp/bootstrap_test.go
       Note: Idempotency drift device profile key and audit regression coverage
+    - Path: repo://pkg/embeddedidp/inprocess_transport.go
+      Note: Bounded exact-issuer networkless HTTP transport
+    - Path: repo://pkg/embeddedidp/inprocess_transport_test.go
+      Note: Origin path overflow body fidelity and cancellation regression tests
     - Path: repo://pkg/idpaccounts/accounts.go
       Note: Public atomic account creation and password replacement implemented in Phase 1
     - Path: repo://pkg/idpaccounts/password.go
@@ -38,6 +46,7 @@ LastUpdated: 2026-07-13T21:36:00-04:00
 WhatFor: Use this diary to review completed work and resume implementation without repeating investigation.
 WhenToUse: Read before working on TINYIDP-EMBED-FOUND-001 or changing the public account, bootstrap, or in-process issuer APIs.
 ---
+
 
 
 
@@ -530,11 +539,95 @@ Generic: caller shape + ordinary idpstore validation
 Conflict sentinel: embeddedidp.ErrBootstrapConflict
 ```
 
+## Step 7: Commit bootstrap and implement bounded in-process HTTP
+
+The bootstrap checkpoint was committed, then Phase 3 added a tiny-idp-owned `http.RoundTripper` for same-process OIDC back-channel traffic. The transport accepts only the exact configured issuer origin and issuer path subtree, validates canonical paths, buffers at most a configured response size, and never delegates rejected requests to a network transport.
+
+### Commit
+
+```text
+7481ee1 Feat: add declarative IdP bootstrap
+```
+
+### What I did
+
+- Added `DefaultInProcessResponseLimit`, `InProcessTransportOptions`, `InProcessIssuerTransport`, and its constructor.
+- Required absolute HTTP(S) issuer URLs without userinfo, query, fragment, opaque form, noncanonical path, ambiguous encoded separators, encoded dots, backslashes, or a non-root trailing slash.
+- Required exact lowercase scheme and host matching and segment-aware issuer path containment on each request.
+- Converted the client request clone into server-handler form with `RequestURI`, empty scheme/host, canonical decoded path, and explicit loopback peer metadata.
+- Added a custom response writer that never buffers more than its limit and records overflow even when a handler ignores the short-write error.
+- Preserved status, headers, repeated headers, body, content length, protocol metadata, and originating request in the returned response.
+- Propagated request cancellation and closed request bodies according to `RoundTripper` ownership.
+- Migrated xapp development and production OIDC clients away from go-go-goja's unbounded helper to `embeddedidp.NewInProcessIssuerTransport`.
+
+### Why
+
+- Discovery and token exchange must work before the public listener is reachable.
+- A general network fallback would turn an issuer configuration mistake into SSRF or unintended egress.
+- `httptest.ResponseRecorder` buffers without a hard maximum and is unsuitable for a security boundary handling arbitrary handler output.
+- Owning the primitive in tiny-idp lets all Go hosts and the future device example use it without depending on go-go-goja internals.
+
+### What worked
+
+- Tests demonstrate exact request body delivery, query-preserving `RequestURI`, server metadata, response header/body fidelity, exact origin and path rejection, default/custom bounds, ignored handler write errors, and cancellation.
+- The xapp login integration suite passed after migration, exercising real OIDC discovery and token exchange.
+- Race tests and `go test ./...` passed.
+
+### What didn't work
+
+- The first focused test exposed that a root issuer URL has an empty parsed `URL.Path`, although its escaped HTTP path is `/`. Canonical validation initially rejected it as non-absolute:
+
+```text
+TestInProcessIssuerTransportUsesDefaultResponseBound:
+invalid in-process issuer path: path must be absolute
+```
+
+  The canonicalizer now maps an empty parsed path to `/` before validation. The focused suite passed on the next run.
+
+### What I learned
+
+- `URL.EscapedPath()` and `URL.Path` must be considered together: the former exposes encoded ambiguity, while the latter is appropriate for canonical clean-path comparison.
+- Handler dispatch should receive server request semantics, but the returned response must still point at the original client request.
+- Enforcing bounds requires overflow state in addition to returning a write error because handlers frequently ignore `Write` results.
+
+### What was tricky to build
+
+Path containment alone is insufficient. A string prefix would accept `/idp-other`, while decoding before validation can turn encoded separators or dot segments into a path outside the issuer. The transport first rejects ambiguous encodings and noncanonical decoded paths, then performs exact-or-segment containment.
+
+### What warrants a second pair of eyes
+
+- Review the deliberate rejection of every encoded dot (`%2e`), which is stricter than rejecting only encoded dot segments.
+- Confirm a 1 MiB default is sufficient for discovery, JWKS, token, introspection, and future device responses.
+- Review whether future streaming endpoints should be forbidden or receive a separate explicitly streaming transport; this implementation is intentionally buffered.
+- Confirm custom `RemoteAddr` should remain host-supplied metadata rather than a parsed network endpoint.
+
+### What should be done in the future
+
+- Keep the transport networkless; do not add a fallback field.
+- Add endpoint-class aggregate instrumentation outside the transport without logging query strings or bodies.
+- Use this transport for future device polling only after strict provider device endpoints exist.
+
+### Code review instructions
+
+- Review `pkg/embeddedidp/inprocess_transport.go` together with every negative URL case in its test.
+- Verify `boundedResponseWriter.Write` stores at most the configured number of bytes.
+- Search xapp for go-go-goja `NewInProcessIssuerTransport`; no use should remain.
+- Run `go test -race ./pkg/embeddedidp ./cmd/tinyidp-xapp` and `go test ./...`.
+
+### Technical details
+
+```text
+Default maximum response: 1 MiB
+Default handler RemoteAddr: 127.0.0.1:0
+Allowed path: issuer path exactly, or issuer path + "/" + descendant
+Fallback transport: none
+```
+
 ## Continuation point
 
-Phase 2 implementation and verification are complete but not yet committed. Next:
+Phase 3 implementation and verification are complete but not yet committed. Next:
 
-1. update Phase 2 tasks, relationships, and changelog;
-2. run docmgr doctor and staged-diff checks;
-3. commit bootstrap independently;
-4. implement the bounded fail-closed in-process issuer transport.
+1. update Phase 3 tasks, relations, changelog, and doctor;
+2. commit the transport and xapp migration;
+3. add public composition documentation, import guards, and security regression checks;
+4. run the final release-quality verification matrix.

@@ -31,3 +31,12 @@ Implemented Phase 2 declarative browser/device/generic client bootstrap, semanti
 
 - cmd/tinyidp-xapp/state.go — Xapp consumes bootstrap API
 - pkg/embeddedidp/bootstrap.go — Public bootstrap API
+
+## 2026-07-13
+
+Implemented Phase 3 bounded fail-closed in-process issuer transport, comprehensive path/origin/overflow/cancellation tests, and xapp development/production migration; race and full tests pass.
+
+### Related Files
+
+- cmd/tinyidp-xapp/development_app.go — Xapp development transport consumer
+- pkg/embeddedidp/inprocess_transport.go — Public exact-issuer RoundTripper
