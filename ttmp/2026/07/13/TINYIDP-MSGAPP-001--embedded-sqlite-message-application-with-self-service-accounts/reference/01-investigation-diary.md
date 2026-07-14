@@ -40,6 +40,10 @@ RelatedFiles:
       Note: Atomic durable OAuth state consumption (commit 2603c18)
     - Path: repo://examples/tinyidp-message-app/login_attempts_test.go
       Note: Replay, expiry, and concurrent single-winner tests
+    - Path: repo://examples/tinyidp-message-app/loginui/renderer.go
+      Note: Presentation-only tiny-idp interaction renderer and static stylesheet handler
+    - Path: repo://examples/tinyidp-message-app/loginui/renderer_test.go
+      Note: Reusable tiny-idp interaction conformance harness evidence
     - Path: repo://examples/tinyidp-message-app/messages.go
       Note: Opaque cursor codec for stable message-feed continuation
     - Path: repo://examples/tinyidp-message-app/oidc_client.go
@@ -82,6 +86,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -2456,4 +2461,97 @@ ui/src (React + RTK Query + Bootstrap + custom CSS)
 GET /                 --> embedded index shell + CSP
 GET /static/app/*     --> embedded build artifact
 GET /api/*, /auth/*, /idp/* --> protocol/application handlers, never SPA fallback
+```
+
+## Step 25: Add the compatible provider-owned identity presentation
+
+The Message Desk now includes its own tiny-idp login/consent renderer and a
+stylesheet at `/static/tinyidp/login.css`. It uses the same restrained
+paper-and-ink, system-sans, monospaced-label language as the application UI,
+without adding OS chrome, a menu bar, or Chicago typography. It remains a
+presentation-only component: tiny-idp supplies the validated page model and
+retains all protocol decisions and state.
+
+### Prompt Context
+
+**User prompt (verbatim):** "yes"
+
+**Assistant interpretation:** Continue the remaining Phase 7 provider-presentation work after confirming the frontend direction.
+
+**Inferred user intent:** Make the relying-party application and the embedded IdP feel like one coherent product without weakening tiny-idp's trust boundary.
+
+**Commit (code):** `7344db4` — "feat(msgapp): add compatible idp interaction renderer"
+
+### What I did
+
+- Added `loginui.Renderer`, implementing `idpui.InteractionRenderer`.
+- Added a template containing only provider-supplied title, public error,
+  login/consent prompt, protocol hidden fields, and provider action values.
+- Added a static CSS handler that serves only `/static/tinyidp/login.css`.
+- Added `idpuitest.RenderAndCheck` conformance coverage and extended the app
+  static-route test to verify the stylesheet and absence of Chicago references.
+
+### Why
+
+An embedding host may customize the interaction presentation, but it must not
+reconstruct, mutate, or infer OAuth/OIDC decisions. Implementing the public
+renderer interface preserves that separation: the provider validates page
+shape, interaction identifiers, CSRF, actions, and authorization state before
+and after rendering.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app/loginui ./examples/tinyidp-message-app -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app/loginui 0.004s
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 1.350s
+```
+
+The conformance harness accepted the renderer's complete document, including
+the POST form, exact hidden values, action contract, denial `formnovalidate`,
+credential labels, autocomplete, and no active content.
+
+### What didn't work
+
+- N/A. The first implementation passed renderer conformance and application tests.
+
+### What I learned
+
+- The renderer conformance test is stronger than snapshot testing for this
+  boundary: it checks protocol fields and accessibility semantics while leaving
+  visual markup evolution possible.
+
+### What was tricky to build
+
+The initial compact template placed credential inputs inside labels without
+explicit `for`/`id` pairs. The reusable conformance checker requires explicit
+labels, so the final template uses `tinyidp-login` and `tinyidp-password` IDs.
+This maintains accessible error association without adding hidden client logic.
+
+### What warrants a second pair of eyes
+
+- The renderer is available for host composition, but the future Phase 8
+  executable must pass it through `embeddedidp.Options.UI.Renderer` when it
+  constructs the provider. The existing integration test still uses the
+  default provider renderer until that executable composition exists.
+
+### What should be done in the future
+
+- Add browser/accessibility checks for the React UI and interaction renderer.
+- Wire the renderer, durable audit, and production controls into the real
+  standalone server construction in Phase 8.
+
+### Code review instructions
+
+- Read `loginui/renderer.go`, then its template, then `renderer_test.go`.
+- Confirm the template has no script, inline style, or protocol-derived URL
+  construction beyond the provider-owned form action.
+- Validate with `go test ./examples/tinyidp-message-app/loginui ./examples/tinyidp-message-app -count=1`.
+
+### Technical details
+
+```text
+embeddedidp.Options.UI.Renderer -> loginui.Renderer.RenderInteraction
+provider-owned InteractionPage -> one complete HTML document
+GET /static/tinyidp/login.css -> Message Desk provider stylesheet
 ```

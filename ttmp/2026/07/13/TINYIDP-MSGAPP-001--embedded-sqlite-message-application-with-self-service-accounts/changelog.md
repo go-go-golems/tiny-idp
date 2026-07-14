@@ -196,3 +196,12 @@ Phase 7: added embedded React message frontend with retro monochrome paper-and-i
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/ui/src/styles.css — Visual language
 
+
+## 2026-07-14
+
+Phase 7: added conformant Message Desk tiny-idp interaction renderer and /static/tinyidp stylesheet (commit 7344db4)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/loginui/renderer.go — Provider presentation component
+
