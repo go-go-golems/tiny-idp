@@ -124,3 +124,12 @@ Bound durable OIDC/login state and independent app sessions to HTTP routes, with
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Authentication and app-session route boundary
 
+
+## 2026-07-14
+
+Phase 4: verified full browser-to-embedded-IdP callback flow and explicit back-channel transport (commit ee793d8)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http_test.go — Same-process end-to-end browser regression test
+

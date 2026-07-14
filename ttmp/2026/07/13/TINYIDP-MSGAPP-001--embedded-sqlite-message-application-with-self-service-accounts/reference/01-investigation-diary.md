@@ -12,6 +12,8 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-message-app/app_http_test.go
+      Note: Exercises the browser-visible login form and complete callback flow
     - Path: repo://examples/tinyidp-message-app/appstore.go
       Note: Checksummed app schema and SQLite envelope (commit c41ba0b)
     - Path: repo://examples/tinyidp-message-app/appstore_test.go
@@ -25,7 +27,9 @@ RelatedFiles:
     - Path: repo://examples/tinyidp-message-app/login_attempts_test.go
       Note: Replay, expiry, and concurrent single-winner tests
     - Path: repo://examples/tinyidp-message-app/oidc_client.go
-      Note: OIDC discovery, durable PKCE, callback verification core (commit 36c1727)
+      Note: |-
+        OIDC discovery, durable PKCE, callback verification core (commit 36c1727)
+        Keeps the token exchange and ID-token verification on the explicit in-process transport
     - Path: repo://examples/tinyidp-message-app/oidc_client_integration_test.go
       Note: Exact in-process issuer discovery evidence
     - Path: repo://examples/tinyidp-message-app/state.go
@@ -54,6 +58,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -1394,3 +1399,153 @@ try the network even though discovery used the in-process provider correctly.
 Phase 4 needs its positive browser/IdP callback test and then can be closed.
 Proceed to Phase 5 registration endpoints only after the runnable composition
 can initialize identity and application stores together.
+
+## Step 17: Prove the complete browser-to-embedded-IdP login flow
+
+The application now has a positive integration test that takes the same route
+as a browser: application login redirect, the mounted IdP authorization page,
+credential form submission, callback, and application-session lookup. This
+closes the critical gap between testing the OIDC client methods independently
+and proving their actual HTTP composition.
+
+The test also exposed a transport-boundary detail that independent unit tests
+had not exercised. Discovery used the explicit in-process transport, but the
+callback exchange and JWKS verification need that client placed in their own
+context as well. The callback now makes that binding before consuming state and
+performing back-channel requests, so it cannot silently use the host network.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead."
+
+**Assistant interpretation:** Continue the planned implementation without pausing, completing the next coherent security-critical increment and its evidence.
+
+**Inferred user intent:** Produce a runnable, thoroughly verified self-contained relying-party example through small reviewable commits and a traceable implementation diary.
+
+**Commit (code):** `ee793d8` — "test(msgapp): cover embedded browser login flow"
+
+### What I did
+
+- Bound `finishLogin` to `c.http` with `oauth2.HTTPClient`, matching OIDC
+  discovery and preventing a network fallback during code exchange or JWKS
+  verification.
+- Added `TestBrowserLoginCompletesAgainstEmbeddedProvider`, which constructs an
+  identity SQLite store, account service, conservative browser client,
+  provider, in-process transport, and application store.
+- Used an `httptest.NewUnstartedServer` listener address to configure exact
+  redirect URIs before starting the shared public application/IdP handler.
+- Used a cookie jar to fetch the IdP form, extract only its test-visible hidden
+  CSRF and interaction inputs, submit valid credentials, follow the callback,
+  prove the application session exists, and prove callback replay fails.
+- Ran the focused and full message-app package tests.
+
+### Why
+
+OIDC correctness is a composition property. State, nonce, PKCE, token exchange,
+ID-token verification, cookie routing, and redirect handling can each pass
+isolated tests while their integrations use the wrong HTTP client or cookie
+scope. The end-to-end test makes the intended browser/public-handler versus
+back-channel/in-process-transport split executable.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app -run 'TestBrowserLoginCompletesAgainstEmbeddedProvider' -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 0.572s
+
+go test ./examples/tinyidp-message-app -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 0.949s
+```
+
+The callback redirects to its originally requested local path, establishes an
+opaque application session, and returns `502` for the replayed state. The
+one-time state therefore remains the first application-level replay boundary
+even when the browser retains both app and IdP cookies.
+
+### What didn't work
+
+The first sandboxed integration-test invocation could not open the loopback
+listener required by `httptest`:
+
+```text
+panic: httptest: failed to listen on a port: listen tcp6 [::1]:0: socket: operation not permitted
+```
+
+I reran the same `go test` command with the approved loopback-network
+permission. The code did not need a change for that expected sandbox boundary.
+
+### What I learned
+
+- `oauth2.Config.Exchange` takes a custom client from context, while
+  `oidc.IDTokenVerifier.Verify` also needs that context to fetch JWKS. Setting
+  it only during discovery is insufficient.
+- An unstarted test server supplies a listener early enough to establish
+  identity-client redirect registrations before its public handler starts.
+- A genuine browser-flow test should use a cookie jar and the public handler;
+  directly invoking `Provider.Handler` would bypass the precise routing and
+  cookie conditions the example is meant to demonstrate.
+
+### What was tricky to build
+
+The provider needs a fixed issuer and exact redirect URI, while an ordinary
+`httptest.NewServer` chooses its port only after construction. I used
+`httptest.NewUnstartedServer`, derived `baseURL` from its preallocated
+listener, built the identity client and provider with that exact value, then
+assigned the combined app handler and started the server. This preserves strict
+redirect validation without a hard-coded port or a test-only configuration
+bypass.
+
+### What warrants a second pair of eyes
+
+- Review the desired HTTP error mapping for a consumed callback state. The
+  current external `502` is intentionally generic but a production app may
+  prefer a non-diagnostic user-facing error page and a distinct operator audit
+  event.
+- Review future test coverage for nonce mismatch and expired state. The
+  callback core checks these conditions, and repository tests cover expiry,
+  but an end-to-end negative case can make the externally observable behavior
+  more explicit.
+
+### What should be done in the future
+
+- Begin Phase 5 with an anonymous registration pre-session and CSRF endpoint.
+- Keep login and registration abuse control separate: the provider's login
+  limiter does not automatically protect anonymous account creation.
+- Add an explicit RP-initiated IdP logout decision before claiming coordinated
+  logout semantics.
+
+### Code review instructions
+
+- Start in `examples/tinyidp-message-app/oidc_client.go` at `finishLogin` and
+  verify that every OIDC back-channel action shares `c.http`.
+- Read `TestBrowserLoginCompletesAgainstEmbeddedProvider` in
+  `examples/tinyidp-message-app/app_http_test.go` from setup through replay;
+  confirm it goes through `/auth/login`, `/idp/authorize`, `/auth/callback`,
+  and `/api/session` rather than calling private implementation methods.
+- Validate with:
+
+  ```text
+  go test ./examples/tinyidp-message-app -count=1
+  ```
+
+### Technical details
+
+The tested request sequence is:
+
+```text
+GET /auth/login?return_to=/messages
+  -> 303 /idp/authorize?...state...nonce...code_challenge...
+GET /idp/authorize?...                              [browser + IdP cookies]
+  -> 200 login/consent form with CSRF + interaction
+POST /idp/authorize                                 [credentials + CSRF]
+  -> 303 /auth/callback?state=...&code=...
+GET /auth/callback?state=...&code=...
+  -> in-process POST /idp/token and JWKS verification
+  -> 303 /messages + tinymsg_app_session
+GET /api/session
+  -> {"authenticated":true,...}
+```
+
+The exact redirect URI is registered through
+`embeddedidp.BrowserClient(clientID, []string{baseURL + callbackPath}, ...)`;
+the app never relaxes that provider validation merely to simplify tests.
