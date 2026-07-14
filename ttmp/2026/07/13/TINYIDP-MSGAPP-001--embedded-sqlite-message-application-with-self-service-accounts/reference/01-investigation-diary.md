@@ -20,6 +20,10 @@ RelatedFiles:
       Note: Phase 0 executable route, cookie, and invariant contract
     - Path: repo://examples/tinyidp-message-app/contracts_test.go
       Note: Public consumer import-boundary enforcement
+    - Path: repo://examples/tinyidp-message-app/login_attempts.go
+      Note: Atomic durable OAuth state consumption (commit 2603c18)
+    - Path: repo://examples/tinyidp-message-app/login_attempts_test.go
+      Note: Replay, expiry, and concurrent single-winner tests
     - Path: repo://examples/tinyidp-message-app/state.go
       Note: Phase 3 state-root paths, manifest, secrets, and atomic publication (commit 9f4a4e2)
     - Path: repo://examples/tinyidp-message-app/state_test.go
@@ -46,6 +50,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -971,3 +976,77 @@ all application domain tables remain inside the checksummed migration.
 ## Continuation point
 
 Add the login-attempt repository and its atomic, one-time consume tests next.
+
+## Step 10: Persist and atomically consume OIDC login attempts
+
+The third Phase 3 task made authorization responses one-time across restarts and
+concurrent callbacks. Only SHA-256 of OAuth state is persisted. Nonce, PKCE
+verifier, local return path, and lifetime remain server-side and are returned
+only by the winning consume operation.
+
+**Commit (code):** `2603c18` — "feat(msgapp): persist one-time login attempts"
+
+### What I did
+
+- Added bounded login-attempt creation.
+- Added one-statement `UPDATE ... RETURNING` consumption conditioned on an
+  unconsumed row and a strictly future expiry.
+- Mapped wrong, expired, and replayed state to one public sentinel error.
+- Added successful, wrong-state, expiration-boundary, replay, and sixteen-way
+  concurrent consume tests.
+
+Command and result:
+
+```text
+go test ./examples/tinyidp-message-app -run TestLoginAttempt -count=1
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app 0.023s
+```
+
+### Why
+
+- State stored only in a browser cookie cannot provide durable replay defense.
+- Hashing state reduces useful credential material in a database disclosure.
+- One SQL statement gives the consume transition a clear linearization point.
+
+### What worked
+
+- Exactly one of sixteen concurrent consumers won.
+- Wrong, expired-at-the-boundary, and replayed values were indistinguishable to
+  the caller.
+
+### What didn't work
+
+- N/A. The focused test passed on its first run.
+
+### What I learned
+
+- SQLite `UPDATE ... RETURNING` expresses the one-time transition without a
+  caller-managed read/modify/write transaction.
+
+### What was tricky to build
+
+Expiry uses `expires_at > now`, so a request at the exact expiry instant is
+invalid. This boundary is intentional and covered explicitly.
+
+### What warrants a second pair of eyes
+
+- Confirm a 1024-byte raw state input cap is appropriately conservative.
+- Review whether nonce and PKCE verifier should receive explicit database
+  length constraints in a later migration.
+
+### What should be done in the future
+
+- The callback handler must consume before token exchange and must never restore
+  a consumed attempt after downstream failure.
+- Cleanup must retain recently consumed attempts long enough for audit/debugging
+  policy, then delete them.
+
+### Code review instructions
+
+- Review `consumeLoginAttempt` and the concurrent winner assertion.
+- Run the focused command above with `-race` during the Phase 3 exit gate.
+
+## Continuation point
+
+Implement hashed application sessions with independent CSRF secrets, lookup,
+revocation, expiry, and restart tests.

@@ -77,3 +77,12 @@ Added the application-owned SQLite store, checksummed migration history, WAL and
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/appstore.go — Application SQLite boundary
 
+
+## 2026-07-14 - Phase 3 OIDC login attempts
+
+Persisted only hashed OAuth state and added an atomic one-time consume transition with replay, expiry, wrong-state, and concurrent winner tests (commit 2603c18).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/login_attempts.go — Durable callback replay boundary
+
