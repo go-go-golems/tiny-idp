@@ -95,3 +95,14 @@ Added hash-only durable application sessions with independent CSRF material, abs
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/sessions.go — Relying-party session boundary
 
+
+## 2026-07-14 - Phase 3 repository completion
+
+Added one-time registration attempts (db24682), stable append-only messages (b58c057), retention cleanup (3782f2c), and passed the complete focused suite plus race detector.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/cleanup.go — Retention cleanup
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/messages.go — Message persistence and stable cursor
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/registration_attempts.go — Anonymous pre-session boundary
+

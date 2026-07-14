@@ -21,9 +21,9 @@
 - [x] Phase 3: Implement application SQLite opening, WAL pragmas, schema ledger, checksum, and migrations <!-- t:mhk9 -->
 - [x] Phase 3: Implement durable one-time OIDC login attempts with atomic consume <!-- t:x6kf -->
 - [x] Phase 3: Implement hashed application sessions with CSRF material, revocation, and expiry <!-- t:8yok -->
-- [ ] Phase 3: Implement durable registration attempts with atomic consume <!-- t:j891 -->
-- [ ] Phase 3: Implement message insert, stable cursor pagination, and append-only ownership model <!-- t:flqi -->
-- [ ] Phase 3: Add migration, permission, restart, concurrency, cleanup, and repository tests <!-- t:vuy8 -->
+- [x] Phase 3: Implement durable registration attempts with atomic consume <!-- t:j891 -->
+- [x] Phase 3: Implement message insert, stable cursor pagination, and append-only ownership model <!-- t:flqi -->
+- [x] Phase 3: Add migration, permission, restart, concurrency, cleanup, and repository tests <!-- t:vuy8 -->
 - [ ] Phase 4: Build OIDC discovery and verifier over NewInProcessIssuerTransport <!-- t:npwn -->
 - [ ] Phase 4: Implement begin-login with local return path, state, nonce, and PKCE S256 <!-- t:tjzi -->
 - [ ] Phase 4: Implement one-time callback, code exchange, ID-token verification, and nonce validation <!-- t:nd5u -->

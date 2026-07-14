@@ -1126,3 +1126,139 @@ recent touch without turning reads into mandatory writes.
 
 Implement durable one-time registration attempts with independent anonymous
 CSRF material next.
+
+## Step 12: Add one-time registration attempts
+
+Registration now has a durable anonymous pre-session. The raw cookie token is
+hashed before persistence; a separate 32-byte CSRF secret is returned only to
+the single successful consume operation.
+
+**Commit (code):** `db24682` — "feat(msgapp): persist registration attempts"
+
+### What I did
+
+- Added bounded create and atomic `UPDATE ... RETURNING` consume operations.
+- Added wrong-token, replay, expiry semantics and sixteen-way concurrency tests.
+
+### What worked
+
+- Exactly one concurrent consumer won; all losers received the stable
+  unavailable error.
+
+### What didn't work
+
+- N/A. `go test ./examples/tinyidp-message-app -run TestRegistrationAttempt
+  -count=1` passed in 0.015 seconds.
+
+### What was tricky to build
+
+Anonymous CSRF material must survive restart but must not authenticate the user.
+The record authorizes only one registration submission.
+
+### What warrants a second pair of eyes
+
+- Confirm the HTTP phase consumes the attempt before password hashing begins.
+
+### What should be done in the future
+
+- Bind the CSRF proof to this secret and enforce Origin independently.
+
+### Code review instructions
+
+- Review `registration_attempts.go` beside `login_attempts.go` for consistent
+  one-time semantics.
+
+## Step 13: Add the append-only message repository
+
+The application can now persist plain-text messages and list them with a stable
+keyset cursor ordered by `(created_at DESC, id DESC)`. Ownership fields are
+required inputs to the repository and will be supplied only from session
+middleware by the Phase 6 HTTP handler.
+
+**Commit (code):** `b58c057` — "feat(msgapp): add message repository"
+
+### What I did
+
+- Added body line-ending normalization, whitespace rejection, 1000-rune and
+  4096-byte bounds.
+- Added inserts and cursor pagination with ID tie-breaking.
+- Added validation, pagination, and sixteen-way concurrent insertion tests.
+
+### What worked
+
+- Identical timestamps paginated without gaps or duplicates.
+- Concurrent inserts received sixteen distinct IDs.
+
+### What didn't work
+
+- N/A. Focused tests passed in 0.052 seconds.
+
+### What was tricky to build
+
+Timestamp-only pagination is unstable when multiple writes share a timestamp;
+the row ID is therefore part of both ordering and cursor predicates.
+
+### What warrants a second pair of eyes
+
+- Review preservation of leading/trailing user whitespace; only all-whitespace
+  bodies are rejected.
+
+### What should be done in the future
+
+- The HTTP request type must contain only `body`; subject spoofing must fail as
+  an unknown JSON field.
+
+### Code review instructions
+
+- Review `listMessages` SQL and `TestMessageCursorPaginationIsStable`.
+
+## Step 14: Add retention cleanup and close Phase 3
+
+The final repository task added bounded cleanup for expired or sufficiently old
+terminal login attempts, registration attempts, and sessions. Messages are not
+part of protocol cleanup and remain append-only.
+
+**Commit (code):** `3782f2c` — "feat(msgapp): add protocol state cleanup"
+
+### What I did
+
+- Added typed cleanup counts and configurable terminal retention.
+- Proved fresh pending login state survives cleanup.
+- Ran the complete focused suite and race detector.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app -count=1
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app 0.130s
+go test -race ./examples/tinyidp-message-app -count=1
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app 1.135s
+```
+
+### What didn't work
+
+- N/A.
+
+### What was tricky to build
+
+Retention compares both expiry and terminal timestamps to the same cutoff so a
+recently consumed record is retained even though it can no longer be used.
+
+### What warrants a second pair of eyes
+
+- Review the eventual default retention duration and whether cleanup should use
+  one transaction for all counts.
+
+### What should be done in the future
+
+- Schedule cleanup with provider maintenance and expose only aggregate results.
+
+### Code review instructions
+
+- Review `cleanup.go`, then run the two phase-exit commands above.
+
+## Continuation point
+
+Phase 3 persistence is complete. Begin Phase 4 by composing the embedded
+provider and OIDC discovery/verifier over the exact in-process transport, then
+implement begin-login and callback against the durable repositories.
