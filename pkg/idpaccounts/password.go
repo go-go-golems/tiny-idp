@@ -76,6 +76,7 @@ func NewService(store idpstore.Store, opts Options) (*Service, error) {
 	return newService(store, opts, passwordhash.Hasher{})
 }
 
+// tinyidp:development-default -- production hosts inject the provider's durable audit sink.
 func newService(store idpstore.Store, opts Options, hasher passwordhash.Hasher) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("store is required")

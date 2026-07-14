@@ -48,7 +48,7 @@ jobs:
           go run ./cmd/tinyidp serve-production --help
 
       - name: Repository-specific Go AST analyzers
-        run: go run ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint -- ./pkg/... ./internal/...
+        run: make auditlint
 
       - name: Parser fuzz seed corpus
         run: go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts -count=1

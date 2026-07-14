@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+//nolint:nonamedreturns // retErr lets deferred construction cleanup observe any initialization failure.
 func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *DevelopmentApplication, retErr error) {
 	manifest, err := ValidateInitializedState(stateRoot)
 	if err != nil {

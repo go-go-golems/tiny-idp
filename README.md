@@ -260,6 +260,8 @@ The strict engine signs ID tokens with the active key in the store's `KeyStore` 
 
 Run the strict IdP inside your own binary. `embeddedidp.New(ctx, Options)` returns a `*Provider` whose `Handler()` you mount on any `*http.ServeMux`:
 
+The supported composition also includes `pkg/idpaccounts` for account/password lifecycle, `embeddedidp.Bootstrap` for browser or device-shaped clients and the initial signing key, and `embeddedidp.NewInProcessIssuerTransport` for bounded same-process discovery and token exchange. See [`docs/embedding-foundations.md`](docs/embedding-foundations.md) for the complete construction order, failure semantics, executable examples, and the current strict-mode device authorization gap.
+
 ```go
 import (
     "context"

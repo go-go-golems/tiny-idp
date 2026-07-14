@@ -110,6 +110,34 @@ func TestDevelopmentApplicationInteractionDoctor(t *testing.T) {
 	}
 }
 
+func TestDevelopmentApplicationReconcilesPersistentIdentityState(t *testing.T) {
+	ctx := context.Background()
+	config := DevelopmentApplicationConfig{
+		PublicBaseURL: "http://127.0.0.1:8787",
+		StateRoot:     t.TempDir(),
+		Login:         "alice",
+		Password:      "correct horse battery staple",
+	}
+	first, err := NewDevelopmentApplication(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewDevelopmentApplication(ctx, config)
+	if err != nil {
+		t.Fatalf("restart with equivalent identity state: %v", err)
+	}
+	if err := second.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	config.Password = "different persisted password phrase"
+	if _, err := NewDevelopmentApplication(ctx, config); err == nil || !strings.Contains(err.Error(), "password conflicts with persisted identity state") {
+		t.Fatalf("conflicting restart error = %v", err)
+	}
+}
+
 func TestLoadOrCreateKeyIsStableAndOwnerOnly(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "secrets", "binding.key")
 	first, err := loadOrCreateKey(file)

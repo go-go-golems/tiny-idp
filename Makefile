@@ -1,4 +1,4 @@
-.PHONY: test build lint lintmax fmt-check vuln verify logcopter-generate logcopter-check glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems
+.PHONY: test build lint lintmax fmt-check vuln verify auditlint logcopter-generate logcopter-check glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems
 
 GO_PACKAGES ?= ./...
 LOGCOPTER_PACKAGES ?= ./cmd/... ./internal/... ./pkg/...
@@ -21,12 +21,14 @@ GLAZED_LINT_FLAGS ?= -glazedclilint.allow-paths=cmd/tinyidp/main.go,internal/cmd
 IDPUI_ANALYZER_BIN ?= /tmp/tinyidp-idpui-analyzer
 IDPUI_ANALYZER_PKG ?= ./ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/scripts/idpui_analyzer/cmd/idpui-analyzer
 IDPUI_ANALYZER_DIRS ?= ./pkg/idpui/... ./internal/fositeadapter ./cmd/tinyidp-xapp/internal/loginui
+AUDITLINT_PKG ?= ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint
+AUDITLINT_DIRS ?= ./pkg/... ./internal/... ./cmd/tinyidp-xapp/... ./examples/...
 
 test:
-	GOWORK=off go test $(GO_PACKAGES)
+	go test $(GO_PACKAGES)
 
 build:
-	GOWORK=off go build $(GO_PACKAGES)
+	go build $(GO_PACKAGES)
 
 $(GOVULNCHECK_BIN):
 	@echo "Installing govulncheck $(GOVULNCHECK_VERSION)"
@@ -34,9 +36,14 @@ $(GOVULNCHECK_BIN):
 	@mv /tmp/govulncheck $(GOVULNCHECK_BIN)
 
 vuln: $(GOVULNCHECK_BIN)
-	GOWORK=off $(GOVULNCHECK_BIN) $(GO_PACKAGES)
+	$(GOVULNCHECK_BIN) $(GO_PACKAGES)
 
-verify: build test lint vuln
+verify: build test lint auditlint vuln
+
+auditlint:
+	@for package in $(AUDITLINT_DIRS); do \
+		GOFLAGS=-buildvcs=false go run $(AUDITLINT_PKG) "$$package" || exit $$?; \
+	done
 
 $(GOLANGCI_LINT_BIN):
 	@echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)"
@@ -46,22 +53,22 @@ $(GOLANGCI_LINT_BIN):
 golangci-lint-install: $(GOLANGCI_LINT_BIN)
 
 lint: glazed-lint-build golangci-lint-install idpui-analyzer-build
-	GOWORK=off $(GOLANGCI_LINT_BIN) run -v
-	GOWORK=off go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)
-	GOWORK=off go vet -vettool=$(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_DIRS)
+	$(GOLANGCI_LINT_BIN) run -v
+	go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)
+	go vet -vettool=$(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_DIRS)
 
 lintmax: glazed-lint-build golangci-lint-install
-	GOWORK=off $(GOLANGCI_LINT_BIN) run -v --max-same-issues=100
-	GOWORK=off go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)
+	$(GOLANGCI_LINT_BIN) run -v --max-same-issues=100
+	go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)
 
 fmt-check: golangci-lint-install
-	GOWORK=off $(GOLANGCI_LINT_BIN) fmt --diff
+	$(GOLANGCI_LINT_BIN) fmt --diff
 
 logcopter-generate:
-	GOWORK=off go generate ./...
+	go generate ./...
 
 logcopter-check:
-	GOWORK=off go tool logcopter-gen -area-prefix $(LOGCOPTER_AREA_PREFIX) -strip-prefix $(LOGCOPTER_STRIP_PREFIX) -check $(LOGCOPTER_PACKAGES)
+	go tool logcopter-gen -area-prefix $(LOGCOPTER_AREA_PREFIX) -strip-prefix $(LOGCOPTER_STRIP_PREFIX) -check $(LOGCOPTER_PACKAGES)
 
 glazed-lint-build:
 	@if [ -n "$(GLAZED_VERSION)" ] && [ "$(GLAZED_VERSION)" != "(devel)" ]; then \
@@ -77,13 +84,13 @@ glazed-lint-build:
 	@mv $(dir $(GLAZED_LINT_BIN))glazed-lint $(GLAZED_LINT_BIN)
 
 glazed-lint: glazed-lint-build
-	GOWORK=off go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)
+	go vet -vettool=$(GLAZED_LINT_BIN) $(GLAZED_LINT_FLAGS) $(GLAZED_LINT_DIRS)
 
 idpui-analyzer-build:
-	GOWORK=off go build -o $(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_PKG)
+	go build -o $(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_PKG)
 
 idpui-analyzer: idpui-analyzer-build
-	GOWORK=off go vet -vettool=$(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_DIRS)
+	go vet -vettool=$(IDPUI_ANALYZER_BIN) $(IDPUI_ANALYZER_DIRS)
 
 bump-go-go-golems:
 	@deps="$$(awk '/^require[[:space:]]+github\.com\/go-go-golems\// { print $$2 } /^[[:space:]]*github\.com\/go-go-golems\// { print $$1 }' go.mod | sort -u)"; \

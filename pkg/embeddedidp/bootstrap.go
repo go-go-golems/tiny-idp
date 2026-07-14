@@ -72,6 +72,7 @@ func (e *ClientConflictError) Error() string {
 
 func (e *ClientConflictError) Unwrap() error { return ErrBootstrapConflict }
 
+// tinyidp:development-default -- production hosts inject a durable bootstrap audit sink.
 func Bootstrap(ctx context.Context, store idpstore.Store, cfg BootstrapConfig) (BootstrapReport, error) {
 	report := BootstrapReport{}
 	if ctx == nil {

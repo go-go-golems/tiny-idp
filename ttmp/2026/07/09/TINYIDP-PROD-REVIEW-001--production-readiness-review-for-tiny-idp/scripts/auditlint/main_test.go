@@ -10,6 +10,10 @@ func TestInternalAPIAnalyzer(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), internalAPIAnalyzer, "fixture/pkg/public")
 }
 
+func TestEmbeddingImportAnalyzer(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), embeddingImportAnalyzer, "fixture/cmd/tinyidp-xapp")
+}
+
 func TestIgnoredRandAnalyzer(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), ignoredRandAnalyzer, "fixture/checks/randcheck")
 }

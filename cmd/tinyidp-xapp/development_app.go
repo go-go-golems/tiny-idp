@@ -24,11 +24,11 @@ import (
 	durableobjectsprovider "github.com/go-go-golems/go-go-objects/pkg/xgoja/providers/durableobjects"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/xgojaruntime"
-	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
+	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 	"github.com/pkg/errors"
 )
 
@@ -58,6 +58,7 @@ type DevelopmentApplication struct {
 	extras        []func(context.Context) error
 }
 
+//nolint:nonamedreturns // retErr lets deferred construction cleanup observe any initialization failure.
 func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationConfig) (_ *DevelopmentApplication, retErr error) {
 	if ctx == nil {
 		return nil, errors.New("development application context is required")
@@ -73,43 +74,39 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	}
 
 	issuer := cfg.PublicBaseURL + "/idp"
-	store := memory.New()
-	now := time.Now().UTC()
-	client := idpstore.Client{
-		ID:           developmentClientID,
-		Public:       true,
-		RequirePKCE:  true,
-		RedirectURIs: []string{cfg.PublicBaseURL + "/auth/callback"},
-		AllowedScopes: []string{
-			"openid", "profile", "email",
-		},
-		AccessTokenTTL:  time.Hour,
-		IDTokenTTL:      time.Hour,
-		RefreshTokenTTL: 24 * time.Hour,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(cfg.StateRoot, "identity", "development.sqlite")))
+	if err != nil {
+		return nil, errors.Wrap(err, "open development identity store")
 	}
-	if err := store.PutClient(ctx, client); err != nil {
-		return nil, errors.Wrap(err, "seed development OIDC client")
-	}
+	storeOwnedByApp := false
+	defer func() {
+		if retErr != nil && !storeOwnedByApp {
+			_ = store.Close()
+		}
+	}()
 	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{})
 	if err != nil {
 		return nil, errors.Wrap(err, "create development password service")
 	}
-	if err := seedDevelopmentUser(ctx, accounts, developmentUser{ID: "dev-alice", Subject: "dev-alice-subject", Login: cfg.Login, Password: cfg.Password, Name: "Alice", Email: "alice@example.test"}); err != nil {
+	if err := seedDevelopmentUser(ctx, store, accounts, developmentUser{ID: "dev-alice", Subject: "dev-alice-subject", Login: cfg.Login, Password: cfg.Password, Name: "Alice", Email: "alice@example.test"}); err != nil {
 		return nil, err
 	}
 	if cfg.SecondLogin != "" {
-		if err := seedDevelopmentUser(ctx, accounts, developmentUser{ID: "dev-bob", Subject: "dev-bob-subject", Login: cfg.SecondLogin, Password: cfg.SecondPassword, Name: "Bob", Email: "bob@example.test"}); err != nil {
+		if err := seedDevelopmentUser(ctx, store, accounts, developmentUser{ID: "dev-bob", Subject: "dev-bob-subject", Login: cfg.SecondLogin, Password: cfg.SecondPassword, Name: "Bob", Email: "bob@example.test"}); err != nil {
 			return nil, err
 		}
 	}
-	signingKey, err := keys.GenerateRSA("xapp-dev-signing-key", now)
-	if err != nil {
-		return nil, errors.Wrap(err, "generate development signing key")
-	}
-	if err := store.CreateSigningKey(ctx, signingKey); err != nil {
-		return nil, errors.Wrap(err, "seed development signing key")
+	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{
+		Mode: embeddedidp.DevMode,
+		Clients: []embeddedidp.ClientSpec{embeddedidp.BrowserClient(
+			developmentClientID,
+			[]string{cfg.PublicBaseURL + "/auth/callback"},
+			[]string{cfg.PublicBaseURL + "/"},
+			[]string{"openid", "profile", "email"},
+		)},
+		SigningKeyID: "xapp-dev-signing-key",
+	}); err != nil {
+		return nil, errors.Wrap(err, "bootstrap development identity provider")
 	}
 	tokenSecret, err := randomKey(32)
 	if err != nil {
@@ -134,7 +131,11 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	if err != nil {
 		return nil, errors.Wrap(err, "create embedded development IdP")
 	}
-	app := &DevelopmentApplication{idp: idpProvider, loginUI: interactionUI, publicBaseURL: cfg.PublicBaseURL}
+	app := &DevelopmentApplication{
+		idp: idpProvider, loginUI: interactionUI, publicBaseURL: cfg.PublicBaseURL,
+		extras: []func(context.Context) error{func(context.Context) error { return store.Close() }},
+	}
+	storeOwnedByApp = true
 	defer func() {
 		if retErr != nil {
 			_ = app.Close(context.Background())
@@ -187,10 +188,23 @@ type developmentUser struct {
 	Email    string
 }
 
-func seedDevelopmentUser(ctx context.Context, accounts *idpaccounts.Service, seed developmentUser) error {
+func seedDevelopmentUser(ctx context.Context, store *sqlitestore.Store, accounts *idpaccounts.Service, seed developmentUser) error {
 	_, err := accounts.Create(ctx, idpaccounts.CreateRequest{ID: seed.ID, Subject: seed.Subject, Login: seed.Login, Password: []byte(seed.Password), Email: seed.Email, EmailVerified: true, Name: seed.Name, PreferredUsername: seed.Login})
-	if err != nil {
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, idpstore.ErrDuplicate) {
 		return errors.Wrap(err, "seed development user")
+	}
+	existing, getErr := store.GetUserByLogin(ctx, seed.Login)
+	if getErr != nil {
+		return errors.Wrap(getErr, "reconcile development user")
+	}
+	if existing.ID != seed.ID || existing.Sub != seed.Subject || existing.Email != seed.Email || existing.Name != seed.Name {
+		return errors.Errorf("development user %q conflicts with persisted identity state", seed.Login)
+	}
+	if _, authErr := accounts.AuthenticatePassword(ctx, seed.Login, seed.Password, idp.LoginMetadata{ClientID: developmentClientID}); authErr != nil {
+		return errors.Errorf("development user %q password conflicts with persisted identity state", seed.Login)
 	}
 	return nil
 }

@@ -76,6 +76,8 @@ func (r LoginReason) Valid() bool {
 // Explanation returns a conservative default explanation for the login state.
 func (r LoginReason) Explanation() string {
 	switch r {
+	case LoginReasonSessionMissing:
+		return "Sign in to continue."
 	case LoginReasonPromptLogin:
 		return "This application requested that you sign in again."
 	case LoginReasonMaxAge:

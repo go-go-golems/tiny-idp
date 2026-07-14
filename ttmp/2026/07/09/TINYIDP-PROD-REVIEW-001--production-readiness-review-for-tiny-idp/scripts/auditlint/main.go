@@ -23,6 +23,7 @@ import (
 func main() {
 	multichecker.Main(
 		internalAPIAnalyzer,
+		embeddingImportAnalyzer,
 		ignoredRandAnalyzer,
 		httpServerAnalyzer,
 		securityDefaultAnalyzer,
@@ -38,6 +39,39 @@ func main() {
 		protocolLifecycleAnalyzer,
 		ignoredSecurityErrorAnalyzer,
 	)
+}
+
+var embeddingImportAnalyzer = &analysis.Analyzer{
+	Name: "tinyidpembeddingimports",
+	Doc:  "reports application examples and xapp packages that bypass public tiny-idp embedding APIs",
+	Run:  runEmbeddingImports,
+}
+
+func runEmbeddingImports(pass *analysis.Pass) (any, error) {
+	packagePath := pass.Pkg.Path()
+	if strings.HasSuffix(packagePath, ".test") {
+		return nil, nil
+	}
+	if !strings.Contains(packagePath, "/cmd/tinyidp-xapp") && !strings.Contains(packagePath, "/examples/") {
+		return nil, nil
+	}
+	allowedOwnInternal := ""
+	if index := strings.Index(packagePath, "/cmd/tinyidp-xapp"); index >= 0 {
+		allowedOwnInternal = packagePath[:index+len("/cmd/tinyidp-xapp")] + "/internal/"
+	}
+	for _, file := range pass.Files {
+		for _, imported := range file.Imports {
+			importPath, err := strconv.Unquote(imported.Path.Value)
+			if err != nil || !strings.Contains(importPath, "/internal/") {
+				continue
+			}
+			if strings.Contains(packagePath, "/cmd/tinyidp-xapp") && strings.HasPrefix(importPath, allowedOwnInternal) {
+				continue
+			}
+			pass.Reportf(imported.Pos(), "embedding application imports private package %q; compose identity through pkg/idpaccounts, pkg/embeddedidp, pkg/idpstore, and pkg/sqlitestore", importPath)
+		}
+	}
+	return nil, nil
 }
 
 var internalAPIAnalyzer = &analysis.Analyzer{
@@ -312,6 +346,7 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 				continue
 			}
 			mutations := 0
+			mutationNames := make([]string, 0, 2)
 			mutationInLoop := false
 			hasTransaction := false
 			ast.Inspect(fn.Body, func(node ast.Node) bool {
@@ -326,6 +361,7 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 					}
 					if isMutationName(sel.Sel.Name) {
 						mutations++
+						mutationNames = append(mutationNames, sel.Sel.Name)
 					}
 				}
 				return true
@@ -354,7 +390,7 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 				return !mutationInLoop
 			})
 			if !hasTransaction && (mutations >= 2 || mutationInLoop) {
-				pass.Reportf(fn.Name.Pos(), "persistence function %s performs %d mutation operations without Begin/BeginTx; partial failure or concurrency can expose intermediate state", fn.Name.Name, mutations)
+				pass.Reportf(fn.Name.Pos(), "persistence function %s performs %d mutation operations without Begin/BeginTx; partial failure or concurrency can expose intermediate state; classified calls: %s", fn.Name.Name, mutations, strings.Join(mutationNames, ", "))
 			}
 		}
 	}
@@ -375,6 +411,10 @@ func hasDirective(group *ast.CommentGroup, directive string) bool {
 }
 
 func isMutationName(name string) bool {
+	if name == "Execute" {
+		// Template execution renders output; it is not database Exec/ExecContext.
+		return false
+	}
 	for _, prefix := range []string{"Exec", "Put", "Create", "Rotate", "Revoke", "Activate", "Retire", "Reset", "Delete", "Mark", "put", "revoke"} {
 		if strings.HasPrefix(name, prefix) {
 			return true
