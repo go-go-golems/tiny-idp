@@ -1333,3 +1333,64 @@ after an uncertain exchange risks an ambiguous security state.
 
 Add HTTP handlers for `/auth/login`, `/auth/callback`, session middleware, and
 local logout. Then drive a full IdP login form in a same-process test.
+
+## Step 16: Bind OIDC and app sessions to HTTP routes
+
+The OIDC client is now exposed through application routes. These routes keep
+the IdP handler under `/idp/`, expose a separate `/auth/*` and `/api/session`
+surface, set only an opaque app-session cookie, and use the session's independent
+CSRF secret for local logout.
+
+**Commit (code):** `bfb79fa` — "feat(msgapp): add auth HTTP handlers"
+
+### What I did
+
+- Added `GET /auth/login`, `GET /auth/callback`, `GET /api/session`, and
+  `POST /auth/logout`.
+- Propagated the exact in-process back-channel HTTP client into code exchange
+  and ID-token verification context.
+- Added response `no-store`, no-referrer, and nosniff headers.
+- Added JSON session disclosure for same-origin UI code and constant-time CSRF
+  comparison for local logout.
+- Added tests showing an app session is independent of the IdP and that logout
+  revokes it durably.
+
+Command and result:
+
+```text
+go test ./examples/tinyidp-message-app -run 'Test(SessionEndpoint|LoginRejects|BeginLogin|ReturnTo|OIDCClient)' -count=1
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app 0.233s
+```
+
+### What didn't work
+
+- N/A. The focused handler test passed on the first run.
+
+### What was tricky to build
+
+`oauth2.Config.Exchange` accepts its HTTP client through context. Without
+placing the exact in-process client into callback context, code exchange would
+try the network even though discovery used the in-process provider correctly.
+
+### What warrants a second pair of eyes
+
+- Review whether logout should later offer a separate explicit RP-initiated IdP
+  logout route; local logout currently has deliberately narrower semantics.
+- Review the CSP selected once the React shell is added.
+
+### What should be done in the future
+
+- Add a successful full callback test that parses the IdP form and follows the
+  exact redirects.
+- Attach current-session lookup as middleware for the message API.
+
+### Code review instructions
+
+- Review `handleCallback`, then `handleLogout`.
+- Run the focused command above.
+
+## Continuation point
+
+Phase 4 needs its positive browser/IdP callback test and then can be closed.
+Proceed to Phase 5 registration endpoints only after the runnable composition
+can initialize identity and application stores together.

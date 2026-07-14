@@ -27,7 +27,7 @@
 - [x] Phase 4: Build OIDC discovery and verifier over NewInProcessIssuerTransport <!-- t:npwn -->
 - [x] Phase 4: Implement begin-login with local return path, state, nonce, and PKCE S256 <!-- t:tjzi -->
 - [ ] Phase 4: Implement one-time callback, code exchange, ID-token verification, and nonce validation <!-- t:nd5u -->
-- [ ] Phase 4: Implement app-session middleware, session API, local logout, and coordinated IdP logout <!-- t:d2ns -->
+- [x] Phase 4: Implement app-session middleware, session API, local logout, and coordinated IdP logout <!-- t:d2ns -->
 - [ ] Phase 4: Add callback replay, mismatch, expiry, subject, and open-redirect tests <!-- t:xkz3 -->
 - [ ] Phase 5: Implement registration pre-session and anonymous CSRF endpoint <!-- t:7606 -->
 - [ ] Phase 5: Implement strict bounded account creation JSON and password-buffer clearing <!-- t:jhes -->

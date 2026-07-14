@@ -115,3 +115,12 @@ Added go-oidc and OAuth2-based discovery, durable PKCE state/nonce flow, callbac
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/oidc_client.go — Public OIDC relying-party boundary
 
+
+## 2026-07-14 - Phase 4 authentication HTTP handlers
+
+Bound durable OIDC/login state and independent app sessions to HTTP routes, with no-store headers and CSRF-protected local logout (commit bfb79fa).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Authentication and app-session route boundary
+
