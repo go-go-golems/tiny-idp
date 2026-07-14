@@ -315,10 +315,42 @@ For the device ticket, begin with Phase 0 and Phase 1. Do not add discovery
 metadata until durable creation, verification, polling, and token issuance are
 complete behind the strict provider.
 
-## Remaining work
+## 2026-07-14 15:35 EDT — Final validation, commits, and publication
+
+The complete repository suite passed with normal loopback and shared-cache
+access:
+
+```text
+go test ./...
+```
+
+Created two scoped commits with `LEFTHOOK=0`:
+
+- `b2f31d3 feat(examples): make embedded host a complete OIDC app`
+- `7d46268 docs(device): design production authorization grant`
+
+The first sandboxed staging attempt could not create the linked-worktree
+`index.lock` because the actual Git directory is outside the writable workspace.
+Staging and committing were repeated with the required approval. Only the five
+example files, the new ticket, and its vocabulary entry were staged. The two
+pre-existing untracked OIDF directories remained untouched.
+
+Docmgr frontmatter validation passed, and `docmgr doctor` reported all checks
+passed after adding the `oauth2` topic vocabulary and notes for every related
+file.
+
+Uploaded one combined PDF containing the ticket index, design, diary, tasks,
+and four preserved specifications:
+
+```text
+/ai/2026/07/14/TINYIDP-DEVICE-PROD-001/
+TINYIDP Device Production Design Bundle.pdf
+```
+
+### Remaining implementation work
 
 - Implement the device phases tracked in `tasks.md`.
-- Run the complete repository suite in an environment that permits loopback
-  `httptest` listeners.
-- Add the embedded example files to docmgr relations.
-- Upload the ticket bundle to reMarkable after docmgr validation.
+- Keep device discovery advertisement disabled until the endpoint, browser
+  verification, and atomic Fosite token issuance phases pass together.
+- Obtain an independent security review before declaring RFC 8628 production
+  ready.
