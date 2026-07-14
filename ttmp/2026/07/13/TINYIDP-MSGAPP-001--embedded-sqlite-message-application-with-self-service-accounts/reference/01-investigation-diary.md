@@ -16,6 +16,10 @@ RelatedFiles:
       Note: Phase 0 executable route, cookie, and invariant contract
     - Path: repo://examples/tinyidp-message-app/contracts_test.go
       Note: Public consumer import-boundary enforcement
+    - Path: repo://examples/tinyidp-message-app/state.go
+      Note: Phase 3 state-root paths, manifest, secrets, and atomic publication (commit 9f4a4e2)
+    - Path: repo://examples/tinyidp-message-app/state_test.go
+      Note: Permission, conflict, idempotency, and damage tests
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/design-doc/01-embedded-tiny-idp-sqlite-message-application-analysis-design-and-implementation-guide.md
       Note: Primary design artifact whose evidence and construction are recorded in this diary.
     - Path: repo://ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/sources/01-go-oidc-package.md
@@ -38,6 +42,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -686,6 +691,8 @@ ID, issuer mount, application routes, cookie names, and named security-invariant
 test inventory. A Go AST import-boundary test prevents the example from using
 tiny-idp internal packages merely because it shares the module.
 
+**Commit (code and contract docs):** `ec45bb2` — "feat(msgapp): freeze implementation contract"
+
 ### What I did
 
 - Read the complete diary template and existing ticket diary before editing.
@@ -784,3 +791,98 @@ Phase 0 and the inherited public foundations are reconciled. Continue with
 Phase 3 in `examples/tinyidp-message-app`: state paths, owner-only secrets,
 application SQLite migrations, login attempts, sessions, registration attempts,
 messages, cleanup, restart, and concurrency tests.
+
+## Step 8: Implement the owner-only application state root
+
+This step implemented the first Phase 3 task as an independent unit. The
+message application now has deterministic paths for identity, application,
+secret, audit, and manifest state. Initialization is idempotent for the same
+public origin and fails on origin or client-contract drift.
+
+Secrets are generated with `crypto/rand`, written through owner-only temporary
+files, synced, and atomically renamed. Validation checks both file mode and
+exact secret length before later provider or session construction can use the
+state.
+
+**Commit (code):** `9f4a4e2` — "feat(msgapp): add secure state root"
+
+### What I did
+
+- Added `statePaths` and `resolveStatePaths`.
+- Added a versioned, non-secret JSON manifest.
+- Added canonical HTTP(S) origin validation; plain HTTP is loopback-only.
+- Added owner-only directory creation and two independent 32-byte secrets.
+- Added atomic JSON and byte-file writers.
+- Added state validation and damage detection.
+- Added tests for permissions, idempotency, conflicts, unsafe origins, and
+  truncated secrets.
+
+Command:
+
+```bash
+gofmt -w examples/tinyidp-message-app/state.go \
+  examples/tinyidp-message-app/state_test.go
+go test ./examples/tinyidp-message-app
+```
+
+Result:
+
+```text
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app 0.013s
+```
+
+### Why
+
+- Identity and application databases require a stable, explicit ownership
+  boundary before either is opened.
+- Token and application-session secrets serve different cryptographic purposes
+  and must not be reused.
+- An origin change modifies issuer and redirect semantics, so startup must fail
+  rather than silently rewrite initialized state.
+
+### What worked
+
+- First focused test run passed.
+- Repeating initialization preserved `CreatedAt` and both secrets.
+- File and directory permission assertions pass on the target filesystem.
+
+### What didn't work
+
+- N/A. The implementation formatted and passed on the first test run.
+
+### What I learned
+
+- The xapp state implementation remains a useful operational reference, but the
+  message app needs a smaller manifest and does not need object-storage paths.
+- Loopback HTTP can be admitted without a broad insecure-mode fallback.
+
+### What was tricky to build
+
+Atomic creation must not overwrite an existing temporary file left by another
+initializer. `O_EXCL` makes concurrent or stale temporary state explicit. The
+published destination is never opened with truncation.
+
+### What warrants a second pair of eyes
+
+- Review whether directory `Chmod(0700)` should reject rather than repair broad
+  permissions on an existing root.
+- Review whether manifest publication needs an explicit parent-directory sync
+  for the required crash-consistency level.
+
+### What should be done in the future
+
+- Doctor must reuse `validateStateRoot` and report stable reason codes without
+  printing secret contents.
+- CLI initialization must avoid logging raw public input beyond the normalized
+  non-secret origin.
+
+### Code review instructions
+
+- Start at `initializeStateRoot` in `state.go`.
+- Review `writeBytesAtomic` for cleanup and publication ordering.
+- Run `go test ./examples/tinyidp-message-app -run 'Test(State|Initialize|Normalize|Validate)'`.
+
+## Continuation point
+
+State-root task is complete. Implement the application SQLite schema ledger and
+checksum enforcement next, then add repositories in separate tasks.

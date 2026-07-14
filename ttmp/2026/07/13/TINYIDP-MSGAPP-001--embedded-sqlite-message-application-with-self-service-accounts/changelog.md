@@ -59,3 +59,12 @@ Reconciled the original plan with landed embedding foundations, added 36 impleme
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/contracts.go — Frozen application contract
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/13/TINYIDP-MSGAPP-001--embedded-sqlite-message-application-with-self-service-accounts/reference/02-implementation-contract-and-task-map.md — Accepted decisions and task reconciliation
 
+
+## 2026-07-14 - Phase 3 secure state root
+
+Added the versioned application manifest, deterministic two-database paths, loopback-aware origin validation, owner-only secrets, atomic writes, and focused tests (commit 9f4a4e2).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/state.go — State-root implementation
+
