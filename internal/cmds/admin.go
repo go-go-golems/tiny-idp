@@ -11,6 +11,7 @@ import (
 
 	"github.com/manuel/tinyidp/internal/admin"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
@@ -59,12 +60,12 @@ func newAdminUserCreateCommand(dbPath *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			svc, closeFn, err := openAdminService(*dbPath)
+			svc, closeFn, err := openAccountService(*dbPath)
 			if err != nil {
 				return err
 			}
 			defer closeFn()
-			u, err := svc.CreateUser(cmd.Context(), admin.CreateUserRequest{Login: login, Password: pw, ID: id, Sub: sub, Email: email, EmailVerified: emailVerified, Name: name})
+			u, err := svc.Create(cmd.Context(), idpaccounts.CreateRequest{Login: login, Password: pw, ID: id, Subject: sub, Email: email, EmailVerified: emailVerified, Name: name})
 			if err != nil {
 				return err
 			}
@@ -94,12 +95,12 @@ func newAdminUserSetPasswordCommand(dbPath *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			svc, closeFn, err := openAdminService(*dbPath)
+			svc, closeFn, err := openAccountService(*dbPath)
 			if err != nil {
 				return err
 			}
 			defer closeFn()
-			if err := svc.SetPassword(cmd.Context(), admin.SetPasswordRequest{Login: login, Password: pw}); err != nil {
+			if err := svc.SetPassword(cmd.Context(), idpaccounts.SetPasswordRequest{Login: login, Password: pw}); err != nil {
 				return err
 			}
 			return writeJSONLine(cmd.OutOrStdout(), map[string]any{"status": "password-updated", "login": login})
@@ -186,6 +187,28 @@ func openAdminService(dbPath string) (*admin.Service, func(), error) {
 		return nil, nil, err
 	}
 	return svc, func() { _ = audit.Close(); _ = st.Close() }, nil
+}
+
+func openAccountService(dbPath string) (*idpaccounts.Service, func(), error) {
+	if strings.TrimSpace(dbPath) == "" {
+		return nil, nil, fmt.Errorf("--db is required")
+	}
+	store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(dbPath))
+	if err != nil {
+		return nil, nil, err
+	}
+	audit, err := idp.NewFileAuditSink(dbPath + ".audit.jsonl")
+	if err != nil {
+		_ = store.Close()
+		return nil, nil, err
+	}
+	service, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: audit})
+	if err != nil {
+		_ = audit.Close()
+		_ = store.Close()
+		return nil, nil, err
+	}
+	return service, func() { _ = audit.Close(); _ = store.Close() }, nil
 }
 
 func emitAdminAudit(ctx context.Context, dbPath string, event idp.Event) error {

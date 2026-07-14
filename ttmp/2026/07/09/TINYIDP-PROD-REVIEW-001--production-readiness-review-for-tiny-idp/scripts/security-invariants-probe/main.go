@@ -15,11 +15,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
@@ -72,17 +71,20 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	}
 	fmt.Println("PASS: SQLite database remains 0600 under umask 000")
 
-	hasher := passwordhash.New(passwordhash.TestParams())
-	service, err := admin.NewService(store, admin.Options{Hasher: hasher})
+	service, err := admin.NewService(store, admin.Options{})
 	if err != nil {
 		return err
 	}
-	_, err = service.CreateUser(ctx, admin.CreateUserRequest{Login: "short-password-user", Password: []byte("x"), Email: "short@example.test"})
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{})
+	if err != nil {
+		return err
+	}
+	_, err = accounts.Create(ctx, idpaccounts.CreateRequest{Login: "short-password-user", Password: []byte("x"), Email: "short@example.test"})
 	if !errors.Is(err, idp.ErrPasswordRejected) {
 		return fmt.Errorf("one-character password error = %v, want password rejection", err)
 	}
 	fmt.Println("PASS: one-character password is rejected by the establishment policy")
-	_, err = service.CreateUser(ctx, admin.CreateUserRequest{Login: "probe-user", Password: []byte("a valid password phrase"), Email: "probe@example.test"})
+	_, err = accounts.Create(ctx, idpaccounts.CreateRequest{Login: "probe-user", Password: []byte("a valid password phrase"), Email: "probe@example.test"})
 	if err != nil {
 		return fmt.Errorf("create valid probe user: %w", err)
 	}
@@ -118,7 +120,7 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	}
 	fmt.Println("PASS: production construction rejects expired keys and missing controls")
 
-	lostRound, observedCount, locked, err := probeConcurrentLockout(ctx, store, service.Passwords, rounds, attempts)
+	lostRound, observedCount, locked, err := probeConcurrentLockout(ctx, store, accounts, rounds, attempts)
 	if err != nil {
 		return err
 	}
@@ -129,7 +131,7 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	return nil
 }
 
-func probeConcurrentLockout(ctx context.Context, store *sqlitestore.Store, passwords *authn.PasswordService, rounds, attempts int) (int, int, bool, error) {
+func probeConcurrentLockout(ctx context.Context, store *sqlitestore.Store, passwords *idpaccounts.Service, rounds, attempts int) (int, int, bool, error) {
 	user, err := store.GetUserByLogin(ctx, "probe-user")
 	if err != nil {
 		return 0, 0, false, err
@@ -148,7 +150,7 @@ func probeConcurrentLockout(ctx context.Context, store *sqlitestore.Store, passw
 					return groupCtx.Err()
 				}
 				_, authErr := passwords.AuthenticatePassword(groupCtx, "probe-user", "wrong", idp.LoginMetadata{ClientID: "probe"})
-				if authErr == nil || (!errors.Is(authErr, authn.ErrInvalidCredentials) && !errors.Is(authErr, authn.ErrAccountLocked)) {
+				if authErr == nil || (!errors.Is(authErr, idpaccounts.ErrInvalidCredentials) && !errors.Is(authErr, idpaccounts.ErrAccountLocked)) {
 					return fmt.Errorf("unexpected authentication result: %v", authErr)
 				}
 				return nil

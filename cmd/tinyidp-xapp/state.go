@@ -14,6 +14,7 @@ import (
 	"github.com/manuel/tinyidp/internal/admin"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 	"github.com/pkg/errors"
@@ -125,6 +126,10 @@ func InitializeState(ctx context.Context, cfg InitializeStateConfig) (_ StateMan
 	if err != nil {
 		return StateManifest{}, errors.Wrap(err, "create initialization service")
 	}
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: audit})
+	if err != nil {
+		return StateManifest{}, errors.Wrap(err, "create account lifecycle service")
+	}
 
 	if _, err := loadOrCreateKey(paths.TokenSecret); err != nil {
 		return StateManifest{}, errors.Wrap(err, "initialize token secret")
@@ -135,7 +140,7 @@ func InitializeState(ctx context.Context, cfg InitializeStateConfig) (_ StateMan
 	if err := reconcileRPClient(ctx, service, desired); err != nil {
 		return StateManifest{}, err
 	}
-	if err := reconcileFirstUser(ctx, service, cfg); err != nil {
+	if err := reconcileFirstUser(ctx, store, accounts, cfg); err != nil {
 		return StateManifest{}, err
 	}
 	if err := reconcileSigningKey(ctx, store); err != nil {
@@ -203,8 +208,8 @@ func reconcileRPClient(ctx context.Context, service *admin.Service, manifest Sta
 	return errors.Wrap(err, "create relying-party client")
 }
 
-func reconcileFirstUser(ctx context.Context, service *admin.Service, cfg InitializeStateConfig) error {
-	existing, err := service.GetUserByLogin(ctx, cfg.Login)
+func reconcileFirstUser(ctx context.Context, store idpstore.Store, accounts *idpaccounts.Service, cfg InitializeStateConfig) error {
+	existing, err := store.GetUserByLogin(ctx, cfg.Login)
 	if err == nil {
 		if existing.Disabled || (cfg.Email != "" && existing.Email != cfg.Email) {
 			return errors.New("existing first user conflicts with initialization request")
@@ -214,7 +219,7 @@ func reconcileFirstUser(ctx context.Context, service *admin.Service, cfg Initial
 	if !errors.Is(err, idpstore.ErrNotFound) {
 		return errors.Wrap(err, "read first user")
 	}
-	_, err = service.CreateUser(ctx, admin.CreateUserRequest{
+	_, err = accounts.Create(ctx, idpaccounts.CreateRequest{
 		Login:             cfg.Login,
 		Password:          cfg.Password,
 		Email:             cfg.Email,

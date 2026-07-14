@@ -14,11 +14,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/manuel/tinyidp/internal/authn"
-	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/idp"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 )
 
 type report struct {
@@ -54,25 +52,17 @@ func main() {
 
 func run(ctx context.Context, workers, attempts, maxConcurrent int) error {
 	store := memory.New()
-	if err := store.PutUser(ctx, "load-user", idpstore.User{ID: "load-user", Sub: "load-subject"}); err != nil {
-		return err
-	}
-	policy := authn.DefaultPasswordPolicy()
+	policy := idpaccounts.DefaultLoginPolicy()
 	policy.LockoutThreshold = 1_000_000
-	service, err := authn.NewPasswordService(store, authn.Options{
-		Hasher: passwordhash.New(passwordhash.DefaultParams()),
-		Policy: policy,
-		Work:   idp.PasswordWorkConfig{MaxConcurrent: maxConcurrent},
-		Audit:  idp.NewMemorySink(),
+	service, err := idpaccounts.NewService(store, idpaccounts.Options{
+		LoginPolicy:  policy,
+		PasswordWork: idp.PasswordWorkConfig{MaxConcurrent: maxConcurrent},
+		Audit:        idp.NewMemorySink(),
 	})
 	if err != nil {
 		return err
 	}
-	credential, err := service.HashCredential(ctx, "load-user", "load-user", []byte("a production load password phrase"), time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	if err := store.PutPasswordCredential(ctx, credential); err != nil {
+	if _, err := service.Create(ctx, idpaccounts.CreateRequest{ID: "load-user", Subject: "load-subject", Login: "load-user", Password: []byte("a production load password phrase")}); err != nil {
 		return err
 	}
 	runtime.GC()
@@ -88,7 +78,7 @@ func run(ctx context.Context, workers, attempts, maxConcurrent int) error {
 			defer wg.Done()
 			for range jobs {
 				_, err := service.AuthenticatePassword(ctx, "load-user", "an incorrect password phrase", idp.LoginMetadata{ClientID: "load-client", RemoteAddr: "192.0.2.1"})
-				if !errors.Is(err, authn.ErrInvalidCredentials) {
+				if !errors.Is(err, idpaccounts.ErrInvalidCredentials) {
 					errorsCh <- err
 					return
 				}

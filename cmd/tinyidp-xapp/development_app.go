@@ -25,10 +25,10 @@ import (
 	durableobjectsprovider "github.com/go-go-golems/go-go-objects/pkg/xgoja/providers/durableobjects"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/xgojaruntime"
-	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/pkg/errors"
 )
@@ -93,15 +93,15 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	if err := store.PutClient(ctx, client); err != nil {
 		return nil, errors.Wrap(err, "seed development OIDC client")
 	}
-	passwords, err := authn.NewPasswordService(store, authn.Options{})
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{})
 	if err != nil {
 		return nil, errors.Wrap(err, "create development password service")
 	}
-	if err := seedDevelopmentUser(ctx, store, passwords, developmentUser{ID: "dev-alice", Subject: "dev-alice-subject", Login: cfg.Login, Password: cfg.Password, Name: "Alice", Email: "alice@example.test"}, now); err != nil {
+	if err := seedDevelopmentUser(ctx, accounts, developmentUser{ID: "dev-alice", Subject: "dev-alice-subject", Login: cfg.Login, Password: cfg.Password, Name: "Alice", Email: "alice@example.test"}); err != nil {
 		return nil, err
 	}
 	if cfg.SecondLogin != "" {
-		if err := seedDevelopmentUser(ctx, store, passwords, developmentUser{ID: "dev-bob", Subject: "dev-bob-subject", Login: cfg.SecondLogin, Password: cfg.SecondPassword, Name: "Bob", Email: "bob@example.test"}, now); err != nil {
+		if err := seedDevelopmentUser(ctx, accounts, developmentUser{ID: "dev-bob", Subject: "dev-bob-subject", Login: cfg.SecondLogin, Password: cfg.SecondPassword, Name: "Bob", Email: "bob@example.test"}); err != nil {
 			return nil, err
 		}
 	}
@@ -124,7 +124,7 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 		Issuer:        issuer,
 		Mode:          embeddedidp.DevMode,
 		Store:         store,
-		Authenticator: passwords,
+		Authenticator: accounts,
 		Cookie: embeddedidp.CookieConfig{
 			SessionName: "xapp_idp_session",
 			CSRFName:    "xapp_idp_csrf",
@@ -188,13 +188,9 @@ type developmentUser struct {
 	Email    string
 }
 
-func seedDevelopmentUser(ctx context.Context, store *memory.Store, passwords *authn.PasswordService, seed developmentUser, now time.Time) error {
-	user := idpstore.User{ID: seed.ID, Sub: seed.Subject, Email: seed.Email, EmailVerified: true, Name: seed.Name, PreferredUsername: seed.Login, CreatedAt: now, UpdatedAt: now}
-	credential, err := passwords.HashCredential(ctx, user.ID, seed.Login, []byte(seed.Password), now)
+func seedDevelopmentUser(ctx context.Context, accounts *idpaccounts.Service, seed developmentUser) error {
+	_, err := accounts.Create(ctx, idpaccounts.CreateRequest{ID: seed.ID, Subject: seed.Subject, Login: seed.Login, Password: []byte(seed.Password), Email: seed.Email, EmailVerified: true, Name: seed.Name, PreferredUsername: seed.Login})
 	if err != nil {
-		return errors.Wrap(err, "hash development credential")
-	}
-	if err := store.CreateUserWithCredential(ctx, seed.Login, user, credential); err != nil {
 		return errors.Wrap(err, "seed development user")
 	}
 	return nil

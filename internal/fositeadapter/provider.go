@@ -27,11 +27,11 @@ import (
 	fositememory "github.com/ory/fosite/storage"
 	fositejwt "github.com/ory/fosite/token/jwt"
 
-	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/oidcmeta"
 	"github.com/manuel/tinyidp/internal/securitytrace"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/manuel/tinyidp/pkg/idpui"
 )
@@ -202,7 +202,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		opts.ClientAddress = idp.DirectClientAddressResolver{}
 	}
 	if opts.Authenticator == nil {
-		policy := authn.DefaultPasswordPolicy()
+		policy := idpaccounts.DefaultLoginPolicy()
 		if opts.Mode != idpstore.ProductionMode {
 			policy.AllowPasswordless = true
 			policy.LockoutThreshold = 0
@@ -210,7 +210,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 				opts.PasswordPolicy = idp.DevelopmentPasswordAcceptancePolicy()
 			}
 		}
-		authenticator, err := authn.NewPasswordService(opts.Store, authn.Options{Audit: opts.Audit, Policy: policy, Acceptance: opts.PasswordPolicy, Work: opts.PasswordWork})
+		authenticator, err := idpaccounts.NewService(opts.Store, idpaccounts.Options{Audit: opts.Audit, LoginPolicy: policy, PasswordPolicy: opts.PasswordPolicy, PasswordWork: opts.PasswordWork})
 		if err != nil {
 			return nil, fmt.Errorf("build password authenticator: %w", err)
 		}
@@ -591,12 +591,12 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		}
 		result, authErr := p.authenticator.AuthenticatePassword(r.Context(), login, r.PostForm.Get("password"), idp.LoginMetadata{RemoteAddr: clientAddress, UserAgent: r.UserAgent(), ClientID: ar.GetClient().GetID()})
 		if authErr != nil {
-			if errors.Is(authErr, authn.ErrAuthenticationUnavailable) || errors.Is(authErr, authn.ErrPasswordWorkRejected) {
+			if errors.Is(authErr, idpaccounts.ErrAuthenticationUnavailable) || errors.Is(authErr, idpaccounts.ErrPasswordWorkRejected) {
 				p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.unavailable", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "authentication_unavailable"})
 				http.Error(w, "authentication temporarily unavailable", http.StatusServiceUnavailable)
 				return
 			}
-			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: authn.AuditReason(authErr)})
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.failure", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: idpaccounts.AuditReason(authErr)})
 			page := p.newInteractionPage(handle, r.PostForm.Get(idpui.CSRFFieldName), record.RequiredActions, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), login, &idpui.PublicError{Code: idpui.ErrorInvalidCredentials, Field: idpui.FieldCredentials, Summary: "Invalid login or password."})
 			p.renderInteraction(w, r, http.StatusUnauthorized, page)
 			return

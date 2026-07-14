@@ -12,8 +12,18 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/state.go
+      Note: Composition root now constructs account and administrative services explicitly
+    - Path: repo://internal/admin/service.go
+      Note: Reduced operational administration service after account lifecycle extraction
+    - Path: repo://internal/fositeadapter/provider.go
+      Note: Production provider migrated to the public account authentication service
     - Path: repo://internal/server/device.go
       Note: Current device grant evidence used to prevent browser-only bootstrap assumptions.
+    - Path: repo://pkg/idpaccounts/accounts.go
+      Note: Public atomic account creation and password replacement implemented in Phase 1
+    - Path: repo://pkg/idpaccounts/password.go
+      Note: Public password authentication policy work limiting and readiness implementation
     - Path: repo://pkg/idpstore/validate.go
       Note: Current public client invariants that shaped browser and device profile decisions.
     - Path: repo://ttmp/2026/07/13/TINYIDP-EMBED-FOUND-001--public-embedding-foundations-for-browser-and-device-applications/design-doc/01-public-account-bootstrap-and-in-process-issuer-apis-analysis-design-and-implementation-guide.md
@@ -24,6 +34,7 @@ LastUpdated: 2026-07-13T21:36:00-04:00
 WhatFor: Use this diary to review completed work and resume implementation without repeating investigation.
 WhenToUse: Read before working on TINYIDP-EMBED-FOUND-001 or changing the public account, bootstrap, or in-process issuer APIs.
 ---
+
 
 
 
@@ -302,11 +313,107 @@ Primary design:
 design-doc/01-public-account-bootstrap-and-in-process-issuer-apis-analysis-design-and-implementation-guide.md
 ```
 
+## Step 4: Extract the public account lifecycle boundary
+
+Phase 1 moved password authentication and account mutation from `internal/authn` and `internal/admin` into `pkg/idpaccounts`. The public constructor exposes policy, work limiting, clock, and audit configuration, but it does not expose the internal Argon2id implementation. A private constructor permits fast package tests with reduced hashing parameters.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement the first accepted phase as a direct boundary move, migrate all repository consumers, and do not leave an internal forwarding adapter.
+
+**Inferred user intent:** Give the forthcoming SQLite application and later device example a stable supported way to establish and authenticate accounts.
+
+### What I did
+
+- Created `pkg/idpaccounts` with package documentation, `Service`, `Options`, `LoginPolicy`, typed authentication errors, account creation, password replacement, authentication, work metrics, and production-readiness reporting.
+- Added compile-time assertions for `idp.PasswordAuthenticator`, `idp.PasswordWorkReporter`, and `idp.ProductionReadyReporter`.
+- Kept password hashing and user normalization as implementation details rather than public API types.
+- Removed password mutation from `internal/admin`; that service now owns clients, keys, diagnosis, backup, and user enable/disable operations.
+- Migrated the strict Fosite provider, CLI, strict development server, xapp development and production composition, xapp initialization, provider tests, and archived runnable security probes.
+- Changed account lifecycle audit event names to `identity.account.created` and `identity.account.password_changed`.
+- Added memory and SQLite tests for creation, duplicate IDs, password policy, authentication, replacement, lockout, storage failure, bounded work, passwordless policy, and audit-after-commit semantics.
+
+Representative commands:
+
+```bash
+rg -n 'internal/authn|NewPasswordService|HashCredential|CreateUser' --glob='*.go' .
+gofmt -w pkg/idpaccounts internal/admin internal/fositeadapter internal/cmds cmd/tinyidp-xapp
+go test ./pkg/idpaccounts ./internal/admin ./internal/fositeadapter ./internal/cmds ./cmd/tinyidp-xapp
+```
+
+### Why
+
+- Embedded applications must not import `internal` packages.
+- Account establishment and password authentication share acceptance policy, hashing, work limiting, storage, and audit semantics and therefore belong to one cohesive service.
+- Client/key administration is operational authority and remains internal.
+- Direct migration makes the unsupported boundary disappear instead of indefinitely maintaining two APIs.
+
+### What worked
+
+- Focused tests passed for all migrated production consumers.
+- The public service returns a committed user with `idp.ErrAuditDelivery` when post-commit audit delivery fails.
+- A repository search no longer found a production Go consumer of `internal/authn` after migration.
+- Existing security probes were converted to use the same supported public contract that examples will use.
+
+### What didn't work
+
+- An over-broad mechanical regular expression corrupted the first moved password test by deleting constructor arguments. I discarded that transformed test and rebuilt a smaller focused suite with explicit helpers instead of trying to repair ambiguous text.
+- The first multi-file provider-test patch used an incorrect import context and did not apply. I inspected exact imports and applied a narrower patch successfully.
+- The first sandboxed focused test run failed for four packages because the normal shared Go build cache was read-only:
+
+```text
+open /home/manuel/.cache/go-build/...: read-only file system
+```
+
+  Re-running the identical `go test` command with approved access to the normal cache passed. No private cache or alternate `go.work` was created.
+
+### What I learned
+
+- Hashing must remain private, but account creation is the correct public test and seed primitive; external tests should not manufacture password credentials.
+- Historical executable probes are meaningful API consumers. Migrating them detects whether the public surface is sufficient for instrumentation work.
+- Separating account mutation required the CLI to construct the correct domain service explicitly rather than treating the admin service as a universal facade.
+
+### What was tricky to build
+
+The old admin service constructed and publicly exposed its password service. Removing that field affected production probes that used `service.Passwords` as a shortcut. The correct replacement was not another field or adapter: each composition root now constructs `idpaccounts.Service` and `internal/admin.Service` from the same store and audit sink according to the authority it needs.
+
+### What warrants a second pair of eyes
+
+- Review privileged fields on `CreateRequest`, especially groups, roles, and tenant.
+- Confirm the audit namespace change is reflected in any external audit alert rules.
+- Review whether password replacement should gain a separate forced-change request in a future lifecycle ticket.
+- Check the default Argon2id cost in integration tests; package-private tests use explicit reduced parameters, while external consumer tests deliberately exercise the production constructor.
+
+### What should be done in the future
+
+- Complete race and full-repository verification before the Phase 1 commit.
+- Add the static import guard in Phase 4 so application packages cannot regress to internal account packages.
+- Build browser/device bootstrap on this public account service without coupling account operations to client provisioning.
+
+### Code review instructions
+
+- Begin at `pkg/idpaccounts/accounts.go` and `pkg/idpaccounts/password.go`.
+- Verify `internal/admin/service.go` has no password hasher or account creation authority.
+- Search all Go files for `internal/authn`, `NewPasswordService`, and `HashCredential`.
+- Run the focused command above, then the Phase 1 race and repository-wide commands.
+
+### Technical details
+
+```text
+Public constructor: idpaccounts.NewService(store, idpaccounts.Options)
+Atomic create primitive: idpstore.Store.CreateUserWithCredential
+Atomic replacement primitive: idpstore.Store.ReplacePasswordAndSecurityState
+Post-commit audit signal: idp.ErrAuditDelivery
+```
+
 ## Continuation point
 
-Phase 0 design is complete but not yet committed. The next steps are:
+Phase 1 implementation and focused tests are complete but not yet committed. The next steps are:
 
-1. update index, relationships, tasks, and changelog;
-2. validate the ticket with docmgr doctor;
-3. commit the Phase 0 design;
-4. begin Phase 1 in `pkg/idpaccounts`.
+1. run selected race tests and `go test ./...`;
+2. inspect the final diff and public API;
+3. update ticket tasks, relationships, and changelog;
+4. commit Phase 1;
+5. begin declarative browser/device bootstrap.

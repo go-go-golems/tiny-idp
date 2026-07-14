@@ -17,7 +17,6 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/client"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
@@ -26,6 +25,7 @@ import (
 	"github.com/manuel/tinyidp/internal/server"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -253,24 +253,20 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 			return nil, err
 		}
 	}
-	passwords, err := authn.NewPasswordService(st, authn.Options{Acceptance: idp.DevelopmentPasswordAcceptancePolicy()})
+	passwords, err := idpaccounts.NewService(st, idpaccounts.Options{PasswordPolicy: idp.DevelopmentPasswordAcceptancePolicy()})
 	if err != nil {
 		return nil, err
 	}
 	for _, sc := range scenarios.All() {
 		u := idpstore.User{ID: sc.User.Sub, Sub: sc.User.Sub, Email: sc.User.Email, Name: sc.User.Name, EmailVerified: true}
 		applyScenarioClaims(&u, sc.ExtraClaims)
-		if err := st.PutUser(context.Background(), sc.Name, u); err != nil {
-			return nil, err
-		}
 		if sc.Password != "" {
-			credential, err := passwords.HashCredential(context.Background(), u.ID, sc.Name, []byte(sc.Password), time.Now().UTC())
+			_, err := passwords.Create(context.Background(), idpaccounts.CreateRequest{Login: sc.Name, Password: []byte(sc.Password), ID: u.ID, Subject: u.Sub, Email: u.Email, EmailVerified: u.EmailVerified, Name: u.Name, PreferredUsername: u.PreferredUsername, Groups: u.Groups, Roles: u.Roles, Tenant: u.Tenant, Locale: u.Locale})
 			if err != nil {
 				return nil, err
 			}
-			if err := st.PutPasswordCredential(context.Background(), credential); err != nil {
-				return nil, err
-			}
+		} else if err := st.PutUser(context.Background(), sc.Name, u); err != nil {
+			return nil, err
 		}
 	}
 	key, err := keys.GenerateRSA("strict-dev-key-1", time.Now())

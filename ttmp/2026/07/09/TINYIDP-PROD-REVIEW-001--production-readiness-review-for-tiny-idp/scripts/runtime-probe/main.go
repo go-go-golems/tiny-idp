@@ -29,6 +29,7 @@ import (
 	"github.com/manuel/tinyidp/internal/admin"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
@@ -169,7 +170,11 @@ func run(ctx context.Context, cfg config) error {
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)
 	}
-	_, err = adminService.CreateUser(ctx, admin.CreateUserRequest{
+	accountService, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: auditSink})
+	if err != nil {
+		return fmt.Errorf("create account service: %w", err)
+	}
+	_, err = accountService.Create(ctx, idpaccounts.CreateRequest{
 		Login:             "alice",
 		Password:          []byte("correct horse battery staple"),
 		Email:             "alice@example.test",

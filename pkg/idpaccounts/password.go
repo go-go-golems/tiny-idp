@@ -1,4 +1,4 @@
-package authn
+package idpaccounts
 
 import (
 	"context"
@@ -21,7 +21,8 @@ var (
 	ErrPasswordWorkRejected      = errors.New("password work rejected")
 )
 
-type PasswordPolicy struct {
+// LoginPolicy controls lockout behavior and development-only passwordless use.
+type LoginPolicy struct {
 	LockoutThreshold  int
 	LockoutWindow     time.Duration
 	LockoutDuration   time.Duration
@@ -29,23 +30,25 @@ type PasswordPolicy struct {
 	DummyHash         []byte
 }
 
-func DefaultPasswordPolicy() PasswordPolicy {
-	return PasswordPolicy{LockoutThreshold: 5, LockoutWindow: 15 * time.Minute, LockoutDuration: 15 * time.Minute}
+func DefaultLoginPolicy() LoginPolicy {
+	return LoginPolicy{LockoutThreshold: 5, LockoutWindow: 15 * time.Minute, LockoutDuration: 15 * time.Minute}
 }
 
+// Options configures account lifecycle and password authentication behavior.
+// Password hashing parameters deliberately remain an implementation detail.
 type Options struct {
-	Hasher     passwordhash.Hasher
-	Policy     PasswordPolicy
-	Acceptance idp.PasswordAcceptancePolicy
-	Work       idp.PasswordWorkConfig
-	Clock      func() time.Time
-	Audit      idp.Sink
+	LoginPolicy    LoginPolicy
+	PasswordPolicy idp.PasswordAcceptancePolicy
+	PasswordWork   idp.PasswordWorkConfig
+	Clock          func() time.Time
+	Audit          idp.Sink
 }
 
-type PasswordService struct {
+// Service owns account creation, password replacement, and password authentication.
+type Service struct {
 	store         idpstore.Store
 	hasher        passwordhash.Hasher
-	policy        PasswordPolicy
+	policy        LoginPolicy
 	clock         func() time.Time
 	audit         idp.Sink
 	acceptance    idp.PasswordAcceptancePolicy
@@ -64,26 +67,31 @@ type passwordWorkMetrics struct {
 	totalDuration atomic.Int64
 }
 
-var _ idp.PasswordAuthenticator = (*PasswordService)(nil)
+var _ idp.PasswordAuthenticator = (*Service)(nil)
+var _ idp.PasswordWorkReporter = (*Service)(nil)
+var _ idp.ProductionReadyReporter = (*Service)(nil)
 
 // tinyidp:development-default -- production construction validates the injected sink.
-func NewPasswordService(store idpstore.Store, opts Options) (*PasswordService, error) {
+func NewService(store idpstore.Store, opts Options) (*Service, error) {
+	return newService(store, opts, passwordhash.Hasher{})
+}
+
+func newService(store idpstore.Store, opts Options, hasher passwordhash.Hasher) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("store is required")
 	}
-	hasher := opts.Hasher
 	if hasher.Params.MemoryKiB == 0 {
 		hasher = passwordhash.New(passwordhash.DefaultParams())
 	}
-	policy := opts.Policy
+	policy := opts.LoginPolicy
 	if policy.LockoutThreshold == 0 && policy.LockoutWindow == 0 && policy.LockoutDuration == 0 && len(policy.DummyHash) == 0 {
-		policy = DefaultPasswordPolicy()
+		policy = DefaultLoginPolicy()
 	}
-	acceptance := opts.Acceptance
+	acceptance := opts.PasswordPolicy
 	if acceptance.MinCharacters == 0 {
 		acceptance = idp.DefaultPasswordAcceptancePolicy()
 	}
-	workConfig := opts.Work
+	workConfig := opts.PasswordWork
 	if workConfig.MaxConcurrent == 0 {
 		workConfig = idp.DefaultPasswordWorkConfig()
 	}
@@ -105,10 +113,10 @@ func NewPasswordService(store idpstore.Store, opts Options) (*PasswordService, e
 	if sink == nil {
 		sink = idp.NoopSink{}
 	}
-	return &PasswordService{store: store, hasher: hasher, policy: policy, clock: clock, audit: sink, acceptance: acceptance, work: make(chan struct{}, workConfig.MaxConcurrent)}, nil
+	return &Service{store: store, hasher: hasher, policy: policy, clock: clock, audit: sink, acceptance: acceptance, work: make(chan struct{}, workConfig.MaxConcurrent)}, nil
 }
 
-func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, password string, meta idp.LoginMetadata) (idp.AuthResult, error) {
+func (s *Service) AuthenticatePassword(ctx context.Context, login, password string, meta idp.LoginMetadata) (idp.AuthResult, error) {
 	now := s.clock().UTC()
 	normalized := user.Normalize(login)
 	passwordBytes, normalizeErr := s.acceptance.NormalizePassword([]byte(password))
@@ -196,7 +204,7 @@ func (s *PasswordService) AuthenticatePassword(ctx context.Context, login, passw
 	return idp.AuthResult{User: u, AMR: []string{"pwd"}}, nil
 }
 
-func (s *PasswordService) HashCredential(ctx context.Context, userID, login string, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
+func (s *Service) hashCredential(ctx context.Context, userID, login string, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
 	normalized, err := s.acceptance.NormalizeAndValidatePassword(ctx, password, login, userID)
 	if err != nil {
 		return idpstore.PasswordCredential{}, err
@@ -217,7 +225,7 @@ func (s *PasswordService) HashCredential(ctx context.Context, userID, login stri
 	return idpstore.PasswordCredential{UserID: userID, Login: user.Normalize(login), PasswordHash: encoded, HashAlgorithm: passwordhash.AlgorithmArgon2id, HashParams: params, CreatedAt: now, UpdatedAt: now, PasswordChangedAt: now}, nil
 }
 
-func (s *PasswordService) checkAccountState(ctx context.Context, u idpstore.User, credential idpstore.PasswordCredential, now time.Time, meta idp.LoginMetadata) error {
+func (s *Service) checkAccountState(ctx context.Context, u idpstore.User, credential idpstore.PasswordCredential, now time.Time, meta idp.LoginMetadata) error {
 	if u.Disabled || credential.Disabled {
 		s.emit(ctx, "password.login.failure", meta, u.Sub, "account_disabled")
 		return ErrAccountDisabled
@@ -237,7 +245,7 @@ func (s *PasswordService) checkAccountState(ctx context.Context, u idpstore.User
 	return nil
 }
 
-func (s *PasswordService) recordFailure(ctx context.Context, userID string, now time.Time) error {
+func (s *Service) recordFailure(ctx context.Context, userID string, now time.Time) error {
 	_, err := s.store.RecordFailedLogin(ctx, userID, now, idpstore.LockoutPolicy{
 		Threshold: s.policy.LockoutThreshold,
 		Window:    s.policy.LockoutWindow,
@@ -246,7 +254,7 @@ func (s *PasswordService) recordFailure(ctx context.Context, userID string, now 
 	return err
 }
 
-func (s *PasswordService) rehashCredential(ctx context.Context, credential idpstore.PasswordCredential, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
+func (s *Service) rehashCredential(ctx context.Context, credential idpstore.PasswordCredential, password []byte, now time.Time) (idpstore.PasswordCredential, error) {
 	release, err := s.beginPasswordWork(ctx)
 	if err != nil {
 		return idpstore.PasswordCredential{}, err
@@ -265,7 +273,7 @@ func (s *PasswordService) rehashCredential(ctx context.Context, credential idpst
 	return credential, nil
 }
 
-func (s *PasswordService) dummyVerify(ctx context.Context, password []byte) error {
+func (s *Service) dummyVerify(ctx context.Context, password []byte) error {
 	release, err := s.beginPasswordWork(ctx)
 	if err != nil {
 		return err
@@ -275,7 +283,7 @@ func (s *PasswordService) dummyVerify(ctx context.Context, password []byte) erro
 	return nil
 }
 
-func (s *PasswordService) beginPasswordWork(ctx context.Context) (func(), error) {
+func (s *Service) beginPasswordWork(ctx context.Context) (func(), error) {
 	waitStart := time.Now()
 	waited := false
 	select {
@@ -306,7 +314,7 @@ func (s *PasswordService) beginPasswordWork(ctx context.Context) (func(), error)
 	}, nil
 }
 
-func (s *PasswordService) PasswordWorkStats() idp.PasswordWorkStats {
+func (s *Service) PasswordWorkStats() idp.PasswordWorkStats {
 	return idp.PasswordWorkStats{
 		Capacity:      cap(s.work),
 		InFlight:      s.metrics.inFlight.Load(),
@@ -319,11 +327,11 @@ func (s *PasswordService) PasswordWorkStats() idp.PasswordWorkStats {
 	}
 }
 
-func (s *PasswordService) ProductionReady() bool {
+func (s *Service) ProductionReady() bool {
 	return s != nil && cap(s.work) > 0 && s.acceptance.MinCharacters >= 15 && s.acceptance.MaxCharacters >= 64 && s.acceptance.Blocklist != nil
 }
 
-func (s *PasswordService) emit(ctx context.Context, name string, meta idp.LoginMetadata, subject, reason string) {
+func (s *Service) emit(ctx context.Context, name string, meta idp.LoginMetadata, subject, reason string) {
 	result := "accepted"
 	if reason != "" {
 		result = "rejected"

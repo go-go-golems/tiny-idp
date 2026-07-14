@@ -5,10 +5,10 @@
 - [x] Phase 0: map browser, xapp, administration, signing-key, SQLite, and device-client composition boundaries <!-- t:nagt -->
 - [x] Phase 0: define accepted public API contracts and compatibility posture <!-- t:s5z5 -->
 - [x] Phase 0: write the intern-ready design and implementation guide <!-- t:g3jr -->
-- [ ] Phase 1: create the public pkg/idpaccounts package and password authentication service <!-- t:ejlf -->
-- [ ] Phase 1: expose atomic account creation and password replacement through public types <!-- t:msvu -->
-- [ ] Phase 1: migrate provider, admin, xapp, tests, and ticket tooling without compatibility adapters <!-- t:8olw -->
-- [ ] Phase 1: run focused, race, and full-repository verification and commit <!-- t:hkiv -->
+- [x] Phase 1: create the public pkg/idpaccounts package and password authentication service <!-- t:ejlf -->
+- [x] Phase 1: expose atomic account creation and password replacement through public types <!-- t:msvu -->
+- [x] Phase 1: migrate provider, admin, xapp, tests, and ticket tooling without compatibility adapters <!-- t:8olw -->
+- [x] Phase 1: run focused, race, and full-repository verification and commit <!-- t:hkiv -->
 - [ ] Phase 2: define generic bootstrap client specifications for browser and device clients <!-- t:ztj7 -->
 - [ ] Phase 2: implement conservative client reconciliation and active signing-key provisioning <!-- t:uhbt -->
 - [ ] Phase 2: add idempotency, conflict, cancellation, audit, browser-profile, and device-profile tests <!-- t:nv3b -->

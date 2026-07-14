@@ -10,9 +10,9 @@ import (
 	"github.com/go-go-golems/go-go-goja/pkg/gojahttp/auth/oidcauth"
 	"github.com/go-go-golems/go-go-goja/pkg/xgoja/hostauth"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
-	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 	"github.com/pkg/errors"
 )
@@ -49,7 +49,7 @@ func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *Develo
 		return nil, errors.Wrap(err, "create production interaction renderer")
 	}
 	app.loginUI = interactionUI
-	passwords, err := authn.NewPasswordService(store, authn.Options{Audit: audit})
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: audit})
 	if err != nil {
 		return nil, errors.Wrap(err, "create production password service")
 	}
@@ -66,7 +66,7 @@ func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *Develo
 		Issuer:        manifest.Issuer,
 		Mode:          embeddedidp.ProductionMode,
 		Store:         store,
-		Authenticator: passwords,
+		Authenticator: accounts,
 		Cookie: embeddedidp.CookieConfig{
 			Secure:      true,
 			SameSite:    http.SameSiteLaxMode,

@@ -17,11 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -421,9 +420,6 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test"}); err != nil {
-		t.Fatal(err)
-	}
 	key, err := keys.GenerateRSA("kid-1", time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -431,15 +427,11 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 	if err := st.CreateSigningKey(ctx, key); err != nil {
 		t.Fatal(err)
 	}
-	svc, err := authn.NewPasswordService(st, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
+	svc, err := idpaccounts.NewService(st, idpaccounts.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := svc.HashCredential(ctx, "u1", "alice", []byte("alice-password-long"), time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.PutPasswordCredential(ctx, credential); err != nil {
+	if _, err := svc.Create(ctx, idpaccounts.CreateRequest{ID: "u1", Subject: "user-alice", Login: "alice", Password: []byte("alice-password-long"), Email: "alice@example.test"}); err != nil {
 		t.Fatal(err)
 	}
 	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, SecretKey: secretKey, Mode: idpstore.ProductionMode, Authenticator: svc, Consent: fositeadapter.AlwaysSkipConsent{}})

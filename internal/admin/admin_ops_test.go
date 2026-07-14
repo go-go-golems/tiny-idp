@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
@@ -18,7 +17,7 @@ import (
 func TestServiceClientLifecycle(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	svc, err := admin.NewService(st, admin.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
+	svc, err := admin.NewService(st, admin.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +54,7 @@ func TestServiceKeysDoctorAndBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := admin.NewService(st, admin.Options{Hasher: passwordhash.New(passwordhash.TestParams()), Clock: func() time.Time { return time.Date(2026, 7, 8, 3, 0, 0, 0, time.UTC) }})
+	svc, err := admin.NewService(st, admin.Options{Clock: func() time.Time { return time.Date(2026, 7, 8, 3, 0, 0, 0, time.UTC) }})
 	if err != nil {
 		t.Fatal(err)
 	}

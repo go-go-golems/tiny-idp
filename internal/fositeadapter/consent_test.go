@@ -9,11 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/authn"
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/passwordhash"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
@@ -128,19 +127,15 @@ func TestPromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent(t *testing.T) 
 func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	user := idpstore.User{ID: "u1", Sub: "sub-1"}
 	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}}
 	_ = st.PutClient(ctx, client)
-	_ = st.PutUser(ctx, "alice", user)
-	svc, err := authn.NewPasswordService(st, authn.Options{Hasher: passwordhash.New(passwordhash.TestParams())})
+	svc, err := idpaccounts.NewService(st, idpaccounts.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := svc.HashCredential(ctx, "u1", "alice", []byte("alice-password-long"), time.Now().UTC())
-	if err != nil {
+	if _, err := svc.Create(ctx, idpaccounts.CreateRequest{ID: "u1", Subject: "sub-1", Login: "alice", Password: []byte("alice-password-long")}); err != nil {
 		t.Fatal(err)
 	}
-	_ = st.PutPasswordCredential(ctx, credential)
 	key, err := keys.GenerateRSA("kid-1", time.Now())
 	if err != nil {
 		t.Fatal(err)

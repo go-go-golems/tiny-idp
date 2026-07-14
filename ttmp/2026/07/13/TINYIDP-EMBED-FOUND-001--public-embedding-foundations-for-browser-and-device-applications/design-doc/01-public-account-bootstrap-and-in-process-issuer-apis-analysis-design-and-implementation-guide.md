@@ -18,10 +18,10 @@ RelatedFiles:
       Note: Current browser-specific client and signing-key bootstrap logic to replace.
     - Path: repo://internal/admin/users.go
       Note: Current atomic account creation and password replacement implementation moving to the public account package.
-    - Path: repo://internal/authn/password.go
-      Note: Current password authentication and credential hashing implementation moving to the public account package.
     - Path: repo://pkg/embeddedidp/options.go
       Note: Current public provider configuration boundary that consumes the account service.
+    - Path: repo://pkg/idpaccounts/password.go
+      Note: Implemented public replacement for the former internal password authentication service
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Public store and named atomic transitions used by accounts and bootstrap.
     - Path: ws://go-go-goja/pkg/gojahttp/auth/oidcauth/inprocess_transport.go
@@ -32,6 +32,7 @@ LastUpdated: 2026-07-13T21:36:00-04:00
 WhatFor: Use this guide to understand, implement, review, and extend tiny-idp's application-facing embedding foundations.
 WhenToUse: Read before changing account provisioning, password authentication, embedded provider bootstrap, client profiles, signing-key setup, or same-process issuer transport.
 ---
+
 
 
 
