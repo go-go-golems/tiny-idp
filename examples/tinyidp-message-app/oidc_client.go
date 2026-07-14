@@ -86,6 +86,11 @@ func (c *oidcClient) finishLogin(ctx context.Context, store *appStore, state, co
 	if c == nil || c.verifier == nil || store == nil || strings.TrimSpace(code) == "" || len(code) > 8192 {
 		return loginCompletion{}, errors.New("OIDC callback is invalid")
 	}
+	// Discovery, the token exchange, and JWKS verification must use the same
+	// explicit in-process transport. The browser reaches the IdP through the
+	// public handler, while these back-channel requests must never silently
+	// fall back to the host network.
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.http)
 	now := c.now().UTC()
 	attempt, err := store.consumeLoginAttempt(ctx, state, now)
 	if err != nil {
