@@ -36,9 +36,9 @@
 - [x] Phase 6: Implement public cursor-paginated message reads <!-- t:oq2h -->
 - [x] Phase 6: Implement authenticated CSRF-protected message creation with subject derived from session <!-- t:h3gp -->
 - [x] Phase 6: Add normalization, bounds, spoofing, authorization, and concurrent insertion tests <!-- t:drrc -->
-- [ ] Phase 7: Scaffold pnpm React TypeScript Redux Toolkit RTK Query and Bootstrap frontend <!-- t:g584 -->
-- [ ] Phase 7: Implement session, registration, feed, composer, logout, loading, empty, and error states <!-- t:43iv -->
-- [ ] Phase 7: Build deterministic assets and embed only below /static/app/ <!-- t:lytc -->
+- [x] Phase 7: Scaffold pnpm React TypeScript Redux Toolkit RTK Query and Bootstrap frontend <!-- t:g584 -->
+- [x] Phase 7: Implement session, registration, feed, composer, logout, loading, empty, and error states <!-- t:43iv -->
+- [x] Phase 7: Build deterministic assets and embed only below /static/app/ <!-- t:lytc -->
 - [ ] Phase 7: Implement compatible styled tiny-idp interaction renderer under /static/tinyidp/ <!-- t:zsw6 -->
 - [ ] Phase 7: Add component, static route, CSP, literal-message, keyboard, reflow, and accessibility tests <!-- t:4ydv -->
 - [ ] Phase 8: Implement Glazed init command without requiring an initial user <!-- t:jb5w -->

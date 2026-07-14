@@ -20,6 +20,7 @@ RelatedFiles:
         Stable non-secret registration audit event codes
         Public GET message feed with bounded pagination and subject-redacted response
         Authenticated message creation with exact Origin, app-session CSRF, and server-derived author fields
+        Embedded root shell, CSP, and /static/app-only serving boundary
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
       Note: |-
         Exercises the browser-visible login form and complete callback flow
@@ -51,6 +52,10 @@ RelatedFiles:
       Note: Phase 3 state-root paths, manifest, secrets, and atomic publication (commit 9f4a4e2)
     - Path: repo://examples/tinyidp-message-app/state_test.go
       Note: Permission, conflict, idempotency, and damage tests
+    - Path: repo://examples/tinyidp-message-app/ui/src/App.tsx
+      Note: React application states for guest registration, login, feed, composer, and logout
+    - Path: repo://examples/tinyidp-message-app/ui/src/styles.css
+      Note: Retro paper-and-ink visual system without menu bar, window chrome, or Chicago font
     - Path: repo://pkg/idpaccounts/accounts.go
       Note: Public canonical login normalization for embedding-safe rate-limit keys
     - Path: repo://pkg/idpaccounts/password.go
@@ -77,6 +82,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -2311,4 +2317,143 @@ POST /api/messages {"body":"..."}
   Origin + Fetch Metadata -> app-session cookie -> session CSRF
   -> createMessage(subject=session.Subject, name=session.DisplayName)
   -> 201 message response without subject
+```
+
+## Step 24: Build the embedded retro Message Desk frontend
+
+The message application now has a compiled React frontend served by the same Go
+handler that serves its APIs and embedded IdP. It uses Redux Toolkit Query for
+session, registration, feed, message, and logout requests, and it is built into
+`/static/app/` for single-binary distribution. The visual system takes the
+existing Local Loop application's paper-and-ink principles but is intentionally
+not a Mac desktop imitation: there is no menu bar, no window chrome, and no
+Chicago font.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead. make it look retro macos1 monochrome look similar to the other app / css we have. (no menu bar, no window chrome, no chicago font)."
+
+**Assistant interpretation:** Implement the Phase 7 React frontend with a restrained early-personal-computing visual character derived from the existing BBS app, while explicitly excluding the requested UI tropes.
+
+**Inferred user intent:** Deliver a usable and distinctive self-contained message app whose design feels related to the existing retro application without becoming a literal or distracting operating-system mockup.
+
+**Commit (code):** `f651ed7` — "feat(msgapp): add embedded retro message frontend"
+
+### What I did
+
+- Added a pnpm React 19, TypeScript, Redux Toolkit/RTK Query, and Bootstrap
+  workspace under `examples/tinyidp-message-app/ui/`.
+- Added RTK Query endpoints for session, feed, registration, account creation,
+  message creation, and logout; mutation CSRF values remain explicit endpoint
+  arguments instead of global hidden state.
+- Built guest registration, sign-in, signed-in composer, feed, loading, empty,
+  and error states.
+- Built the frontend to committed deterministic assets below
+  `static/app/`, with Vite's base set to `/static/app/`.
+- Added Go `embed.FS` serving for `/static/app/`, a root-only HTML shell, a
+  strict CSP, and a regression test that static routes work while arbitrary
+  functional paths remain 404.
+- Applied a monochrome paper/ink base, double-rule masthead, restrained
+  monospace labels, pastel teal/blue/coral accents, square controls, and
+  responsive layout. Typography is system sans-serif plus labels; it does not
+  request or imitate Chicago.
+
+### Why
+
+The example must demonstrate the full consumer application, not just an API.
+Embedding prebuilt assets lets a future `serve` command ship a single Go binary
+without a separate Node runtime. Restricting generated assets to `/static/app/`
+also prevents static serving from obscuring identity or API route failures.
+
+### What worked
+
+```text
+pnpm run build
+vite v6.3.5 building for production...
+✓ 46 modules transformed.
+✓ built in 1.69s
+
+go test ./examples/tinyidp-message-app -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 2.792s
+```
+
+The root-page regression test proves the application serves its React shell
+with a CSP, JavaScript is served from `/static/app/assets/main.js`, and
+`/not-a-ui-route` returns 404 instead of receiving a broad SPA fallback.
+
+### What didn't work
+
+The initial sandboxed `pnpm install` could not resolve npm registry hosts:
+
+```text
+ERR_PNPM_META_FETCH_FAIL GET https://registry.npmjs.org/pnpm
+getaddrinfo ENOTFOUND registry.npmjs.org
+```
+
+The approved networked retry installed the pinned dependencies. Its first build
+then caught a TypeScript generic syntax error in `api.ts`; correcting
+`b.mutation<{next:string},{...}>` allowed the build to proceed. A subsequent
+Go format command ran from the UI directory and used the wrong relative path;
+the command was rerun from the repository root. Finally, Go's ServeMux rejected
+a `GET /` root pattern that overlapped the IdP's GET-and-POST `/idp/` route. The
+root fallback is now unqualified and `handleIndex` itself admits only `/`.
+
+### What I learned
+
+- Go 1.22 ServeMux resolves path/method relationships at registration time;
+  an all-method root can coexist with a more-specific IdP path where a
+  GET-only root cannot.
+- The existing BBS CSS supplies a coherent lineage: paper/ink contrast, double
+  rules, monospaced metadata, square fields, and modest color accents work
+  without reproducing its board layout or operating-system imagery.
+- The Vite build emits a Bootstrap-inclusive CSS artifact; keeping it under the
+  explicitly reserved static prefix maintains the server's route contract.
+
+### What was tricky to build
+
+There are two distinct front-end delivery contexts. Vite development uses the
+source `ui/index.html` and proxy routes; the Go process serves the generated
+`static/app/index.html` and assets. The Vite `base`, output directory, Go
+embed path, root shell, and test all use the same `/static/app/` contract so a
+production page never points at development source paths.
+
+### What warrants a second pair of eyes
+
+- Review the current registration form's generic error behavior and add field
+  hints only if they do not turn duplicate login or password-policy outcomes
+  into an enumeration oracle.
+- The generated Bootstrap CSS is useful for consistency but large for this
+  small app; a later size budget can decide whether to import only required
+  Bootstrap components.
+- Phase 7's compatible provider interaction renderer and accessibility/browser
+  gates remain open; this frontend does not restyle the IdP-owned page yet.
+
+### What should be done in the future
+
+- Add the compatible tiny-idp interaction renderer under `/static/tinyidp/`.
+- Add frontend component/accessibility tests and a browser canary in tmux.
+- Implement the executable init/serve/doctor lifecycle in Phase 8 so this
+  embedded UI can run as the documented standalone program.
+
+### Code review instructions
+
+- Start at `ui/src/App.tsx`, then `ui/src/api.ts`, then `ui/src/styles.css`.
+- Review `app_http.go` for `messageAppAssets`, `handleIndex`, and the static
+  mount; confirm static files never mount below `/api`, `/auth`, or `/idp`.
+- Validate with:
+
+  ```text
+  pnpm -C examples/tinyidp-message-app/ui run build
+  go test ./examples/tinyidp-message-app -count=1
+  ```
+
+### Technical details
+
+```text
+ui/src (React + RTK Query + Bootstrap + custom CSS)
+   -- pnpm run build --> static/app/index.html + static/app/assets/*
+   -- go:embed ------> messageAppAssets
+GET /                 --> embedded index shell + CSP
+GET /static/app/*     --> embedded build artifact
+GET /api/*, /auth/*, /idp/* --> protocol/application handlers, never SPA fallback
 ```

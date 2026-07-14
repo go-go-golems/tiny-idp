@@ -187,3 +187,12 @@ Phase 6: added authenticated CSRF-protected message creation with verified-sessi
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — POST /api/messages
 
+
+## 2026-07-14
+
+Phase 7: added embedded React message frontend with retro monochrome paper-and-ink styling (commit f651ed7)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/ui/src/styles.css — Visual language
+
