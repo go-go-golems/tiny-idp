@@ -29,9 +29,17 @@ type CreateRequest struct {
 	Locale            string
 }
 
+// NormalizeLogin returns the canonical login representation used by account
+// creation and password authentication. Embedding applications can use this
+// value for non-secret correlation keys such as rate limits; they must not use
+// it as proof that an account exists.
+func NormalizeLogin(login string) string {
+	return user.Normalize(login)
+}
+
 // Create atomically persists a user and its initial password credential.
 func (s *Service) Create(ctx context.Context, req CreateRequest) (idpstore.User, error) {
-	login := user.Normalize(req.Login)
+	login := NormalizeLogin(req.Login)
 	if login == "" {
 		return idpstore.User{}, fmt.Errorf("login is required")
 	}

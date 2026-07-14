@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,22 +22,32 @@ import (
 const (
 	registrationAttemptLifetime = 10 * time.Minute
 	maxRegistrationRequestBytes = 64 << 10
+	registrationRetryAfter      = 60
 )
 
 type messageApp struct {
-	store        *appStore
-	oidc         *oidcClient
-	accounts     *idpaccounts.Service
-	provider     http.Handler
-	cookieSecure bool
-	now          func() time.Time
-	mux          *http.ServeMux
+	store               *appStore
+	oidc                *oidcClient
+	accounts            *idpaccounts.Service
+	provider            http.Handler
+	publicOrigin        string
+	addressResolver     idp.ClientAddressResolver
+	registrationLimiter idp.RateLimiter
+	cookieSecure        bool
+	now                 func() time.Time
+	mux                 *http.ServeMux
 }
 
 var _ http.Handler = (*messageApp)(nil)
 
 func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccounts.Service, provider http.Handler, cookieSecure bool) *messageApp {
-	app := &messageApp{store: store, oidc: oidcClient, accounts: accounts, provider: provider, cookieSecure: cookieSecure, now: time.Now, mux: http.NewServeMux()}
+	publicOrigin := ""
+	if oidcClient != nil {
+		publicOrigin = oidcClient.publicOrigin
+	}
+	app := &messageApp{store: store, oidc: oidcClient, accounts: accounts, provider: provider, publicOrigin: publicOrigin,
+		addressResolver: idp.DirectClientAddressResolver{}, registrationLimiter: idp.NewFixedWindowRateLimiter(5, time.Minute),
+		cookieSecure: cookieSecure, now: time.Now, mux: http.NewServeMux()}
 	app.mux.HandleFunc("GET /auth/login", app.handleLogin)
 	app.mux.HandleFunc("GET /auth/callback", app.handleCallback)
 	app.mux.HandleFunc("GET /api/session", app.handleSession)
@@ -132,6 +143,10 @@ func (a *messageApp) handleCreateAccount(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if !a.isSameOriginRegistrationRequest(r) {
+		http.Error(w, "invalid registration request", http.StatusForbidden)
+		return
+	}
 	attempt, ok := a.currentRegistrationAttempt(r)
 	if !ok || !csrfEqual(r.Header.Get("X-CSRF-Token"), attempt.CSRFSecret) {
 		http.Error(w, "invalid registration request", http.StatusForbidden)
@@ -140,6 +155,11 @@ func (a *messageApp) handleCreateAccount(w http.ResponseWriter, r *http.Request)
 	request, err := decodeCreateAccountRequest(w, r)
 	if err != nil || strings.TrimSpace(request.Login) == "" || strings.TrimSpace(request.DisplayName) == "" || request.Password != request.PasswordConfirmation {
 		writeAccountCreationError(w, http.StatusUnprocessableEntity)
+		return
+	}
+	if !a.allowRegistration(r, request.Login) {
+		w.Header().Set("Retry-After", strconv.Itoa(registrationRetryAfter))
+		writeAccountCreationError(w, http.StatusTooManyRequests)
 		return
 	}
 	password := []byte(request.Password)
@@ -159,6 +179,30 @@ func (a *messageApp) handleCreateAccount(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]string{"next": "/auth/login"})
+}
+
+func (a *messageApp) isSameOriginRegistrationRequest(r *http.Request) bool {
+	if a.publicOrigin == "" || r.Header.Get("Origin") != a.publicOrigin {
+		return false
+	}
+	return strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) != "cross-site"
+}
+
+func (a *messageApp) allowRegistration(r *http.Request, login string) bool {
+	if a.addressResolver == nil || a.registrationLimiter == nil {
+		return false
+	}
+	address, err := a.addressResolver.ResolveClientAddress(r)
+	if err != nil {
+		return false
+	}
+	normalizedLogin := idpaccounts.NormalizeLogin(login)
+	if normalizedLogin == "" {
+		return false
+	}
+	loginHash := sha256.Sum256([]byte(normalizedLogin))
+	return a.registrationLimiter.Allow(r.Context(), "registration:address:"+address) &&
+		a.registrationLimiter.Allow(r.Context(), "registration:login:"+base64.RawURLEncoding.EncodeToString(loginHash[:]))
 }
 
 func (a *messageApp) currentRegistrationAttempt(r *http.Request) (registrationAttempt, bool) {

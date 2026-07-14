@@ -119,7 +119,7 @@ func newService(store idpstore.Store, opts Options, hasher passwordhash.Hasher) 
 
 func (s *Service) AuthenticatePassword(ctx context.Context, login, password string, meta idp.LoginMetadata) (idp.AuthResult, error) {
 	now := s.clock().UTC()
-	normalized := user.Normalize(login)
+	normalized := NormalizeLogin(login)
 	passwordBytes, normalizeErr := s.acceptance.NormalizePassword([]byte(password))
 	if normalized == "" || normalizeErr != nil || (password == "" && !s.policy.AllowPasswordless) {
 		if err := s.dummyVerify(ctx, passwordBytes); err != nil {

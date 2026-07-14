@@ -24,6 +24,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const registrationTestOrigin = "https://app.example.test"
+
 func TestSessionEndpointAndLogoutUseIndependentAppSession(t *testing.T) {
 	ctx := context.Background()
 	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
@@ -127,6 +129,7 @@ func TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService(t *testi
 		t.Fatal(err)
 	}
 	app := newMessageApp(appStore, nil, accounts, nil, false)
+	app.publicOrigin = registrationTestOrigin
 	noPreSession := httptest.NewRecorder()
 	app.ServeHTTP(noPreSession, newAccountRequest(t, createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}, "", nil))
 	if noPreSession.Code != http.StatusForbidden {
@@ -166,6 +169,7 @@ func TestCreateAccountRejectsUnknownAndMultipleJSONValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := newMessageApp(appStore, nil, accounts, nil, false)
+	app.publicOrigin = registrationTestOrigin
 	for name, body := range map[string]string{
 		"unknown field": `{"login":"alice","displayName":"Alice","password":"this is a long enough password","passwordConfirmation":"this is a long enough password","admin":true}`,
 		"two values":    `{"login":"alice","displayName":"Alice","password":"this is a long enough password","passwordConfirmation":"this is a long enough password"} {}`,
@@ -175,6 +179,7 @@ func TestCreateAccountRejectsUnknownAndMultipleJSONValues(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/api/accounts", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("X-CSRF-Token", csrf)
+			request.Header.Set("Origin", registrationTestOrigin)
 			request.AddCookie(cookie)
 			response := httptest.NewRecorder()
 			app.ServeHTTP(response, request)
@@ -182,6 +187,68 @@ func TestCreateAccountRejectsUnknownAndMultipleJSONValues(t *testing.T) {
 				t.Fatalf("account creation = %d: %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestCreateAccountRejectsForeignOriginBeforeConsumingPreSession(t *testing.T) {
+	ctx := context.Background()
+	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appStore.Close()
+	identityStore, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "identity.sqlite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer identityStore.Close()
+	accounts, err := idpaccounts.NewService(identityStore, idpaccounts.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(appStore, nil, accounts, nil, false)
+	app.publicOrigin = registrationTestOrigin
+	cookie, csrf := registrationContext(t, app)
+	payload := createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}
+	foreign := httptest.NewRecorder()
+	request := newAccountRequest(t, payload, csrf, cookie)
+	request.Header.Set("Origin", "https://attacker.example.test")
+	app.ServeHTTP(foreign, request)
+	if foreign.Code != http.StatusForbidden {
+		t.Fatalf("foreign origin status = %d", foreign.Code)
+	}
+	fetchCrossSite := httptest.NewRecorder()
+	request = newAccountRequest(t, payload, csrf, cookie)
+	request.Header.Set("Sec-Fetch-Site", "cross-site")
+	app.ServeHTTP(fetchCrossSite, request)
+	if fetchCrossSite.Code != http.StatusForbidden {
+		t.Fatalf("cross-site fetch status = %d", fetchCrossSite.Code)
+	}
+	created := httptest.NewRecorder()
+	app.ServeHTTP(created, newAccountRequest(t, payload, csrf, cookie))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("valid retry after foreign origin = %d: %s", created.Code, created.Body.String())
+	}
+}
+
+func TestRegistrationRateLimitsAddressAndCanonicalLogin(t *testing.T) {
+	app := &messageApp{addressResolver: idp.DirectClientAddressResolver{}, registrationLimiter: idp.NewFixedWindowRateLimiter(1, time.Hour)}
+	firstAddress := httptest.NewRequest(http.MethodPost, "/api/accounts", nil)
+	firstAddress.RemoteAddr = "192.0.2.1:1234"
+	if !app.allowRegistration(firstAddress, "Alice") {
+		t.Fatal("first registration was rate limited")
+	}
+	secondAddress := httptest.NewRequest(http.MethodPost, "/api/accounts", nil)
+	secondAddress.RemoteAddr = "192.0.2.2:1234"
+	if app.allowRegistration(secondAddress, " alice ") {
+		t.Fatal("canonical login did not share a rate-limit key")
+	}
+	app.registrationLimiter = idp.NewFixedWindowRateLimiter(1, time.Hour)
+	if !app.allowRegistration(firstAddress, "alice") {
+		t.Fatal("first address-limit registration was rate limited")
+	}
+	if app.allowRegistration(firstAddress, "bob") {
+		t.Fatal("address did not share a rate-limit key")
 	}
 }
 
@@ -213,6 +280,7 @@ func newAccountRequest(t *testing.T, payload createAccountRequest, csrf string, 
 	}
 	request := httptest.NewRequest(http.MethodPost, "/api/accounts", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", registrationTestOrigin)
 	if csrf != "" {
 		request.Header.Set("X-CSRF-Token", csrf)
 	}

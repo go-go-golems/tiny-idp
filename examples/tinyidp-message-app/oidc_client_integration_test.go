@@ -43,7 +43,7 @@ func TestOIDCClientDiscoversEmbeddedIssuerInProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if client.config.Endpoint.AuthURL != baseURL+issuerPath+"/authorize" || client.config.RedirectURL != baseURL+callbackPath {
+	if client.publicOrigin != baseURL || client.config.Endpoint.AuthURL != baseURL+issuerPath+"/authorize" || client.config.RedirectURL != baseURL+callbackPath {
 		t.Fatalf("unexpected discovered client config: %#v", client.config)
 	}
 }
