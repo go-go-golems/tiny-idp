@@ -55,6 +55,7 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 	app.mux.HandleFunc("GET /api/session", app.handleSession)
 	app.mux.HandleFunc("GET /api/registration", app.handleRegistration)
 	app.mux.HandleFunc("GET /api/messages", app.handleListMessages)
+	app.mux.HandleFunc("POST /api/messages", app.handleCreateMessage)
 	app.mux.HandleFunc("POST /api/accounts", app.handleCreateAccount)
 	app.mux.HandleFunc("POST /auth/logout", app.handleLogout)
 	if provider != nil {
@@ -179,6 +180,53 @@ func (a *messageApp) handleListMessages(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+type createMessageRequest struct {
+	Body string `json:"body"`
+}
+
+func (a *messageApp) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
+	if !a.isSameOriginUnsafeRequest(r) {
+		http.Error(w, "invalid message request", http.StatusForbidden)
+		return
+	}
+	session, ok := a.currentSession(r)
+	if !ok || !csrfEqual(r.Header.Get("X-CSRF-Token"), session.CSRFSecret) {
+		http.Error(w, "invalid message request", http.StatusForbidden)
+		return
+	}
+	request, err := decodeCreateMessageRequest(w, r)
+	if err != nil {
+		http.Error(w, "invalid message request", http.StatusUnprocessableEntity)
+		return
+	}
+	created, err := a.store.createMessage(r.Context(), message{AuthorSubject: session.Subject, AuthorName: session.DisplayName, Body: request.Body, CreatedAt: a.now().UTC()})
+	if err != nil {
+		http.Error(w, "invalid message request", http.StatusUnprocessableEntity)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(messageResponse{ID: created.ID, AuthorName: created.AuthorName, Body: created.Body, CreatedAt: created.CreatedAt})
+}
+
+func decodeCreateMessageRequest(w http.ResponseWriter, r *http.Request) (createMessageRequest, error) {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return createMessageRequest{}, errors.New("message request must be JSON")
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRegistrationRequestBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var request createMessageRequest
+	if err := decoder.Decode(&request); err != nil {
+		return createMessageRequest{}, errors.Wrap(err, "decode message request")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return createMessageRequest{}, errors.New("message request must contain one JSON value")
+	}
+	return request, nil
+}
+
 type createAccountRequest struct {
 	Login                string `json:"login"`
 	DisplayName          string `json:"displayName"`
@@ -192,7 +240,7 @@ func (a *messageApp) handleCreateAccount(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if !a.isSameOriginRegistrationRequest(r) {
+	if !a.isSameOriginUnsafeRequest(r) {
 		a.recordRegistration(r.Context(), "rejected", "origin_rejected", "")
 		http.Error(w, "invalid registration request", http.StatusForbidden)
 		return
@@ -244,7 +292,7 @@ func (a *messageApp) recordRegistration(ctx context.Context, result, reason, sub
 	_ = a.audit.Emit(ctx, idp.Event{Time: a.now().UTC(), Name: "account.self_registration", Subject: subject, Result: result, Reason: reason})
 }
 
-func (a *messageApp) isSameOriginRegistrationRequest(r *http.Request) bool {
+func (a *messageApp) isSameOriginUnsafeRequest(r *http.Request) bool {
 	if a.publicOrigin == "" || r.Header.Get("Origin") != a.publicOrigin {
 		return false
 	}

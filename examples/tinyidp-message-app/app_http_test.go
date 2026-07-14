@@ -142,6 +142,61 @@ func TestMessageFeedUsesCursorAndDoesNotExposeSubject(t *testing.T) {
 	}
 }
 
+func TestCreateMessageUsesVerifiedSessionAuthorAndCSRF(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{4}, sha256.Size)
+	if err := store.createAppSession(ctx, "session-token", appSession{Subject: "verified-subject", DisplayName: "Verified Alice", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, nil, nil, nil, false)
+	app.publicOrigin = registrationTestOrigin
+	for name, mutate := range map[string]func(*http.Request){
+		"missing csrf":   func(r *http.Request) { r.Header.Del("X-CSRF-Token") },
+		"foreign origin": func(r *http.Request) { r.Header.Set("Origin", "https://attacker.example.test") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := newMessageRequest(t, `{"body":"hello"}`, "session-token", csrf)
+			mutate(request)
+			response := httptest.NewRecorder()
+			app.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("message create = %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+	request := newMessageRequest(t, `{"body":"hello","authorSubject":"attacker"}`, "session-token", csrf)
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("spoofed author status = %d: %s", response.Code, response.Body.String())
+	}
+	created := httptest.NewRecorder()
+	app.ServeHTTP(created, newMessageRequest(t, `{"body":"hello"}`, "session-token", csrf))
+	if created.Code != http.StatusCreated || strings.Contains(created.Body.String(), "verified-subject") {
+		t.Fatalf("message create = %d: %s", created.Code, created.Body.String())
+	}
+	values, err := store.listMessages(ctx, nil, 10)
+	if err != nil || len(values) != 1 || values[0].AuthorSubject != "verified-subject" || values[0].AuthorName != "Verified Alice" {
+		t.Fatalf("stored message = %#v, %v", values, err)
+	}
+}
+
+func newMessageRequest(t *testing.T, body, token string, csrf []byte) *http.Request {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", registrationTestOrigin)
+	request.Header.Set("X-CSRF-Token", base64.RawURLEncoding.EncodeToString(csrf))
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: token})
+	return request
+}
+
 func TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService(t *testing.T) {
 	ctx := context.Background()
 	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
