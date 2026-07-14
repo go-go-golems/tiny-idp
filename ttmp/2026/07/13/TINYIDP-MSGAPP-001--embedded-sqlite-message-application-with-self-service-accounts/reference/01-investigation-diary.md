@@ -12,6 +12,10 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-message-app/appstore.go
+      Note: Checksummed app schema and SQLite envelope (commit c41ba0b)
+    - Path: repo://examples/tinyidp-message-app/appstore_test.go
+      Note: Migration, checksum, permissions, and pragma evidence
     - Path: repo://examples/tinyidp-message-app/contracts.go
       Note: Phase 0 executable route, cookie, and invariant contract
     - Path: repo://examples/tinyidp-message-app/contracts_test.go
@@ -42,6 +46,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -886,3 +891,83 @@ published destination is never opened with truncation.
 
 State-root task is complete. Implement the application SQLite schema ledger and
 checksum enforcement next, then add repositories in separate tasks.
+
+## Step 9: Add the checksummed application schema
+
+The second Phase 3 task added the application-owned SQLite boundary. The store
+opens only the message application's database, applies a checksummed migration
+ledger, configures WAL and production-shaped connection pragmas, and refuses to
+start when an applied migration's filename or contents no longer match history.
+
+**Commit (code):** `c41ba0b` — "feat(msgapp): add checksummed app schema"
+
+### What I did
+
+- Added `appStore` over `database/sql` and `github.com/mattn/go-sqlite3`.
+- Configured busy timeout, WAL, FULL synchronous mode, foreign keys, immediate
+  transactions, and a bounded four-connection pool.
+- Created the migration ledger and initial login-attempt, session,
+  registration-attempt, and message tables.
+- Added SHA-256 checksums over version, filename, and SQL text.
+- Protected the database directory as 0700 and database file as 0600.
+- Added tests for tables, schema version, checksums, modes, and pragmas.
+
+Command and result:
+
+```text
+go test ./examples/tinyidp-message-app
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app 0.021s
+```
+
+### Why
+
+- The app schema must not be added to tiny-idp's identity migration stream.
+- Checksums turn historical migration edits into startup failures rather than
+  undetected schema divergence.
+- WAL and bounded waiting support concurrent browser reads and short writes
+  without permitting unbounded request stalls.
+
+### What worked
+
+- A clean database reached schema version one.
+- Tampering the recorded checksum caused the next open to fail.
+- SQLite reported `wal`, synchronous level `2`, foreign keys enabled, and a
+  5000-millisecond busy timeout.
+
+### What didn't work
+
+- N/A. Focused tests passed on the first run.
+
+### What I learned
+
+- The sqlite3 DSN can encode every required connection pragma without executing
+  mutable setup SQL after pooling begins.
+- The application directory should be chmod'd even when its parent already
+  exists, because `MkdirAll` does not tighten an existing mode.
+
+### What was tricky to build
+
+The migration ledger itself must exist before a migration transaction can
+record version one. The ledger creation is intentionally a small bootstrap DDL;
+all application domain tables remain inside the checksummed migration.
+
+### What warrants a second pair of eyes
+
+- Review whether four open SQLite connections is the correct initial bound.
+- Review the desired durability/performance tradeoff of `synchronous=FULL`.
+- Confirm the migration checksum should continue to include the filename.
+
+### What should be done in the future
+
+- Doctor must compare supported and applied schema versions and checksums.
+- Every new schema change must append a migration; applied SQL is immutable.
+
+### Code review instructions
+
+- Start at `openAppStore`, then `applyMigration`.
+- Inspect `appMigrations[0]` against Section 13 of the design.
+- Run `go test ./examples/tinyidp-message-app -run 'TestApplication|TestMigration'`.
+
+## Continuation point
+
+Add the login-attempt repository and its atomic, one-time consume tests next.

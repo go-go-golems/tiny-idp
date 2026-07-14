@@ -68,3 +68,12 @@ Added the versioned application manifest, deterministic two-database paths, loop
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/state.go — State-root implementation
 
+
+## 2026-07-14 - Phase 3 application schema
+
+Added the application-owned SQLite store, checksummed migration history, WAL and durability pragmas, owner-only permissions, and focused schema tests (commit c41ba0b).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/appstore.go — Application SQLite boundary
+
