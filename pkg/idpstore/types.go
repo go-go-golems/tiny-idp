@@ -172,6 +172,36 @@ type Session struct {
 	RevokedAt  *time.Time
 }
 
+// BrowserContext is an opaque, browser-profile-scoped container for remembered
+// IdP sessions. The browser receives only the random handle whose keyed hash is
+// IDHash; it never receives a user ID, a session handle, or a list of accounts.
+// A context is not authentication evidence on its own.
+type BrowserContext struct {
+	IDHash     []byte
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+	RevokedAt  *time.Time
+}
+
+// RememberedBrowserSession associates one browser context with one valid IdP
+// session. DisplayLabel is deliberately host-selected, already-sanitized
+// presentation data. It must not be treated as identity evidence: activation
+// revalidates the linked session and user atomically.
+//
+// Raw browser-context, remembered-entry, and IdP-session handles are never
+// persisted. Every handle field here is a keyed hash.
+type RememberedBrowserSession struct {
+	IDHash        []byte
+	ContextIDHash []byte
+	SessionIDHash []byte
+	UserID        string
+	DisplayLabel  string
+	CreatedAt     time.Time
+	LastUsedAt    time.Time
+	RemovedAt     *time.Time
+}
+
 // InteractionRequiredAction is a bit set of native actions that must be
 // satisfied before an authorization interaction may be consumed.
 type InteractionRequiredAction uint32

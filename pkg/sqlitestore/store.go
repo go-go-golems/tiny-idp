@@ -673,6 +673,248 @@ func (s *Store) RevokeSession(ctx context.Context, idHash []byte, at time.Time) 
 	return err
 }
 
+func (s *Store) CreateBrowserContext(ctx context.Context, browserContext idpstore.BrowserContext) error {
+	data, err := enc(browserContext)
+	if err != nil {
+		return err
+	}
+	_, err = s.conn().ExecContext(ctx, `INSERT INTO browser_contexts(hash,expires_at,revoked_at,data) VALUES(?,?,?,?)`, hashKey(browserContext.IDHash), browserContext.ExpiresAt.UTC(), browserContext.RevokedAt, data)
+	return mapDup(err)
+}
+
+func (s *Store) GetBrowserContext(ctx context.Context, contextHash []byte) (idpstore.BrowserContext, error) {
+	var data []byte
+	err := s.conn().QueryRowContext(ctx, `SELECT data FROM browser_contexts WHERE hash=?`, hashKey(contextHash)).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return idpstore.BrowserContext{}, idpstore.ErrNotFound
+	}
+	if err != nil {
+		return idpstore.BrowserContext{}, err
+	}
+	return dec[idpstore.BrowserContext](data)
+}
+
+func (s *Store) CreateRememberedBrowserSession(ctx context.Context, remembered idpstore.RememberedBrowserSession) error {
+	data, err := enc(remembered)
+	if err != nil {
+		return err
+	}
+	_, err = s.conn().ExecContext(ctx, `INSERT INTO remembered_browser_sessions(hash,context_hash,session_hash,user_id,removed_at,last_used_at,data) VALUES(?,?,?,?,?,?,?)`, hashKey(remembered.IDHash), hashKey(remembered.ContextIDHash), hashKey(remembered.SessionIDHash), remembered.UserID, remembered.RemovedAt, remembered.LastUsedAt.UTC(), data)
+	return mapDup(err)
+}
+
+func (s *Store) ListRememberedBrowserSessions(ctx context.Context, contextHash []byte, now time.Time) ([]idpstore.RememberedBrowserSession, error) {
+	if !s.browserContextActive(ctx, contextHash, now) {
+		return nil, idpstore.ErrNotFound
+	}
+	rows, err := s.conn().QueryContext(ctx, `SELECT data FROM remembered_browser_sessions WHERE context_hash=? AND removed_at IS NULL ORDER BY last_used_at DESC, hash ASC`, hashKey(contextHash))
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]idpstore.RememberedBrowserSession, 0)
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		remembered, err := dec[idpstore.RememberedBrowserSession](data)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, remembered)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	entries := make([]idpstore.RememberedBrowserSession, 0, len(candidates))
+	for _, remembered := range candidates {
+		session, err := s.GetSession(ctx, remembered.SessionIDHash)
+		if err != nil || !sessionActiveAt(session, now) || session.UserID != remembered.UserID {
+			continue
+		}
+		user, err := s.GetUser(ctx, remembered.UserID)
+		if err != nil || user.Disabled {
+			continue
+		}
+		entries = append(entries, remembered)
+	}
+	return entries, nil
+}
+
+func (s *Store) ActivateRememberedSession(ctx context.Context, contextHash, entryHash, newSessionHash []byte, now time.Time) (idpstore.Session, idpstore.User, error) {
+	if s.runner == nil {
+		var session idpstore.Session
+		var user idpstore.User
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			scoped, ok := tx.(*Store)
+			if !ok {
+				return fmt.Errorf("unexpected SQLite transaction implementation")
+			}
+			var err error
+			session, user, err = scoped.activateRememberedSession(ctx, contextHash, entryHash, newSessionHash, now)
+			return err
+		})
+		return session, user, err
+	}
+	return s.activateRememberedSession(ctx, contextHash, entryHash, newSessionHash, now)
+}
+
+func (s *Store) activateRememberedSession(ctx context.Context, contextHash, entryHash, newSessionHash []byte, now time.Time) (idpstore.Session, idpstore.User, error) {
+	now = now.UTC()
+	if !s.browserContextActive(ctx, contextHash, now) {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrNotFound
+	}
+	var data []byte
+	err := s.conn().QueryRowContext(ctx, `SELECT data FROM remembered_browser_sessions WHERE hash=? AND context_hash=? AND removed_at IS NULL`, hashKey(entryHash), hashKey(contextHash)).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrNotFound
+	}
+	if err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	remembered, err := dec[idpstore.RememberedBrowserSession](data)
+	if err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	source, err := s.GetSession(ctx, remembered.SessionIDHash)
+	if errors.Is(err, idpstore.ErrNotFound) || !sessionActiveAt(source, now) || source.UserID != remembered.UserID {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrNotFound
+	}
+	if err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	user, err := s.GetUser(ctx, source.UserID)
+	if errors.Is(err, idpstore.ErrNotFound) || user.Disabled {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrNotFound
+	}
+	if err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	active := source
+	active.IDHash = append([]byte(nil), newSessionHash...)
+	active.CreatedAt = now
+	active.LastSeenAt = now
+	active.RevokedAt = nil
+	if err := s.CreateSession(ctx, active); err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	remembered.LastUsedAt = now
+	data, err = enc(remembered)
+	if err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	if _, err := s.conn().ExecContext(ctx, `UPDATE remembered_browser_sessions SET last_used_at=?,data=? WHERE hash=? AND context_hash=? AND removed_at IS NULL`, now, data, hashKey(entryHash), hashKey(contextHash)); err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	browserContext, err := s.GetBrowserContext(ctx, contextHash)
+	if err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	browserContext.LastSeenAt = now
+	contextData, err := enc(browserContext)
+	if err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	if _, err := s.conn().ExecContext(ctx, `UPDATE browser_contexts SET data=? WHERE hash=?`, contextData, hashKey(contextHash)); err != nil {
+		return idpstore.Session{}, idpstore.User{}, err
+	}
+	return active, user, nil
+}
+
+func (s *Store) RemoveRememberedBrowserSession(ctx context.Context, contextHash, entryHash []byte, at time.Time) error {
+	if s.runner == nil {
+		return s.Update(ctx, func(tx idpstore.TxStore) error {
+			scoped, ok := tx.(*Store)
+			if !ok {
+				return fmt.Errorf("unexpected SQLite transaction implementation")
+			}
+			return scoped.RemoveRememberedBrowserSession(ctx, contextHash, entryHash, at)
+		})
+	}
+	if !s.browserContextActive(ctx, contextHash, at) {
+		return idpstore.ErrNotFound
+	}
+	at = at.UTC()
+	var data []byte
+	err := s.conn().QueryRowContext(ctx, `SELECT data FROM remembered_browser_sessions WHERE hash=? AND context_hash=? AND removed_at IS NULL`, hashKey(entryHash), hashKey(contextHash)).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return idpstore.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	remembered, err := dec[idpstore.RememberedBrowserSession](data)
+	if err != nil {
+		return err
+	}
+	remembered.RemovedAt = &at
+	data, err = enc(remembered)
+	if err != nil {
+		return err
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE remembered_browser_sessions SET removed_at=?,data=? WHERE hash=? AND context_hash=? AND removed_at IS NULL`, at, data, hashKey(entryHash), hashKey(contextHash))
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return idpstore.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) RevokeBrowserContext(ctx context.Context, contextHash []byte, at time.Time) error {
+	if s.runner == nil {
+		return s.Update(ctx, func(tx idpstore.TxStore) error {
+			scoped, ok := tx.(*Store)
+			if !ok {
+				return fmt.Errorf("unexpected SQLite transaction implementation")
+			}
+			return scoped.RevokeBrowserContext(ctx, contextHash, at)
+		})
+	}
+	at = at.UTC()
+	browserContext, err := s.GetBrowserContext(ctx, contextHash)
+	if errors.Is(err, idpstore.ErrNotFound) {
+		return idpstore.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	browserContext.RevokedAt = &at
+	data, err := enc(browserContext)
+	if err != nil {
+		return err
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE browser_contexts SET revoked_at=?,data=? WHERE hash=?`, at, data, hashKey(contextHash))
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return idpstore.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) browserContextActive(ctx context.Context, contextHash []byte, now time.Time) bool {
+	browserContext, err := s.GetBrowserContext(ctx, contextHash)
+	return err == nil && browserContext.RevokedAt == nil && (browserContext.ExpiresAt.IsZero() || now.Before(browserContext.ExpiresAt))
+}
+
+func sessionActiveAt(session idpstore.Session, now time.Time) bool {
+	return session.RevokedAt == nil && (session.ExpiresAt.IsZero() || now.Before(session.ExpiresAt))
+}
+
 func (s *Store) CreateInteraction(ctx context.Context, interaction idpstore.InteractionRecord) error {
 	data, err := enc(interaction)
 	if err != nil {

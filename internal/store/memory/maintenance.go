@@ -63,6 +63,20 @@ func (s *Store) Maintain(ctx context.Context, now time.Time, policy idpstore.Mai
 			report.DomainRecords++
 		}
 	}
+	for key, value := range s.browserContexts {
+		if expiredMemory(value.ExpiresAt, value.RevokedAt, cutoff) {
+			delete(s.browserContexts, key)
+			report.DomainRecords++
+		}
+	}
+	for key, value := range s.rememberedSessions {
+		_, contextExists := s.browserContexts[hashKey(value.ContextIDHash)]
+		_, sessionExists := s.sessions[hashKey(value.SessionIDHash)]
+		if (value.RemovedAt != nil && value.RemovedAt.Before(cutoff)) || !contextExists || !sessionExists {
+			delete(s.rememberedSessions, key)
+			report.DomainRecords++
+		}
+	}
 	for key, value := range s.interactions {
 		if expiredMemory(value.ExpiresAt, value.ConsumedAt, cutoff) {
 			delete(s.interactions, key)

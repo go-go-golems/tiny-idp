@@ -64,6 +64,27 @@ func (s *Store) Maintain(ctx context.Context, now time.Time, policy idpstore.Mai
 		})); err != nil {
 			return err
 		}
+		if err = add(deleteJSONRecords[idpstore.BrowserContext](ctx, scoped.conn(), "browser_contexts", "hash", func(v idpstore.BrowserContext) bool {
+			return expiredOrTerminal(v.ExpiresAt, v.RevokedAt, domainCutoff)
+		})); err != nil {
+			return err
+		}
+		if err = add(deleteJSONRecords[idpstore.RememberedBrowserSession](ctx, scoped.conn(), "remembered_browser_sessions", "hash", func(v idpstore.RememberedBrowserSession) bool {
+			return v.RemovedAt != nil && v.RemovedAt.Before(domainCutoff)
+		})); err != nil {
+			return err
+		}
+		orphaned, err := scoped.conn().ExecContext(ctx, `DELETE FROM remembered_browser_sessions
+			WHERE NOT EXISTS (SELECT 1 FROM browser_contexts WHERE browser_contexts.hash = remembered_browser_sessions.context_hash)
+			   OR NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.hash = remembered_browser_sessions.session_hash)`)
+		if err != nil {
+			return fmt.Errorf("maintain remembered browser session references: %w", err)
+		}
+		orphanedCount, err := orphaned.RowsAffected()
+		if err != nil {
+			return err
+		}
+		report.DomainRecords += orphanedCount
 		if err = add(deleteJSONRecords[idpstore.InteractionRecord](ctx, scoped.conn(), "authorization_interactions", "hash", func(v idpstore.InteractionRecord) bool {
 			return expiredOrTerminal(v.ExpiresAt, v.ConsumedAt, domainCutoff)
 		})); err != nil {

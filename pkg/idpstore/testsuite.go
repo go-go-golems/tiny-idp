@@ -11,6 +11,119 @@ import (
 // RunStoreSuite verifies invariants every store implementation must satisfy.
 func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
+	t.Run("maintenance removes expired browser contexts and orphaned remembered sessions", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		maintenance, ok := st.(MaintenanceStore)
+		if !ok {
+			t.Fatal("store does not implement maintenance")
+		}
+		now := time.Date(2026, time.July, 14, 18, 0, 0, 0, time.UTC)
+		contextHash := []byte("expired-browser-context")
+		sessionHash := []byte("expired-source-session")
+		if err := st.CreateBrowserContext(ctx, BrowserContext{IDHash: contextHash, CreatedAt: now.Add(-72 * time.Hour), ExpiresAt: now.Add(-48 * time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateSession(ctx, Session{IDHash: sessionHash, UserID: "u1", ExpiresAt: now.Add(-48 * time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateRememberedBrowserSession(ctx, RememberedBrowserSession{IDHash: []byte("orphaned-remembered-entry"), ContextIDHash: contextHash, SessionIDHash: sessionHash, UserID: "u1", CreatedAt: now.Add(-72 * time.Hour), LastUsedAt: now.Add(-72 * time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		report, err := maintenance.Maintain(ctx, now, MaintenancePolicy{RetainExpiredFor: 24 * time.Hour, ProtocolStateRetention: 24 * time.Hour, SigningKeyRetention: 24 * time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.DomainRecords < 3 {
+			t.Fatalf("maintenance domain records = %d, want at least 3", report.DomainRecords)
+		}
+		if _, err := st.GetBrowserContext(ctx, contextHash); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expired browser context survived maintenance: %v", err)
+		}
+		if _, err := st.GetSession(ctx, sessionHash); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expired source session survived maintenance: %v", err)
+		}
+	})
+	t.Run("remembered browser session activation is context-bound and fresh", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Date(2026, time.July, 14, 18, 0, 0, 0, time.UTC)
+		contextA := []byte("browser-context-a")
+		contextB := []byte("browser-context-b")
+		sourceHash := []byte("source-session")
+		entryHash := []byte("remembered-entry")
+		freshHash := []byte("fresh-active-session")
+		if err := st.PutUser(ctx, "alice", User{ID: "u1", Sub: "subject-1", Name: "Alice"}); err != nil {
+			t.Fatal(err)
+		}
+		source := Session{IDHash: sourceHash, UserID: "u1", AuthTime: now.Add(-10 * time.Minute), CreatedAt: now.Add(-10 * time.Minute), LastSeenAt: now.Add(-10 * time.Minute), ExpiresAt: now.Add(time.Hour), ACR: "urn:tinyidp:password", AMR: []string{"pwd"}}
+		if err := st.CreateSession(ctx, source); err != nil {
+			t.Fatal(err)
+		}
+		for _, browserContext := range []BrowserContext{
+			{IDHash: contextA, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(24 * time.Hour)},
+			{IDHash: contextB, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(24 * time.Hour)},
+		} {
+			if err := st.CreateBrowserContext(ctx, browserContext); err != nil {
+				t.Fatal(err)
+			}
+		}
+		remembered := RememberedBrowserSession{IDHash: entryHash, ContextIDHash: contextA, SessionIDHash: sourceHash, UserID: "u1", DisplayLabel: "Alice", CreatedAt: now, LastUsedAt: now}
+		if err := st.CreateRememberedBrowserSession(ctx, remembered); err != nil {
+			t.Fatal(err)
+		}
+		entries, err := st.ListRememberedBrowserSessions(ctx, contextA, now)
+		if err != nil || len(entries) != 1 || entries[0].DisplayLabel != "Alice" {
+			t.Fatalf("list remembered entries = %#v, %v", entries, err)
+		}
+		entries[0].DisplayLabel = "mutated caller copy"
+		again, err := st.ListRememberedBrowserSessions(ctx, contextA, now)
+		if err != nil || again[0].DisplayLabel != "Alice" {
+			t.Fatalf("remembered entry aliases store state: %#v, %v", again, err)
+		}
+		if _, _, err := st.ActivateRememberedSession(ctx, contextB, entryHash, []byte("cross-context"), now.Add(time.Second)); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("cross-context activation error = %v, want %v", err, ErrNotFound)
+		}
+		if _, err := st.GetSession(ctx, []byte("cross-context")); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("cross-context activation created a session: %v", err)
+		}
+		active, user, err := st.ActivateRememberedSession(ctx, contextA, entryHash, freshHash, now.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if user.ID != "u1" || string(active.IDHash) != string(freshHash) || !active.AuthTime.Equal(source.AuthTime) || !active.ExpiresAt.Equal(source.ExpiresAt) || active.RevokedAt != nil {
+			t.Fatalf("activated session/user = %#v / %#v", active, user)
+		}
+		if _, err := st.GetSession(ctx, sourceHash); err != nil {
+			t.Fatalf("activation replaced source session: %v", err)
+		}
+		entries, err = st.ListRememberedBrowserSessions(ctx, contextA, now.Add(time.Minute))
+		if err != nil || len(entries) != 1 || !entries[0].LastUsedAt.Equal(now.Add(time.Minute)) {
+			t.Fatalf("activation did not refresh entry use: %#v, %v", entries, err)
+		}
+		if err := st.RevokeSession(ctx, sourceHash, now.Add(90*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		entries, err = st.ListRememberedBrowserSessions(ctx, contextA, now.Add(2*time.Minute))
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("revoked source session remains selectable: %#v, %v", entries, err)
+		}
+		if _, _, err := st.ActivateRememberedSession(ctx, contextA, entryHash, []byte("revoked-source"), now.Add(2*time.Minute)); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("revoked source activation error = %v, want %v", err, ErrNotFound)
+		}
+		if err := st.RemoveRememberedBrowserSession(ctx, contextA, entryHash, now.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := st.ActivateRememberedSession(ctx, contextA, entryHash, []byte("removed-entry"), now.Add(2*time.Minute)); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("removed entry activation error = %v, want %v", err, ErrNotFound)
+		}
+		if err := st.RevokeBrowserContext(ctx, contextA, now.Add(3*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.ListRememberedBrowserSessions(ctx, contextA, now.Add(3*time.Minute)); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("revoked context list error = %v, want %v", err, ErrNotFound)
+		}
+	})
 	t.Run("nested transactions are rejected", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)

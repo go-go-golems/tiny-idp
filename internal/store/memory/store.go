@@ -30,6 +30,8 @@ type Store struct {
 	refresh            map[string]idpstore.RefreshToken
 	consents           map[string]idpstore.Consent
 	sessions           map[string]idpstore.Session
+	browserContexts    map[string]idpstore.BrowserContext
+	rememberedSessions map[string]idpstore.RememberedBrowserSession
 	interactions       map[string]idpstore.InteractionRecord
 	keys               map[string]idpstore.SigningKey
 }
@@ -51,6 +53,8 @@ func New() *Store {
 		refresh:            map[string]idpstore.RefreshToken{},
 		consents:           map[string]idpstore.Consent{},
 		sessions:           map[string]idpstore.Session{},
+		browserContexts:    map[string]idpstore.BrowserContext{},
+		rememberedSessions: map[string]idpstore.RememberedBrowserSession{},
 		interactions:       map[string]idpstore.InteractionRecord{},
 		keys:               map[string]idpstore.SigningKey{},
 	}
@@ -432,6 +436,159 @@ func (s *Store) RevokeSession(_ context.Context, idHash []byte, at time.Time) er
 	return nil
 }
 
+func (s *Store) CreateBrowserContext(_ context.Context, context idpstore.BrowserContext) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := hashKey(context.IDHash)
+	if _, ok := s.browserContexts[key]; ok {
+		return idpstore.ErrDuplicate
+	}
+	s.browserContexts[key] = cloneBrowserContext(context)
+	return nil
+}
+
+func (s *Store) GetBrowserContext(_ context.Context, contextHash []byte) (idpstore.BrowserContext, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	context, ok := s.browserContexts[hashKey(contextHash)]
+	if !ok {
+		return idpstore.BrowserContext{}, idpstore.ErrNotFound
+	}
+	return cloneBrowserContext(context), nil
+}
+
+func (s *Store) CreateRememberedBrowserSession(_ context.Context, remembered idpstore.RememberedBrowserSession) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := hashKey(remembered.IDHash)
+	if _, ok := s.rememberedSessions[key]; ok {
+		return idpstore.ErrDuplicate
+	}
+	s.rememberedSessions[key] = cloneRememberedBrowserSession(remembered)
+	return nil
+}
+
+func (s *Store) ListRememberedBrowserSessions(_ context.Context, contextHash []byte, now time.Time) ([]idpstore.RememberedBrowserSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.browserContextActiveLocked(contextHash, now) {
+		return nil, idpstore.ErrNotFound
+	}
+	entries := make([]idpstore.RememberedBrowserSession, 0)
+	for _, remembered := range s.rememberedSessions {
+		if !equalHash(remembered.ContextIDHash, contextHash) || remembered.RemovedAt != nil {
+			continue
+		}
+		session, ok := s.sessions[hashKey(remembered.SessionIDHash)]
+		if !ok || !sessionActive(session, now) || session.UserID != remembered.UserID {
+			continue
+		}
+		user, ok := s.usersByID[remembered.UserID]
+		if !ok || user.Disabled {
+			continue
+		}
+		entries = append(entries, cloneRememberedBrowserSession(remembered))
+	}
+	return entries, nil
+}
+
+func (s *Store) ActivateRememberedSession(ctx context.Context, contextHash, entryHash, newSessionHash []byte, now time.Time) (idpstore.Session, idpstore.User, error) {
+	if s.inTransaction {
+		return s.activateRememberedSession(contextHash, entryHash, newSessionHash, now)
+	}
+	var session idpstore.Session
+	var user idpstore.User
+	err := s.Update(ctx, func(tx idpstore.TxStore) error {
+		scoped, ok := tx.(*Store)
+		if !ok {
+			return errors.New("unexpected memory transaction implementation")
+		}
+		var err error
+		session, user, err = scoped.activateRememberedSession(contextHash, entryHash, newSessionHash, now)
+		return err
+	})
+	return session, user, err
+}
+
+func (s *Store) activateRememberedSession(contextHash, entryHash, newSessionHash []byte, now time.Time) (idpstore.Session, idpstore.User, error) {
+	now = now.UTC()
+	if !s.browserContextActiveLocked(contextHash, now) {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrNotFound
+	}
+	entryKey := hashKey(entryHash)
+	remembered, ok := s.rememberedSessions[entryKey]
+	if !ok || !equalHash(remembered.ContextIDHash, contextHash) || remembered.RemovedAt != nil {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrNotFound
+	}
+	source, ok := s.sessions[hashKey(remembered.SessionIDHash)]
+	if !ok || !sessionActive(source, now) || source.UserID != remembered.UserID {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrNotFound
+	}
+	user, ok := s.usersByID[source.UserID]
+	if !ok || user.Disabled {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrNotFound
+	}
+	newKey := hashKey(newSessionHash)
+	if _, exists := s.sessions[newKey]; exists {
+		return idpstore.Session{}, idpstore.User{}, idpstore.ErrDuplicate
+	}
+	active := cloneSession(source)
+	active.IDHash = append([]byte(nil), newSessionHash...)
+	active.CreatedAt = now
+	active.LastSeenAt = now
+	active.RevokedAt = nil
+	s.sessions[newKey] = active
+	remembered.LastUsedAt = now
+	s.rememberedSessions[entryKey] = remembered
+	contextKey := hashKey(contextHash)
+	browserContext := s.browserContexts[contextKey]
+	browserContext.LastSeenAt = now
+	s.browserContexts[contextKey] = browserContext
+	return cloneSession(active), user, nil
+}
+
+func (s *Store) RemoveRememberedBrowserSession(_ context.Context, contextHash, entryHash []byte, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.browserContextActiveLocked(contextHash, at) {
+		return idpstore.ErrNotFound
+	}
+	entryKey := hashKey(entryHash)
+	remembered, ok := s.rememberedSessions[entryKey]
+	if !ok || !equalHash(remembered.ContextIDHash, contextHash) || remembered.RemovedAt != nil {
+		return idpstore.ErrNotFound
+	}
+	at = at.UTC()
+	remembered.RemovedAt = &at
+	s.rememberedSessions[entryKey] = remembered
+	return nil
+}
+
+func (s *Store) RevokeBrowserContext(_ context.Context, contextHash []byte, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := hashKey(contextHash)
+	context, ok := s.browserContexts[key]
+	if !ok {
+		return idpstore.ErrNotFound
+	}
+	at = at.UTC()
+	context.RevokedAt = &at
+	s.browserContexts[key] = context
+	return nil
+}
+
+func (s *Store) browserContextActiveLocked(contextHash []byte, now time.Time) bool {
+	context, ok := s.browserContexts[hashKey(contextHash)]
+	return ok && context.RevokedAt == nil && (context.ExpiresAt.IsZero() || now.Before(context.ExpiresAt))
+}
+
+func sessionActive(session idpstore.Session, now time.Time) bool {
+	return session.RevokedAt == nil && (session.ExpiresAt.IsZero() || now.Before(session.ExpiresAt))
+}
+
+func equalHash(a, b []byte) bool { return bytes.Equal(a, b) }
+
 func (s *Store) CreateInteraction(_ context.Context, interaction idpstore.InteractionRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -767,6 +924,8 @@ func (s *Store) cloneLocked() *Store {
 		refresh:            cloneMap(s.refresh),
 		consents:           cloneMap(s.consents),
 		sessions:           cloneMap(s.sessions),
+		browserContexts:    cloneBrowserContextMap(s.browserContexts),
+		rememberedSessions: cloneRememberedBrowserSessionMap(s.rememberedSessions),
 		interactions:       cloneInteractionMap(s.interactions),
 		keys:               cloneMap(s.keys),
 	}
@@ -785,6 +944,8 @@ func (s *Store) replaceLocked(next *Store) {
 	s.refresh = next.refresh
 	s.consents = next.consents
 	s.sessions = next.sessions
+	s.browserContexts = next.browserContexts
+	s.rememberedSessions = next.rememberedSessions
 	s.interactions = next.interactions
 	s.keys = next.keys
 }
@@ -795,6 +956,52 @@ func cloneInteractionMap(source map[string]idpstore.InteractionRecord) map[strin
 		clone[key] = cloneInteraction(value)
 	}
 	return clone
+}
+
+func cloneBrowserContextMap(source map[string]idpstore.BrowserContext) map[string]idpstore.BrowserContext {
+	clone := make(map[string]idpstore.BrowserContext, len(source))
+	for key, value := range source {
+		clone[key] = cloneBrowserContext(value)
+	}
+	return clone
+}
+
+func cloneRememberedBrowserSessionMap(source map[string]idpstore.RememberedBrowserSession) map[string]idpstore.RememberedBrowserSession {
+	clone := make(map[string]idpstore.RememberedBrowserSession, len(source))
+	for key, value := range source {
+		clone[key] = cloneRememberedBrowserSession(value)
+	}
+	return clone
+}
+
+func cloneSession(session idpstore.Session) idpstore.Session {
+	session.IDHash = append([]byte(nil), session.IDHash...)
+	session.AMR = append([]string(nil), session.AMR...)
+	if session.RevokedAt != nil {
+		revokedAt := *session.RevokedAt
+		session.RevokedAt = &revokedAt
+	}
+	return session
+}
+
+func cloneBrowserContext(context idpstore.BrowserContext) idpstore.BrowserContext {
+	context.IDHash = append([]byte(nil), context.IDHash...)
+	if context.RevokedAt != nil {
+		revokedAt := *context.RevokedAt
+		context.RevokedAt = &revokedAt
+	}
+	return context
+}
+
+func cloneRememberedBrowserSession(remembered idpstore.RememberedBrowserSession) idpstore.RememberedBrowserSession {
+	remembered.IDHash = append([]byte(nil), remembered.IDHash...)
+	remembered.ContextIDHash = append([]byte(nil), remembered.ContextIDHash...)
+	remembered.SessionIDHash = append([]byte(nil), remembered.SessionIDHash...)
+	if remembered.RemovedAt != nil {
+		removedAt := *remembered.RemovedAt
+		remembered.RemovedAt = &removedAt
+	}
+	return remembered
 }
 
 func cloneMap[K comparable, V any](source map[K]V) map[K]V {

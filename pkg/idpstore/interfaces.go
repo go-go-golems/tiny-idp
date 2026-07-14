@@ -80,6 +80,20 @@ type SessionStore interface {
 	RevokeSession(ctx context.Context, idHash []byte, at time.Time) error
 }
 
+// BrowserContextStore persists the server-owned account chooser state for one
+// browser profile. Context and entry handles are keyed hashes, just like
+// Session.IDHash. Activation always creates a fresh active session handle; an
+// old browser cookie value can therefore never be recovered or reissued.
+type BrowserContextStore interface {
+	CreateBrowserContext(ctx context.Context, browserContext BrowserContext) error
+	GetBrowserContext(ctx context.Context, contextHash []byte) (BrowserContext, error)
+	CreateRememberedBrowserSession(ctx context.Context, remembered RememberedBrowserSession) error
+	ListRememberedBrowserSessions(ctx context.Context, contextHash []byte, now time.Time) ([]RememberedBrowserSession, error)
+	ActivateRememberedSession(ctx context.Context, contextHash, entryHash, newSessionHash []byte, now time.Time) (Session, User, error)
+	RemoveRememberedBrowserSession(ctx context.Context, contextHash, entryHash []byte, at time.Time) error
+	RevokeBrowserContext(ctx context.Context, contextHash []byte, at time.Time) error
+}
+
 // InteractionStore persists server-owned browser authorization continuations.
 // Raw interaction handles are never stored; callers supply keyed hashes.
 type InteractionStore interface {
@@ -108,6 +122,7 @@ type StoreOperations interface {
 	RefreshTokenStore
 	ConsentStore
 	SessionStore
+	BrowserContextStore
 	InteractionStore
 	KeyStore
 }
@@ -128,6 +143,8 @@ type ReadStore interface {
 	GetRefreshToken(ctx context.Context, tokenHash []byte) (RefreshToken, error)
 	GetConsent(ctx context.Context, userID, clientID string, scopes []string) (Consent, error)
 	GetSession(ctx context.Context, idHash []byte) (Session, error)
+	GetBrowserContext(ctx context.Context, contextHash []byte) (BrowserContext, error)
+	ListRememberedBrowserSessions(ctx context.Context, contextHash []byte, now time.Time) ([]RememberedBrowserSession, error)
 	GetInteraction(ctx context.Context, idHash []byte) (InteractionRecord, error)
 	ActiveSigningKey(ctx context.Context) (SigningKey, error)
 	VerificationKeys(ctx context.Context) ([]SigningKey, error)
