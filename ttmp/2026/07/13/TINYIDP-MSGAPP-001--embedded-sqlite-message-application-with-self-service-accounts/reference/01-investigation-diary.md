@@ -19,12 +19,14 @@ RelatedFiles:
         Origin, Fetch Metadata, trusted address, and canonical-login registration boundary
         Stable non-secret registration audit event codes
         Public GET message feed with bounded pagination and subject-redacted response
+        Authenticated message creation with exact Origin, app-session CSRF, and server-derived author fields
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
       Note: |-
         Exercises the browser-visible login form and complete callback flow
         Validates cookie and durable one-time registration state
         Tests registration CSRF, strict JSON, normal authentication, and absence of auto-login
         HTTP registration followed by genuine embedded provider login
+        Mutation authorization, spoofing, and stored-author regression coverage
     - Path: repo://examples/tinyidp-message-app/appstore.go
       Note: Checksummed app schema and SQLite envelope (commit c41ba0b)
     - Path: repo://examples/tinyidp-message-app/appstore_test.go
@@ -75,6 +77,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -2222,4 +2225,90 @@ GET /api/messages?limit=20
   -> nextCursor = base64url(RFC3339Nano timestamp | ID)
 GET /api/messages?before=nextCursor
   -> WHERE (created_at < ts OR created_at = ts AND id < id)
+```
+
+## Step 23: Create messages from verified application sessions
+
+Phase 6 now has its state-changing half. `POST /api/messages` requires the
+configured exact Origin, rejects cross-site Fetch Metadata, loads the opaque
+app-session cookie, compares its independent CSRF secret in constant time, and
+accepts only a strict JSON object containing `body`. The request cannot supply
+an author subject or display name.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead."
+
+**Assistant interpretation:** Continue implementation with the next security-sensitive application route.
+
+**Inferred user intent:** Make the message application genuinely usable while preserving identity ownership and anti-forgery invariants.
+
+**Commit (code):** `d47efe7` — "feat(msgapp): add authenticated message creation"
+
+### What I did
+
+- Added `POST /api/messages`, strict bounded JSON decoding, and a typed response.
+- Reused the exact-origin/cross-site rejection boundary before session lookup.
+- Required the opaque app session plus `X-CSRF-Token` matching that session.
+- Passed only session subject and display name to the repository.
+- Added tests for missing CSRF, foreign Origin, unknown spoofed author fields,
+  response subject redaction, and persisted verified authorship.
+
+### Why
+
+The browser must never be able to choose the identity attached to a message.
+That value is authorization data, not presentation input; it comes only from
+the post-OIDC app session created by the callback.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app -run 'Test(CreateMessage|Message)' -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 0.035s
+
+go test ./examples/tinyidp-message-app -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 1.116s
+```
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- Reusing the same-origin helper is appropriate only because both registration
+  and message mutation are browser-cookie APIs; their CSRF secrets remain
+  separate and purpose-specific.
+
+### What was tricky to build
+
+The test must distinguish a rejected spoofed `authorSubject` field from a
+successful request that silently ignores it. `DisallowUnknownFields` makes the
+wire contract fail closed, and the database assertion independently proves the
+only stored author is the verified session principal.
+
+### What warrants a second pair of eyes
+
+- The handler maps repository validation and decoding failures to the same
+  public 422 response. Review desired UI error detail before frontend work,
+  without returning subject or CSRF information.
+
+### What should be done in the future
+
+- Begin Phase 7 frontend work; its composer must send only `{body}` and read
+  the CSRF token from `/api/session`.
+
+### Code review instructions
+
+- Review `handleCreateMessage`, then `decodeCreateMessageRequest`, then
+  `TestCreateMessageUsesVerifiedSessionAuthorAndCSRF`.
+- Validate with `go test ./examples/tinyidp-message-app -count=1`.
+
+### Technical details
+
+```text
+POST /api/messages {"body":"..."}
+  Origin + Fetch Metadata -> app-session cookie -> session CSRF
+  -> createMessage(subject=session.Subject, name=session.DisplayName)
+  -> 201 message response without subject
 ```

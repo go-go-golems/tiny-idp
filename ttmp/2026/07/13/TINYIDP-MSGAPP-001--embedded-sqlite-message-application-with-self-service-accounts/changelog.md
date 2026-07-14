@@ -178,3 +178,12 @@ Phase 6: added public cursor-paginated message feed with opaque cursor validatio
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — GET /api/messages
 
+
+## 2026-07-14
+
+Phase 6: added authenticated CSRF-protected message creation with verified-session authorship (commit d47efe7)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — POST /api/messages
+
