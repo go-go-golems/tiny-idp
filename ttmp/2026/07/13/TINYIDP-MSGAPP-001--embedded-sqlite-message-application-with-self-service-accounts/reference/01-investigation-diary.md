@@ -17,11 +17,13 @@ RelatedFiles:
         Issues anonymous registration pre-sessions and CSRF material
         Strict bounded registration decoding, one-time CSRF consumption, account-service delegation, and password-byte clearing
         Origin, Fetch Metadata, trusted address, and canonical-login registration boundary
+        Stable non-secret registration audit event codes
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
       Note: |-
         Exercises the browser-visible login form and complete callback flow
         Validates cookie and durable one-time registration state
         Tests registration CSRF, strict JSON, normal authentication, and absence of auto-login
+        HTTP registration followed by genuine embedded provider login
     - Path: repo://examples/tinyidp-message-app/appstore.go
       Note: Checksummed app schema and SQLite envelope (commit c41ba0b)
     - Path: repo://examples/tinyidp-message-app/appstore_test.go
@@ -70,6 +72,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -2007,3 +2010,133 @@ POST /api/accounts
 
 The canonical login is SHA-256 hashed and base64url encoded only as a limiter
 key component. It is neither logged by this handler nor returned to the caller.
+
+## Step 21: Close Phase 5 with auditable registration and normal login
+
+Phase 5 is now complete. Registration records fixed, non-secret audit outcomes
+and the strongest browser test begins with no account at all: it obtains a
+registration pre-session, creates Alice through `POST /api/accounts`, then
+uses the provider-owned authorization form to authenticate and obtains the
+application session through the normal OIDC callback. This proves registration
+is durable and usable without collapsing it into auto-login.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 17)
+
+**Assistant interpretation:** Finish the remaining registration exit criteria, particularly operator-visible outcomes and a genuine post-registration authentication path.
+
+**Inferred user intent:** Establish that the example is a complete relying-party flow, not a collection of independently passing storage and handler fragments.
+
+**Commit (code):** `9363945` — "test(msgapp): prove registration then browser login"
+
+### What I did
+
+- Added `account.self_registration` audit events with stable result/reason
+  pairs: `origin_rejected`, `csrf_rejected`, `invalid_request`, `rate_limited`,
+  `account_rejected`, and `unavailable`; successful events carry only the new
+  subject.
+- Kept event fields empty so the handler never records raw login, password,
+  CSRF token, cookie, or request body.
+- Added MemorySink assertions for rejected and accepted events.
+- Replaced the browser test's direct account-service seeding with real GET
+  registration and POST account-creation calls through the mounted app.
+- Continued the same cookie-jar browser through OIDC authorize, IdP form
+  credentials, callback, app-session lookup, and callback replay rejection.
+
+### Why
+
+Fixed reason codes let operations count and alert on security-relevant outcomes
+without parsing unstable prose or leaking request values. More importantly, an
+account-service unit test is not proof that the public registration protocol,
+cookie jar, exact Origin rule, and provider authentication agree. The complete
+browser test binds those contracts together.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app -run 'Test(CreateAccountRequires|BrowserLoginCompletes)' -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 0.896s
+
+go test ./examples/tinyidp-message-app -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 1.683s
+```
+
+The browser begins unauthenticated, registers Alice, signs in with the exact
+password it registered, obtains an independent application session, and cannot
+reuse the authorization callback state.
+
+### What didn't work
+
+The first focused build omitted the standard-library `context` import required
+by the audit helper:
+
+```text
+examples/tinyidp-message-app/app_http.go:193:45: undefined: context
+```
+
+After adding the import, the browser test initially submitted the old seeded
+password and correctly received the provider's `401 Invalid login or password`.
+I aligned the test's IdP-form value with the password used by the HTTP
+registration step; the focused and complete suites then passed.
+
+### What I learned
+
+- An IdP can only prove the integration when its login form sees the credential
+  produced by the app's public registration path, not one seeded around it.
+- Security audit records should contain a fixed outcome and subject when
+  appropriate, but no raw protocol or credential material.
+- The example currently uses `idp.NoopSink` by default; Phase 8 composition
+  must inject a durable audit sink for production rather than treating the
+  default as operationally sufficient.
+
+### What was tricky to build
+
+The test needs browser cookies for registration and then provider cookies for
+login, while its OIDC back-channel remains an in-process transport. A single
+cookie-jar client handles only the public HTTP calls; discovery, token exchange,
+and JWKS verification still use the configured in-process client. This mirrors
+the intended deployment topology and avoids falsely using the browser client
+for a private back-channel.
+
+### What warrants a second pair of eyes
+
+- Review the production audit-delivery policy. `recordRegistration` currently
+  records best-effort through the injected sink; a later production composition
+  must decide how a durable sink failure is surfaced after an identity mutation
+  has already committed.
+- Review audit event naming with the broader tiny-idp audit vocabulary before
+  dashboards or retention rules depend on it.
+
+### What should be done in the future
+
+- Begin Phase 6: public cursor-paginated feed reads, then authenticated
+  session/CSRF-protected message creation with subject derived only from the
+  app session.
+- Add message audit events and apply exact-origin checks to its unsafe route.
+- Configure durable audit, a production rate limiter, and trusted proxy policy
+  in the Phase 8 executable composition.
+
+### Code review instructions
+
+- Review `recordRegistration` and every early return in `handleCreateAccount`.
+- Read `TestBrowserLoginCompletesAgainstEmbeddedProvider` as an executable
+  sequence from registration through callback replay; confirm no test-side
+  `accounts.Create` remains.
+- Validate with `go test ./examples/tinyidp-message-app -count=1`.
+
+### Technical details
+
+```text
+anonymous browser
+  -> GET /api/registration
+  -> POST /api/accounts (Origin + pre-session + CSRF)
+  -> account.self_registration accepted(subject)
+  -> GET /auth/login
+  -> provider-owned /idp/authorize form
+  -> OIDC callback
+  -> independent tinymsg_app_session
+```
+
+The audit event never includes the registration cookie, CSRF token, password,
+or the login string; the subject appears only after identity creation succeeds.

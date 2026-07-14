@@ -160,3 +160,12 @@ Phase 5: added same-origin, Fetch Metadata, address, and canonical-login registr
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Registration perimeter controls
 
+
+## 2026-07-14
+
+Phase 5: added stable registration audit events and proved HTTP registration followed by embedded browser login (commit 9363945)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http_test.go — End-to-end registration and OIDC login evidence
+
