@@ -169,3 +169,12 @@ Phase 5: added stable registration audit events and proved HTTP registration fol
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http_test.go — End-to-end registration and OIDC login evidence
 
+
+## 2026-07-14
+
+Phase 6: added public cursor-paginated message feed with opaque cursor validation (commit 423e6f6)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — GET /api/messages
+

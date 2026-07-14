@@ -18,6 +18,7 @@ RelatedFiles:
         Strict bounded registration decoding, one-time CSRF consumption, account-service delegation, and password-byte clearing
         Origin, Fetch Metadata, trusted address, and canonical-login registration boundary
         Stable non-secret registration audit event codes
+        Public GET message feed with bounded pagination and subject-redacted response
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
       Note: |-
         Exercises the browser-visible login form and complete callback flow
@@ -36,6 +37,8 @@ RelatedFiles:
       Note: Atomic durable OAuth state consumption (commit 2603c18)
     - Path: repo://examples/tinyidp-message-app/login_attempts_test.go
       Note: Replay, expiry, and concurrent single-winner tests
+    - Path: repo://examples/tinyidp-message-app/messages.go
+      Note: Opaque cursor codec for stable message-feed continuation
     - Path: repo://examples/tinyidp-message-app/oidc_client.go
       Note: |-
         OIDC discovery, durable PKCE, callback verification core (commit 36c1727)
@@ -72,6 +75,7 @@ LastUpdated: 2026-07-13T20:27:13-04:00
 WhatFor: Use this diary to review how the application design was derived and to continue the future implementation without repeating investigation.
 WhenToUse: Read before implementing or revising TINYIDP-MSGAPP-001.
 ---
+
 
 
 
@@ -2140,3 +2144,82 @@ anonymous browser
 
 The audit event never includes the registration cookie, CSRF token, password,
 or the login string; the subject appears only after identity creation succeeds.
+
+## Step 22: Publish the cursor-paginated message feed
+
+Phase 6 now exposes `GET /api/messages`. The public response contains only the
+message ID, display name, plain-text body, and creation time; it intentionally
+does not disclose the internal author subject. Pagination continues the store's
+stable `(created_at DESC, id DESC)` order with an opaque base64url cursor.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead"
+
+**Assistant interpretation:** Continue into the next implementation phase with another independently reviewable security boundary.
+
+**Inferred user intent:** Turn the persisted message repository into a usable public application API without exposing identity internals or introducing unstable feed paging.
+
+**Commit (code):** `423e6f6` — "feat(msgapp): add public message feed"
+
+### What I did
+
+- Added strict encode/decode helpers for a cursor containing the persisted timestamp and ID.
+- Added `GET /api/messages?before=&limit=` with limit default 20 and bounds 1–100.
+- Returned a typed JSON response with a continuation cursor when a full page is returned.
+- Added codec, HTTP pagination, ordering, and subject-redaction tests.
+
+### Why
+
+Offset pagination can duplicate or skip rows as new messages arrive. The
+repository already uses a keyset predicate over a total order, so the HTTP API
+preserves that property rather than adding a competing pagination scheme.
+
+### What worked
+
+```text
+go test ./examples/tinyidp-message-app -run 'TestMessage' -count=1
+ok   github.com/manuel/tinyidp/examples/tinyidp-message-app 0.025s
+```
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- A public presentation API should not inherit every persistence field; author
+  subjects are server-side authorization material and are deliberately omitted.
+
+### What was tricky to build
+
+The cursor must preserve the exact timestamp text used by the SQLite keyset
+comparison. The codec therefore uses `formatAppTime` and `parseAppTime`, not a
+second ad-hoc time representation.
+
+### What warrants a second pair of eyes
+
+- A full page receives a continuation cursor even if it happens to be the last
+  page; following it safely returns an empty page. A future `hasMore` query can
+  refine that UX without weakening cursor correctness.
+
+### What should be done in the future
+
+- Add authenticated message creation with exact Origin, session CSRF, and
+  server-derived author identity.
+
+### Code review instructions
+
+- Review `decodeMessageCursor`, then `handleListMessages`, then
+  `TestMessageFeedUsesCursorAndDoesNotExposeSubject`.
+- Validate with `go test ./examples/tinyidp-message-app -run 'TestMessage' -count=1`.
+
+### Technical details
+
+```text
+GET /api/messages?limit=20
+  -> ordered rows (created_at DESC, id DESC)
+  -> nextCursor = base64url(RFC3339Nano timestamp | ID)
+GET /api/messages?before=nextCursor
+  -> WHERE (created_at < ts OR created_at = ts AND id < id)
+```

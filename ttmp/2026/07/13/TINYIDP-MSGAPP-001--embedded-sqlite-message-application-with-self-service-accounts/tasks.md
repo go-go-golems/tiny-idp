@@ -33,7 +33,7 @@
 - [x] Phase 5: Implement strict bounded account creation JSON and password-buffer clearing <!-- t:jhes -->
 - [x] Phase 5: Add Origin, Fetch Metadata, address, login-key, and password-work abuse controls <!-- t:3we3 -->
 - [x] Phase 5: Add generic registration errors, fixed audit reasons, and successful-login tests <!-- t:z9he -->
-- [ ] Phase 6: Implement public cursor-paginated message reads <!-- t:oq2h -->
+- [x] Phase 6: Implement public cursor-paginated message reads <!-- t:oq2h -->
 - [ ] Phase 6: Implement authenticated CSRF-protected message creation with subject derived from session <!-- t:h3gp -->
 - [ ] Phase 6: Add normalization, bounds, spoofing, authorization, and concurrent insertion tests <!-- t:drrc -->
 - [ ] Phase 7: Scaffold pnpm React TypeScript Redux Toolkit RTK Query and Bootstrap frontend <!-- t:g584 -->
