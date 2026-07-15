@@ -382,7 +382,8 @@ func (p *Provider) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
+		issuerOrigin := p.issuer.URL.Scheme + "://" + p.issuer.URL.Host
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' "+issuerOrigin+"; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

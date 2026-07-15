@@ -231,7 +231,7 @@ func TestInteractionCSPAllowsOnlySameOriginStyles(t *testing.T) {
 	request := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	request.Del("login")
 	recorder := doAuthorizeBegin(t, provider.Handler(), request)
-	want := "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
+	want := "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' http://127.0.0.1:5556; base-uri 'none'"
 	if got := recorder.Header().Get("Content-Security-Policy"); got != want {
 		t.Fatalf("CSP=%q want=%q", got, want)
 	}
