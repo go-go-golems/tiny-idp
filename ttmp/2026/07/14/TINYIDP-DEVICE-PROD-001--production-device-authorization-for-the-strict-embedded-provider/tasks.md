@@ -15,10 +15,10 @@
 - [x] Phase 2: Add constrained SQLite device-grant schema, indexes, and atomic transitions <!-- t:klm8 -->
 - [x] Phase 2: Add transition concurrency, cancellation, rollback, restart, and expiry tests <!-- t:y2iq -->
 - [x] Phase 2: Integrate device records with maintenance, backup verification, and restore tests <!-- t:n2k6 -->
-- [ ] Phase 3: Implement domain-separated keyed hashing and code generators with collision retry <!-- t:xdur -->
-- [ ] Phase 3: Implement strict bounded POST device authorization parsing and client authentication <!-- t:16og -->
-- [ ] Phase 3: Enforce device grant capability and requested-scope policy <!-- t:3cwn -->
-- [ ] Phase 3: Persist grants, emit audit, return RFC 8628 response, and add endpoint tests <!-- t:gcwl -->
+- [x] Phase 3: Implement domain-separated keyed hashing and code generators with collision retry <!-- t:xdur -->
+- [x] Phase 3: Implement strict bounded POST device authorization parsing and client authentication <!-- t:16og -->
+- [x] Phase 3: Enforce device grant capability and requested-scope policy <!-- t:3cwn -->
+- [x] Phase 3: Persist grants, emit audit, return RFC 8628 response, and add endpoint tests <!-- t:gcwl -->
 - [ ] Phase 4: Define typed bounded DeviceVerificationRenderer API and default pages <!-- t:ju8o -->
 - [ ] Phase 4: Implement code entry, normalization, generic errors, and verification interaction binding <!-- t:r34p -->
 - [ ] Phase 4: Integrate browser authentication, CSRF, client/scope display, and explicit decisions <!-- t:ubvd -->

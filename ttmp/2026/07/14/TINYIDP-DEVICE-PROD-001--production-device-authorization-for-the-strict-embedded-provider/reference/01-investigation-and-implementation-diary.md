@@ -678,3 +678,110 @@ pending + approve/deny -> approved|denied
 approved + consume (same tx as token persistence later) -> consumed
 any active status at expires_at <= now -> derived expired outcome
 ```
+
+## Step 4: Add the bounded device-authorization creation boundary
+
+The durable store accepts hashes, never raw user-facing credentials. This step
+therefore introduces the only creation boundary that handles raw device and
+user codes. It does not advertise discovery metadata yet, and verification and
+token issuance are still separate phases.
+
+### What I did
+
+- Added `POST /device_authorization` to the strict provider route set.
+- Enforced POST-only, form media type, a 16 KiB body cap before parsing, and
+  duplicate rejection for `client_id` and `scope`.
+- Added cryptographic 32-byte URL-safe device codes and canonical 8-character
+  ambiguity-safe user codes (`ABCD-EFGH`).
+- Added domain-separated HMAC inputs `tinyidp/device-code/v1\x00` and
+  `tinyidp/user-code/v1\x00`. Hash helpers receive only the provider secret
+  and raw code; store records receive their output only.
+- Added client resolution: public clients use their registered form client ID;
+  confidential clients must use HTTP Basic authentication and bcrypt
+  verification. Conflicting Basic and form identities fail closed.
+- Enforced `GrantDeviceCode`, enabled-client status, `openid`, and the existing
+  exact allowed-scope policy before generating any durable grant.
+- Added address and client creation-rate-limit keys, bounded five-attempt
+  collision retry, secret-free audit events, and no-store JSON responses with
+  `device_code`, `user_code`, verification URI, complete URI, expiry, and
+  interval.
+- Added focused tests for malformed input, unauthorized capability, scope
+  rejection, public and confidential clients, raw-code non-persistence/audit,
+  collision retry, user-code normalization, and hash-domain separation.
+
+### Why
+
+- Device codes are bearer credentials and user codes are verification secrets.
+  Treating either as ordinary request logging or persistence material would
+  turn storage, audit, and metrics into credential disclosure surfaces.
+- Form parsing and client identity must occur before code generation. Otherwise
+  a malformed request can allocate durable state or induce an oracle.
+- RFC 8628 creation has different client authentication needs from browser
+  authorization: a public device can identify itself, while a confidential one
+  must prove its client secret.
+
+### What worked
+
+- `go test ./internal/fositeadapter -run 'TestDevice' -count=1` passed after
+  both public and confidential client paths were covered.
+- `go test ./internal/fositeadapter ./pkg/idpstore ./internal/store/memory
+  ./pkg/sqlitestore` passed, confirming existing strict authorization-code and
+  refresh flows remain intact.
+
+### What didn't work
+
+- The first focused build used `idp.ParseScopes`; scope parsing belongs to
+  `idpstore.ParseScopes`. Replacing the package reference fixed the compile
+  failure without changing endpoint behavior.
+
+### What I learned
+
+- The strict provider already has correctly scoped security headers and a
+  reusable `writeJSON` path. The endpoint only needed to add cache controls and
+  keep its own error body protocol-compatible.
+- The public client model is now enough to decide whether Basic is mandatory:
+  `Public` plus explicit device capability selects registered-public identity;
+  a non-public device-capable client selects bcrypt-backed Basic verification.
+
+### What was tricky to build
+
+- Collision safety applies to both hashes. A collision on either unique SQLite
+  column returns the same storage duplicate signal, so the endpoint regenerates
+  the entire device/user-code pair rather than attempting partial reuse.
+- The verification URI complete value must include the human code for user
+  convenience while the persisted grant must still contain only its HMAC.
+
+### What warrants a second pair of eyes
+
+- Review whether the fixed 16 KiB request limit and five collision attempts
+  match deployment requirements before release.
+- Confirm external integrators expect strict `openid` for this OIDC-focused
+  device endpoint; a pure OAuth resource-only profile would need a separately
+  designed policy.
+- Confirm audit retention and downstream sinks never serialize raw HTTP bodies
+  for this route; the provider event fields themselves are secret-free.
+
+### What should be done in the future
+
+- Begin Phase 4: add a typed verification renderer and browser UI bound to the
+  stored user-code hash, authenticated session, CSRF token, and explicit
+  approve/deny decision.
+
+### Code review instructions
+
+- Read `deviceAuthorization` from method/media checks through `CreateDeviceGrant`.
+- Verify no raw code appears in `DeviceGrant`, audit fields, rate-limit keys,
+  or store parameters.
+- Run the focused `TestDeviceAuthorizationRetriesHashCollisionsWithinBound` and
+  `TestDeviceAuthorizationAuthenticatesConfidentialDeviceClients` tests.
+- Confirm discovery intentionally remains unchanged until Phases 4–7 pass.
+
+### Technical details
+
+```text
+bounded form + authenticated/identified client + allowed openid scope
+  -> random (device_code, user_code)
+  -> HMAC(domain || raw code)
+  -> CreateDeviceGrant(pending, hashes only)
+  -> audit(event/reason only) + no-store RFC 8628 JSON
+```

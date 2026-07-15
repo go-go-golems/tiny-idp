@@ -16,6 +16,18 @@ and one-time consumption in memory and SQLite, with constrained schema,
 maintenance, backup/restore, restart, rollback, cancellation, and concurrency
 coverage.
 
+Completed Phase 3 with the bounded `POST /device_authorization` boundary.
+Raw codes exist only while producing the response, then become domain-separated
+keyed hashes in a durable pending grant. The endpoint authenticates confidential
+clients, enforces capability and scope policy, retries collisions, emits
+secret-free audit events, and returns RFC 8628 fields with no-store headers.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_codes.go — generation, canonicalization, and hash domains
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — strict request boundary and route registration
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_authorization_test.go — endpoint and secret-handling tests
+
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpstore/types.go — device state and typed requests/results

@@ -15,11 +15,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
@@ -82,36 +86,40 @@ type Options struct {
 	TokenPersistenceHook func(point string) error
 	SecurityEvents       securitytrace.Sink
 	InteractionRenderer  idpui.InteractionRenderer
+	// deviceCodeGenerator is an internal test seam. Production code always uses
+	// cryptographic randomness from generateDeviceCodes.
+	deviceCodeGenerator func() (deviceCode, userCode string, err error)
 }
 
 type Provider struct {
-	issuer            oidcmeta.Issuer
-	store             idpstore.Store
-	fositeStore       *fositememory.MemoryStore
-	sqlStore          *sqlFositeStore
-	oauth2            fosite.OAuth2Provider
-	config            *fosite.Config
-	mode              idpstore.Mode
-	csrfKey           []byte
-	cookieSecure      bool
-	cookieSameSite    http.SameSite
-	sessionCookieName string
-	csrfCookieName    string
-	chooser           AccountChooserConfig
-	cookiePathValue   string
-	audit             idp.Sink
-	securityEvents    securitytrace.Sink
-	consent           idp.ConsentPolicy
-	rateLimiter       idp.RateLimiter
-	clientAddress     idp.ClientAddressResolver
-	authenticator     idp.PasswordAuthenticator
-	auditFailures     atomic.Uint64
-	securityFailures  atomic.Uint64
-	sessionTTL        time.Duration
-	interactionTTL    time.Duration
-	clock             func() time.Time
-	interactionUI     idpui.InteractionRenderer
-	renderMetrics     interactionRenderMetrics
+	issuer              oidcmeta.Issuer
+	store               idpstore.Store
+	fositeStore         *fositememory.MemoryStore
+	sqlStore            *sqlFositeStore
+	oauth2              fosite.OAuth2Provider
+	config              *fosite.Config
+	mode                idpstore.Mode
+	csrfKey             []byte
+	cookieSecure        bool
+	cookieSameSite      http.SameSite
+	sessionCookieName   string
+	csrfCookieName      string
+	chooser             AccountChooserConfig
+	cookiePathValue     string
+	audit               idp.Sink
+	securityEvents      securitytrace.Sink
+	consent             idp.ConsentPolicy
+	rateLimiter         idp.RateLimiter
+	clientAddress       idp.ClientAddressResolver
+	authenticator       idp.PasswordAuthenticator
+	auditFailures       atomic.Uint64
+	securityFailures    atomic.Uint64
+	sessionTTL          time.Duration
+	interactionTTL      time.Duration
+	clock               func() time.Time
+	interactionUI       idpui.InteractionRenderer
+	deviceCodeGenerator func() (deviceCode, userCode string, err error)
+	renderMetrics       interactionRenderMetrics
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -285,7 +293,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -391,11 +399,148 @@ func (p *Provider) registerAt(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(prefix+"/.well-known/openid-configuration", p.discovery)
 	mux.HandleFunc(prefix+"/jwks", p.jwks)
 	mux.HandleFunc(prefix+"/authorize", p.authorize)
+	mux.HandleFunc(prefix+"/device_authorization", p.deviceAuthorization)
 	mux.HandleFunc(prefix+"/token", p.token)
 	mux.HandleFunc(prefix+"/userinfo", p.userinfo)
 	mux.HandleFunc(prefix+"/end-session", p.endSession)
 	mux.HandleFunc(prefix+"/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc(prefix+"/readyz", p.readyz)
+}
+
+const (
+	deviceAuthorizationMaxBody = 16 << 10
+	deviceGrantTTL             = 10 * time.Minute
+	devicePollInterval         = 5 * time.Second
+	deviceGrantCollisionLimit  = 5
+)
+
+type deviceAuthorizationResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete"`
+	ExpiresIn               int64  `json:"expires_in"`
+	Interval                int64  `json:"interval"`
+}
+
+func (p *Provider) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		deviceAuthorizationError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/x-www-form-urlencoded" {
+		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "content type must be application/x-www-form-urlencoded")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, deviceAuthorizationMaxBody)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "request body is invalid or too large")
+		return
+	}
+	form, err := url.ParseQuery(string(body))
+	if err != nil || duplicateFormValue(form, "client_id") || duplicateFormValue(form, "scope") {
+		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "invalid form")
+		return
+	}
+	clientAddress, err := p.clientAddress.ResolveClientAddress(r)
+	if err != nil {
+		deviceAuthorizationError(w, http.StatusInternalServerError, "server_error", "resolve client address failed")
+		return
+	}
+	clientID, clientSecret, basicAuth := r.BasicAuth()
+	formClientID := strings.TrimSpace(form.Get("client_id"))
+	if basicAuth && formClientID != "" && formClientID != clientID {
+		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "conflicting client identity")
+		return
+	}
+	if !basicAuth {
+		clientID = formClientID
+	}
+	if clientID == "" || !p.rateLimiter.Allow(r.Context(), "device:create:address:"+clientAddress) || !p.rateLimiter.Allow(r.Context(), "device:create:client:"+clientID) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "rate_limited_or_invalid_client"})
+		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_client", "client authentication failed")
+		return
+	}
+	client, err := p.store.GetClient(r.Context(), clientID)
+	if err != nil || client.Disabled || !client.AllowsGrantType(idpstore.GrantDeviceCode) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "device_grant_not_allowed"})
+		deviceAuthorizationError(w, http.StatusBadRequest, "unauthorized_client", "client is not permitted to use device authorization")
+		return
+	}
+	if !client.Public && (!basicAuth || bcrypt.CompareHashAndPassword(client.SecretHash, []byte(clientSecret)) != nil) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="tiny-idp device authorization"`)
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "client_authentication_failed"})
+		deviceAuthorizationError(w, http.StatusUnauthorized, "invalid_client", "client authentication failed")
+		return
+	}
+	scopes := idpstore.ParseScopes(form.Get("scope"))
+	if len(scopes) == 0 || !containsScope(scopes, "openid") || !client.AllowsScope(scopes) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "invalid_scope"})
+		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_scope", "requested scope is not allowed")
+		return
+	}
+	for attempt := 0; attempt < deviceGrantCollisionLimit; attempt++ {
+		deviceCode, userCode, err := p.nextDeviceCodes()
+		if err != nil {
+			deviceAuthorizationError(w, http.StatusInternalServerError, "server_error", "generate device code")
+			return
+		}
+		now := p.now()
+		grantID, err := randomB64(16)
+		if err != nil {
+			deviceAuthorizationError(w, http.StatusInternalServerError, "server_error", "generate device grant id")
+			return
+		}
+		grant := idpstore.DeviceGrant{ID: grantID, DeviceCodeHash: deviceCodeHash(p.csrfKey, deviceCode), UserCodeHash: userCodeHash(p.csrfKey, userCode), ClientID: client.ID, RequestedScopes: scopes, Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(deviceGrantTTL), PollInterval: devicePollInterval, NextPollAt: now}
+		if err := p.store.CreateDeviceGrant(r.Context(), grant); err != nil {
+			if errors.Is(err, idpstore.ErrDuplicate) {
+				continue
+			}
+			deviceAuthorizationError(w, http.StatusInternalServerError, "server_error", "persist device authorization")
+			return
+		}
+		verificationURI := p.issuer.Endpoint("/device")
+		complete, err := url.Parse(verificationURI)
+		if err != nil {
+			deviceAuthorizationError(w, http.StatusInternalServerError, "server_error", "construct verification URI")
+			return
+		}
+		query := complete.Query()
+		query.Set("user_code", userCode)
+		complete.RawQuery = query.Encode()
+		p.recordAudit(r.Context(), idp.Event{Time: now, Name: "device.authorization.created", ClientID: client.ID, Result: "accepted", Fields: map[string]string{"scope_count": fmt.Sprintf("%d", len(scopes))}})
+		writeJSON(w, http.StatusOK, deviceAuthorizationResponse{DeviceCode: deviceCode, UserCode: userCode, VerificationURI: verificationURI, VerificationURIComplete: complete.String(), ExpiresIn: int64(deviceGrantTTL / time.Second), Interval: int64(devicePollInterval / time.Second)})
+		return
+	}
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "code_collision_limit"})
+	deviceAuthorizationError(w, http.StatusInternalServerError, "server_error", "allocate device authorization")
+}
+
+func (p *Provider) nextDeviceCodes() (string, string, error) {
+	if p.deviceCodeGenerator != nil {
+		return p.deviceCodeGenerator()
+	}
+	return generateDeviceCodes()
+}
+
+func duplicateFormValue(form url.Values, key string) bool { return len(form[key]) > 1 }
+
+func containsScope(scopes []string, wanted string) bool {
+	for _, scope := range scopes {
+		if scope == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func deviceAuthorizationError(w http.ResponseWriter, status int, code, description string) {
+	writeJSON(w, status, map[string]string{"error": code, "error_description": description})
 }
 
 func (p *Provider) discovery(w http.ResponseWriter, _ *http.Request) {
