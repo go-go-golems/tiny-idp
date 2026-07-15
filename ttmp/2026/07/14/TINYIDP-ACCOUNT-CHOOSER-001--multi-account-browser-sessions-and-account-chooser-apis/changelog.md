@@ -76,3 +76,12 @@ Separated Message Desk local logout from provider-wide logout; live Playwright v
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Explicit logout scope boundary.
 
+
+## 2026-07-14
+
+Completed provider-owned remembered-account removal; final removal transitions safely to fresh credentials (commit e7dbbc7).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Context-bound remembered membership removal.
+

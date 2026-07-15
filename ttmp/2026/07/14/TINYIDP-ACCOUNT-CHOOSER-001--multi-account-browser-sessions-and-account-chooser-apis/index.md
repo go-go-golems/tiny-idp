@@ -1,7 +1,7 @@
 ---
 Title: Multi-Account Browser Sessions and Account Chooser APIs
 Ticket: TINYIDP-ACCOUNT-CHOOSER-001
-Status: active
+Status: complete
 Topics:
     - identity
     - oidc
@@ -14,10 +14,12 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-14T17:53:02.165083414-04:00
+LastUpdated: 2026-07-14T21:24:46.711523874-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
+
 
 # Multi-Account Browser Sessions and Account Chooser APIs
 

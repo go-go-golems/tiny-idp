@@ -1465,3 +1465,91 @@ global action
   -> redirect /
   -> next /auth/login renders credentials
 ```
+
+## Step 11: Add provider-owned remembered-account removal
+
+The account chooser could select a remembered identity or require a different
+credential, but it could not retire one stale remembered membership. The
+provider now supports that operation as a context-bound chooser action. It
+removes a single remembered entry, not an account and not a provider session
+belonging to another browser context.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok implement the provider-owner removal (since that's useful for the future), then close."
+
+**Assistant interpretation:** Complete the useful missing chooser lifecycle
+operation, verify it, and prepare the feature ticket for closure.
+
+**Inferred user intent:** Leave the identity toolbox with a complete enough
+multi-account lifecycle that future hosts can remove stale remembered accounts.
+
+**Commit (code):** `e7dbbc79df942e99d4037715efa7ecb9f588b7d8` — "feat(idp): allow removing remembered accounts"
+
+### What I did
+
+- Added `idpui.ActionRemoveAccount` and its stable submitted value.
+- Added the action to account chooser pages and provider action validation.
+- On removal, decode the opaque selected entry, validate it against the
+  interaction's browser-context binding, remove only that membership, audit
+  the outcome, and re-render remaining entries.
+- When the removed entry was the final remembered one, consume the chooser and
+  render a fresh credential interaction instead of rendering an invalid empty
+  chooser.
+- Added a focused provider test proving the entry cannot subsequently activate
+  and that the durable user account remains.
+
+### Why
+
+- Remembered membership is browser-context state, not account ownership.
+  Deleting an entry must therefore not disable or delete the identity.
+- The final-entry transition must be a valid credential interaction because
+  the UI contract forbids an empty chooser and no account remains to select.
+
+### What worked
+
+- `go test ./internal/fositeadapter ./pkg/idpui -count=1` passed after gofmt.
+
+### What didn't work
+
+- N/A; the existing store contract supplied the required context-bound removal
+  primitive, so no storage migration was needed.
+
+### What I learned
+
+- A browser-visible removal action can remain presentation-safe when the
+  provider treats its submitted value as an opaque selector and performs the
+  ownership check in persistent state.
+
+### What was tricky to build
+
+Removal is non-terminal while entries remain: the original interaction and
+CSRF binding continue, but the provider must reload entries before rendering.
+With no remaining entry it becomes terminal and creates a fresh login
+interaction; reusing the chooser record would leave it with incompatible
+required actions.
+
+### What warrants a second pair of eyes
+
+- Review future custom renderers to ensure they render `remove_account` with a
+  selected opaque account field and do not replace provider validation.
+
+### What should be done in the future
+
+- Move the saved Playwright scenarios into CI and complete the deferred Phase
+  6 race, fuzz, backup, rollback, and interoperability assurance ticket.
+
+### Code review instructions
+
+- Review `resumeAuthorize` in `internal/fositeadapter/provider.go` and run
+  `go test ./internal/fositeadapter ./pkg/idpui -count=1`.
+
+### Technical details
+
+```text
+remove_account(entry opaque value)
+  -> context-bound RemoveRememberedBrowserSession
+  -> entries remain: re-render chooser
+  -> no entries: fresh credential interaction
+  -> durable user account unchanged
+```
