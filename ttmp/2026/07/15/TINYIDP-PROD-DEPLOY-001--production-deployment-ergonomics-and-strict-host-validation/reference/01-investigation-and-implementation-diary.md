@@ -65,6 +65,8 @@ host validation path.
 **Inferred user intent:** Make tinyidp operable with a production-quality
 workflow and collect honest evidence rather than relying on an in-memory demo.
 
+**Commit (code):** b886362 — "feat(deploy): clarify strict production hosting"
+
 ### What I did
 
 - Inspected `internal/cmds/serve_production.go`, `internal/cmds/admin*.go`,
