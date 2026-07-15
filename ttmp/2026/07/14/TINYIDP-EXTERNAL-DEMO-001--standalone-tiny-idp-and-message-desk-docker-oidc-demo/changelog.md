@@ -23,3 +23,14 @@ Implemented external RP runtime, callback-aware interaction CSP, provider UI reu
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/external_runtime.go — External relying-party composition
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/rendering.go — Validated callback-aware CSP
 
+
+## 2026-07-14
+
+Completed Compose startup repair and real two-origin Playwright verification: login, scopes, message creation, chooser/switch, local logout, global logout, and fresh-login behavior (commit 8d040cb).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-external-message-desk/docker-entrypoint.sh — Named-volume ownership then privilege drop
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/external_config.go — Private backchannel validation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/01-compose-health-smoke.sh — Repeatable Compose health smoke
+

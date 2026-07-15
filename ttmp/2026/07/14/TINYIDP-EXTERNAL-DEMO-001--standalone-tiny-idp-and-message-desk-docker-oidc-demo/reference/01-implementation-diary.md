@@ -16,16 +16,21 @@ Owners: []
 RelatedFiles:
     - Path: repo://examples/tinyidp-external-message-desk/compose.yaml
       Note: Compose deployment work
+    - Path: repo://examples/tinyidp-external-message-desk/docker-entrypoint.sh
+      Note: Container state ownership evidence
     - Path: repo://examples/tinyidp-message-app/external_runtime.go
       Note: External RP boundary
     - Path: repo://internal/fositeadapter/rendering.go
       Note: Callback-origin CSP evidence
+    - Path: repo://ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/01-compose-health-smoke.sh
+      Note: Reproducible Compose health check
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-14T21:58:07.711626152-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 # Implementation diary
@@ -693,4 +698,127 @@ browser: localhost:8080 <---- redirect ----> localhost:8081
 container app: public issuer URL localhost:8081
 container app transport: localhost:8081 -> idp:8081
 container IdP: validates/mints tokens for issuer localhost:8081
+```
+
+## Step 9: Repair named-volume startup and verify the real Compose flow
+
+The Compose test progressed from infrastructure failure to a full two-origin
+browser flow. Docker initially mounted named volumes as root, while the images
+deliberately ran as an unprivileged service user. A small entrypoint now
+creates and chowns `/state` once as root, then uses `setpriv` to execute the
+actual server as `tinyidp`. The private `idp:8081` destination also required
+its own operator-only validation rule: it is not a browser public origin and
+must not be rejected for failing a loopback-hostname constraint.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Complete actual container startup and browser
+assurance rather than accepting configuration-only evidence.
+
+**Inferred user intent:** Have a self-contained runnable application a user
+can open immediately, backed by evidence that identity and application state
+are truly separated.
+
+**Commit (code):** 8d040cb — "fix(external-demo): initialize durable container volumes"
+
+### What I did
+
+- Diagnosed the IdP startup log: `open /state/tinyidp.sqlite: permission denied`.
+- Added `docker-entrypoint.sh`, verified `/usr/bin/setpriv` exists in the
+  Debian image, and changed both images to drop privileges after chowning the
+  named state volume.
+- Diagnosed the next startup failure: private `http://idp:8081` was rejected
+  as a browser public origin.
+- Added `normalizeExternalBackchannelURL`, which keeps strict URL/path rules
+  while allowing a private Compose DNS host.
+- Rebuilt both images in tmux, started Compose successfully, and confirmed
+  both health checks are healthy.
+- Used Playwright against `http://localhost:8080` to verify:
+  - guest external-mode capability UI and no registration form;
+  - password login and requested `openid`, `profile` scopes;
+  - callback back to the Message Desk RP;
+  - persistent message creation;
+  - chooser display and a switch from Amelie to Wesen;
+  - global logout returning to guest mode; and
+  - a subsequent sign-in opening password login rather than a remembered
+    account chooser.
+  - local logout returning to guest mode while a subsequent sign-in correctly
+    showed the remembered-account chooser, proving the provider session stayed
+    distinct from the application session.
+
+### Why
+
+- A container image that works only after manual volume permission repair is
+  not a self-contained demo. Likewise, private network routing must not dilute
+  public-issuer validation rules.
+
+### What worked
+
+- `go test ./examples/tinyidp-message-app -count=1` passed after adding the
+  backchannel validation test.
+- `docker compose -f compose.yaml ps` reported both `idp` and `message-desk`
+  as healthy with public ports 8081 and 8080.
+- The Playwright browser flow completed on the real Compose deployment.
+
+### What didn't work
+
+- The first Compose run failed because the `tinyidp` user could not write a
+  fresh root-owned named volume.
+- The second run failed because the private Docker DNS backchannel was passed
+  through a validator intended for public browser origins.
+- Docker BuildKit emitted partial output when run directly in this environment;
+  running the long message-image build in tmux retained the build to completion.
+
+### What I learned
+
+- Container durable-state permissions are part of the deployment contract,
+  not an operational afterthought. A temporary privileged initialization step
+  is compatible with a permanently unprivileged server process.
+- Public OIDC issuer identity, browser navigation, and private backchannel
+  reachability require three separately named configuration concepts.
+
+### What was tricky to build
+
+- The entrypoint must not leave the application server running as root. It
+  performs only `mkdir`/`chown`, then `exec`s `setpriv` with the configured
+  UID, GID, and supplementary groups. Docker's named volume mount replaces
+  image filesystem ownership, so a Dockerfile-only `chown` cannot solve it.
+
+### What warrants a second pair of eyes
+
+- Review whether the demo should use a one-shot volume-init service rather
+  than an entrypoint once this pattern is generalized for production.
+- Add source-level Playwright or Go integration harnesses for all tested
+  scenarios; this ticket currently records MCP browser evidence but does not
+  yet persist a reusable browser script.
+- `scripts/01-compose-health-smoke.sh` now persists the repeatable container
+  build/readiness portion of this verification; browser interaction remains a
+  separate Playwright concern.
+
+### What should be done in the future
+
+- Add durable automated two-origin tests, including local logout and negative
+  CSRF/callback cases, before promoting the example beyond development demo
+  status.
+- Add HTTPS/reverse-proxy deployment examples and replace the committed public
+  fixture with an operator secret mount in any shared environment.
+
+### Code review instructions
+
+- Read `docker-entrypoint.sh`, both Dockerfiles, `compose.yaml`, and
+  `external_config.go` as one deployment boundary.
+- Run the focused Go test, `docker compose up --build`, then exercise the
+  sequence listed under What I did from a browser.
+
+### Technical details
+
+```text
+container start:
+root entrypoint -> chown /state -> setpriv tinyidp -> server
+
+browser test:
+guest -> IdP login -> RP callback -> write -> chooser/switch
+      -> global logout -> guest -> fresh login form
 ```
