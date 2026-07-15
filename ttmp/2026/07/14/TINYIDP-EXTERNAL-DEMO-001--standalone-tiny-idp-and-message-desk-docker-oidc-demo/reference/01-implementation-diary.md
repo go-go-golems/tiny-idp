@@ -108,3 +108,81 @@ the provider binary.
 Message Desk owns: app SQLite, app session, PKCE/state/nonce, messages.
 tiny-idp owns: identity SQLite, accounts, IdP cookies, login/consent/chooser.
 ```
+
+## Step 2: Establish the external relying-party configuration boundary
+
+The first implementation slice adds a standalone configuration type before any
+container or handler change. An external deployment is valid only when the
+Message Desk public origin and issuer are distinct, the issuer is canonical,
+the client identifier is present, and cookie security agrees with the public
+URL scheme. This makes an accidentally co-hosted or insecure configuration
+fail at startup rather than behaving ambiguously at callback time.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, now implement them, task by task, committing at appropriate intervals, keeping a detailed diary as you work"
+
+**Assistant interpretation:** Execute the detailed implementation plan in
+small verified commits while maintaining a continuation-ready diary.
+
+**Inferred user intent:** Build the external IdP demonstration from explicit,
+testable security contracts rather than an unstructured Docker prototype.
+
+### What I did
+
+- Added `externalOIDCConfig` and canonical external issuer normalization in
+  `examples/tinyidp-message-app/external_config.go`.
+- Added table-style negative tests for same-origin, missing-client, cookie,
+  cross-origin logout endpoint, query, credentials, and noncanonical path
+  configurations.
+- Ran `gofmt` and the focused configuration test command.
+
+### Why
+
+- The embedded app derives issuer and logout paths from one origin. That is
+  unsafe as an implicit assumption for independent services, so the external
+  contract must name and validate those values before runtime composition.
+
+### What worked
+
+- `go test ./examples/tinyidp-message-app -run 'TestExternalOIDCConfigValidation|TestNormalizeExternalIssuer' -count=1` passed.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- The existing `normalizePublicBaseURL` already encodes the development
+  loopback-only HTTP policy. Reusing it makes external issuer validation obey
+  the same policy without accepting arbitrary plaintext network origins.
+
+### What was tricky to build
+
+- An issuer may include a path, but an RP public origin may not. The
+  normalization therefore validates the origin with the existing helper and
+  preserves only one canonical issuer path suffix.
+
+### What warrants a second pair of eyes
+
+- Review whether the final production configuration should discover the
+  end-session endpoint exclusively or allow the validated explicit override
+  introduced here for operational compatibility.
+
+### What should be done in the future
+
+- Implement Phase 1.2 next: the IdP seed/client manifest and idempotent
+  bootstrap command.
+
+### Code review instructions
+
+- Read `externalOIDCConfig.validate` beside `normalizePublicBaseURL`, then run
+  the focused test command above.
+
+### Technical details
+
+```text
+public origin != issuer
+issuer and end-session endpoint share origin
+https public origin <=> Secure app cookie
+```
