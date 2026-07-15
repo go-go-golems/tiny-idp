@@ -146,7 +146,11 @@ type InteractionPage struct {
 }
 
 type InteractionForm struct {
-	ActionURL        string
+	ActionURL string
+	// RedirectOrigin is the canonical origin of the already-validated relying
+	// party callback. The provider uses it to permit the terminal authorization
+	// redirect under the interaction document's form-action CSP.
+	RedirectOrigin   string
 	InteractionField string
 	Interaction      string
 	CSRFField        string

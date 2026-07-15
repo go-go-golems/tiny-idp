@@ -45,6 +45,7 @@ func (p *Provider) newInteractionPage(
 		DocumentTitle: title,
 		Form: idpui.InteractionForm{
 			ActionURL:        p.issuer.Endpoint("/authorize"),
+			RedirectOrigin:   interactionRedirectOrigin(request.Get("redirect_uri")),
 			InteractionField: idpui.InteractionFieldName,
 			Interaction:      interactionHandle,
 			CSRFField:        idpui.CSRFFieldName,
@@ -73,6 +74,14 @@ func (p *Provider) newInteractionPage(
 	return page
 }
 
+func interactionRedirectOrigin(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.User != nil {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
 func interactionLoginReason(actions idpstore.InteractionRequiredAction, request url.Values) idpui.LoginReason {
 	if actions.Has(idpstore.InteractionRequireStepUp) {
 		return idpui.LoginReasonStepUp
@@ -95,6 +104,9 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 	}()
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
+	if page.Form.RedirectOrigin != "" {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' "+page.Form.RedirectOrigin+"; base-uri 'none'")
+	}
 	if err := page.Validate(); err != nil {
 		p.recordRenderFailure(r, page, "invalid_page")
 		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
