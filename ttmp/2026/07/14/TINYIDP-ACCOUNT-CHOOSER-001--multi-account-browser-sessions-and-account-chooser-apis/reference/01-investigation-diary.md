@@ -12,12 +12,22 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-message-app/loginui/templates/interaction.html
+      Note: Custom renderer preserves opaque chooser controls.
+    - Path: repo://examples/tinyidp-message-app/oidc_client.go
+      Note: Message Desk requests the standard OIDC select_account prompt.
     - Path: repo://internal/fositeadapter/account_chooser.go
       Note: Opt-in privacy and capacity configuration.
     - Path: repo://internal/fositeadapter/account_chooser_test.go
       Note: Deduplication and capacity lifecycle test.
     - Path: repo://internal/fositeadapter/end_session.go
       Note: Atomic provider logout of active session and context.
+    - Path: repo://internal/fositeadapter/interaction.go
+      Note: Creates follow-on interactions bound to a freshly activated selected-account session.
+    - Path: repo://internal/fositeadapter/provider.go
+      Note: Implements select-account, consent continuation, and use-another state transitions.
+    - Path: repo://internal/fositeadapter/select_account_test.go
+      Note: End-to-end protocol coverage for three selection outcomes.
     - Path: repo://internal/fositeadapter/session.go
       Note: Atomic context/session/membership lifecycle.
     - Path: repo://internal/store/memory/store.go
@@ -37,7 +47,9 @@ RelatedFiles:
     - Path: repo://pkg/idpui/templates/interaction.html
       Note: Default accessible chooser controls.
     - Path: repo://pkg/idpui/types.go
-      Note: Chooser prompt presentation contract and validation.
+      Note: |-
+        Chooser prompt presentation contract and validation.
+        Provider UI action contract including use-another-account.
     - Path: repo://pkg/sqlitestore/maintenance.go
       Note: Retention and orphan cleanup.
     - Path: repo://pkg/sqlitestore/migrations/007_browser_contexts.sql
@@ -50,12 +62,17 @@ RelatedFiles:
       Note: Repeatable lifecycle validation.
     - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/03-chooser-ui-contract.sh
       Note: Repeatable UI contract test.
+    - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/04-select-account-protocol.sh
+      Note: Repeatable account chooser state-machine validation.
+    - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/05-message-desk-smoke.spec.mjs
+      Note: Prepared local browser smoke scenario.
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-14T17:53:02.926941303-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -550,4 +567,382 @@ browser context, and atomically validate it in storage.
 ```text
 provider-owned remembered entry hash --> base64 opaque value --> HTML radio
 browser POST value ------------------> provider context binding + store lookup
+```
+
+## Step 5: Implement the standard select-account authorization path
+
+The chooser is now functional for an interactive authorization request. An RP
+can send `prompt=select_account`; tiny-idp lists only current entries from the
+opaque browser context, binds the authorization interaction to that context,
+and accepts an opaque selector only through the store’s fresh-session
+activation transaction. The browser never supplies a subject, session handle,
+or a user profile decision.
+
+The first integration test caught a state-machine bypass: the existing fast
+path issued a code whenever login and consent were not required. It initially
+did not also check whether account selection was required. Correcting that
+guard made the provider render the chooser before token issuance.
+
+### Prompt Context
+
+**User prompt (verbatim):** "build it all, playwright it, then let _me_ test it."
+
+**Assistant interpretation:** Finish the functional account chooser, validate
+it with real browser automation, start an application, and provide an
+operator-ready handoff.
+
+**Inferred user intent:** Verify the production-relevant user journey rather
+than stopping at persistence or unit-level APIs.
+
+**Commit (code):** `fc09893050c71f38602addc93a44291748deed91` — "feat(oidc): implement select account authorization"
+
+### What I did
+
+- Added `InteractionRequireAccountSelection` and a browser-context hash to the
+  durable interaction record; memory cloning preserves that new binding.
+- Marked the browser-posted `account` field as transient so it cannot alter the
+  canonical OIDC request digest.
+- Implemented interactive `prompt=select_account` handling, context entry
+  listing, opaque base64url selector rendering, and a standard
+  `account_selection_required` response for silent selection requirements.
+- Bound chooser POSTs to both CSRF/browser binding and the original browser
+  context, then called `ActivateRememberedSession` with a fresh cookie handle.
+- Added a GET-to-POST integration test and
+  `scripts/04-select-account-protocol.sh`.
+
+### Why
+
+- OIDC selection must run before the normal immediate authorize completion,
+  even if an old active session exists.
+- A context-bound interaction prevents a copied selector from a different
+  browser profile activating an account.
+- Fresh activation preserves the selected session’s authentication time but
+  avoids reissuing a prior raw session cookie.
+
+### What worked
+
+- The focused protocol test passed: it rendered the chooser, posted the entry
+  for a second remembered user, issued an authorization code, emitted a new
+  session cookie, and verified that the stored active session belongs to that
+  selected user.
+- `go test ./internal/fositeadapter ./pkg/idpui ./pkg/embeddedidp -count=1`
+  passed.
+
+### What didn't work
+
+- The first integration request used the default HTTP client, which followed a
+  provider redirect and reported the callback’s 404 instead of the provider
+  response. Disabling redirects made the test observe the expected endpoint.
+- The direct response then showed a 303 code issue instead of chooser HTML.
+  The cause was the immediate-authorize guard omitting the new selection
+  action. Adding that condition resolved the behavior.
+
+### What I learned
+
+- Every new interaction-required action must be included in the “can finish
+  immediately” predicate; login and consent are not an exhaustive list.
+- The existing canonical-request filter is the correct place to classify
+  chooser form values as transient and prevent them from affecting the OIDC
+  request integrity digest.
+
+### What was tricky to build
+
+The selection selector is an encoded remembered-entry hash. It is intentionally
+not a credential: the provider decodes it, validates the stored interaction’s
+context binding, and lets the atomic store operation validate membership,
+source session, and user state. An invalid selector receives a uniform bad
+request/audit event rather than an account-specific explanation.
+
+### What warrants a second pair of eyes
+
+- The selection-plus-consent continuation is completed in Step 6 below; review
+  its new fresh-session binding carefully.
+- Add explicit fuzzing for base64 selector parsing and POST field multiplicity
+  in Phase 6.
+
+### What should be done in the future
+
+- Start a configured demonstration host and test the full browser journey with
+  Playwright.
+- Add direct browser-visible removal actions.
+- Extend renderer conformance checks to require chooser radio/label semantics.
+
+### Code review instructions
+
+- Review `beginAuthorize` and its immediate completion predicate.
+- Review context binding in `createInteraction` and `resumeAuthorize`.
+- Run `scripts/04-select-account-protocol.sh`.
+
+### Technical details
+
+```text
+GET /authorize?prompt=select_account
+  -> interaction(context hash, old session hash, CSRF binding)
+  -> opaque entry radio list
+POST account=<base64url(entry hash)>
+  -> verify CSRF + old session + context
+  -> ActivateRememberedSession(context, entry, fresh session hash)
+  -> Set-Cookie(fresh active handle) -> authorization code
+```
+
+## Step 6: Split account selection from a required consent decision
+
+The first selection implementation was correct for hosts whose consent policy
+skipped consent, which includes the local Message Desk demonstration. It had a
+real correctness gap for a policy that requires user consent: after activating
+the selected account, the old selection interaction could not safely become a
+consent interaction because it remained bound to the old active-session hash
+and accepted the `continue` action rather than an explicit consent decision.
+
+This step makes the state-machine transition explicit. Selection activates the
+chosen account under a new random handle, consumes the chooser interaction,
+and creates a new consent-only interaction bound to that fresh session. The
+user then sees the ordinary approve/deny prompt; only approval may issue an
+authorization code.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue. you can spend more time as long as you know what to do / you are making progress"
+
+**Assistant interpretation:** Continue from the working account chooser,
+resolve discovered correctness gaps rather than stopping at the first passing
+demo path, and preserve evidence for review.
+
+**Inferred user intent:** The identity implementation should be production
+robust across consent policies, not merely work in the development example.
+
+**Commit (code):** `8c5bdc5b80b321e8d4df1ae5cad4d5a5729e82ec` — "feat(idp): complete account chooser consent flow"
+
+### What I did
+
+- Added `createInteractionForSession` in `interaction.go`; it accepts the
+  server-known session hash for cases where an interaction rotates the browser
+  session before producing its next page.
+- Kept the ordinary `createInteraction` convenience entry point; it binds from
+  the current request cookie and preserves the prior behavior for regular
+  login/consent interactions.
+- In `resumeAuthorize`, recomputed consent after remembered-account activation.
+  When required, it consumes the account-selection record and renders a new
+  `InteractionRequireConsent` record bound to the new active-session hash.
+- Added `TestPromptSelectAccountCreatesFreshConsentInteraction`, which proves
+  the first POST returns a consent page rather than an authorization code and
+  that only a subsequent approve POST receives a code.
+- Enabled the opt-in chooser in Message Desk with its explicit, privacy-aware
+  display-label policy and taught its custom renderer to render radio controls.
+- Added custom-renderer coverage so the provider can safely hand Message Desk
+  an account-chooser page.
+
+### Why
+
+- A session hash is an interaction-security binding. It must refer to the
+  newly activated account before a subsequent form may approve consent.
+- `continue` means account selection, while `approve` means consent. Reusing
+  one interaction would blur those two decisions and make the action contract
+  unreviewable.
+- Every host-supplied renderer must explicitly preserve the typed chooser
+  form, otherwise a provider feature can be correct yet inaccessible in a
+  branded application.
+
+### What worked
+
+- `go test ./internal/fositeadapter ./pkg/idpui ./pkg/embeddedidp ./examples/tinyidp-message-app/loginui ./examples/tinyidp-message-app -count=1` passed.
+- The new integration test demonstrated this concrete sequence:
+
+```text
+chooser POST (account two)
+  -> Set-Cookie(fresh idp session)
+  -> 200 consent page (fresh interaction)
+  -> approve POST with fresh cookie
+  -> 303 callback with authorization code
+```
+
+### What didn't work
+
+- Running the focused integration test in the restricted filesystem sandbox
+  panicked before application code ran:
+  `httptest: failed to listen on a port: listen tcp6 [::1]:0: socket: operation not permitted`.
+  Rerunning the unchanged test with approved loopback-listener access passed.
+- The prior implementation did not have a failing test for this consent path;
+  the gap was identified by reviewing the stored interaction binding, not by
+  an observed browser failure.
+
+### What I learned
+
+- An authorization interaction is a state-machine node, not a generic form
+  token. When an authentication decision changes session identity, the next
+  node must carry the new binding.
+- `issueCSRF` can safely reuse the same nonce cookie while deriving a distinct
+  MAC per new opaque interaction handle. The CSRF value remains tied to the
+  fresh interaction without exposing state to the browser.
+
+### What was tricky to build
+
+The selection request still contains the old session cookie because response
+cookies are not applied until after the POST completes. Creating the consent
+record with `browserSessionHash(r)` would therefore bind it to the old account.
+`createInteractionForSession` solves this by accepting
+`HashSecret(secret, newHandle)` directly, while keeping the raw `newHandle`
+only in the response cookie. The integration test posts the consent form with
+the returned fresh cookie, proving the binding is usable and not merely stored.
+
+### What warrants a second pair of eyes
+
+- Review the consume-then-create ordering. If durable creation of the second
+  interaction fails, the user has a valid fresh session but must restart the
+  authorization request; this is fail-closed for code issuance, but could be
+  improved with a storage-level composite transition in a future hardening
+  phase.
+- Review the `InteractionOutcomeApproved` naming for a consumed selection
+  continuation. It records successful completion of that continuation, not
+  user consent; security event consumers should not equate it with
+  `ConsentApproved`.
+
+### What should be done in the future
+
+- Add a composite store operation if product requirements demand retry-free
+  atomicity across activation, interaction consumption, and consent-record
+  creation.
+- Run browser automation after the local Playwright test dependency is
+  available.
+
+### Code review instructions
+
+- Start in `internal/fositeadapter/provider.go` at the selection branch in
+  `resumeAuthorize`.
+- Then read `createInteractionForSession` and confirm that its caller passes
+  the fresh handle hash rather than a request cookie hash.
+- Run `scripts/04-select-account-protocol.sh`; inspect the consent-transition
+  test before the simple direct-selection test.
+
+### Technical details
+
+```text
+old selection interaction [context + old session]
+  -> validate entry and activate account under fresh handle
+  -> consume old interaction
+  -> consent interaction [fresh session]
+  -> explicit approve or deny
+```
+
+## Step 7: Add an explicit “Use another account” branch and request selection from Message Desk
+
+The chooser now provides the normal escape hatch for a remembered account list.
+Selecting “Use another account” is not a client-side navigation or a special
+subject value: it consumes the chooser continuation and creates a credential
+interaction with no active-session binding. The browser must enter credentials
+before tiny-idp will continue the authorization request.
+
+Message Desk now asks for the standard OIDC `prompt=select_account` parameter
+on its browser login initiation. A remembered browser profile therefore gets
+the provider chooser; a profile with no usable entries gets the existing
+password page. This is a host request to tiny-idp, not an application-side
+account lookup.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 6)
+
+**Assistant interpretation:** Close the remaining usable account-switch path
+and make the self-contained host exercise the standard provider feature.
+
+**Inferred user intent:** A user should be able to choose a remembered account
+or authenticate a different one without a relying party inferring identity
+from cookies or profile data.
+
+**Commit (code):** `3ee16cc5ef35148fa5c2b0b18761c56b80445d39` — "feat(idp): support choosing another account"
+
+### What I did
+
+- Added `idpui.ActionUseAnotherAccount` with a fixed submitted value, default
+  label, and `formnovalidate` behavior so a required radio selection does not
+  block the alternate path.
+- Made chooser pages render `Continue`, `Use another account`, and `Deny`.
+- Added the provider transition from that action to a fresh-login interaction;
+  the new record has no session binding and requires an ordinary credential
+  POST with approve/deny terminal actions.
+- Added `TestPromptSelectAccountUseAnotherAccountRequiresCredentials`.
+- Added `prompt=select_account` to Message Desk’s PKCE authorization URL and
+  a unit assertion that the query contains the parameter.
+- Extended the Message Desk custom-renderer test to require the alternate
+  action as well as the opaque account radio control.
+- Updated `scripts/04-select-account-protocol.sh` to run all select-account
+  protocol tests.
+
+### Why
+
+- A selector list with no route to another credential is unusable when the
+  desired account has not yet been remembered.
+- Browser constraint validation would otherwise force a selected radio entry
+  even when the user deliberately chooses a different account path.
+- The relying party must request the standardized prompt; merely enabling the
+  provider configuration leaves ordinary authorization requests on the normal
+  SSO fast path.
+
+### What worked
+
+- The focused protocol command passed all three integration cases: direct
+  selection, selection requiring fresh consent, and use-another credential
+  transition.
+- The broader focused command passed the adapter, `idpui`, embedded API,
+  Message Desk renderer, and Message Desk application packages.
+
+### What didn't work
+
+- No implementation failure occurred in this increment.
+
+### What I learned
+
+- `formnovalidate` is part of the protocol presentation contract, not just a
+  cosmetic HTML option: alternate and denial actions must be usable when a
+  required credential or radio field is intentionally empty.
+- A host using `prompt=select_account` receives the desired fallback behavior
+  from the provider without branching on browser account state itself.
+
+### What was tricky to build
+
+The “use another” action must not simply clear the active session or reuse its
+authorization interaction. Clearing a cookie would leave server-side state
+ambiguous; reusing the interaction would preserve a binding to the prior
+account. The implementation instead consumes the context-bound chooser node,
+creates a new fresh-login node with a nil session binding, and relies on the
+already-reviewed password-authentication code to create the new session.
+
+### What warrants a second pair of eyes
+
+- The Message Desk currently has a separate uncommitted RP-initiated global
+  logout experiment. Global logout intentionally revokes the browser context,
+  so it will clear the remembered account list. The host UX should expose a
+  clearly named local app sign-out alongside global sign-out if it wants users
+  to return to the chooser after leaving the application.
+- Entry removal is designed in the ticket but not exposed by a provider UI/API
+  in this increment.
+
+### What should be done in the future
+
+- Decide and implement Message Desk local-versus-global logout controls
+  without overwriting the existing uncommitted global-logout work.
+- Add provider-owned removal actions and a browser test for selection, use
+  another, denial, and cross-context rejection.
+
+### Code review instructions
+
+- Read `pkg/idpui/types.go` first for the stable action contract.
+- Review the `ActionUseAnotherAccount` branch in `resumeAuthorize` and confirm
+  the second record has a nil session binding.
+- Inspect `examples/tinyidp-message-app/oidc_client.go` to see the one
+  standards-based host integration point.
+- Run `scripts/04-select-account-protocol.sh` and the Message Desk package
+  tests listed above.
+
+### Technical details
+
+```text
+chooser page
+  Continue + opaque entry -> activate remembered account
+  Use another account    -> consume chooser -> fresh credential interaction
+  Deny                   -> OAuth access_denied
+
+Message Desk /auth/login
+  -> PKCE + nonce + prompt=select_account
+  -> provider decides chooser versus normal login
 ```

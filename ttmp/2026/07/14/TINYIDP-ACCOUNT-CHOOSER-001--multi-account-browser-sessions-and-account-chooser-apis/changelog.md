@@ -38,3 +38,13 @@ Added typed, renderer-safe account chooser prompt contract with opaque entry val
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/types.go — Public chooser UI model
 
+
+## 2026-07-14
+
+Completed standard select-account transitions: fresh session-bound consent continuation, use-another credential flow, and Message Desk prompt integration (commits 8c5bdc5, 3ee16cc).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/oidc_client.go — Host requests standard select_account prompt.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Security-sensitive interaction state transitions.
+
