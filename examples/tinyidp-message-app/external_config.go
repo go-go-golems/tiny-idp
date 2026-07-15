@@ -38,7 +38,7 @@ func (c externalOIDCConfig) validate() error {
 		return errors.New("external relying-party cookie security must match the public URL scheme")
 	}
 	if strings.TrimSpace(c.BackchannelURL) != "" {
-		backchannel, err := normalizeExternalIssuer(c.BackchannelURL)
+		backchannel, err := normalizeExternalBackchannelURL(c.BackchannelURL)
 		if err != nil {
 			return errors.Wrap(err, "external OIDC backchannel URL")
 		}
@@ -84,4 +84,26 @@ func normalizeExternalIssuer(raw string) (string, error) {
 		return "", errors.New("external issuer path must be canonical")
 	}
 	return origin + path, nil
+}
+
+// normalizeExternalBackchannelURL validates an operator-only destination. It
+// is intentionally not constrained to a browser-loopback hostname: Compose
+// service DNS such as idp:8081 is private routing, not a public issuer.
+func normalizeExternalBackchannelURL(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", errors.Wrap(err, "parse external OIDC backchannel URL")
+	}
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
+		return "", errors.New("external OIDC backchannel URL must be an absolute HTTP(S) URL without query, fragment, or credentials")
+	}
+	path := strings.TrimSuffix(parsed.EscapedPath(), "/")
+	if path == "/" {
+		path = ""
+	}
+	if strings.Contains(path, "//") {
+		return "", errors.New("external OIDC backchannel URL path must be canonical")
+	}
+	return parsed.Scheme + "://" + parsed.Host + path, nil
 }

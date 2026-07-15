@@ -3,7 +3,7 @@ services:
     build:
       context: ../..
       dockerfile: examples/tinyidp-external-message-desk/Dockerfile.idp
-    command: ["--state-root", "/state", "--issuer", "http://localhost:8081", "--listen", ":8081", "--seed-file", "/config/demo-seed.json"]
+    command: ["/usr/local/bin/tinyidp-external-idp", "--state-root", "/state", "--issuer", "http://localhost:8081", "--listen", ":8081", "--seed-file", "/config/demo-seed.json"]
     ports: ["8081:8081"]
     volumes:
       - idp-state:/state

@@ -30,3 +30,14 @@ func TestNormalizeExternalIssuer(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeExternalBackchannelURLPermitsPrivateDockerDNS(t *testing.T) {
+	if got, err := normalizeExternalBackchannelURL("http://idp:8081"); err != nil || got != "http://idp:8081" {
+		t.Fatalf("normalize private backchannel = %q, %v", got, err)
+	}
+	for _, raw := range []string{"idp:8081", "http://user@idp:8081", "http://idp:8081/?query=x"} {
+		if _, err := normalizeExternalBackchannelURL(raw); err == nil {
+			t.Fatalf("invalid private backchannel %q accepted", raw)
+		}
+	}
+}
