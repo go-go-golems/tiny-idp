@@ -12,7 +12,8 @@ import (
 	"golang.org/x/net/html"
 )
 
-const interactionCSP = "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
+const interactionCSPPrefix = "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' "
+const interactionCSPSuffix = "; base-uri 'none'"
 
 type InteractionHealth struct {
 	HTMLBytes int
@@ -50,7 +51,11 @@ func (a *DevelopmentApplication) CheckInteractionUI(ctx context.Context) (Intera
 	if interactionResponse.Code != http.StatusOK {
 		return InteractionHealth{}, fmt.Errorf("interaction document status %d", interactionResponse.Code)
 	}
-	if interactionResponse.Header().Get("Content-Security-Policy") != interactionCSP || interactionResponse.Header().Get("Cache-Control") != "no-store" {
+	wantCSP, err := interactionCSPForRedirect(target.Query().Get("redirect_uri"))
+	if err != nil {
+		return InteractionHealth{}, fmt.Errorf("interaction document has an invalid redirect URI: %w", err)
+	}
+	if interactionResponse.Header().Get("Content-Security-Policy") != wantCSP || interactionResponse.Header().Get("Cache-Control") != "no-store" {
 		return InteractionHealth{}, fmt.Errorf("interaction document security headers are invalid")
 	}
 	document := interactionResponse.Body.Bytes()
@@ -71,6 +76,14 @@ func (a *DevelopmentApplication) CheckInteractionUI(ctx context.Context) (Intera
 		return InteractionHealth{}, fmt.Errorf("interaction stylesheet size is invalid")
 	}
 	return InteractionHealth{HTMLBytes: len(document), CSSBytes: stylesheetResponse.Body.Len()}, nil
+}
+
+func interactionCSPForRedirect(rawRedirectURI string) (string, error) {
+	redirectURI, err := url.Parse(rawRedirectURI)
+	if err != nil || redirectURI.Scheme == "" || redirectURI.Host == "" || redirectURI.User != nil {
+		return "", fmt.Errorf("invalid redirect URI")
+	}
+	return interactionCSPPrefix + redirectURI.Scheme + "://" + redirectURI.Host + interactionCSPSuffix, nil
 }
 
 func declaredStylesheet(document []byte) (string, error) {

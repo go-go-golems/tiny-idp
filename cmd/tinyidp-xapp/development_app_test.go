@@ -208,7 +208,7 @@ func TestDevelopmentApplicationLoginToApplicationVerticalSlice(t *testing.T) {
 	if !bytes.Contains(loginHTML, []byte(`href="/static/tinyidp/login.css"`)) || !bytes.Contains(loginHTML, []byte(`Tiny BBS identity service`)) {
 		t.Fatalf("login page did not use the xapp renderer: %s", loginHTML)
 	}
-	wantCSP := "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
+	wantCSP := "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' " + server.URL + "; base-uri 'none'"
 	if got := loginPage.Header.Get("Content-Security-Policy"); got != wantCSP {
 		t.Fatalf("login CSP=%q want=%q", got, wantCSP)
 	}
