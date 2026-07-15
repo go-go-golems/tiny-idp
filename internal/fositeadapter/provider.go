@@ -530,7 +530,7 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 	if actions.Has(idpstore.InteractionRequireAccountSelection) {
 		page.DocumentTitle = "Choose an account"
 		page.AccountChooser = chooserPrompt(chooserEntries)
-		page.Form.Actions = []idpui.Action{idpui.ActionContinue, idpui.ActionUseAnotherAccount, idpui.ActionDeny}
+		page.Form.Actions = []idpui.Action{idpui.ActionContinue, idpui.ActionUseAnotherAccount, idpui.ActionRemoveAccount, idpui.ActionDeny}
 	}
 	p.renderInteraction(w, r, http.StatusOK, page)
 }
@@ -602,7 +602,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	action := idpui.Action(r.PostForm.Get(idpui.ActionFieldName))
 	selectionRequired := record.RequiredActions.Has(idpstore.InteractionRequireAccountSelection)
-	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionDeny) || (!selectionRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
+	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionRemoveAccount && action != idpui.ActionDeny) || (!selectionRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
 		http.Error(w, "invalid interaction action", http.StatusBadRequest)
 		return
 	}
@@ -635,6 +635,45 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		page := p.newInteractionPage(loginHandle, loginCSRF, loginActions, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
+		p.renderInteraction(w, r, http.StatusOK, page)
+		return
+	}
+	if selectionRequired && action == idpui.ActionRemoveAccount {
+		entryHash, decodeErr := base64.RawURLEncoding.DecodeString(r.PostForm.Get(idpui.AccountFieldName))
+		if decodeErr != nil || len(entryHash) == 0 {
+			http.Error(w, "invalid account selection", http.StatusBadRequest)
+			return
+		}
+		contextHash := p.browserContextHash(r)
+		if err := p.store.RemoveRememberedBrowserSession(r.Context(), contextHash, entryHash, p.now()); err != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account_selection.remove_rejected", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "invalid_selection"})
+			http.Error(w, "invalid account selection", http.StatusBadRequest)
+			return
+		}
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account_selection.removed", ClientID: ar.GetClient().GetID(), Result: "accepted"})
+		entries, err := p.store.ListRememberedBrowserSessions(r.Context(), contextHash, p.now())
+		if err != nil && !errors.Is(err, idpstore.ErrNotFound) {
+			http.Error(w, "browser context storage unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if len(entries) > 0 {
+			page := p.newInteractionPage(handle, r.PostForm.Get(idpui.CSRFFieldName), record.RequiredActions, url.Values(record.CanonicalRequest), false, client.ID, []string(ar.GetRequestedScopes()), "", nil)
+			page.DocumentTitle = "Choose an account"
+			page.AccountChooser = chooserPrompt(entries)
+			page.Form.Actions = []idpui.Action{idpui.ActionContinue, idpui.ActionUseAnotherAccount, idpui.ActionRemoveAccount, idpui.ActionDeny}
+			p.renderInteraction(w, r, http.StatusOK, page)
+			return
+		}
+		if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
+			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
+			return
+		}
+		loginHandle, loginCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireFreshLogin, nil)
+		if err != nil {
+			http.Error(w, "create login interaction failed", http.StatusInternalServerError)
+			return
+		}
+		page := p.newInteractionPage(loginHandle, loginCSRF, idpstore.InteractionRequireFreshLogin, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
 		p.renderInteraction(w, r, http.StatusOK, page)
 		return
 	}

@@ -23,13 +23,14 @@ type Action string
 const (
 	ActionContinue          Action = "continue"
 	ActionUseAnotherAccount Action = "use_another_account"
+	ActionRemoveAccount     Action = "remove_account"
 	ActionApprove           Action = "approve"
 	ActionDeny              Action = "deny"
 )
 
 func (a Action) Valid() bool {
 	switch a {
-	case ActionContinue, ActionUseAnotherAccount, ActionApprove, ActionDeny:
+	case ActionContinue, ActionUseAnotherAccount, ActionRemoveAccount, ActionApprove, ActionDeny:
 		return true
 	default:
 		return false
@@ -44,6 +45,8 @@ func (a Action) Label() string {
 		return "Continue"
 	case ActionUseAnotherAccount:
 		return "Use another account"
+	case ActionRemoveAccount:
+		return "Remove account"
 	case ActionApprove:
 		return "Approve"
 	case ActionDeny:

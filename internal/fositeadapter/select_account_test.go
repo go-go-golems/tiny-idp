@@ -228,6 +228,28 @@ func TestPromptSelectAccountUseAnotherAccountRequiresCredentials(t *testing.T) {
 	}
 }
 
+func TestPromptSelectAccountRemovesOnlySelectedRememberedMembership(t *testing.T) {
+	fixture := newSelectAccountFixture(t, nil)
+	form, csrfCookie := fixture.begin(t)
+	form.Set("action", string(idpui.ActionRemoveAccount))
+	response := fixture.submit(t, form, csrfCookie)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="password"`) || strings.Contains(string(body), "Choose an account") {
+		t.Fatalf("removing final account should require credentials status=%d body=%s", response.StatusCode, body)
+	}
+	contextHash := idpstore.HashSecret(fixture.secret, fixture.contextHandle)
+	if _, _, err := fixture.store.ActivateRememberedSession(fixture.ctx, contextHash, fixture.entryHash, idpstore.HashSecret(fixture.secret, "must-not-activate"), time.Now().UTC()); err == nil {
+		t.Fatal("removed remembered account could still be activated")
+	}
+	if _, err := fixture.store.GetUser(fixture.ctx, "u2"); err != nil {
+		t.Fatalf("removing remembered membership removed the account: %v", err)
+	}
+}
+
 func chooserInput(t *testing.T, body []byte, name string) string {
 	t.Helper()
 	re := regexp.MustCompile(`name="` + regexp.QuoteMeta(name) + `" value="([^"]+)"`)
