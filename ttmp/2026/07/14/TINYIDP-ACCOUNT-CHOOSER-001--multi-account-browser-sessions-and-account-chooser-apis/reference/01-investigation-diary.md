@@ -12,8 +12,18 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-message-app/app_http.go
+      Note: Creates a protected relying-party session after self-registration and preserves local continuation.
+    - Path: repo://examples/tinyidp-message-app/app_http_test.go
+      Note: Verifies automatic post-registration session and independent OIDC login behavior.
+    - Path: repo://examples/tinyidp-message-app/loginui/renderer_test.go
+      Note: Conformance and presentation assertions for chooser rendering.
+    - Path: repo://examples/tinyidp-message-app/loginui/static/login.css
+      Note: Branded account chooser component styling.
     - Path: repo://examples/tinyidp-message-app/loginui/templates/interaction.html
-      Note: Custom renderer preserves opaque chooser controls.
+      Note: |-
+        Custom renderer preserves opaque chooser controls.
+        Semantic account-card chooser markup for the custom renderer.
     - Path: repo://examples/tinyidp-message-app/oidc_client.go
       Note: Message Desk requests the standard OIDC select_account prompt.
     - Path: repo://internal/fositeadapter/account_chooser.go
@@ -72,6 +82,7 @@ LastUpdated: 2026-07-14T17:53:02.926941303-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -1086,4 +1097,158 @@ browser -> http://127.0.0.1:8090/auth/login
         -> tiny-idp interaction UI
 
 token exchange -> explicit in-process issuer transport
+```
+
+## Step 9: Make the chooser coherent with the branded login page and sign in a newly registered user
+
+The original chooser was functional but visually wrong for Message Desk. Its
+radio controls inherited the generic credential-label grid and consequently
+looked like an accidental form fragment rather than part of the existing
+identity page. The custom renderer now emits a dedicated chooser fieldset and
+account-card controls; the stylesheet gives selected, focused, alternate, and
+denial states the same restrained typographic and color system as the login
+and consent page.
+
+Registration now creates a protected Message Desk relying-party session after
+the account service has accepted the initial password. The existing frontend
+navigates to `/auth/login` after account creation, so that handler recognizes
+the new RP session and returns directly to the requested local page instead of
+starting a redundant OIDC transaction. This is intentionally not an IdP
+cookie: the user is signed into the application they just joined, while a
+future authorization request still uses the provider’s normal password or
+account-chooser flow.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, but the account chooser looks like ass and doesn't really fit the look of the previous page, maybe it's a css issue on some common htmL? I'm not sure how it works.
+
+Also, after creating an account, I should be logged in on the next screen, if possible (might not be possible, not sure)"
+
+**Assistant interpretation:** Repair the custom renderer and stylesheet so
+account selection looks native to the Message Desk identity surface, then make
+successful account registration continue directly into a usable application
+session.
+
+**Inferred user intent:** The example should demonstrate a complete, polished
+identity experience rather than forcing users through unnecessary steps after
+creating a local account.
+
+**Commit (code):** `757f98e576640ed8fe15283a96a19dc047179dcb` — "feat(message-app): sign in after registration"
+
+### What I did
+
+- Replaced the one-line Message Desk interaction template with readable
+  semantic HTML, including a dedicated `fieldset.account-chooser`, explanatory
+  copy, labelled radio account cards, and a distinct alternate-action button.
+- Reworked `login.css` around those classes while retaining the established
+  paper, ink, teal, blue, and rose palette and the no-window-chrome visual
+  language.
+- Extended the custom renderer test to run the generic `idpuitest`
+  conformance checker against an account-chooser page, then assert the
+  styled-account markup exists.
+- Added `establishAppSession`, which generates a new opaque RP session token
+  and CSRF secret, stores only the token hash, emits the HttpOnly cookie, and
+  is called after a successful account creation.
+- Changed the registration response target to `/` and made `/auth/login`
+  redirect an already-authenticated app user to its validated local `return_to`
+  path.
+- Updated registration and embedded-browser integration tests so they verify
+  the immediate session and keep the separate OIDC callback exercise in a
+  clean browser profile.
+- Rebuilt the local UI for the running demo using already-installed pnpm
+  dependencies, then restarted the server in tmux and verified `/healthz`.
+
+### Why
+
+- The provider sends a typed `AccountChooserPrompt`; a host renderer is
+  responsible for making that typed prompt visually coherent without changing
+  field names, opaque values, or actions.
+- Account creation has just proven possession of the newly chosen password.
+  Issuing the relying-party session is therefore an ordinary post-registration
+  login, not an SSO bypass.
+- An IdP browser session must remain provider-owned. Creating one from the RP
+  registration handler would cross the intended boundary and require a new
+  carefully designed embedded-provider API.
+
+### What worked
+
+- `go test ./examples/tinyidp-message-app/loginui ./examples/tinyidp-message-app -count=1` passed after the change.
+- The test verifies an HttpOnly, `SameSite=Lax` Message Desk session cookie,
+  persists it under a hash, and proves `/auth/login?return_to=/messages`
+  redirects the newly registered user to `/messages` without an OIDC round
+  trip.
+- The restarted local server reports a ready lifecycle and serves all new
+  `account-chooser`, `account-choice`, and `chooser-note` CSS rules.
+
+### What didn't work
+
+- The existing end-to-end OIDC test initially expected registration to leave
+  the browser unauthenticated and received `Location: /messages` from the new
+  login continuation instead of an IdP authorization URL. This was an expected
+  consequence of the new behavior, not a production failure. The test now
+  creates a clean cookie jar for its independent OIDC callback scenario and
+  passes.
+- The frontend source already contained uncommitted global-logout changes.
+  The local production build includes those existing source changes, but this
+  commit deliberately stages only the new server-side behavior and chooser
+  presentation files; it does not absorb that unrelated work.
+
+### What I learned
+
+- The visual defect was caused by common element selectors (`label` and
+  `input`) applying credential-form layout to radio choices. A component class
+  is the right boundary for a renderer-specific prompt subtype.
+- A single application can safely provide immediate RP sign-in at registration
+  while leaving the IdP authentication lifecycle independent. The distinction
+  is important when explaining why a later OIDC interaction may still request
+  credentials.
+
+### What was tricky to build
+
+The application and identity stores are independent SQLite databases. Account
+creation cannot be atomically committed with the new Message Desk session.
+The handler creates the account first, then attempts session establishment; a
+rare application-store failure returns a clear `503` saying the account was
+created but automatic sign-in is unavailable. It never returns a false account
+creation failure that would encourage a duplicate registration attempt, and it
+never emits a cookie before its session record is stored.
+
+### What warrants a second pair of eyes
+
+- The local RP session removes the immediate OIDC login page after registration
+  by design, but it does not establish a remembered IdP account. Decide whether
+  the example later needs a dedicated embedded-provider registration-to-IdP
+  session API, with its own capability and audit design.
+- The previously uncommitted global logout work clears the IdP browser context.
+  A polished multiple-account UI should distinguish local app sign-out from
+  provider-wide sign-out before exposing both controls.
+
+### What should be done in the future
+
+- Add an explicit “Change account” control to Message Desk that starts the
+  select-account flow even for an authenticated RP user.
+- Run the saved Playwright suite once the test package is approved, adding a
+  visual regression assertion for account-card selection and a registration
+  auto-sign-in flow.
+
+### Code review instructions
+
+- Read `loginui/templates/interaction.html` and `static/login.css` together;
+  confirm every account input remains the provider-generated opaque value.
+- Review `establishAppSession` before `handleCreateAccount`; ensure the
+  session record is stored before `setSessionCookie` and no IdP cookie is set.
+- Run the focused Message Desk test command and inspect the live CSS at
+  `/static/tinyidp/login.css`.
+
+### Technical details
+
+```text
+registration password accepted
+  -> durable tiny-idp account
+  -> fresh Message Desk session token + CSRF secret
+  -> hashed session record + HttpOnly RP cookie
+  -> existing /auth/login continuation sees RP session
+  -> 303 local return_to page
+
+This does not set tinyidp_session.
 ```

@@ -57,3 +57,13 @@ Launched and wire-verified the Message Desk account-chooser demo on 127.0.0.1:80
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/05-message-desk-smoke.spec.mjs — Prepared browser smoke script.
 
+
+## 2026-07-14
+
+Improved Message Desk chooser presentation and established a protected relying-party session immediately after successful account registration (commit 757f98e).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Registration-to-RP-session continuation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/loginui/static/login.css — Account chooser visual integration.
+
