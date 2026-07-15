@@ -27,6 +27,56 @@ type oidcClient struct {
 	now                func() time.Time
 }
 
+// issuerRewriteTransport keeps the issuer URL visible to oidc and oauth2
+// while routing only back-channel traffic to a private container address.
+// Browser redirects retain the public canonical issuer.
+type issuerRewriteTransport struct {
+	issuer      *url.URL
+	backchannel *url.URL
+	base        http.RoundTripper
+}
+
+func externalBackchannelClient(issuerRaw, backchannelRaw string) (*http.Client, error) {
+	if strings.TrimSpace(backchannelRaw) == "" {
+		return &http.Client{}, nil
+	}
+	issuer, err := url.Parse(issuerRaw)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse external issuer")
+	}
+	backchannel, err := url.Parse(backchannelRaw)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse external OIDC backchannel URL")
+	}
+	return &http.Client{Transport: &issuerRewriteTransport{issuer: issuer, backchannel: backchannel, base: http.DefaultTransport}}, nil
+}
+
+func (t *issuerRewriteTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if t == nil || t.issuer == nil || t.backchannel == nil || request == nil || request.URL == nil || request.URL.Scheme != t.issuer.Scheme || request.URL.Host != t.issuer.Host {
+		return http.DefaultTransport.RoundTrip(request)
+	}
+	clone := request.Clone(request.Context())
+	clone.URL = cloneURL(request.URL)
+	clone.URL.Scheme = t.backchannel.Scheme
+	clone.URL.Host = t.backchannel.Host
+	issuerPath := strings.TrimRight(t.issuer.EscapedPath(), "/")
+	requestPath := request.URL.EscapedPath()
+	suffix := strings.TrimPrefix(requestPath, issuerPath)
+	clone.URL.Path = strings.TrimRight(t.backchannel.EscapedPath(), "/") + suffix
+	clone.URL.RawPath = ""
+	clone.Host = t.issuer.Host
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(clone)
+}
+
+func cloneURL(value *url.URL) *url.URL {
+	clone := *value
+	return &clone
+}
+
 type loginCompletion struct {
 	SessionToken string
 	ReturnTo     string

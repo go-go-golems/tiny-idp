@@ -13,6 +13,7 @@ import (
 type externalOIDCConfig struct {
 	PublicBaseURL      string
 	Issuer             string
+	BackchannelURL     string
 	ClientID           string
 	EndSessionEndpoint string
 	CookieSecure       bool
@@ -35,6 +36,17 @@ func (c externalOIDCConfig) validate() error {
 	}
 	if strings.HasPrefix(publicBaseURL, "https://") != c.CookieSecure {
 		return errors.New("external relying-party cookie security must match the public URL scheme")
+	}
+	if strings.TrimSpace(c.BackchannelURL) != "" {
+		backchannel, err := normalizeExternalIssuer(c.BackchannelURL)
+		if err != nil {
+			return errors.Wrap(err, "external OIDC backchannel URL")
+		}
+		issuerURL, _ := url.Parse(issuer)
+		backchannelURL, _ := url.Parse(backchannel)
+		if issuerURL.EscapedPath() != backchannelURL.EscapedPath() {
+			return errors.New("external OIDC backchannel URL must preserve the issuer path")
+		}
 	}
 	if c.EndSessionEndpoint == "" {
 		return nil

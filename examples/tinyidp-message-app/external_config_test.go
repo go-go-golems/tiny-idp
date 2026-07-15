@@ -12,6 +12,7 @@ func TestExternalOIDCConfigValidation(t *testing.T) {
 		{PublicBaseURL: valid.PublicBaseURL, Issuer: valid.Issuer, ClientID: ""},
 		{PublicBaseURL: valid.PublicBaseURL, Issuer: valid.Issuer, ClientID: valid.ClientID, CookieSecure: true},
 		{PublicBaseURL: valid.PublicBaseURL, Issuer: valid.Issuer, ClientID: valid.ClientID, EndSessionEndpoint: "http://127.0.0.1:8090/end-session"},
+		{PublicBaseURL: valid.PublicBaseURL, Issuer: valid.Issuer, ClientID: valid.ClientID, BackchannelURL: "http://idp:8081/other"},
 	} {
 		if err := config.validate(); err == nil {
 			t.Fatalf("invalid external configuration accepted: %#v", config)

@@ -76,6 +76,7 @@ type serveSettings struct {
 	IdleTimeout         string `glazed:"idle-timeout"`
 	MaxRequestBytes     int    `glazed:"max-request-bytes"`
 	ExternalIssuer      string `glazed:"external-issuer"`
+	ExternalBackchannel string `glazed:"external-backchannel-url"`
 }
 
 var _ cmds.BareCommand = (*ServeCommand)(nil)
@@ -98,6 +99,7 @@ func NewServeCommand() (cmds.BareCommand, error) {
 			fields.New("idle-timeout", fields.TypeString, fields.WithDefault("1m")),
 			fields.New("max-request-bytes", fields.TypeInteger, fields.WithDefault(1<<20)),
 			fields.New("external-issuer", fields.TypeString, fields.WithHelp("Run as an external OIDC relying party against this issuer instead of embedding tiny-idp")),
+			fields.New("external-backchannel-url", fields.TypeString, fields.WithHelp("Optional container-only URL for OIDC discovery, JWKS, and token requests; preserves the public issuer in protocol validation")),
 		),
 	)}, nil
 }
@@ -286,7 +288,7 @@ func runMessageApplication(ctx context.Context, settings serveSettings) error {
 	}
 	app, err := openInitializedMessageApplication(ctx, settings.StateRoot)
 	if settings.ExternalIssuer != "" {
-		app, err = openExternalMessageApplication(ctx, settings.StateRoot, settings.ExternalIssuer)
+		app, err = openExternalMessageApplication(ctx, settings.StateRoot, settings.ExternalIssuer, settings.ExternalBackchannel)
 	}
 	if err != nil {
 		return err

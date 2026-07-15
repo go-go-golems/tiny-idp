@@ -2,27 +2,32 @@ package main
 
 import (
 	"context"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 )
 
-func openExternalMessageApplication(ctx context.Context, stateRoot, issuer string) (*initializedMessageApplication, error) {
+func openExternalMessageApplication(ctx context.Context, stateRoot, issuer, backchannelURL string) (*initializedMessageApplication, error) {
 	manifest, err := readStateManifest(resolveStatePaths(stateRoot).Manifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "read application state manifest")
 	}
 	cookieSecure := strings.HasPrefix(manifest.PublicBaseURL, "https://")
-	if err := (externalOIDCConfig{PublicBaseURL: manifest.PublicBaseURL, Issuer: issuer, ClientID: clientID, CookieSecure: cookieSecure}).validate(); err != nil {
+	if err := (externalOIDCConfig{PublicBaseURL: manifest.PublicBaseURL, Issuer: issuer, BackchannelURL: backchannelURL, ClientID: clientID, CookieSecure: cookieSecure}).validate(); err != nil {
 		return nil, err
 	}
 	store, err := openAppStore(ctx, resolveStatePaths(stateRoot).ApplicationDatabase)
 	if err != nil {
 		return nil, err
 	}
-	oidc, err := newOIDCClient(ctx, issuer, manifest.PublicBaseURL, &http.Client{Timeout: 10 * time.Second})
+	client, err := externalBackchannelClient(issuer, backchannelURL)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	client.Timeout = 10 * time.Second
+	oidc, err := newOIDCClient(ctx, issuer, manifest.PublicBaseURL, client)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
