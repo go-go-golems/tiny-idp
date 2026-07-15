@@ -1177,3 +1177,103 @@ sha256(idp token.key) before == after
 sha256(app state.json) before == after
 GET /api/messages before == after
 ```
+
+## Step 13: Complete security handoff and deliver the updated ticket bundle
+
+The implementation work is now accompanied by a focused security review and
+continuation guide. It states the demonstrated claims, their concrete source
+and runtime evidence, the precise non-production boundaries, the acceptance
+commands, and the next production-host and device-client work. The design,
+diary, and review were validated and uploaded together to the ticket's
+reMarkable folder.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 10)
+
+**Assistant interpretation:** Complete the remaining handoff/delivery phase
+after implementing the test and operational assurance work.
+
+**Inferred user intent:** Leave the work usable by a new contributor without
+requiring them to infer what was tested, what failed, or why the example is
+not yet a production deployment.
+
+### What I did
+
+- Added `reference/02-security-review-and-handoff.md` with a scope statement,
+  architecture, claim/evidence review, reproduction procedure, production
+  release gate, CI roadmap, device-client follow-up, and reviewer checklist.
+- Validated the new document frontmatter and ran `docmgr doctor` successfully.
+- Uploaded design guide, implementation diary, and security handoff as
+  `TINYIDP External Demo 001 Assurance.pdf` to
+  `/ai/2026/07/15/TINYIDP-EXTERNAL-DEMO-001`.
+- Marked Phase 7 complete because the diary, security review, reMarkable
+  bundle, and handoff are now present.
+
+### Why
+
+- A source change and passing test are insufficient handoff material for an
+  identity-system deployment boundary. The next contributor needs clear
+  security claims, exact evidence, explicit limits, and a known-safe next
+  sequence.
+
+### What worked
+
+- `docmgr validate frontmatter --doc .../02-security-review-and-handoff.md`
+  returned `Frontmatter OK`.
+- `docmgr doctor --ticket TINYIDP-EXTERNAL-DEMO-001 --stale-after 30` reported
+  all checks passed.
+- `remarquee upload bundle ...` reported:
+  `OK: uploaded TINYIDP External Demo 001 Assurance.pdf -> /ai/2026/07/15/TINYIDP-EXTERNAL-DEMO-001`.
+
+### What didn't work
+
+- N/A. The delivery validation and upload succeeded on the first attempt.
+
+### What I learned
+
+- The handoff is most useful when it separates development-demo completion
+  from production readiness. The completed ticket proves an external OIDC
+  integration and operational checks; it does not imply that TLS, trusted
+  proxying, production audit/secrets, account lifecycle, backup recovery, or
+  CI are solved.
+
+### What was tricky to build
+
+- The final review has to preserve the distinction between direct evidence and
+  recommendation. Each positive claim is tied to code, a test, or a live
+  assertion; each production requirement is labelled as an open release gate.
+
+### What warrants a second pair of eyes
+
+- Review the proposed CI isolation strategy before enabling it on a shared
+  Docker runner; the scripts intentionally create durable demo state and the
+  durability script restarts services.
+- Review the production-host design separately from this ticket. Adding HTTPS
+  URLs to this Compose file is not an adequate substitute for the production
+  capabilities enforced by `embeddedidp.ProductionMode`.
+
+### What should be done in the future
+
+- Create/wire the Docker-capable CI job for scripts 01–03.
+- Implement the production standalone host and deployment design.
+- Continue the planned device-authorization example as a separate client with
+  its own protocol and negative-path assurance.
+
+### Code review instructions
+
+- Read `reference/02-security-review-and-handoff.md` after the design guide
+  and before changing deployment configuration.
+- Run its acceptance command sequence locally; do not reuse the public fixture
+  or scripts in production.
+
+### Technical details
+
+```text
+bundle contents:
+  design guide -> chronological implementation diary -> security handoff
+
+delivery:
+  /ai/2026/07/15/TINYIDP-EXTERNAL-DEMO-001/
+  TINYIDP External Demo 001 Assurance.pdf
+```
