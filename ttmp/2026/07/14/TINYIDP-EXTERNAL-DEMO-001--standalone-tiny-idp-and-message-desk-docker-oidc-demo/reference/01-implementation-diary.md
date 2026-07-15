@@ -822,3 +822,111 @@ browser test:
 guest -> IdP login -> RP callback -> write -> chooser/switch
       -> global logout -> guest -> fresh login form
 ```
+
+## Step 10: Make the development and production profile boundary explicit
+
+The external demo now states plainly that its Docker Compose topology is a
+loopback-only development profile. The current standalone command passes
+`embeddedidp.DevMode`, serves public HTTP loopback origins, and uses a
+committed public fixture; it must not be promoted by merely replacing
+`localhost` with a deployed hostname. The runbook now gives a concrete
+production contract and explains why private Docker routing must not redefine
+the public issuer.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead."
+
+**Assistant interpretation:** Continue the listed next steps: automate the
+two-origin validation, add durability/failure assurance, and document the
+HTTPS production boundary.
+
+**Inferred user intent:** Turn the successful local demonstration into a
+retraceable release-hardening path without overstating what is production
+ready.
+
+### What I did
+
+- Added a `Deployment profiles and the HTTPS boundary` section to
+  `examples/tinyidp-external-message-desk/README.md`.
+- Classified the current Compose setup as development-only and documented its
+  local HTTP, public seed, development-mode, named-volume, and no-TLS
+  assumptions.
+- Defined the production requirements for canonical HTTPS issuer/origin,
+  secure explicit cookies, production-mode readiness prerequisites,
+  trustworthy reverse-proxy origin handling, operator secret injection, and
+  coherent database/signing-key backup.
+- Marked ticket task 1.3 complete.
+
+### Why
+
+- The existing code intentionally supports a convenient local exercise, but
+  its `DevMode` construction cannot provide the production readiness checks
+  required by the public embedded provider API. Documentation that calls the
+  Compose file a generic deployment would be misleading and unsafe.
+
+### What worked
+
+- The README now names the exact boundary and provides a reviewable checklist
+  for a future production-specific host rather than leaving HTTPS and proxy
+  behavior implicit.
+
+### What didn't work
+
+- The first patch targeted the workspace parent instead of the nested
+  `tiny-idp` repository and failed before changing a file:
+  `apply_patch verification failed: Failed to read file to update .../examples/tinyidp-external-message-desk/README.md: No such file or directory`.
+  Retargeting the patch to `tiny-idp/examples/.../README.md` applied the
+  intended change. No application behavior was affected by the failed patch.
+
+### What I learned
+
+- `embeddedidp.ProductionMode` already validates substantially more than an
+  HTTPS URL: persistent/schema-capable store, durable audit, production-ready
+  rate limiter and client-address resolver, password-work reporting, usable
+  RSA signing material, and secure cookies. A production standalone host must
+  deliberately supply those capabilities instead of inheriting this demo's
+  defaults.
+
+### What was tricky to build
+
+- A reverse proxy has two separate effects: it may terminate TLS and it may
+  provide a private network route. Neither effect changes the issuer that OIDC
+  discovery and ID-token verification use. The runbook therefore distinguishes
+  browser-visible canonical issuer, RP public origin, and private
+  service-to-service backchannel route.
+
+### What warrants a second pair of eyes
+
+- Review the future production-host design for an explicit trusted-proxy
+  policy. It must not construct issuer or redirect behavior from untrusted
+  browser-controlled `Host` or forwarded headers.
+- Review whether production account provisioning and seed replacement are
+  addressed by the separate identity-management API work before a deployment
+  guide is advertised as complete.
+
+### What should be done in the future
+
+- Add the committed two-origin Playwright integration harness (task 6.1).
+- Add restart, bad-seed, unavailable-provider, and secret/persistence checks
+  (task 6.3).
+- Build a dedicated production host/deployment guide only after those checks
+  and the required production dependencies are implemented.
+
+### Code review instructions
+
+- Read the new README section alongside
+  `cmd/idp/main.go` and `pkg/embeddedidp/options.go`.
+- Confirm that the documented Compose values are intentionally local HTTP and
+  that the production list matches `embeddedidp.Options.Validate`.
+
+### Technical details
+
+```text
+development demo:
+  issuer=http://localhost:8081, DevMode, public fixture, local named volumes
+
+production host:
+  issuer=https://issuer.example, ProductionMode, secure cookies,
+  durable audit/secrets/store, explicit trusted proxy and backchannel policy
+```
