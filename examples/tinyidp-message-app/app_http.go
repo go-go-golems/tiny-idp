@@ -161,6 +161,20 @@ func (a *messageApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "identity login is unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	// The existing frontend directs a successful registration through this
+	// endpoint. If registration has just established the application session,
+	// return to the local page instead of needlessly starting a second OIDC
+	// transaction. A host can still provide an explicit account-switch control
+	// that starts its own prompt=select_account request.
+	if _, authenticated := a.currentSession(r); authenticated {
+		returnTo, err := normalizeReturnTo(r.URL.Query().Get("return_to"))
+		if err != nil {
+			http.Error(w, "invalid login request", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, returnTo, http.StatusSeeOther)
+		return
+	}
 	location, err := a.oidc.beginLogin(r.Context(), a.store, r.URL.Query().Get("return_to"))
 	if err != nil {
 		http.Error(w, "invalid login request", http.StatusBadRequest)
@@ -363,11 +377,53 @@ func (a *messageApp) handleCreateAccount(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if err := a.establishAppSession(r.Context(), w, user.Sub, user.Name); err != nil {
+		a.recordRegistration(r.Context(), "accepted", "auto_login_unavailable", user.Sub)
+		http.Error(w, "account was created but automatic sign-in is temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	a.recordRegistration(r.Context(), "accepted", "", user.Sub)
 	http.SetCookie(w, &http.Cookie{Name: registerCookie, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: a.cookieSecure})
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]string{"next": "/auth/login"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"next": "/"})
+}
+
+// establishAppSession creates the relying-party session after a successful
+// OIDC callback or a freshly completed local registration. Registration has
+// just accepted the account's initial password, so issuing the Message Desk
+// session does not bypass an authentication decision. It deliberately does
+// not mint an IdP browser cookie: that remains owned by the OIDC provider.
+func (a *messageApp) establishAppSession(ctx context.Context, w http.ResponseWriter, subject, displayName string) error {
+	if a == nil || a.store == nil || strings.TrimSpace(subject) == "" {
+		return errors.New("application session dependencies are unavailable")
+	}
+	token, err := randomURLToken(32)
+	if err != nil {
+		return err
+	}
+	csrfSecret := make([]byte, sha256.Size)
+	if _, err := rand.Read(csrfSecret); err != nil {
+		return errors.Wrap(err, "generate application session CSRF secret")
+	}
+	now := a.now().UTC()
+	if err := a.store.createAppSession(ctx, token, appSession{
+		Subject: subject, DisplayName: firstNonEmpty(strings.TrimSpace(displayName), subject), CSRFSecret: csrfSecret,
+		CreatedAt: now, ExpiresAt: now.Add(8 * time.Hour),
+	}); err != nil {
+		return err
+	}
+	a.setSessionCookie(w, token)
+	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (a *messageApp) recordRegistration(ctx context.Context, result, reason, subject string) {

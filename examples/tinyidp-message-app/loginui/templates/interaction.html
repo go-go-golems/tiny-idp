@@ -1,1 +1,57 @@
-{{define "interaction"}}<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Page.DocumentTitle}} · Message Desk</title><link rel="stylesheet" href="/static/tinyidp/login.css"></head><body><main class="identity"><header><p class="kicker">MESSAGE DESK / IDENTITY</p><h1>{{.Page.DocumentTitle}}</h1>{{with .Page.Login}}<p class="lede">{{.Reason.Explanation}}</p>{{end}}</header>{{with .Page.Error}}<p class="error" id="interaction-error" role="alert">{{.Summary}}</p>{{end}}{{with .Page.Consent}}<section><p class="kicker">REQUESTED ACCESS</p><p><b>{{.ClientID}}</b> requests:</p><ul>{{range .Scopes}}<li><code>{{.Name}}</code>{{with .Description}} — {{.}}{{end}}</li>{{end}}</ul></section>{{end}}<form method="post" action="{{.Page.Form.ActionURL}}">{{with .Page.AccountChooser}}{{$chooser := .}}<fieldset><legend>CHOOSE AN ACCOUNT</legend>{{range .Entries}}<label for="tinyidp-account-{{.Value}}"><input id="tinyidp-account-{{.Value}}" type="radio" name="{{$chooser.AccountField}}" value="{{.Value}}" required> {{.Label}}</label>{{end}}</fieldset>{{end}}{{with .Page.Login}}<label for="tinyidp-login">LOGIN</label><input id="tinyidp-login" name="{{.LoginField}}" value="{{.LoginValue}}" autocomplete="username" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}{{if .Autofocus}} autofocus{{end}}><label for="tinyidp-password">PASSWORD</label><input id="tinyidp-password" name="{{.PasswordField}}" type="password" autocomplete="current-password" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}>{{end}}<input type="hidden" name="{{.Page.Form.InteractionField}}" value="{{.Page.Form.Interaction}}"><input type="hidden" name="{{.Page.Form.CSRFField}}" value="{{.Page.Form.CSRFToken}}"><div class="actions">{{range .Page.Form.Actions}}<button class="{{if eq . "deny"}}deny{{end}}" type="submit" name="{{$.Page.Form.ActionField}}" value="{{.}}"{{if .SkipsConstraintValidation}} formnovalidate{{end}}>{{.Label}}</button>{{end}}</div></form><footer>Authentication is processed locally by tiny-idp.</footer></main></body></html>{{end}}
+{{define "interaction"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{.Page.DocumentTitle}} · Message Desk</title>
+  <link rel="stylesheet" href="/static/tinyidp/login.css">
+</head>
+<body>
+  <main class="identity">
+    <header>
+      <p class="kicker">MESSAGE DESK / IDENTITY</p>
+      <h1>{{.Page.DocumentTitle}}</h1>
+      {{with .Page.Login}}<p class="lede">{{.Reason.Explanation}}</p>{{end}}
+    </header>
+    {{with .Page.Error}}<p class="error" id="interaction-error" role="alert">{{.Summary}}</p>{{end}}
+    {{with .Page.Consent}}
+    <section>
+      <p class="kicker">REQUESTED ACCESS</p>
+      <p><b>{{.ClientID}}</b> requests:</p>
+      <ul>{{range .Scopes}}<li><code>{{.Name}}</code>{{with .Description}} — {{.}}{{end}}</li>{{end}}</ul>
+    </section>
+    {{end}}
+    <form method="post" action="{{.Page.Form.ActionURL}}">
+      {{with .Page.AccountChooser}}
+      {{$chooser := .}}
+      <fieldset class="account-chooser">
+        <legend>CHOOSE AN ACCOUNT</legend>
+        <p class="chooser-note">Select a remembered local identity, or authenticate a different one.</p>
+        {{range .Entries}}
+        <label class="account-choice" for="tinyidp-account-{{.Value}}">
+          <input id="tinyidp-account-{{.Value}}" type="radio" name="{{$chooser.AccountField}}" value="{{.Value}}" required>
+          <span>{{.Label}}</span>
+        </label>
+        {{end}}
+      </fieldset>
+      {{end}}
+      {{with .Page.Login}}
+      <label for="tinyidp-login">LOGIN</label>
+      <input id="tinyidp-login" name="{{.LoginField}}" value="{{.LoginValue}}" autocomplete="username" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}{{if .Autofocus}} autofocus{{end}}>
+      <label for="tinyidp-password">PASSWORD</label>
+      <input id="tinyidp-password" name="{{.PasswordField}}" type="password" autocomplete="current-password" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}>
+      {{end}}
+      <input type="hidden" name="{{.Page.Form.InteractionField}}" value="{{.Page.Form.Interaction}}">
+      <input type="hidden" name="{{.Page.Form.CSRFField}}" value="{{.Page.Form.CSRFToken}}">
+      <div class="actions">
+        {{range .Page.Form.Actions}}
+        <button class="{{if eq . "deny"}}deny{{else if eq . "use_another_account"}}alternate{{end}}" type="submit" name="{{$.Page.Form.ActionField}}" value="{{.}}"{{if .SkipsConstraintValidation}} formnovalidate{{end}}>{{.Label}}</button>
+        {{end}}
+      </div>
+    </form>
+    <footer>Authentication is processed locally by tiny-idp.</footer>
+  </main>
+</body>
+</html>
+{{end}}

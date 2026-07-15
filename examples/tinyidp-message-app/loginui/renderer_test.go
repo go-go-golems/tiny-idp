@@ -1,7 +1,6 @@
 package loginui
 
 import (
-	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -43,12 +42,15 @@ func TestRendererRendersAccountChooserControls(t *testing.T) {
 		},
 		AccountChooser: &idpui.AccountChooserPrompt{AccountField: idpui.AccountFieldName, Entries: []idpui.AccountChooserEntry{{Value: "opaque-account-handle", Label: "Amelie"}}},
 	}
-	var rendered bytes.Buffer
-	if err := renderer.RenderInteraction(context.Background(), &rendered, page); err != nil {
+	rendered, violations, err := idpuitest.RenderAndCheck(context.Background(), renderer, page)
+	if err != nil {
 		t.Fatal(err)
 	}
-	html := rendered.String()
-	for _, required := range []string{`type="radio"`, `name="account"`, `value="opaque-account-handle"`, "Amelie", "CHOOSE AN ACCOUNT", `value="use_another_account"`, "Use another account"} {
+	if len(violations) != 0 {
+		t.Fatalf("account chooser renderer violations = %#v", violations)
+	}
+	html := string(rendered)
+	for _, required := range []string{`class="account-choice"`, `type="radio"`, `name="account"`, `value="opaque-account-handle"`, "Amelie", "CHOOSE AN ACCOUNT", `value="use_another_account"`, "Use another account"} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("account chooser is missing %q: %s", required, html)
 		}

@@ -257,16 +257,32 @@ func TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService(t *testi
 	cookie, csrf := registrationContext(t, app)
 	created := httptest.NewRecorder()
 	app.ServeHTTP(created, newAccountRequest(t, createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}, csrf, cookie))
-	if created.Code != http.StatusCreated || !strings.Contains(created.Body.String(), `"next":"/auth/login"`) {
+	if created.Code != http.StatusCreated || !strings.Contains(created.Body.String(), `"next":"/"`) {
 		t.Fatalf("account creation = %d: %s", created.Code, created.Body.String())
 	}
 	if _, err := accounts.AuthenticatePassword(ctx, "alice", "this is a long enough password", idp.LoginMetadata{}); err != nil {
 		t.Fatalf("new account cannot authenticate: %v", err)
 	}
+	var appCookie *http.Cookie
 	for _, setCookie := range created.Result().Cookies() {
 		if setCookie.Name == appCookieName {
-			t.Fatal("registration unexpectedly created an application session")
+			appCookie = setCookie
 		}
+	}
+	if appCookie == nil || appCookie.Value == "" || !appCookie.HttpOnly || appCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("registration did not establish a protected application session: %#v", appCookie)
+	}
+	session, err := appStore.getAppSession(ctx, appCookie.Value, time.Now().UTC())
+	if err != nil || session.Subject == "" || session.DisplayName != "Alice" {
+		t.Fatalf("automatic application session = %#v, %v", session, err)
+	}
+	app.oidc = &oidcClient{}
+	continuation := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/auth/login?return_to=/messages", nil)
+	request.AddCookie(appCookie)
+	app.ServeHTTP(continuation, request)
+	if continuation.Code != http.StatusSeeOther || continuation.Header().Get("Location") != "/messages" {
+		t.Fatalf("registered session login continuation = %d %q", continuation.Code, continuation.Header().Get("Location"))
 	}
 	events := audit.Events()
 	if len(events) != 2 || events[0].Name != "account.self_registration" || events[0].Result != "rejected" || events[0].Reason != "csrf_rejected" ||
@@ -500,6 +516,13 @@ func TestBrowserLoginCompletesAgainstEmbeddedProvider(t *testing.T) {
 		t.Fatalf("registration status = %d: %s", registrationResponse.StatusCode, body)
 	}
 	registrationResponse.Body.Close()
+	// Registration now establishes the relying-party session immediately. Use a
+	// clean browser profile for the separate OIDC login/callback exercise below.
+	loginJar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser = &http.Client{Jar: loginJar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	loginResponse, err := browser.Get(server.URL + "/auth/login?return_to=/messages")
 	if err != nil {
 		t.Fatal(err)
