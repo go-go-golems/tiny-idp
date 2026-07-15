@@ -106,3 +106,29 @@ authorization and end-session. A proxy route changes reachability, not the
 OIDC issuer. Validate this with a real browser after proxy configuration,
 because cookies, CSP `form-action`, redirect chains, and forwarded-origin
 handling are browser-visible behavior.
+
+## Automated development assurance
+
+The ticket keeps its runnable assurance tools under
+`ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/`.
+Run them from the repository root in this order:
+
+```sh
+# Build/start the local development topology and confirm both readiness endpoints.
+ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/01-compose-health-smoke.sh
+
+# Install the pinned ticket-local Playwright runner if needed, then exercise
+# actual browser login, consent, scopes, CSRF rejection, message creation,
+# chooser/account switch, local logout, and global logout.
+ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/02-run-playwright-browser-smoke.sh
+
+# Check unprivileged PID 1, development-fixture exposure in rendered config/logs,
+# and persistent key/app/message state across controlled service restarts.
+ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/03-compose-durability-and-secret-check.sh
+```
+
+The browser suite uses only the committed public development fixture. Its
+generated `node_modules`, trace, video, screenshot, and HTML-report artifacts
+are ignored by the ticket-local `.gitignore`; do not commit test output or use
+the scripts with production credentials. The durability check intentionally
+restarts both services and is therefore a development-environment operation.

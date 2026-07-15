@@ -24,6 +24,10 @@ RelatedFiles:
       Note: Callback-origin CSP evidence
     - Path: repo://ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/01-compose-health-smoke.sh
       Note: Reproducible Compose health check
+    - Path: repo://ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/02-external-demo.spec.mjs
+      Note: Committed two-origin browser flow
+    - Path: repo://ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/03-compose-durability-and-secret-check.sh
+      Note: Restart and development-fixture exposure assurance
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-14T21:58:07.711626152-04:00
@@ -929,4 +933,247 @@ development demo:
 production host:
   issuer=https://issuer.example, ProductionMode, secure cookies,
   durable audit/secrets/store, explicit trusted proxy and backchannel policy
+```
+
+## Step 11: Convert browser evidence into a committed two-origin assurance suite
+
+The prior Playwright result was valuable but lived only in an interactive MCP
+session. This step converts the same complete behavior into a version-pinned,
+ticket-local Playwright suite that any developer or CI worker can execute
+against the Compose topology. It also adds a source-level assertion that the
+private Docker backchannel rewrites only the network destination while keeping
+the public issuer Host and logical request URL intact.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 10)
+
+**Assistant interpretation:** Implement the remaining automated two-origin
+integration and operational assurance work, not merely describe it.
+
+**Inferred user intent:** Make the standalone example resistant to regression
+by preserving real browser and durable-state checks in the repository.
+
+**Commit (code):** e4a1a2d — "test(external-demo): automate two-origin assurance"
+
+### What I did
+
+- Added a ticket-local pinned `@playwright/test` package, lockfile, config,
+  artifact `.gitignore`, browser spec, and executable runner at
+  `scripts/02-run-playwright-browser-smoke.sh`.
+- Implemented `02-external-demo.spec.mjs` to check both readiness endpoints,
+  external-mode registration absence, unrecognized callback rejection,
+  `openid`/`profile` consent display, password login, missing-CSRF rejection,
+  message creation, provider chooser behavior after local logout, use-another
+  account behavior, and global logout requiring a fresh password page.
+- Added `TestIssuerRewriteTransportRoutesOnlyTheNetworkDestination` in
+  `examples/tinyidp-message-app/oidc_client_test.go`. It asserts a public
+  `https://issuer.example.test/idp/...` logical request is cloned to the
+  private `http://idp:8081/private-idp/...` destination with the public Host
+  preserved and the original request unchanged.
+- Installed the ticket-local runner and ran the suite successfully against
+  fresh live Compose services, then ran it again after controlled restarts.
+- Ran focused Go packages and Compose schema validation successfully.
+
+### Why
+
+- OIDC redirect and cookie behavior, provider CSP, chooser ownership, and
+  local-versus-global logout are browser properties. A Go handler test cannot
+  establish that Chromium will accept the final redirect chain.
+- The private backchannel transport carries a critical issuer invariant that
+  should have a direct source-level test in addition to its Compose behavior.
+
+### What worked
+
+- `pnpm ... test:browser` passed twice against the real containers. The final
+  run completed one complete scenario in roughly three seconds.
+- `go test ./examples/tinyidp-external-message-desk/... ./examples/tinyidp-message-app ./internal/fositeadapter ./pkg/idpui -count=1` passed.
+- `docker compose -f examples/tinyidp-external-message-desk/compose.yaml config`
+  succeeded.
+
+### What didn't work
+
+- The initial `@playwright/test` 1.55.0 runner expected
+  `chromium_headless_shell-1187`, which was absent even after an installer
+  invocation that printed only ten-percent download progress. The workstation
+  had a complete 1.60.0 Chromium/headless-shell pair, so the pinned runner was
+  updated to 1.60.0 and lockfile regenerated rather than relying on an
+  incomplete browser download.
+- The first live selector expected `Approve access`, while the renderer's
+  actual accessible button name is `Approve`. Playwright's snapshot exposed
+  the exact semantic control and the selector was corrected.
+- A subsequent broad `getByText("Amelie")` assertion matched both the signed-in
+  status and a durable preexisting feed entry. The assertion was scoped to
+  `header .status`, which tests the intended authenticated-session fact rather
+  than an unrelated persisted message.
+
+### What I learned
+
+- Browser assertions must use stable, intentionally scoped accessible names.
+  The selector errors were test-harness defects, not protocol failures, and
+  the snapshots gave precise correction evidence.
+- A pinned Playwright package and a compatible pinned browser build are one
+  operational unit. The lockfile provides runner reproducibility; the runner
+  script documents installation and never commits browser artifacts.
+
+### What was tricky to build
+
+- The flow is stateful by design. A local logout must lead to a chooser only
+  because the same browser retains a provider cookie, while a global logout
+  must later show the password fields. A fresh Playwright page/context and
+  carefully ordered assertions make these two intended states distinguishable.
+- The Message Desk feed is durable, so test text must be unique (`Date.now()`)
+  and the identity assertion must not rely on a possibly repeated author name
+  in historical messages.
+
+### What warrants a second pair of eyes
+
+- Review the browser package/version strategy when CI is introduced. CI should
+  provision the exact Playwright browser build before calling the ticket
+  runner and retain traces only on failure.
+- Review whether another user-facing application needs a separate account
+  fixture/client rather than sharing this intentionally development-only
+  Message Desk client.
+
+### What should be done in the future
+
+- Wire `01`, `02`, and `03` into a CI job with Docker support.
+- Add an HTTPS/reverse-proxy browser variant when a production host topology
+  exists; do not reinterpret this HTTP loopback suite as that evidence.
+
+### Code review instructions
+
+- Read `02-external-demo.spec.mjs` in order; each assertion corresponds to a
+  browser- or protocol-boundary invariant.
+- Read the source transport test beside `issuerRewriteTransport.RoundTrip`.
+- Start Compose, then run `scripts/02-run-playwright-browser-smoke.sh`.
+
+### Technical details
+
+```text
+browser test path:
+guest -> authorize -> password + consent -> callback -> app session
+      -> CSRF-negative POST -> durable message -> local logout -> chooser
+      -> use another account -> global logout -> fresh password login
+
+transport test:
+logical issuer URL and Host remain public; TCP destination becomes private DNS
+```
+
+## Step 12: Add restart, privilege, and development-fixture exposure checks
+
+The browser suite proves the interactive protocol path. This step adds a
+separate shell check for properties that need container introspection and
+controlled restart behavior. It uses only the deliberately public demo
+fixture, checks that the fixture is not emitted in rendered Compose
+configuration or service logs, and proves that the provider signing secret,
+Message Desk state manifest, and public message feed survive restart.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 10)
+
+**Assistant interpretation:** Finish the explicit failure, persistence, and
+secret-leak assurance portion of the existing ticket.
+
+**Inferred user intent:** Demonstrate that a running Docker example has basic
+operational safety properties beyond a single happy-path login.
+
+**Commit (code):** e4a1a2d — "test(external-demo): automate two-origin assurance"
+
+### What I did
+
+- Added executable `scripts/03-compose-durability-and-secret-check.sh`.
+- Checked `/proc/1/status` in each container rather than the diagnostic
+  `docker compose exec` user, proving that both actual server PID 1 processes
+  run unprivileged after the entrypoint's `setpriv` transition.
+- Checked rendered Compose config and accumulated service logs for the public
+  fixture password.
+- Captured hashes for `/state/token.key` and `/state/state.json`, captured the
+  public feed, restarted IdP first, waited for its readiness, restarted the RP,
+  waited for both readiness endpoints, then compared all persisted evidence.
+- Added the three-runner sequence to the example README and completed ticket
+  tasks 6.1 and 6.3 plus their parent assurance phase.
+
+### Why
+
+- Docker `USER`, an entrypoint privilege drop, volume persistence, and log
+  hygiene are not established by a web request. They need direct operational
+  assertions.
+- Restarting the provider before its dependent RP exercises the intended
+  startup ordering without inventing an unsupported simultaneous-restart
+  requirement.
+
+### What worked
+
+- The corrected durability script passed. It reported
+  `durability and development-fixture exposure checks passed` after both
+  controlled service restarts.
+- The subsequent complete Playwright run still passed, confirming browser
+  behavior after the durability exercise.
+
+### What didn't work
+
+- The first privilege check ran `docker compose exec -T idp id -u` and reported
+  `a service is running as root: idp=0 message-desk=0`. This measured Docker's
+  diagnostic exec process, not the service. Inspecting PID 1 through
+  `/proc/1/status` corrected the measurement and confirmed the actual servers
+  are unprivileged.
+- Readiness polling printed transient expected connection messages such as
+  `curl: (52) Empty reply from server` and `curl: (56) Recv failure: Connection reset by peer`
+  during controlled restart. The loop retried and succeeded before its bounded
+  timeout; these are recorded as restart timing observations, not ignored
+  failures.
+
+### What I learned
+
+- Container diagnostics have their own user identity. A meaningful privilege
+  assertion must inspect the process that accepts traffic, not the user Docker
+  gives to an ad-hoc exec command.
+- A local fixture string can be used safely as a negative exposure sentinel
+  only because it is explicitly public and development-only. This script is
+  not a general secret scanner and must not receive real credentials.
+
+### What was tricky to build
+
+- State persistence needs stable evidence. Hashing the IdP token secret and RP
+  manifest proves the essential bootstrap files survive, while byte-comparing
+  the unauthenticated public feed proves the app data view survives. The script
+  restarts the provider first and waits before RP restart because the RP
+  performs discovery at initialization.
+
+### What warrants a second pair of eyes
+
+- Review whether the app readiness endpoint should eventually include an
+  optional external-issuer dependency check. It currently reports its local
+  store/audit readiness; changing that contract could affect availability
+  semantics during provider maintenance.
+- Review production secret scanning separately. Rendered config and logs are
+  useful development checks but cannot replace image/SBOM/secret-manager
+  policy or centralized log retention review.
+
+### What should be done in the future
+
+- Add Docker-capable CI for all three scripts and retain only failure
+  artifacts.
+- Add a production host test that exercises secure cookies and an explicitly
+  trusted proxy boundary.
+
+### Code review instructions
+
+- Read `03-compose-durability-and-secret-check.sh` with
+  `docker-entrypoint.sh` and `compose.yaml`.
+- Run the script only against a local development topology; it intentionally
+  restarts services.
+- Confirm `scripts/.gitignore` excludes `node_modules`, reports, and test
+  artifacts.
+
+### Technical details
+
+```text
+PID 1 uid != 0
+fixture password !in {compose config, service logs}
+sha256(idp token.key) before == after
+sha256(app state.json) before == after
+GET /api/messages before == after
 ```
