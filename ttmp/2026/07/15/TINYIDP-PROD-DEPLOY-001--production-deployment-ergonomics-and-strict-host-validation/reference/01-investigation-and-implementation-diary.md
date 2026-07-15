@@ -566,6 +566,196 @@ redemption updates the durable state within the transaction that persists the
 Fosite access-token session. A later reopen therefore observes the consumed
 state rather than a process-local flag.
 
+## Step 5: Run repository-wide static and dynamic release gates
+
+I ran the repository’s complete local verification stack after the SQLite
+device-auth repair and restart regression were in place. The first complete
+test run exposed a stale xapp CSP assertion, and the subsequent lint/audit
+passes exposed seven code-quality findings plus three static-analysis
+classification/boundary findings. Each was investigated as a concrete
+invariant rather than suppressed. The final independent build, test, lint,
+audit, and vulnerability commands all completed successfully.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead"
+
+**Assistant interpretation:** Continue with the next credible production
+release gates rather than stopping after the device-specific regression tests.
+
+**Inferred user intent:** Treat the project’s own static tooling as evidence,
+fix real defects it discovers, and leave an auditable account of any gate that
+still remains outside the local build.
+
+### What I did
+
+- Ran repository-wide `go test ./...` and `go build ./...`.
+- Corrected the xapp interaction doctor and vertical-slice test to expect the
+  exact CSP required by the validated relying-party callback origin. The
+  provider had intentionally changed from `form-action 'self'` to
+  `form-action 'self' <validated-origin>` so terminal authorization redirects
+  work under CSP; the doctor had not been updated. Committed as `c8f513e`
+  (`fix(xapp): validate callback-aware interaction CSP`).
+- Ran the configured lint target. It reported three named-return policy
+  findings, a capitalized Fosite error, two dead Message Desk functions, and a
+  deprecated Go parser use in the external-import boundary test.
+- Replaced named-return/deferred rollback patterns with explicit rollback or
+  success-state logic, preserved the device-token transaction behavior,
+  removed dead code, lowercased the error, and migrated the AST contract test
+  to `go/packages`. Committed as `48f2ab0`
+  (`chore: resolve configured lint findings`).
+- Ran the project’s Go AST `auditlint` tool. It first flagged a transaction
+  helper used only through `Store.Update`; I documented that transaction scope
+  in the source, which is the analyzer’s deliberate reviewable escape hatch.
+- Improved `auditlint` itself to recognize Fosite’s
+  `storage.MaybeBeginTx` and the bounded collision retry around a single
+  atomic `CreateDeviceGrant` insert. Added analyzer fixtures for both cases.
+- Migrated the standalone external Message Desk seed test from the private
+  memory store to the public `sqlitestore` API, so the external-example
+  boundary applies to tests as well as production code. Committed as
+  `6c03b8c` (`fix(audit): refine persistence analysis gates`).
+- Ran `make vuln` after the static-analysis cleanup.
+
+### Why
+
+Release confidence depends on complementary evidence:
+
+- End-to-end and adapter tests exercise protocol behavior.
+- The compiler and linter expose dead paths and misleading interfaces.
+- Purpose-built AST analyzers encode project-specific rules that generic Go
+  tooling cannot infer, including public embedding boundaries and persistence
+  transaction discipline.
+- Vulnerability analysis checks the module dependency graph for known
+  reachable vulnerabilities.
+
+Correcting a stale verifier is security work when it would otherwise declare a
+working restrictive policy invalid or tempt a later maintainer to weaken the
+provider CSP merely to satisfy the test.
+
+### What worked
+
+The final independently observed gates were:
+
+```text
+go test ./... -count=1
+ok github.com/manuel/tinyidp/cmd/tinyidp-xapp
+ok github.com/manuel/tinyidp/examples/tinyidp-external-message-desk
+ok github.com/manuel/tinyidp/examples/tinyidp-message-app
+ok github.com/manuel/tinyidp/internal/fositeadapter
+... all remaining packages passed
+
+go build ./...
+# success
+
+make lint
+0 issues.
+
+make auditlint
+# success
+
+make vuln
+# success; govulncheck reported no findings
+```
+
+The `make verify` aggregate target also began successfully, but its tool-job
+handle disappeared while its full test output was still streaming. No process
+remained afterward. I therefore reran the five constituent gates independently
+and recorded their successful exits above rather than treating the aggregate
+wrapper interruption as a pass.
+
+### What didn't work
+
+- The first full suite failed because `CheckInteractionUI` assumed the old
+  fixed CSP. The provider’s callback-origin policy was intentional and already
+  covered by its direct renderer test; the xapp verifier was stale.
+- The first lint invocation reported seven actionable issues. None required a
+  configuration suppression.
+- The first audit pass reported helper/retry patterns it could not classify.
+  The transaction-scoped helper was correctly atomic; the analyzer needed
+  explicit support for Fosite’s transaction API and a tested distinction
+  between one-statement collision retries and multi-write loops.
+- The aggregate `make verify` process could not be reattached after output
+  streaming. Independent reruns supplied the complete evidence.
+
+### What I learned
+
+The repository already has a useful layered analysis capability:
+
+```text
+generic Go analysis
+    -> compiler, tests, staticcheck, govet, golangci-lint
+project-specific AST analysis
+    -> CLI conventions, renderer safety, persistence atomicity,
+       embedding boundaries, audit delivery, protocol lifecycle
+dependency analysis
+    -> govulncheck
+```
+
+The value of the project-specific layer depends on maintaining its false
+positive model. An unreviewed blanket exemption would reduce trust; a narrowly
+documented transaction-scoped helper and analyzer fixtures make the intended
+semantics inspectable and regression-tested.
+
+### What was tricky to build
+
+The device-token handler previously used a named return so a deferred rollback
+could observe every return path. Removing that lint violation required making
+rollback explicit on each failure after `MaybeBeginTx`, including token-session
+write failures and commit failures. Existing device failpoint tests and the
+new SQLite restart tests protect the resulting transaction behavior.
+
+The CSP doctor cannot compare against a constant because the expected allowed
+callback origin varies per registered redirect URI. It now derives only
+`scheme://host` from the already generated authorization target and compares
+the full restrictive policy exactly.
+
+### What warrants a second pair of eyes
+
+- Review the `auditlint` classification of `CreateDeviceGrant` against its
+  actual SQLite implementation whenever that storage method changes from one
+  statement to a compound operation.
+- Review the explicit device-token rollback paths with a focus on any future
+  Fosite API additions between transaction acquisition and commit.
+- Review the xapp CSP checker if applications begin registering nonstandard
+  redirect schemes or if the provider adds a different terminal interaction
+  mechanism.
+
+### What should be done in the future
+
+- Complete the ticket’s still-open locally trusted browser-TLS gate; current
+  automated endpoint coverage does not prove certificate trust, rendering, or
+  browser navigation policy under the production certificate chain.
+- Execute and document a real backup/restore drill, including signing keys and
+  the consumed-device-grant property after restoration.
+- Obtain an external code/security review before a public production release.
+
+### Code review instructions
+
+- Review `cmd/tinyidp-xapp/interaction_doctor.go` with
+  `internal/fositeadapter/rendering.go`; confirm the verifier checks the
+  provider policy instead of replacing it with a weaker constant.
+- Review `internal/fositeadapter/device_token_handler.go` and run its
+  failpoint/restart tests.
+- Review the narrow `auditlint` additions and their fixture counterpart under
+  `TINYIDP-PROD-REVIEW-001`; ensure they classify only the documented cases.
+- Run the five commands in **What worked**.
+
+### Technical details
+
+The account-selection activation helper performs three writes—new active
+session, remembered-entry `last_used_at`, and browser-context `last_seen_at`—
+but its public entry point invokes it only on a `Store` whose `runner` is an
+open `sql.Tx`. The `tinyidp:transaction-scoped` marker is not a blanket
+suppression: the code comment records the exact caller contract and the
+analyzer recognizes that marker only on the documented helper.
+
+The device-authorization allocation loop has one SQLite `INSERT` attempt per
+iteration. A duplicate code causes no partial state and the loop retries with
+new random codes; a successful iteration returns immediately. It is therefore
+not a multi-write atomicity candidate. By contrast, device-token redemption
+creates token sessions and consumes a grant as one transaction, and the
+analyzer now recognizes the Fosite `MaybeBeginTx` boundary that enforces it.
+
 ## Usage Examples
 
 <!-- Show how to use this reference in practice -->

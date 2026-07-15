@@ -38,3 +38,12 @@ Added and passed the SQLite close/reopen redemption and replay regression gate; 
 ### Related Files
 
 - internal/fositeadapter/sqlstore_test.go — Restart and replay coverage
+
+## 2026-07-15 - Completed local static and dynamic release gates
+
+Ran and recorded full tests, build, lint, project-specific audit AST analysis, and dependency vulnerability analysis; fixed the CSP verifier, lint findings, audit classifications, and an external-example private import.
+
+### Related Files
+
+- internal/fositeadapter/device_token_handler.go — Device transaction assurance
+- ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint/main.go — Static-analysis assurance

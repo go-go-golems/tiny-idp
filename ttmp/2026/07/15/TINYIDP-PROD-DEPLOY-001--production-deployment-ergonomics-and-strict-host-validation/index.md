@@ -13,14 +13,25 @@ DocType: index
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/interaction_doctor.go
+      Note: Callback-aware CSP verification for xapp interaction health checks
+    - Path: repo://examples/tinyidp-external-message-desk/idp_seed_test.go
+      Note: External example uses public durable-store surface
+    - Path: repo://internal/fositeadapter/device_token_handler.go
+      Note: Explicit transaction rollback paths for device-token persistence
     - Path: repo://internal/fositeadapter/sqlstore_test.go
       Note: SQLite close/reopen device-grant redemption and replay regression coverage
+    - Path: repo://pkg/sqlitestore/store.go
+      Note: Documented transaction-scoped account-selection activation helper
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint/main.go
+      Note: Project-specific persistence and embedding AST analysis
 ExternalSources: []
 Summary: Repeatable strict-host provisioning, deployment boundaries, and smoke-validation evidence.
 LastUpdated: 2026-07-15T18:05:00Z
 WhatFor: Make the production host operable without conflating it with the local development server.
 WhenToUse: Use before provisioning, deploying, or release-gating tinyidp's strict host.
 ---
+
 
 
 # Production Deployment Ergonomics and Strict Host Validation
