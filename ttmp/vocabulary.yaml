@@ -29,6 +29,8 @@ topics:
       description: Security architecture, analysis, verification, controls, and assurance evidence
     - slug: oauth2
       description: OAuth 2.0 protocols, grants, clients, and authorization-server security
+    - slug: docker
+      description: Containerized deployment topology and Docker Compose operations.
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
