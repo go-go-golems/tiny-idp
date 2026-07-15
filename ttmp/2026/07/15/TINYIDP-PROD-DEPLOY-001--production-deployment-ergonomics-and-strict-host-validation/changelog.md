@@ -47,3 +47,12 @@ Ran and recorded full tests, build, lint, project-specific audit AST analysis, a
 
 - internal/fositeadapter/device_token_handler.go — Device transaction assurance
 - ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint/main.go — Static-analysis assurance
+
+## 2026-07-15 - Completed strict-host backup and restore drill
+
+Added reusable online-backup and offline-restore scripts; verified a live backup, durable rollback preservation, restored-state doctor, and TLS readiness after restart.
+
+### Related Files
+
+- scripts/04-create-online-backup.sh — Online backup evidence
+- scripts/05-offline-restore-drill.sh — Restore and rollback evidence

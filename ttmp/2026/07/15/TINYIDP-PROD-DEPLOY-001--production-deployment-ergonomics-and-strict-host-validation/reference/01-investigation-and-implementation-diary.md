@@ -756,6 +756,144 @@ not a multi-write atomicity candidate. By contrast, device-token redemption
 creates token sessions and consumes a grant as one transaction, and the
 analyzer now recognizes the Fosite `MaybeBeginTx` boundary that enforces it.
 
+## Step 6: Exercise online backup and offline restore against a strict host
+
+I turned the storage document’s backup/restore contract into two reusable
+operator scripts and ran a complete recovery drill on a fresh temporary
+strict-host fixture. The backup was created while a direct-TLS server was
+actively serving. Restoration occurred only after stopping that server; it
+then restored the known backup, retained the changed database as a rollback
+artifact, and successfully restarted the strict host from restored state.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead"
+
+**Assistant interpretation:** Continue the next open production release task
+after completing local code, test, lint, audit, and vulnerability gates.
+
+**Inferred user intent:** Verify the documented data-recovery contract in a
+real operator workflow, not only through unit tests.
+
+### What I did
+
+- Added `scripts/04-create-online-backup.sh`. It refuses an existing output,
+  creates a mode-`0700` backup directory, invokes
+  `tinyidp admin backup create`, then verifies the artifact read-only.
+- Added `scripts/05-offline-restore-drill.sh`. It refuses missing input or
+  SQLite `-wal`/`-shm` sidecars, creates a disposable post-backup user,
+  restores the verified artifact, runs `admin doctor`, verifies that the
+  restored database no longer has the probe user, and verifies that the
+  timestamped pre-restore rollback database still has it.
+- Provisioned a fresh fixture under
+  `/tmp/tinyidp-backup-drill-uvNTwV` using the existing strict-host script.
+- Started the fixture in tmux at `https://localhost:9444`, certificate-checked
+  `/healthz`, `/readyz`, and discovery, and ran the online-backup script while
+  the host was listening.
+- Stopped only the temporary port-9444 server with `lsof-who -p 9444 -k`.
+- Ran the offline restore drill. It created `restore-probe` after the backup,
+  restored the backup, and preserved the changed database as
+  `idp.db.pre-restore-20260715T185302.946387208Z`.
+- Restarted the restored database in tmux and repeated the certificate-checked
+  liveness, readiness, and discovery probe successfully.
+
+### Why
+
+Database backup code is necessary but not sufficient operational evidence. An
+operator must demonstrate four different properties:
+
+1. The online copy is self-consistent while the server is live.
+2. The artifact verifies before it is trusted for restoration.
+3. Restore is offline and does not silently discard the replaced database.
+4. The restored database can satisfy the strict host’s actual startup and
+   readiness requirements, including its signing key and schema.
+
+The disposable user makes state comparison meaningful: the backup is taken
+before that user exists, so successful restoration has a clear positive and
+negative assertion.
+
+### What worked
+
+The live backup returned a manifest with schema version 9, one client, one
+user, one password credential, and active signing key `local-strict-smoke`.
+`backup verify` accepted the artifact. The offline drill produced:
+
+```text
+restore drill passed
+restored database: /tmp/tinyidp-backup-drill-uvNTwV/idp.db
+preserved rollback: .../idp.db.pre-restore-20260715T185302.946387208Z
+```
+
+After restart, `/readyz` reported all strict checks ready: lifecycle, store,
+schema, signing key, token secret, audit, rate limiter, and maintenance.
+Discovery again advertised `https://localhost:9444` as issuer.
+
+### What didn't work
+
+The first immediate post-restart curl reached port 9444 before `go run` had
+finished compiling and starting the server. A tmux pane capture showed the
+listener became ready moments later; the same TLS-verifying probe then passed.
+This is a harness startup race, not a restored-state failure. The reusable
+scripts intentionally do not hide such races with an unbounded sleep; a future
+CI wrapper should use bounded readiness polling with a diagnostic timeout.
+
+### What I learned
+
+The backup artifact contains all durable identity state needed by this host:
+schema ledger, clients, password credential, user, and private signing key.
+It does not replace the independent token-secret file or TLS material, so
+those files remain part of a full disaster-recovery inventory. The strict-host
+restart probe is therefore important: a database-only restore can be internally
+consistent and still fail an operational prerequisite if companion secrets are
+lost or mismatched.
+
+### What was tricky to build
+
+The restore command correctly refuses active SQLite sidecars, but an operator
+also has to ensure the provider process itself is stopped. The script checks
+the sidecars and states the process requirement; it cannot safely infer every
+possible process owner from a database path. The live online backup and
+offline restore are deliberately separate phases for that reason.
+
+### What warrants a second pair of eyes
+
+- Review whether the production runbook should require an encrypted,
+  separately retained copy of the token-secret file alongside every database
+  backup.
+- Review whether a timed readiness-poll wrapper belongs in CI, keeping the
+  current scripts as transparent operator primitives.
+- Confirm backup retention, off-host replication, and restore authorization
+  policy with the team operating the production environment.
+
+### What should be done in the future
+
+- Repeat this drill in the intended deployment topology and document the
+  actual secret-recovery procedure.
+- Add a bounded CI wrapper that performs the full online-backup/offline-restore
+  sequence and stores only redacted diagnostics on failure.
+- Complete trusted-browser TLS automation and independent external review
+  before declaring a public production release.
+
+### Code review instructions
+
+- Read `docs/storage.md` first, then both new scripts.
+- Confirm script 04 has no destructive operation and script 05 refuses active
+  sidecars before invoking restore.
+- In a throwaway directory, provision a host, start it in tmux, run script 04,
+  stop it, run script 05, restart it, and run script 03.
+- Do not use the scripts against a production database without first following
+  the environment’s backup retention and change-control procedure.
+
+### Technical details
+
+The online backup uses SQLite’s backup API rather than copying the main
+database file, so committed WAL content is included. Restore verifies the
+artifact before and after staging it, moves the current database to a
+same-directory timestamped rollback path, atomically installs the staged
+database, and fsyncs the relevant directory. The drill confirms the rollback
+path by querying it through the normal public admin API; it does not inspect
+SQLite tables directly or rely on an implementation-only memory store.
+
 ## Usage Examples
 
 <!-- Show how to use this reference in practice -->

@@ -13,4 +13,6 @@
 - [x] Phase 4: Run the real admin provisioning sequence and browser device-verification smoke <!-- t:real-smoke -->
 - [x] Phase 4: Diagnose and fix the post-approval strict-host unresponsiveness before treating device authorization as release-ready <!-- t:blocker -->
 - [ ] Phase 5: Add automated strict-host browser/device smoke coverage with a locally trusted certificate <!-- t:automated-smoke -->
-- [ ] Phase 5: Complete backup/restore drill, external review, and production release checklist <!-- t:release -->
+- [x] Phase 5: Exercise and script an online SQLite backup plus offline restore/rollback drill <!-- t:backup-restore -->
+- [ ] Phase 5: Obtain an independent external security/code review <!-- t:external-review -->
+- [ ] Phase 5: Complete the production release checklist after all release gates are satisfied <!-- t:release -->

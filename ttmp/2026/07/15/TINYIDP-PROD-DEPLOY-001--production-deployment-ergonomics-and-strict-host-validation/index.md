@@ -15,6 +15,8 @@ Owners: []
 RelatedFiles:
     - Path: repo://cmd/tinyidp-xapp/interaction_doctor.go
       Note: Callback-aware CSP verification for xapp interaction health checks
+    - Path: repo://docs/storage.md
+      Note: Supported SQLite backup and restore contract
     - Path: repo://examples/tinyidp-external-message-desk/idp_seed_test.go
       Note: External example uses public durable-store surface
     - Path: repo://internal/fositeadapter/device_token_handler.go
@@ -25,12 +27,17 @@ RelatedFiles:
       Note: Documented transaction-scoped account-selection activation helper
     - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint/main.go
       Note: Project-specific persistence and embedding AST analysis
+    - Path: repo://ttmp/2026/07/15/TINYIDP-PROD-DEPLOY-001--production-deployment-ergonomics-and-strict-host-validation/scripts/04-create-online-backup.sh
+      Note: Online SQLite backup and artifact verification operator primitive
+    - Path: repo://ttmp/2026/07/15/TINYIDP-PROD-DEPLOY-001--production-deployment-ergonomics-and-strict-host-validation/scripts/05-offline-restore-drill.sh
+      Note: Offline restore, rollback preservation, and durable-state recovery drill
 ExternalSources: []
 Summary: Repeatable strict-host provisioning, deployment boundaries, and smoke-validation evidence.
 LastUpdated: 2026-07-15T18:05:00Z
 WhatFor: Make the production host operable without conflating it with the local development server.
 WhenToUse: Use before provisioning, deploying, or release-gating tinyidp's strict host.
 ---
+
 
 
 
