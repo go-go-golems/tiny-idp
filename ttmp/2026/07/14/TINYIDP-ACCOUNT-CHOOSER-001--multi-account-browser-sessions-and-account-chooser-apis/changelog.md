@@ -48,3 +48,12 @@ Completed standard select-account transitions: fresh session-bound consent conti
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/oidc_client.go — Host requests standard select_account prompt.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Security-sensitive interaction state transitions.
 
+
+## 2026-07-14
+
+Launched and wire-verified the Message Desk account-chooser demo on 127.0.0.1:8090; Playwright smoke source is recorded pending explicit third-party npm execution approval.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/05-message-desk-smoke.spec.mjs — Prepared browser smoke script.
+

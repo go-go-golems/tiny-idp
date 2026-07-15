@@ -946,3 +946,144 @@ Message Desk /auth/login
   -> PKCE + nonce + prompt=select_account
   -> provider decides chooser versus normal login
 ```
+
+## Step 8: Launch the real embedded host and prepare browser automation
+
+The completed code is running as the actual self-contained Message Desk
+application, rather than an `httptest` fixture. The health endpoint reports
+the embedded tiny-idp lifecycle as ready, the anonymous session endpoint
+reports `authenticated: false`, and the live login redirect contains the
+expected OIDC PKCE parameters plus `prompt=select_account`.
+
+The Playwright source is stored in the ticket so the browser assertion is
+reviewable and repeatable. The repository has the Playwright CLI but not the
+`@playwright/test` module that supplies the test API; fetching that dependency
+would execute newly downloaded third-party npm code with host access, so the
+environment requires an explicit user approval before that final browser gate
+can run.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 6)
+
+**Assistant interpretation:** Continue until the concrete demonstration is
+live and give the user a testable result, while retaining the intended browser
+automation evidence.
+
+**Inferred user intent:** Validate the embedded application’s real network
+surface in addition to protocol-level integration tests.
+
+**Commit (code):** N/A — launch and validation only; prior code commits are
+`8c5bdc5` and `3ee16cc`.
+
+### What I did
+
+- Initialized isolated local state at `/tmp/tinyidp-account-chooser-demo` with
+  public base URL `http://127.0.0.1:8090`.
+- Started the host in tmux session `tinyidp-account-chooser` with:
+
+```text
+go run ./examples/tinyidp-message-app serve \
+  --state-root /tmp/tinyidp-account-chooser-demo \
+  --addr 127.0.0.1:8090 --log-level info
+```
+
+- Captured the pane’s successful startup line and verified `/healthz` and
+  `/api/session` over loopback.
+- Requested `/auth/login?return_to=/` and inspected its `303 Location`; it
+  includes `prompt=select_account`, `code_challenge_method=S256`, nonce,
+  state, and the local registered callback URL.
+- Added the prepared Playwright smoke source as `scripts/05-message-desk-smoke.spec.mjs`.
+
+### Why
+
+- Unit and integration tests prove protocol paths, while the live check proves
+  the command wiring, embedded asset server, issuer, in-process back-channel,
+  and public frontend origin agree.
+- Keeping the browser script in the ticket makes the final test gate
+  reproducible rather than an undocumented manual browser session.
+
+### What worked
+
+```text
+GET /healthz     -> 200 {"ready":true,...}
+GET /api/session -> {"authenticated":false}
+GET /auth/login  -> 303 Location: ...prompt=select_account...
+```
+
+The tmux pane reports:
+
+```text
+INF message application listening addr=127.0.0.1:8090 origin=http://127.0.0.1:8090
+```
+
+### What didn't work
+
+- `npx playwright test ... --project=chromium` could not run the stored test
+  because the local CLI reports no configured projects and the repository does
+  not provide `@playwright/test`.
+- The direct bootstrap command
+  `npx --yes --package @playwright/test playwright test ... --browser=chromium`
+  was rejected by the execution environment because it would fetch and
+  execute third-party npm code with host access. This is an approval boundary,
+  not a code or test failure.
+- An earlier combined startup command did not leave a tmux session. Running
+  initialization directly succeeded, then starting tmux as a separate command
+  succeeded and produced the healthy server above.
+
+### What I learned
+
+- The Message Desk integration point is exactly one generated authorization
+  parameter; the live redirect confirms it is not only unit-tested but emitted
+  by the binary that users run.
+- Browser-test dependencies need to be present in the repository/toolchain or
+  explicitly approved at runtime. Recording this boundary prevents an
+  apparently skipped security gate from being misread as a passing gate.
+
+### What was tricky to build
+
+The public browser flow and the back-channel intentionally use different
+paths: the browser follows the local public issuer URL, while token exchange
+uses the explicit in-process transport. The live redirect check validates only
+the former, so the earlier Go application integration tests remain necessary
+to validate the latter. Together they cover the split without opening a
+network dependency for token exchange.
+
+### What warrants a second pair of eyes
+
+- The live server contains pre-existing uncommitted Message Desk global-logout
+  changes, deliberately not staged by this ticket. Global IdP logout revokes
+  the remembered browser context; a local RP sign-out control is the remaining
+  UX decision for a multi-account demonstration.
+- The Playwright smoke currently checks the guest landing page. Extend it,
+  after dependency approval, with registration, provider login, explicit
+  account selection, use-another, denial, and browser-context isolation.
+
+### What should be done in the future
+
+- Obtain approval to install/run `@playwright/test`, execute the stored smoke,
+  then add the authenticated multi-account scenarios described above.
+- Resolve the host-local versus provider-global logout UI before claiming a
+  polished Google-style multiple-account demonstration.
+
+### Code review instructions
+
+- Inspect `scripts/05-message-desk-smoke.spec.mjs` and compare its base URL to
+  the documented tmux command.
+- Reproduce the wire check with:
+
+```text
+curl -isS 'http://127.0.0.1:8090/auth/login?return_to=/'
+```
+
+- Inspect tmux with `tmux capture-pane -pt tinyidp-account-chooser -S -100`.
+
+### Technical details
+
+```text
+browser -> http://127.0.0.1:8090/auth/login
+        -> 303 /idp/authorize?PKCE&nonce&prompt=select_account
+        -> tiny-idp interaction UI
+
+token exchange -> explicit in-process issuer transport
+```
