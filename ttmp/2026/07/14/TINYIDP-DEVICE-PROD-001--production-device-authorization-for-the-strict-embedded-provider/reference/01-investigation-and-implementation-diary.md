@@ -991,3 +991,145 @@ POST /device
      // any error rolls back both state changes
   -> secret-free audit + terminal no-store page
 ```
+
+## Step 6: Implement the Fosite device-code token extension
+
+This is the first Phase 5 implementation increment. The installed Fosite
+version (v0.49.0) has no built-in RFC 8628 handler, but it exposes the
+`TokenEndpointHandler` extension contract and its standard token-storage
+transaction lifecycle. The implementation uses that contract instead of
+creating a second token endpoint or independently minting bearer tokens.
+
+### Prompt Context
+
+`continue` — same continuation prompt as the prior steps. Work progressed from
+the committed Phase 4 browser boundary into Phase 5 token redemption.
+
+### What I did
+
+- Inspected the installed Fosite handler and transaction sources locally,
+  including `flow_authorize_code_token.go`, `access_request_handler.go`, and
+  the OpenID token helper. This established that custom grants must implement
+  `TokenEndpointHandler` and explicitly invoke Fosite's transactional storage
+  lifecycle in `PopulateTokenEndpointResponse`.
+- Added `deviceTokenHandler`, appended to `Config.TokenEndpointHandlers` before
+  composing the provider. It requires normal Fosite client authentication,
+  requires exactly the device grant type, rejects duplicate/missing device
+  codes and token-request scopes, polls the durable grant, and maps pending,
+  slowdown, denial, expiry, and replay states to RFC 8628 token errors.
+- On an approved grant, reloaded the subject, replaced requester scopes with
+  the durable approved scope set, populated a normal OIDC session with the
+  stored authentication time, and issued access plus ID tokens through Fosite's
+  existing HMAC and OpenID strategies. Refresh tokens are issued only if the
+  client explicitly permits `refresh_token` and the approved scopes contain
+  `offline_access`.
+- Refactored `newOIDCSession` to accept the common `fosite.Requester` interface
+  because the device exchange has a token requester rather than an authorize
+  requester; the session construction itself requires no authorize-only API.
+- Added `sqlFositeStore.consumeDeviceGrantInTokenTransaction`. It reads and
+  conditionally updates `device_grants` through the same `tokenLifecycle` SQL
+  transaction Fosite uses to create access/refresh records. It does not call
+  `Store.Update`, which would incorrectly open a second transaction.
+- Added an HTTP end-to-end test for pending, browser approval, token issuance,
+  UserInfo, durable consumption, and replay. Added SQLite failpoint tests for
+  begin, device consumption, access-token persistence, and commit failures;
+  each asserts the grant remains approved and no token rows persist.
+
+### Why
+
+- Device-code consumption is a bearer-credential one-time transition. If it
+  commits before token persistence, a transient token write failure burns a
+  legitimate authorization; if it commits after token persistence, a replay
+  can issue another token. One database transaction is the required boundary.
+- Fosite already maintains the same semantics for authorization-code and
+  refresh-token storage. Using its strategy/session APIs keeps UserInfo,
+  introspection, signing-key selection, and standard token response behavior
+  aligned across grants.
+
+### What worked
+
+- The focused HTTP test confirmed `authorization_pending` before approval,
+  access and ID tokens after approval, a valid UserInfo response for
+  `user-alice`, durable `consumed` state, and `invalid_grant` on replay.
+- The SQLite failpoint suite exercised the new `before/after_consume_device_grant`
+  hook points as well as the existing token transaction hooks. It verifies that
+  no failed persistence point consumes the grant or leaves access/refresh rows.
+
+### What didn't work
+
+- The first end-to-end token test used a fixed test `auth_time` later than the
+  host wall clock. Fosite's ID-token strategy correctly rejected it as a future
+  authentication time and returned `server_error`. The test now chooses a
+  timestamp one minute before the wall clock; production timestamps already
+  come from the provider clock and must obey this Fosite invariant.
+- A first test revision attempted to create another grant with the same
+  deterministic test generator after a pending poll. The endpoint correctly
+  rejected the duplicate pair, leaving the confirmation page at code entry.
+  The test now uses an independent provider/grant for the ready-exchange case,
+  rather than bypassing the durable polling rule.
+
+### What I learned
+
+- Fosite's token transaction does not begin around all handlers automatically;
+  its authorization-code handler explicitly calls `storage.MaybeBeginTx` in
+  the response population phase. The device handler mirrors that pattern.
+- The request form is persisted indirectly through Fosite requester storage.
+  Removing `device_code` after it is hashed/consumed and before session
+  persistence prevents a raw bearer credential from entering Fosite rows.
+
+### What was tricky to build
+
+- The handler runs once to validate/poll and later to populate the response.
+  The durable approved grant is checked again by the conditional consume inside
+  the transaction, so the time gap between the two phases cannot create a
+  double issue.
+- The custom device grant has no Fosite-native lifetime configuration slot.
+  It deliberately uses tiny-idp's configured access/ID/refresh lifetimes as
+  the fallback while preserving the client capability checks.
+
+### What warrants a second pair of eyes
+
+- Review the exact RFC error descriptions and status handling against the
+  preserved RFC 8628 source before external compatibility is promised. The
+  error codes are implemented; wording remains intentionally generic.
+- Review the development-memory fallback. Production SQLite shares the Fosite
+  SQL transaction; the development-only in-memory store cannot provide that
+  cross-store atomicity and should never be treated as a production topology.
+
+### What should be done in the future
+
+- Finish Phase 5’s full error matrix: explicit tests for `slow_down`, denial,
+  expiry, wrong client, malformed duplicate fields, refresh policy, and key
+  rotation; then add a real HTTP token-body limit at the shared token boundary.
+- Add a retry-after-failpoint assertion after the SQLite suite to demonstrate
+  that the same approved device grant can successfully redeem once the injected
+  failure is removed.
+
+### Code review instructions
+
+- Read `device_token_handler.go` beside Fosite's local
+  `handler/oauth2/flow_authorize_code_token.go`. Verify the begin/rollback/
+  commit shape and the order: generate values, begin transaction, conditional
+  consume, persist token sessions, issue response, commit.
+- Read `consumeDeviceGrantInTokenTransaction` and confirm every query uses the
+  `tokenLifecycle` transaction, not `s.project` or `s.db` directly.
+- Run `go test ./internal/fositeadapter -run
+  'Test(DeviceTokenExchange|SQLiteDeviceTokenRedemption)' -count=1`.
+
+### Technical details
+
+```text
+POST /token (grant_type=device_code)
+  -> Fosite authenticates client
+  -> PollDeviceGrant(device-code hash, authenticated client)
+     pending / slow_down / denied / expired / consumed -> RFC error
+     approved -> requester{subject, auth_time, approved scopes, OIDC session}
+  -> generate access/optional refresh token values
+  -> Fosite SQL transaction:
+       UPDATE device_grants ... WHERE status='approved' AND expires_at > now
+       INSERT fosite_access_tokens ...
+       INSERT fosite_refresh_tokens ... (only explicit policy)
+       sign ID token
+       COMMIT
+  -> one token response; no raw device code in persisted requester data
+```

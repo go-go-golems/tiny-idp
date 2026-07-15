@@ -421,6 +421,94 @@ func TestDeviceVerificationRendererFailureFailsClosed(t *testing.T) {
 	t.Fatal("renderer failure was not audited")
 }
 
+func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *testing.T) {
+	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	provider, _, _ := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-one", "ABCD-EFGH", nil }, now)
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	client := newDeviceVerificationHTTPClient(t)
+	start, err := client.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var device deviceAuthorizationResponse
+	if err := json.NewDecoder(start.Body).Decode(&device); err != nil {
+		t.Fatal(err)
+	}
+	_ = start.Body.Close()
+	pending := postDeviceToken(t, client, server.URL, device.DeviceCode, "device-cli")
+	if pending.StatusCode != http.StatusBadRequest || tokenErrorCode(t, pending) != "authorization_pending" {
+		t.Fatalf("pending token response = %d", pending.StatusCode)
+	}
+	// A pending poll advances its durable next-poll time. Exercise the successful
+	// redemption on an independent grant so this test does not bypass that
+	// protocol rule with test-only store mutation.
+	readyProvider, readyStore, readySink := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-ready", "JKLM-NPQR", nil }, now)
+	readyServer := httptest.NewServer(readyProvider.Handler())
+	defer readyServer.Close()
+	readyClient := newDeviceVerificationHTTPClient(t)
+	secondStart, err := readyClient.PostForm(readyServer.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var readyDevice deviceAuthorizationResponse
+	if err := json.NewDecoder(secondStart.Body).Decode(&readyDevice); err != nil {
+		t.Fatal(err)
+	}
+	_ = secondStart.Body.Close()
+	readyPage := getDeviceVerificationPage(t, readyClient, readyServer.URL+"/device?user_code="+readyDevice.UserCode, http.StatusOK)
+	readyDecision := deviceVerificationHiddenFields(t, readyPage)
+	readyDecision.Set(idpui.ActionFieldName, string(idpui.ActionApprove))
+	readyDecision.Set(idpui.LoginFieldName, "alice")
+	readyDecision.Set(idpui.PasswordFieldName, "password")
+	readyApproval, err := readyClient.PostForm(readyServer.URL+"/device", readyDecision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = readyApproval.Body.Close()
+	token := postDeviceToken(t, readyClient, readyServer.URL, readyDevice.DeviceCode, "device-cli")
+	if token.StatusCode != http.StatusOK {
+		t.Fatalf("token status = %d body=%q audit=%#v", token.StatusCode, readAndClose(t, token), readySink.Events())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(token.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	_ = token.Body.Close()
+	accessToken, _ := body["access_token"].(string)
+	if accessToken == "" || body["token_type"] != "bearer" || body["id_token"] == "" || body["scope"] != "openid profile" {
+		t.Fatalf("token body = %#v", body)
+	}
+	userinfo, err := http.NewRequest(http.MethodGet, readyServer.URL+"/userinfo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userinfo.Header.Set("Authorization", "Bearer "+accessToken)
+	userResponse, err := readyClient.Do(userinfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if userResponse.StatusCode != http.StatusOK {
+		t.Fatalf("userinfo status = %d body=%q", userResponse.StatusCode, readAndClose(t, userResponse))
+	}
+	var claims map[string]any
+	if err := json.NewDecoder(userResponse.Body).Decode(&claims); err != nil {
+		t.Fatal(err)
+	}
+	_ = userResponse.Body.Close()
+	if claims["sub"] != "user-alice" || claims["name"] != "Alice" {
+		t.Fatalf("userinfo claims = %#v", claims)
+	}
+	grant, err := readyStore.InspectDeviceGrantByDeviceCodeHash(context.Background(), deviceCodeHash([]byte("device-auth-test-secret-key-32-bytes"), readyDevice.DeviceCode), "device-cli")
+	if err != nil || grant.Status != idpstore.DeviceGrantConsumed {
+		t.Fatalf("consumed grant = %#v %v", grant, err)
+	}
+	replay := postDeviceToken(t, readyClient, readyServer.URL, readyDevice.DeviceCode, "device-cli")
+	if replay.StatusCode != http.StatusBadRequest || tokenErrorCode(t, replay) != "invalid_grant" {
+		t.Fatalf("replay token response = %d", replay.StatusCode)
+	}
+}
+
 func newDeviceAuthorizationProvider(t *testing.T, generator func() (string, string, error), now time.Time) (*Provider, *memory.Store, *idp.MemorySink) {
 	t.Helper()
 	ctx := context.Background()
@@ -515,4 +603,24 @@ func cookieNamed(cookies []*http.Cookie, name string) bool {
 		}
 	}
 	return false
+}
+
+func postDeviceToken(t *testing.T, client *http.Client, serverURL, deviceCode, clientID string) *http.Response {
+	t.Helper()
+	response, err := client.PostForm(serverURL+"/token", url.Values{"grant_type": {idpstore.GrantDeviceCode}, "device_code": {deviceCode}, "client_id": {clientID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
+func tokenErrorCode(t *testing.T, response *http.Response) string {
+	t.Helper()
+	var body map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	code, _ := body["error"].(string)
+	return code
 }

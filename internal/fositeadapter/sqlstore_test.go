@@ -234,6 +234,71 @@ func TestSQLiteAuthorizationCodeRedemptionFailpointsAreAtomic(t *testing.T) {
 	}
 }
 
+func TestSQLiteDeviceTokenRedemptionFailpointsRollbackGrantAndTokens(t *testing.T) {
+	points := []string{
+		"before_begin_token",
+		"before_consume_device_grant",
+		"after_consume_device_grant",
+		"before_create_access_token",
+		"after_create_access_token",
+		"before_commit_token",
+	}
+	for _, point := range points {
+		t.Run(point, func(t *testing.T) {
+			ctx := context.Background()
+			now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+			secret := []byte("sqlite-device-token-secret-key-32b")
+			store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
+				t.Fatal(err)
+			}
+			key, err := keys.GenerateRSA("kid-device-token", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.CreateSigningKey(ctx, key); err != nil {
+				t.Fatal(err)
+			}
+			deviceCode := "sqlite-device-code"
+			grant := idpstore.DeviceGrant{ID: "device-grant", DeviceCodeHash: idpstore.HashSecret(secret, "tinyidp/device-code/v1\x00"+deviceCode), UserCodeHash: idpstore.HashSecret(secret, "tinyidp/user-code/v1\x00ABCD-EFGH"), ClientID: "device-cli", RequestedScopes: []string{"openid"}, Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(time.Hour), PollInterval: time.Second, NextPollAt: now}
+			if err := store.CreateDeviceGrant(ctx, grant); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.DecideDeviceGrant(ctx, idpstore.DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: idpstore.DeviceGrantApprove, UserID: "u1", Subject: "user-alice", AuthTime: now, AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, Now: now}); err != nil {
+				t.Fatal(err)
+			}
+			provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, Clock: func() time.Time { return now }, TokenPersistenceHook: func(candidate string) error {
+				if candidate == point {
+					return errors.New("injected device token persistence failure")
+				}
+				return nil
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(provider.Handler())
+			defer server.Close()
+			status, _ := postTokenForm(t, server.URL, url.Values{"grant_type": {idpstore.GrantDeviceCode}, "client_id": {"device-cli"}, "device_code": {deviceCode}})
+			if status == http.StatusOK {
+				t.Fatalf("failpoint %s returned success", point)
+			}
+			loaded, err := store.InspectDeviceGrantByDeviceCodeHash(ctx, grant.DeviceCodeHash, "device-cli")
+			if err != nil || loaded.Status != idpstore.DeviceGrantApproved {
+				t.Fatalf("failpoint %s consumed grant %#v %v", point, loaded, err)
+			}
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_access_tokens`, 0)
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens`, 0)
+		})
+	}
+}
+
 func TestSQLiteRefreshRotationFailpointsAreAtomicAndRetryable(t *testing.T) {
 	points := []string{
 		"before_begin_token",

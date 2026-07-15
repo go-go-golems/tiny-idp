@@ -310,6 +310,11 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
+	deviceTokenHandler, err := newDeviceTokenHandler(p, core, oidc, fs.store)
+	if err != nil {
+		return nil, err
+	}
+	cfg.TokenEndpointHandlers.Append(deviceTokenHandler)
 	strategy := compose.CommonStrategy{CoreStrategy: core, OpenIDConnectTokenStrategy: oidc, Signer: oidc.Signer}
 	p.oauth2 = compose.Compose(
 		cfg,
@@ -1138,7 +1143,7 @@ func (p *Provider) grantRequestedAccessScopes(ar fosite.AccessRequester) {
 	}
 }
 
-func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosite.AuthorizeRequester, authTime time.Time) *openid.DefaultSession {
+func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosite.Requester, authTime time.Time) *openid.DefaultSession {
 	now := p.now()
 	claims := &fositejwt.IDTokenClaims{
 		Issuer:   p.issuer.String(),

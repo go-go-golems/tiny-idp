@@ -189,6 +189,61 @@ func (s *sqlFositeStore) tokenOrDirectExec(ctx context.Context, query string, ar
 	return s.db.ExecContext(ctx, query, args...)
 }
 
+// consumeDeviceGrantInTokenTransaction makes RFC 8628 redemption part of the
+// same SQL transaction that Fosite uses for access/refresh token persistence.
+// It intentionally bypasses Store.Update: that callback would open a second
+// transaction and break the all-or-nothing security invariant.
+func (s *sqlFositeStore) consumeDeviceGrantInTokenTransaction(ctx context.Context, request idpstore.DeviceConsumeRequest) (idpstore.DeviceGrant, error) {
+	if request.Now.IsZero() {
+		return idpstore.DeviceGrant{}, idpstore.ErrInvalidDeviceGrant
+	}
+	lifecycle, err := tokenLifecycleFromContext(ctx)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	var data []byte
+	err = lifecycle.tx.QueryRowContext(ctx, `SELECT data FROM device_grants WHERE device_code_hash=? AND client_id=?`, hex.EncodeToString(request.DeviceCodeHash), request.ClientID).Scan(&data)
+	if err == sql.ErrNoRows {
+		return idpstore.DeviceGrant{}, idpstore.ErrNotFound
+	}
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	var grant idpstore.DeviceGrant
+	if err := json.Unmarshal(data, &grant); err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	now := request.Now.UTC()
+	if !grant.ExpiresAt.IsZero() && !now.Before(grant.ExpiresAt) {
+		return idpstore.DeviceGrant{}, idpstore.ErrExpired
+	}
+	if grant.Status == idpstore.DeviceGrantConsumed {
+		return idpstore.DeviceGrant{}, idpstore.ErrAlreadyConsumed
+	}
+	if grant.Status != idpstore.DeviceGrantApproved {
+		return idpstore.DeviceGrant{}, idpstore.ErrDeviceGrantNotApproved
+	}
+	grant.Status = idpstore.DeviceGrantConsumed
+	grant.ConsumedAt = &now
+	grant.Version++
+	data, err = json.Marshal(grant)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	result, err := s.tokenExec(ctx, "consume_device_grant", `UPDATE device_grants SET status=?,data=? WHERE device_code_hash=? AND client_id=? AND status='approved' AND expires_at>?`, grant.Status, data, hex.EncodeToString(request.DeviceCodeHash), request.ClientID, now)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	if count != 1 {
+		return idpstore.DeviceGrant{}, idpstore.ErrDeviceGrantNotApproved
+	}
+	return grant, nil
+}
+
 func (s *sqlFositeStore) GetClient(ctx context.Context, id string) (fosite.Client, error) {
 	c, err := s.project.GetClient(ctx, id)
 	if err != nil || c.Disabled {
