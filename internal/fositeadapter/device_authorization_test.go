@@ -9,6 +9,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func TestDeviceAuthorizationCreatesHashedGrantAndNoStoreResponse(t *testing.T) {
@@ -506,6 +508,90 @@ func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *t
 	replay := postDeviceToken(t, readyClient, readyServer.URL, readyDevice.DeviceCode, "device-cli")
 	if replay.StatusCode != http.StatusBadRequest || tokenErrorCode(t, replay) != "invalid_grant" {
 		t.Fatalf("replay token response = %d", replay.StatusCode)
+	}
+}
+
+func TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	secret := []byte("sqlite-device-browser-flow-secret-key")
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid", "profile"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Name: "Alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("sqlite-device-browser-key", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := NewProvider(ctx, Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, Clock: func() time.Time { return now }, Authenticator: deviceTestAuthenticator{}, deviceCodeGenerator: func() (string, string, error) { return "sqlite-browser-device-code", "JKLM-NPQR", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	client := newDeviceVerificationHTTPClient(t)
+	client.Timeout = 2 * time.Second
+	start, err := client.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var device deviceAuthorizationResponse
+	if err := json.NewDecoder(start.Body).Decode(&device); err != nil {
+		t.Fatal(err)
+	}
+	_ = start.Body.Close()
+	page := getDeviceVerificationPage(t, client, server.URL+"/device?user_code="+device.UserCode, http.StatusOK)
+	decision := deviceVerificationHiddenFields(t, page)
+	decision.Set(idpui.ActionFieldName, string(idpui.ActionApprove))
+	decision.Set(idpui.LoginFieldName, "alice")
+	decision.Set(idpui.PasswordFieldName, "password")
+	approved, err := client.PostForm(server.URL+"/device", decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.StatusCode != http.StatusOK {
+		t.Fatalf("approval status=%d body=%q", approved.StatusCode, readAndClose(t, approved))
+	}
+	_ = approved.Body.Close()
+	token := postDeviceToken(t, client, server.URL, device.DeviceCode, "device-cli")
+	if token.StatusCode != http.StatusOK {
+		t.Fatalf("token status=%d body=%q", token.StatusCode, readAndClose(t, token))
+	}
+	var tokens map[string]any
+	if err := json.NewDecoder(token.Body).Decode(&tokens); err != nil {
+		t.Fatal(err)
+	}
+	_ = token.Body.Close()
+	accessToken, _ := tokens["access_token"].(string)
+	if accessToken == "" || tokens["id_token"] == "" {
+		t.Fatalf("token response=%#v", tokens)
+	}
+	userinfo, err := http.NewRequest(http.MethodGet, server.URL+"/userinfo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userinfo.Header.Set("Authorization", "Bearer "+accessToken)
+	response, err := client.Do(userinfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("userinfo status=%d body=%q", response.StatusCode, readAndClose(t, response))
+	}
+	_ = response.Body.Close()
+	replay := postDeviceToken(t, client, server.URL, device.DeviceCode, "device-cli")
+	if replay.StatusCode != http.StatusBadRequest || tokenErrorCode(t, replay) != "invalid_grant" {
+		t.Fatalf("replay response=%d", replay.StatusCode)
 	}
 }
 

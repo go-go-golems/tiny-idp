@@ -13,6 +13,8 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://internal/fositeadapter/device_authorization_test.go
+      Note: SQLite browser continuation through token, UserInfo, and replay regression
     - Path: repo://internal/fositeadapter/device_token_handler.go
       Note: Moves ID-token signing before the one-connection SQLite token transaction
     - Path: repo://internal/fositeadapter/sqlstore_test.go
@@ -27,6 +29,7 @@ LastUpdated: 2026-07-15T18:10:00Z
 WhatFor: Preserve exact operational commands, outcomes, and review guidance for strict-host deployment work.
 WhenToUse: Read before resuming this ticket or evaluating strict device authorization for release.
 ---
+
 
 
 
@@ -363,6 +366,91 @@ The captured trace crossed `device_token_handler.go`,
 `database/sql.(*DB).conn` waited for the one available connection. The new
 regression test uses an HTTP client timeout so this failure cannot silently
 become an indefinitely running test again.
+
+## Step 3: Add durable browser-continuation release coverage
+
+I added a SQLite-backed end-to-end adapter test to cover the verification
+continuation that a browser exercises: a device request, code-entry page,
+cookie/CSRF-bound approval, password authentication, token redemption,
+UserInfo, and replay rejection. This complements the real Playwright evidence
+without misrepresenting the current self-signed local certificate as trusted
+browser automation.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead"
+
+**Assistant interpretation:** Continue converting the fixed device flow into
+durable release-gate coverage.
+
+**Inferred user intent:** Ensure the production path remains testable after
+the immediate deadlock fix, not merely manually verified once.
+
+### What I did
+
+- Added `TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay`.
+- Built it on the one-connection `sqlitestore.DefaultConfig` and a real RSA
+  signing key.
+- Used the actual `/device_authorization`, `/device`, `/token`, and `/userinfo`
+  routes, plus the existing cookie-jar and hidden-CSRF form helpers.
+- Added a two-second HTTP client deadline so a recurrence of the deadlock
+  fails deterministically.
+
+### Why
+
+The earlier successful full flow used the in-memory store. The regression was
+production-specific because it depended on durable SQLite's single connection,
+so the release gate needs the same storage configuration.
+
+### What worked
+
+```text
+go test ./internal/fositeadapter -run 'TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay|TestSQLiteDeviceTokenRedemptionSignsBeforeSingleConnectionTransaction' -count=1
+ok github.com/manuel/tinyidp/internal/fositeadapter
+```
+
+### What didn't work
+
+`mkcert` and `certutil` are not installed on this workstation. The future
+Playwright CI gate must provision a dedicated locally trusted CA or a
+Playwright-managed test trust store; it must not use `ignoreHTTPSErrors` and
+call that trusted transport coverage.
+
+### What I learned
+
+The existing browser-form test helpers are sufficiently protocol-real to make
+the SQLite full flow concise and deterministic. A real browser smoke remains
+valuable for renderer/accessibility and TLS policy, while this test protects
+the durable state and endpoint chain cheaply in every Go test run.
+
+### What was tricky to build
+
+The test must use the normal browser interaction record instead of mutating a
+grant directly. Otherwise it would not cover CSRF, cookie binding, and the
+transaction sequence that led to the observed production failure.
+
+### What warrants a second pair of eyes
+
+- Review whether the userinfo response should assert the complete expected
+  claim set, not only its successful authorization, in this release gate.
+
+### What should be done in the future
+
+- Add a locally trusted certificate setup and execute a pinned Playwright
+  version in CI.
+- Add restart/persistence and audit-redaction assertions to the same harness.
+
+### Code review instructions
+
+- Review `TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay` beside the
+  memory-store flow test and the single-connection deadlock regression.
+- Run the focused test command shown above.
+
+### Technical details
+
+The test holds the exact client capability,
+`urn:ietf:params:oauth:grant-type:device_code`, and confirms the consumed code
+subsequently maps to `invalid_grant`.
 
 ## Usage Examples
 

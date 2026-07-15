@@ -22,3 +22,11 @@ Fixed strict device-token self-deadlock: ID-token signing now precedes the one-c
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_token_handler.go — Transaction/signing ordering fix
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — SQLite regression test
+
+## 2026-07-15
+
+Added SQLite-backed device browser-continuation regression: approval form, token issuance, UserInfo, replay rejection, and bounded deadlock detection.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_authorization_test.go — Durable full-flow regression
