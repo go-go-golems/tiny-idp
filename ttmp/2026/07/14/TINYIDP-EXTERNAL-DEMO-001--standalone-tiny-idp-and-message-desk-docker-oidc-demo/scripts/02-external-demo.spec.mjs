@@ -88,6 +88,16 @@ test.describe("standalone tiny-idp and external Message Desk", () => {
     await useAnotherAccount(page);
     await approvePasswordLogin(page, secondAccount);
 
+    // The second message proves the relying party derives message attribution
+    // from the newly verified OIDC session, rather than retaining the first
+    // account's display name across a provider-owned account switch.
+    const secondMarker = `Playwright switched-account verification ${Date.now()}`;
+    await page.getByRole("textbox", { name: "MESSAGE" }).fill(secondMarker);
+    await page.getByRole("button", { name: "Place note" }).click();
+    const secondMessage = page.getByRole("article").filter({ hasText: secondMarker });
+    await expect(secondMessage.getByText(secondAccount.name, { exact: true })).toBeVisible();
+    await expect(secondMessage.getByText(secondMarker, { exact: true })).toBeVisible();
+
     // Global logout clears both the RP session and provider browser session.
     await page.getByRole("button", { name: "Log out everywhere" }).click();
     await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
