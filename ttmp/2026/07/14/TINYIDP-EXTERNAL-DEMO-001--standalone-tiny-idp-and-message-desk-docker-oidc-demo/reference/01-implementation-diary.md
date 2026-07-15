@@ -13,13 +13,20 @@ Topics:
 DocType: reference
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://examples/tinyidp-external-message-desk/compose.yaml
+      Note: Compose deployment work
+    - Path: repo://examples/tinyidp-message-app/external_runtime.go
+      Note: External RP boundary
+    - Path: repo://internal/fositeadapter/rendering.go
+      Note: Callback-origin CSP evidence
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-14T21:58:07.711626152-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Implementation diary
 
@@ -407,4 +414,283 @@ with evidence rather than only an architectural proposal.
 ```text
 idp container: seed file + idp SQLite + token key -> provider HTTP
 app container: separate app SQLite -> ordinary OIDC client HTTP
+```
+
+## Step 6: Make Message Desk a real external relying party
+
+Message Desk can now run without an embedded provider handler, identity SQLite
+store, or account service. External mode opens only its application database,
+performs OIDC discovery and verification against the configured issuer, and
+uses the normal browser authorization-code flow with PKCE, nonce, and a local
+opaque application session.
+
+The live browser test uncovered a broader provider correctness issue: an
+interaction page may POST to the provider and receive a redirect to the
+validated RP callback. Chromium applies `form-action` to that terminal
+redirect as well. A CSP that listed only the provider therefore blocked a
+correct OIDC completion. The fix allows only the callback *origin* already
+validated by the provider for that particular interaction; it does not allow
+arbitrary form targets or callback URLs.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Continue from the standalone provider into an
+independent relying-party runtime and prove a real browser authorization flow.
+
+**Inferred user intent:** Ensure the demo's process split is a genuine security
+boundary rather than merely two different server routes in one binary.
+
+**Commit (code):** a15f51a — "feat(message-app): add external issuer runtime mode"; 09b556d — "fix(idpui): allow canonical form action in CSP"; 911aa11 — "fix(idpui): permit validated callback in form CSP"
+
+### What I did
+
+- Added `--external-issuer` and external runtime composition that opens only
+  Message Desk state.
+- Kept OIDC discovery, token exchange, JWKS lookup, and ID-token verification
+  on one explicit HTTP client.
+- Used Playwright to exercise `8080 -> 8081/authorize -> 8080/auth/callback`.
+- Diagnosed Chromium's exact error: `Refused to send form data ... because it
+  violates ... form-action 'self'`.
+- Added `InteractionForm.RedirectOrigin` and render-time CSP specialization;
+  the value originates from an already verified authorization request.
+
+### Why
+
+- The authorization response is a navigation across origins. CSP needs to
+  preserve that protocol transition while retaining a deny-by-default policy.
+
+### What worked
+
+- `go test ./internal/fositeadapter ./pkg/idpui ./examples/tinyidp-message-app -count=1` passed.
+- Playwright selected a remembered `Amelie` account and returned to an
+  authenticated Message Desk session at `http://127.0.0.1:8080/`.
+
+### What didn't work
+
+- A first CSP adjustment that allowed only the canonical IdP action URL still
+  failed. The browser followed the 303 authorization response to the RP and
+  applied `form-action` to the final callback origin.
+
+### What I learned
+
+- Form-action is relevant to the whole form-navigation chain, not merely the
+  literal HTML `action` attribute. OIDC login pages need a callback-aware CSP
+  derived only from server-validated client registration state.
+
+### What was tricky to build
+
+- The rendered page needs policy data but the renderer must not decide protocol
+  state. `newInteractionPage` derives the canonical redirect origin from the
+  Fosite-validated request; `renderInteraction` only serializes the CSP. This
+  preserves the separation between protocol ownership and host presentation.
+
+### What warrants a second pair of eyes
+
+- Review all future interaction render paths to ensure they pass canonical
+  stored request data, not raw browser parameters, to `newInteractionPage`.
+
+### What should be done in the future
+
+- Add an integration assertion that follows the final 303 in a browser engine
+  so this CSP/OIDC interaction cannot regress.
+
+### Code review instructions
+
+- Start with `internal/fositeadapter/rendering.go`, then review
+  `internal/fositeadapter/provider.go` and `pkg/idpui/types.go`.
+- Run the focused Go test command above and perform a browser sign-in against
+  distinct local origins.
+
+### Technical details
+
+```text
+interaction document CSP:
+  form-action 'self' <registered callback origin>
+
+POST /authorize -> 303 -> RP /auth/callback
+```
+
+## Step 7: Separate provider-owned provisioning from the external RP UI
+
+The external demo now presents a truthful guest experience. It does not render
+or expose Message Desk self-registration because account provisioning belongs
+to the standalone provider. The provider mounts the same constrained
+Message-Desk interaction renderer and its stylesheet, so chooser, login,
+consent, error, and logout-facing pages share the intended retro visual system
+without transferring authorization decisions into the application.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Finish the user-visible two-origin separation
+and make the provider UI consistent with the application visual language.
+
+**Inferred user intent:** A user should understand which service owns an
+account and should never be offered a broken or misleading local workflow.
+
+**Commit (code):** 14e0c4a — "feat(external-demo): separate seeded identity from registration"
+
+### What I did
+
+- Mounted `loginui.Renderer` and `/static/tinyidp/` in the standalone IdP
+  command.
+- Added an explicit `registrationEnabled` capability to `/api/session`.
+- Disabled and returned 404 for registration endpoints in external runtime.
+- Rebuilt the committed React asset and replaced the guest registration form
+  with an operator-seeded-account explanation.
+- Added `TestExternalModeDoesNotExposeSelfRegistration`.
+
+### Why
+
+- “Unavailable” registration endpoints still encourage users to place account
+  data in the wrong service. A 404 and a capability-controlled UI make the
+  ownership boundary explicit.
+
+### What worked
+
+- Focused standalone and Message Desk Go tests passed.
+- Playwright verified local logout returns the guest UI with the new
+  `Use a desk account` panel, and the provider chooser uses the shared style.
+
+### What didn't work
+
+- Initially registration routes were omitted whenever `accounts == nil`, which
+  broke existing tests that intentionally construct a no-account test app.
+  The final design makes registration an explicit runtime capability instead
+  of inferring it from a dependency pointer.
+
+### What I learned
+
+- Feature availability is protocol-visible behavior and deserves an explicit
+  capability rather than an accidental consequence of construction details.
+
+### What was tricky to build
+
+- React hooks cannot be conditionally invoked. The guest branch is a separate
+  component: the external branch never calls the registration query hook, so
+  it cannot create an unused pre-session registration cookie.
+
+### What warrants a second pair of eyes
+
+- Confirm that future external providers expose an intentional provisioning
+  link or admin process rather than re-enabling application registration by
+  default.
+
+### What should be done in the future
+
+- Add an operator UI or documented provisioning CLI only after defining its
+  authorization and audit requirements.
+
+### Code review instructions
+
+- Review `messageApp.registrationEnabled`, `openExternalMessageApplication`,
+  and `ui/src/App.tsx` together.
+- Run `go test ./examples/tinyidp-message-app -count=1` and inspect the guest
+  page through a browser.
+
+### Technical details
+
+```text
+external runtime
+  /api/session -> registrationEnabled: false
+  /api/registration, /api/accounts -> 404
+  guest panel -> provider-owned sign-in
+```
+
+## Step 8: Define the Docker topology and private OIDC backchannel
+
+The ticket now includes two multi-stage Debian-based images, Compose service
+definitions, named volumes, health checks, seed fixture, and an operator
+runbook. A special but bounded Docker requirement is addressed explicitly:
+the host browser must use `http://localhost:8081` as the issuer, whereas the
+Message Desk container must connect to `http://idp:8081`. The rewrite transport
+changes only outbound network routing and preserves the public issuer URL and
+Host header seen by OIDC validation.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Complete a self-contained deployment artifact
+and verify the implementation rather than leaving local-only commands.
+
+**Inferred user intent:** Make the demo reproducible on a clean workstation
+while keeping public browser trust and private container routing distinct.
+
+**Commit (code):** 8739522 — "feat(external-demo): add compose deployment topology"
+
+### What I did
+
+- Added two Dockerfiles, `compose.yaml`, public development seed fixture, and
+  a concise runbook.
+- Added `--external-backchannel-url` and a path-preserving issuer rewrite
+  transport for discovery, JWKS, and token calls.
+- Validated configuration with `docker compose -f compose.yaml config`.
+- Ran `go test ./examples/tinyidp-external-message-desk/... ./examples/tinyidp-message-app -count=1` successfully.
+- Began an actual Compose image build after stopping the temporary tmux demo
+  listeners on ports 8080 and 8081. At this diary point Docker had completed
+  the IdP image but had not left a Message Desk image or running containers;
+  this needs a final build-status follow-up before marking Compose assurance
+  complete.
+
+### Why
+
+- DNS names inside a Compose network are not browser-visible hostnames. Simply
+  configuring `idp:8081` as issuer would make browser redirects fail, while
+  simply configuring `localhost:8081` would make container backchannel calls
+  target the app container itself.
+
+### What worked
+
+- The Go code and Compose schema validation succeeded.
+- The IdP image was successfully exported as
+  `tinyidp-external-message-desk-idp:latest` during the build attempt.
+
+### What didn't work
+
+- The initial `docker compose up --build -d` and follow-up build command
+  returned partial BuildKit output before the Message Desk image was exported;
+  `docker compose ps` showed no containers. This is recorded as incomplete
+  infrastructure validation, not as a passing Compose test.
+
+### What I learned
+
+- Public issuer identity and private reachability are different contracts.
+  The transport must rewrite only the network destination, never the issuer
+  string which `go-oidc` verifies in discovery and ID tokens.
+
+### What was tricky to build
+
+- With an issuer path, a private backchannel URL must preserve that path. The
+  transport strips the canonical issuer prefix from the request and appends
+  only the suffix to the private base, preventing doubled path prefixes.
+
+### What warrants a second pair of eyes
+
+- Add a direct `httptest` assertion for `issuerRewriteTransport` before relying
+  on it for an issuer mounted below a non-root path.
+- Investigate the incomplete BuildKit execution and then run Compose plus the
+  full Playwright two-origin suite.
+
+### What should be done in the future
+
+- Finish Compose startup, test login, chooser, local logout, global logout,
+  message creation, restart persistence, and invalid callback/CSRF failures.
+
+### Code review instructions
+
+- Read `compose.yaml` with `oidc_client.go` and `external_config.go`.
+- Run the focused Go test command, `docker compose -f compose.yaml config`,
+  then `docker compose up --build` and browser-test `localhost:8080`.
+
+### Technical details
+
+```text
+browser: localhost:8080 <---- redirect ----> localhost:8081
+container app: public issuer URL localhost:8081
+container app transport: localhost:8081 -> idp:8081
+container IdP: validates/mints tokens for issuer localhost:8081
 ```

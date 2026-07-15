@@ -13,13 +13,13 @@
 - [x] Phase 1.2: Define IdP seed manifest, client redirect/logout registration, and idempotency semantics <!-- t:qg9j -->
 - [ ] Phase 1.3: Define development HTTP versus production HTTPS/cookie profile boundaries <!-- t:dxv2 -->
 - [ ] Phase 2.1: Add standalone tiny-idp container command and Dockerfile <!-- t:98rp -->
-- [ ] Phase 2.2: Add idempotent seeded-account and browser-client bootstrap <!-- t:8w1h -->
-- [ ] Phase 3.1: Extract or copy external Message Desk RP composition without embedded imports <!-- t:nl19 -->
-- [ ] Phase 3.2: Add external discovery, token, JWKS, and end-session endpoint handling <!-- t:6bcu -->
-- [ ] Phase 3.3: Remove self-registration from external mode and document account provisioning boundary <!-- t:por4 -->
-- [ ] Phase 4.1: Package the Message Desk interaction renderer with standalone tiny-idp <!-- t:dxaq -->
+- [x] Phase 2.2: Add idempotent seeded-account and browser-client bootstrap <!-- t:8w1h -->
+- [x] Phase 3.1: Extract or copy external Message Desk RP composition without embedded imports <!-- t:nl19 -->
+- [x] Phase 3.2: Add external discovery, token, JWKS, and end-session endpoint handling <!-- t:6bcu -->
+- [x] Phase 3.3: Remove self-registration from external mode and document account provisioning boundary <!-- t:por4 -->
+- [x] Phase 4.1: Package the Message Desk interaction renderer with standalone tiny-idp <!-- t:dxaq -->
 - [ ] Phase 5.1: Add compose topology, named volumes, health checks, and startup ordering <!-- t:acph -->
-- [ ] Phase 5.2: Add operator README and reset/restart runbook <!-- t:77cp -->
+- [x] Phase 5.2: Add operator README and reset/restart runbook <!-- t:77cp -->
 - [ ] Phase 6.1: Add two-origin OIDC integration tests <!-- t:zktj -->
 - [ ] Phase 6.2: Add browser smoke for login, scopes, chooser, local logout, and global logout <!-- t:p7x6 -->
 - [ ] Phase 6.3: Add failure, secret-leak, and persistence isolation checks <!-- t:hj1t -->
