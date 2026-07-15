@@ -545,6 +545,17 @@ func (a *messageApp) logoutApplicationSession(w http.ResponseWriter, r *http.Req
 // bootstrap-owned client registration. A browser navigation, not a server-side
 // request, carries the provider's session cookies to RP-initiated logout.
 func (a *messageApp) endSessionURL() (string, error) {
+	if a.oidc != nil && a.oidc.endSessionEndpoint != "" {
+		endpoint, err := url.Parse(a.oidc.endSessionEndpoint)
+		if err != nil {
+			return "", errors.Wrap(err, "parse identity end-session URL")
+		}
+		query := endpoint.Query()
+		query.Set("client_id", clientID)
+		query.Set("post_logout_redirect_uri", a.publicOrigin+"/")
+		endpoint.RawQuery = query.Encode()
+		return endpoint.String(), nil
+	}
 	if a.publicOrigin == "" {
 		return "", nil
 	}

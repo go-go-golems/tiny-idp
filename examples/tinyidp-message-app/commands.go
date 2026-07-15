@@ -75,6 +75,7 @@ type serveSettings struct {
 	WriteTimeout        string `glazed:"write-timeout"`
 	IdleTimeout         string `glazed:"idle-timeout"`
 	MaxRequestBytes     int    `glazed:"max-request-bytes"`
+	ExternalIssuer      string `glazed:"external-issuer"`
 }
 
 var _ cmds.BareCommand = (*ServeCommand)(nil)
@@ -96,6 +97,7 @@ func NewServeCommand() (cmds.BareCommand, error) {
 			fields.New("write-timeout", fields.TypeString, fields.WithDefault("30s")),
 			fields.New("idle-timeout", fields.TypeString, fields.WithDefault("1m")),
 			fields.New("max-request-bytes", fields.TypeInteger, fields.WithDefault(1<<20)),
+			fields.New("external-issuer", fields.TypeString, fields.WithHelp("Run as an external OIDC relying party against this issuer instead of embedding tiny-idp")),
 		),
 	)}, nil
 }
@@ -283,18 +285,25 @@ func runMessageApplication(ctx context.Context, settings serveSettings) error {
 		return errors.New("max-request-bytes must be positive")
 	}
 	app, err := openInitializedMessageApplication(ctx, settings.StateRoot)
+	if settings.ExternalIssuer != "" {
+		app, err = openExternalMessageApplication(ctx, settings.StateRoot, settings.ExternalIssuer)
+	}
 	if err != nil {
 		return err
 	}
 	defer func() { _ = app.Close(context.Background()) }()
-	if _, err := app.provider.RunMaintenance(ctx); err != nil {
-		return errors.Wrap(err, "run initial identity maintenance")
+	if app.provider != nil {
+		if _, err := app.provider.RunMaintenance(ctx); err != nil {
+			return errors.Wrap(err, "run initial identity maintenance")
+		}
 	}
 	if _, err := app.application.cleanup(ctx, time.Now().UTC(), 24*time.Hour); err != nil {
 		return errors.Wrap(err, "run initial application protocol-state cleanup")
 	}
-	if report := app.provider.Readiness(ctx); !report.Ready {
-		return fmt.Errorf("refuse listener while provider is not ready: %#v", report.Checks)
+	if app.provider != nil {
+		if report := app.provider.Readiness(ctx); !report.Ready {
+			return fmt.Errorf("refuse listener while provider is not ready: %#v", report.Checks)
+		}
 	}
 	server := &http.Server{Addr: settings.Addr, Handler: http.MaxBytesHandler(app.handler, int64(settings.MaxRequestBytes)), ReadHeaderTimeout: durations.readHeader, ReadTimeout: durations.read, WriteTimeout: durations.write, IdleTimeout: durations.idle, MaxHeaderBytes: 1 << 20, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
 	secureOrigin := strings.HasPrefix(app.manifest.PublicBaseURL, "https://")
@@ -323,8 +332,10 @@ func runMessageApplication(ctx context.Context, settings serveSettings) error {
 			case <-groupCtx.Done():
 				return nil
 			case <-ticker.C:
-				if _, err := app.provider.RunMaintenance(groupCtx); err != nil && groupCtx.Err() == nil {
-					log.Error().Err(err).Msg("identity maintenance failed; readiness degraded")
+				if app.provider != nil {
+					if _, err := app.provider.RunMaintenance(groupCtx); err != nil && groupCtx.Err() == nil {
+						log.Error().Err(err).Msg("identity maintenance failed; readiness degraded")
+					}
 				}
 				if _, err := app.application.cleanup(groupCtx, time.Now().UTC(), 24*time.Hour); err != nil && groupCtx.Err() == nil {
 					log.Error().Err(err).Msg("application protocol-state cleanup failed")
