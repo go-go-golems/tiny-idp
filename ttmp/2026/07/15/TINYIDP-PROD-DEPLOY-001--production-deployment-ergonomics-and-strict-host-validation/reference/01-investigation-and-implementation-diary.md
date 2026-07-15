@@ -452,6 +452,120 @@ The test holds the exact client capability,
 `urn:ietf:params:oauth:grant-type:device_code`, and confirms the consumed code
 subsequently maps to `invalid_grant`.
 
+## Step 4: Prove durable device-grant replay behavior across restart
+
+I added a restart-boundary regression test for the SQLite-backed device grant.
+It seeds an approved grant, closes the store completely, opens a fresh store
+and provider to redeem it, then closes both again. A third fresh provider sees
+the same opaque device code only as a replay and returns `invalid_grant`. This
+tests the persistence property that a production process restart must not turn
+an approved grant into either a lost authorization or a reusable credential.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead"
+
+**Assistant interpretation:** Continue the release hardening work after the
+browser-continuation test, prioritizing a property that a process-lifetime
+test cannot establish.
+
+**Inferred user intent:** Make the durable production configuration resilient
+to operational restart, not just correct within one Go process.
+
+### What I did
+
+- Added `TestSQLiteApprovedDeviceGrantSurvivesRestartAndRejectsReplay` to
+  `internal/fositeadapter/sqlstore_test.go`.
+- Seeded the durable database with a public device client, user, active RSA
+  signing key, and an approved device grant.
+- Closed the first SQLite store before constructing a fresh provider and
+  redeeming the grant over its real `/token` HTTP route.
+- Closed that store and HTTP server, then reopened the database in a third
+  provider instance and replayed the identical device code.
+- Added a two-second request timeout, so a future one-connection database
+  deadlock fails as a clear test failure rather than hanging the suite.
+- Ran the focused restart, deadlock, and browser-continuation gates, followed
+  by the complete adapter package test suite.
+- Committed the implementation as `6b819f1`
+  (`test(device): verify restart-safe redemption`).
+
+### Why
+
+Device authorization is deliberately stateful. The authorization decision,
+one-time consumption marker, Fosite token sessions, signing key, and client
+configuration must retain compatible meaning after the server is restarted.
+An in-process replay test proves atomicity only while one set of Go objects is
+alive. Closing and reopening the SQLite store instead proves that the durable
+rows and migrations encode the security boundary themselves.
+
+### What worked
+
+```text
+go test ./internal/fositeadapter -run 'TestSQLiteApprovedDeviceGrantSurvivesRestartAndRejectsReplay|TestSQLiteDeviceTokenRedemptionSignsBeforeSingleConnectionTransaction|TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay' -count=1
+ok github.com/manuel/tinyidp/internal/fositeadapter
+
+go test ./internal/fositeadapter -count=1
+ok github.com/manuel/tinyidp/internal/fositeadapter
+```
+
+The first fresh provider returned a token response with HTTP 200. The second
+fresh provider returned HTTP 400 with `{"error":"invalid_grant"}` for the
+same device code.
+
+### What didn't work
+
+There was no product failure during this step. The existing general
+`postTokenForm` helper intentionally has no timeout, so I added a narrow
+device-token request helper for this test instead of changing the behavior of
+unrelated test callers.
+
+### What I learned
+
+The same one-connection SQLite condition that exposed the signing deadlock is
+also useful as a release gate: each restart opens the store under the exact
+supported production configuration. The test also verifies that the prior fix
+does not merely rely on a cached signing key from an earlier provider.
+
+### What was tricky to build
+
+The test must close the HTTP server before closing each store so no handler
+can still hold a database request while the next process simulation begins.
+It also needs a fresh `fositeadapter.Provider` after every open, rather than
+reusing the old provider pointer, or it would not model a process restart.
+
+### What warrants a second pair of eyes
+
+- Confirm whether the release checklist should require a backup/restore
+  version of this test in addition to plain close/reopen.
+- Review whether a startup health probe should report unusable signing-key
+  state separately from general readiness, so operators receive a precise
+  signal before the first token request.
+
+### What should be done in the future
+
+- Add a tested backup/restore drill that restores an approved and an already
+  consumed grant, then checks the same one-time semantics.
+- Add the missing locally trusted browser-TLS gate in CI; this Go test covers
+  durable endpoint semantics, not browser certificate trust or renderer
+  behavior.
+
+### Code review instructions
+
+- Read `TestSQLiteApprovedDeviceGrantSurvivesRestartAndRejectsReplay` beside
+  the single-connection deadlock test.
+- Verify the explicit close/open boundaries and the use of a new provider for
+  each simulated process.
+- Run `go test ./internal/fositeadapter -count=1`.
+
+### Technical details
+
+The device code is never stored in clear text. The seeded grant holds
+`HashSecret(secret, "tinyidp/device-code/v1\\x00" + deviceCode)`, and the
+token endpoint repeats that derivation to locate the grant. Successful
+redemption updates the durable state within the transaction that persists the
+Fosite access-token session. A later reopen therefore observes the consumed
+state rather than a process-local flag.
+
 ## Usage Examples
 
 <!-- Show how to use this reference in practice -->

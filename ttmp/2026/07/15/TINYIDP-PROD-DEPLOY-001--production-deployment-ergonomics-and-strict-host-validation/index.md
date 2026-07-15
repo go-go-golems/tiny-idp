@@ -12,13 +12,16 @@ Topics:
 DocType: index
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://internal/fositeadapter/sqlstore_test.go
+      Note: SQLite close/reopen device-grant redemption and replay regression coverage
 ExternalSources: []
 Summary: Repeatable strict-host provisioning, deployment boundaries, and smoke-validation evidence.
 LastUpdated: 2026-07-15T18:05:00Z
 WhatFor: Make the production host operable without conflating it with the local development server.
 WhenToUse: Use before provisioning, deploying, or release-gating tinyidp's strict host.
 ---
+
 
 # Production Deployment Ergonomics and Strict Host Validation
 

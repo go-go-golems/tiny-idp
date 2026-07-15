@@ -11,6 +11,6 @@
 - [x] Phase 3: Add a systemd hardening template and operator runbook <!-- t:systemd -->
 - [ ] Phase 3: Add a container deployment reference after deciding the supported TLS-termination topology <!-- t:container -->
 - [x] Phase 4: Run the real admin provisioning sequence and browser device-verification smoke <!-- t:real-smoke -->
-- [ ] Phase 4: Diagnose and fix the post-approval strict-host unresponsiveness before treating device authorization as release-ready <!-- t:blocker -->
+- [x] Phase 4: Diagnose and fix the post-approval strict-host unresponsiveness before treating device authorization as release-ready <!-- t:blocker -->
 - [ ] Phase 5: Add automated strict-host browser/device smoke coverage with a locally trusted certificate <!-- t:automated-smoke -->
 - [ ] Phase 5: Complete backup/restore drill, external review, and production release checklist <!-- t:release -->

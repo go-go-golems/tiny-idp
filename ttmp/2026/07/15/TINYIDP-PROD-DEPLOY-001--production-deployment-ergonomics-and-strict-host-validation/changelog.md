@@ -30,3 +30,11 @@ Added SQLite-backed device browser-continuation regression: approval form, token
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_authorization_test.go — Durable full-flow regression
+
+## 2026-07-15 - Verified durable device-grant restart semantics
+
+Added and passed the SQLite close/reopen redemption and replay regression gate; the prior strict-host post-approval deadlock blocker is resolved.
+
+### Related Files
+
+- internal/fositeadapter/sqlstore_test.go — Restart and replay coverage
