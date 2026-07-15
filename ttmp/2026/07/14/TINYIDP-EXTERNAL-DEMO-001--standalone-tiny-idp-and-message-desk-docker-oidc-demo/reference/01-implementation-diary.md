@@ -1277,3 +1277,90 @@ delivery:
   /ai/2026/07/15/TINYIDP-EXTERNAL-DEMO-001/
   TINYIDP External Demo 001 Assurance.pdf
 ```
+
+## Step 14: Prove message attribution after a provider account switch
+
+The initial browser assurance created a message before switching from Amelie to
+Wesen, so it proved the switch itself but did not leave visible Message Desk
+data from the second identity. The Playwright scenario now posts a second,
+unique message after Wesen has authenticated through the provider-owned
+use-another-account path. It scopes the assertion to the article containing
+that exact message and verifies the article author is Wesen.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, add posting a second message after switching to make sure the message is by another person"
+
+**Assistant interpretation:** Extend the committed end-to-end test so the
+account-switch result is proven through a newly created, correctly attributed
+application record.
+
+**Inferred user intent:** Verify that a relying-party session is replaced by
+the newly validated OIDC identity, rather than merely changing the provider UI
+while retaining the first account's application author attribution.
+
+**Commit (code):** 87c9831 — "test(external-demo): verify switched account attribution"
+
+### What I did
+
+- Added a uniquely timestamped post-switch message to
+  `scripts/02-external-demo.spec.mjs` immediately after Wesen completes
+  password login.
+- Located the feed article by that exact marker and asserted both its body and
+  exact author name (`Wesen`).
+- Ran Node syntax validation and the ticket-local Playwright runner against the
+  live Compose topology.
+
+### Why
+
+- Header identity proves the current session presentation, but a newly created
+  persisted message proves the server derives `author_name` from the new
+  verified application session at write time.
+
+### What worked
+
+- `02-run-playwright-browser-smoke.sh` passed the complete two-origin suite,
+  including the new switched-account message assertion, in approximately three
+  seconds.
+
+### What didn't work
+
+- N/A. The focused test extension passed on its first execution.
+
+### What I learned
+
+- Account-switch assurance is stronger when it observes a downstream durable
+  authorization effect. The test now distinguishes a visual account label from
+  actual Message Desk author attribution.
+
+### What was tricky to build
+
+- The feed persists across prior test runs, so matching `Wesen` globally could
+  accidentally select an older message. The test creates a unique marker and
+  scopes the author assertion to the article containing that marker.
+
+### What warrants a second pair of eyes
+
+- Review future message-model changes to ensure author attribution continues
+  to come from the authenticated server-side session, not a client request
+  field. The existing application tests and this browser scenario should move
+  together if that model changes.
+
+### What should be done in the future
+
+- N/A for this development demo assertion. CI wiring remains the previously
+  documented next operational step.
+
+### Code review instructions
+
+- Read the post-switch block in `02-external-demo.spec.mjs` after
+  `approvePasswordLogin(page, secondAccount)`.
+- Run `scripts/02-run-playwright-browser-smoke.sh` against local Compose.
+
+### Technical details
+
+```text
+Amelie signs in -> creates first message
+local logout -> provider chooser -> use another account -> Wesen signs in
+Wesen creates unique second message -> article author must equal Wesen
+```

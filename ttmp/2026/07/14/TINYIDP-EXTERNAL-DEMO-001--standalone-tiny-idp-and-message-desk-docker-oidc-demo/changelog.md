@@ -35,6 +35,15 @@ design, diary, and assurance bundle.
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/reference/02-security-review-and-handoff.md — Security evidence, release gate, and continuation roadmap
 
+## 2026-07-15
+
+Extended the browser suite to prove a post-switch Message Desk write is
+attributed to the second OIDC identity (commit 87c9831).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-EXTERNAL-DEMO-001--standalone-tiny-idp-and-message-desk-docker-oidc-demo/scripts/02-external-demo.spec.mjs — Post-switch persisted author assertion
+
 ## 2026-07-14
 
 Implemented external RP runtime, callback-aware interaction CSP, provider UI reuse, registration boundary, and Compose deployment topology (commits a15f51a, 911aa11, 14e0c4a, 8739522).
