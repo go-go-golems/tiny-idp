@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -77,6 +78,7 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 	app.mux.HandleFunc("GET /readyz", app.handleReady)
 	app.mux.HandleFunc("POST /api/messages", app.handleCreateMessage)
 	app.mux.HandleFunc("POST /api/accounts", app.handleCreateAccount)
+	app.mux.HandleFunc("POST /auth/logout/local", app.handleLocalLogout)
 	app.mux.HandleFunc("POST /auth/logout", app.handleLogout)
 	app.mux.Handle("GET /static/app/", http.StripPrefix("/static/app/", http.FileServer(http.FS(messageAppAssetFS()))))
 	app.mux.Handle("/static/tinyidp/", interactionUI.AssetsHandler())
@@ -166,7 +168,7 @@ func (a *messageApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// return to the local page instead of needlessly starting a second OIDC
 	// transaction. A host can still provide an explicit account-switch control
 	// that starts its own prompt=select_account request.
-	if _, authenticated := a.currentSession(r); authenticated {
+	if _, authenticated := a.currentSession(r); authenticated && r.URL.Query().Get("switch_account") != "1" {
 		returnTo, err := normalizeReturnTo(r.URL.Query().Get("return_to"))
 		if err != nil {
 			http.Error(w, "invalid login request", http.StatusBadRequest)
@@ -500,6 +502,17 @@ func clearBytes(value []byte) {
 }
 
 func (a *messageApp) handleLogout(w http.ResponseWriter, r *http.Request) {
+	a.logoutApplicationSession(w, r, true)
+}
+
+// handleLocalLogout ends only the Message Desk relying-party session. The
+// provider browser session and remembered account context remain intact, so a
+// later normal Sign in request may render prompt=select_account.
+func (a *messageApp) handleLocalLogout(w http.ResponseWriter, r *http.Request) {
+	a.logoutApplicationSession(w, r, false)
+}
+
+func (a *messageApp) logoutApplicationSession(w http.ResponseWriter, r *http.Request, endProviderSession bool) {
 	session, ok := a.currentSession(r)
 	if !ok || !csrfEqual(r.Header.Get("X-CSRF-Token"), session.CSRFSecret) {
 		http.Error(w, "invalid logout request", http.StatusForbidden)
@@ -511,7 +524,39 @@ func (a *messageApp) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: appCookieName, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: a.cookieSecure})
-	w.WriteHeader(http.StatusNoContent)
+	if !endProviderSession {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	endSessionURL, err := a.endSessionURL()
+	if err != nil {
+		http.Error(w, "logout is temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if endSessionURL == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]string{"endSessionUrl": endSessionURL})
+}
+
+// endSessionURL is derived exclusively from the canonical public origin and
+// bootstrap-owned client registration. A browser navigation, not a server-side
+// request, carries the provider's session cookies to RP-initiated logout.
+func (a *messageApp) endSessionURL() (string, error) {
+	if a.publicOrigin == "" {
+		return "", nil
+	}
+	endpoint, err := url.Parse(a.publicOrigin + issuerPath + "/end-session")
+	if err != nil {
+		return "", errors.Wrap(err, "construct identity end-session URL")
+	}
+	query := endpoint.Query()
+	query.Set("client_id", clientID)
+	query.Set("post_logout_redirect_uri", a.publicOrigin+"/")
+	endpoint.RawQuery = query.Encode()
+	return endpoint.String(), nil
 }
 
 func (a *messageApp) currentSession(r *http.Request) (appSession, bool) {

@@ -60,6 +60,73 @@ func TestSessionEndpointAndLogoutUseIndependentAppSession(t *testing.T) {
 	}
 }
 
+func TestLogoutReturnsBrowserNavigableIDPEndSessionURL(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{7}, sha256.Size)
+	if err := store.createAppSession(ctx, "browser-token", appSession{Subject: "subject", DisplayName: "Alice", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, &oidcClient{publicOrigin: registrationTestOrigin}, nil, nil, false)
+	app.now = func() time.Time { return now }
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
+	request.Header.Set("X-CSRF-Token", base64.RawURLEncoding.EncodeToString(csrf))
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("logout status = %d: %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		EndSessionURL string `json:"endSessionUrl"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(body.EndSessionURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.String() != registrationTestOrigin+"/idp/end-session?client_id="+clientID+"&post_logout_redirect_uri="+url.QueryEscape(registrationTestOrigin+"/") {
+		t.Fatalf("end-session URL = %q", parsed.String())
+	}
+	if _, err := store.getAppSession(ctx, "browser-token", now.Add(time.Second)); err == nil {
+		t.Fatal("logout did not revoke application session")
+	}
+}
+
+func TestLocalLogoutRevokesOnlyTheApplicationSession(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{8}, sha256.Size)
+	if err := store.createAppSession(ctx, "browser-token", appSession{Subject: "subject", DisplayName: "Alice", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, &oidcClient{publicOrigin: registrationTestOrigin}, nil, nil, false)
+	app.now = func() time.Time { return now }
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout/local", nil)
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
+	request.Header.Set("X-CSRF-Token", base64.RawURLEncoding.EncodeToString(csrf))
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || response.Body.Len() != 0 {
+		t.Fatalf("local logout = %d: %s", response.Code, response.Body.String())
+	}
+	if _, err := store.getAppSession(ctx, "browser-token", now.Add(time.Second)); err == nil {
+		t.Fatal("local logout did not revoke application session")
+	}
+}
+
 func TestLoginRejectsAmbiguousReturnTo(t *testing.T) {
 	store, err := openAppStore(context.Background(), filepath.Join(t.TempDir(), "messages.sqlite"))
 	if err != nil {
@@ -71,6 +138,35 @@ func TestLoginRejectsAmbiguousReturnTo(t *testing.T) {
 	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/auth/login?return_to=//attacker.test", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("login status = %d", response.Code)
+	}
+}
+
+func TestLoginSwitchAccountStartsOIDCForAnAuthenticatedApplicationSession(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{9}, sha256.Size)
+	if err := store.createAppSession(ctx, "browser-token", appSession{Subject: "subject", DisplayName: "Amelie", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, &oidcClient{config: oauth2.Config{ClientID: clientID, Endpoint: oauth2.Endpoint{AuthURL: "https://issuer.example.test/authorize"}, RedirectURL: registrationTestOrigin + callbackPath}, now: func() time.Time { return now }}, nil, nil, false)
+	request := httptest.NewRequest(http.MethodGet, "/auth/login?return_to=/&switch_account=1", nil)
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("switch-account login = %d: %s", response.Code, response.Body.String())
+	}
+	location, err := url.Parse(response.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if location.Host != "issuer.example.test" || location.Query().Get("prompt") != "select_account" {
+		t.Fatalf("switch-account location = %q", location.String())
 	}
 }
 

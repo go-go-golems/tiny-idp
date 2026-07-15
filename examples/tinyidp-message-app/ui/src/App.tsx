@@ -4,6 +4,7 @@ import {
   useCreateAccountMutation,
   useCreateMessageMutation,
   useFeedQuery,
+  useLocalLogoutMutation,
   useLogoutMutation,
   useRegistrationQuery,
   useSessionQuery,
@@ -12,7 +13,15 @@ import {
 export default function App() {
   const session = useSessionQuery();
   const feed = useFeedQuery();
+  const [localLogout] = useLocalLogoutMutation();
   const [logout] = useLogoutMutation();
+  const signOutOfDesk = async (csrf: string) => {
+    await localLogout({ csrf }).unwrap();
+  };
+  const signOut = async (csrf: string) => {
+    const result = await logout({ csrf }).unwrap();
+    if (result.endSessionUrl) location.assign(result.endSessionUrl);
+  };
 
   if (session.isLoading) return <Notice text="Checking desk session…" />;
   if (session.error) return <Notice text="The desk is temporarily unavailable." />;
@@ -32,7 +41,9 @@ export default function App() {
             {me.authenticated ? (
               <>
                 <b>{me.displayName}</b>
-                <button className="quiet" onClick={() => logout({ csrf: me.csrfToken! })}>Log out</button>
+                <a className="quiet" href="/auth/login?return_to=/&switch_account=1">Change account</a>
+                <button className="quiet" onClick={() => signOutOfDesk(me.csrfToken!)}>Log out of Message Desk</button>
+                <button className="quiet" onClick={() => signOut(me.csrfToken!)}>Log out everywhere</button>
               </>
             ) : <a className="quiet" href="/auth/login?return_to=/">Sign in</a>}
           </div>
