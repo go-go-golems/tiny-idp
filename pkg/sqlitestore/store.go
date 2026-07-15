@@ -980,6 +980,228 @@ func (s *Store) ConsumeInteraction(ctx context.Context, idHash []byte, now time.
 	return interaction, nil
 }
 
+const deviceGrantSlowDownIncrement = 5 * time.Second
+
+func (s *Store) CreateDeviceGrant(ctx context.Context, grant idpstore.DeviceGrant) error {
+	if err := grant.ValidateForCreate(); err != nil {
+		return err
+	}
+	grant.CreatedAt = grant.CreatedAt.UTC()
+	grant.ExpiresAt = grant.ExpiresAt.UTC()
+	grant.NextPollAt = grant.NextPollAt.UTC()
+	grant.Version = 1
+	data, err := enc(grant)
+	if err != nil {
+		return err
+	}
+	_, err = s.conn().ExecContext(ctx, `INSERT INTO device_grants(id,device_code_hash,user_code_hash,client_id,status,expires_at,next_poll_at,data) VALUES(?,?,?,?,?,?,?,?)`, grant.ID, hashKey(grant.DeviceCodeHash), hashKey(grant.UserCodeHash), grant.ClientID, grant.Status, grant.ExpiresAt, grant.NextPollAt, data)
+	return mapDup(err)
+}
+
+func (s *Store) GetDeviceGrantByUserCodeHash(ctx context.Context, userCodeHash []byte) (idpstore.DeviceGrant, error) {
+	return s.loadDeviceGrant(ctx, `SELECT data FROM device_grants WHERE user_code_hash=?`, hashKey(userCodeHash))
+}
+
+func (s *Store) InspectDeviceGrantByDeviceCodeHash(ctx context.Context, deviceCodeHash []byte, clientID string) (idpstore.DeviceGrant, error) {
+	return s.loadDeviceGrant(ctx, `SELECT data FROM device_grants WHERE device_code_hash=? AND client_id=?`, hashKey(deviceCodeHash), clientID)
+}
+
+func (s *Store) loadDeviceGrant(ctx context.Context, query string, args ...any) (idpstore.DeviceGrant, error) {
+	var data []byte
+	err := s.conn().QueryRowContext(ctx, query, args...).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return idpstore.DeviceGrant{}, idpstore.ErrNotFound
+	}
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	return dec[idpstore.DeviceGrant](data)
+}
+
+func (s *Store) PollDeviceGrant(ctx context.Context, request idpstore.DevicePollRequest) (idpstore.DevicePollResult, error) {
+	if s.runner == nil {
+		var result idpstore.DevicePollResult
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			var err error
+			result, err = tx.PollDeviceGrant(ctx, request)
+			return err
+		})
+		return result, err
+	}
+	if request.Now.IsZero() {
+		return idpstore.DevicePollResult{}, idpstore.ErrInvalidDeviceGrant
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	grant, err := s.InspectDeviceGrantByDeviceCodeHash(ctx, request.DeviceCodeHash, request.ClientID)
+	if err != nil {
+		return idpstore.DevicePollResult{}, err
+	}
+	now := request.Now.UTC()
+	if deviceGrantExpired(grant, now) {
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollExpired, Grant: grant}, nil
+	}
+	switch grant.Status {
+	case idpstore.DeviceGrantDenied:
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollDenied, Grant: grant}, nil
+	case idpstore.DeviceGrantConsumed:
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollConsumed, Grant: grant}, nil
+	case idpstore.DeviceGrantPending, idpstore.DeviceGrantApproved:
+	default:
+		return idpstore.DevicePollResult{}, idpstore.ErrInvalidDeviceGrant
+	}
+	if now.Before(grant.NextPollAt) {
+		grant.PollInterval += deviceGrantSlowDownIncrement
+		grant.NextPollAt = now.Add(grant.PollInterval)
+		grant.SlowDownCount++
+		grant.Version++
+		if err := s.updateDevicePoll(ctx, grant, request.ClientID, now, "status IN ('pending','approved')"); err != nil {
+			return idpstore.DevicePollResult{}, err
+		}
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollSlowDown, Grant: grant}, nil
+	}
+	if grant.Status == idpstore.DeviceGrantApproved {
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollApproved, Grant: grant}, nil
+	}
+	grant.NextPollAt = now.Add(grant.PollInterval)
+	grant.Version++
+	if err := s.updateDevicePoll(ctx, grant, request.ClientID, now, "status='pending'"); err != nil {
+		return idpstore.DevicePollResult{}, err
+	}
+	return idpstore.DevicePollResult{Outcome: idpstore.DevicePollPending, Grant: grant}, nil
+}
+
+func (s *Store) updateDevicePoll(ctx context.Context, grant idpstore.DeviceGrant, clientID string, now time.Time, statusPredicate string) error {
+	data, err := enc(grant)
+	if err != nil {
+		return err
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE device_grants SET next_poll_at=?,data=? WHERE device_code_hash=? AND client_id=? AND `+statusPredicate+` AND expires_at>?`, grant.NextPollAt, data, hashKey(grant.DeviceCodeHash), clientID, now)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return idpstore.ErrDeviceGrantNotPending
+	}
+	return nil
+}
+
+func (s *Store) DecideDeviceGrant(ctx context.Context, request idpstore.DeviceDecisionRequest) (idpstore.DeviceGrant, error) {
+	if s.runner == nil {
+		var grant idpstore.DeviceGrant
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			var err error
+			grant, err = tx.DecideDeviceGrant(ctx, request)
+			return err
+		})
+		return grant, err
+	}
+	if request.Now.IsZero() || !request.Decision.Valid() {
+		return idpstore.DeviceGrant{}, idpstore.ErrInvalidDeviceDecision
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	grant, err := s.GetDeviceGrantByUserCodeHash(ctx, request.UserCodeHash)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	now := request.Now.UTC()
+	if deviceGrantExpired(grant, now) {
+		return idpstore.DeviceGrant{}, idpstore.ErrExpired
+	}
+	if grant.Status != idpstore.DeviceGrantPending {
+		return idpstore.DeviceGrant{}, idpstore.ErrDeviceGrantNotPending
+	}
+	if request.Decision == idpstore.DeviceGrantApprove && (request.UserID == "" || request.Subject == "" || request.AuthTime.IsZero()) {
+		return idpstore.DeviceGrant{}, idpstore.ErrInvalidDeviceDecision
+	}
+	grant.Status = idpstore.DeviceGrantDenied
+	grant.DecidedAt = &now
+	if request.Decision == idpstore.DeviceGrantApprove {
+		grant.Status = idpstore.DeviceGrantApproved
+		grant.UserID = request.UserID
+		grant.Subject = request.Subject
+		grant.AuthTime = request.AuthTime.UTC()
+		grant.AuthenticationMethods = append([]string(nil), request.AuthenticationMethods...)
+		grant.ApprovedScopes = append([]string(nil), request.ApprovedScopes...)
+	}
+	grant.Version++
+	data, err := enc(grant)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE device_grants SET status=?,data=? WHERE user_code_hash=? AND status='pending' AND expires_at>?`, grant.Status, data, hashKey(request.UserCodeHash), now)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	if count != 1 {
+		return idpstore.DeviceGrant{}, idpstore.ErrDeviceGrantNotPending
+	}
+	return grant, nil
+}
+
+func (s *Store) ConsumeDeviceGrant(ctx context.Context, request idpstore.DeviceConsumeRequest) (idpstore.DeviceGrant, error) {
+	if s.runner == nil {
+		var grant idpstore.DeviceGrant
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			var err error
+			grant, err = tx.ConsumeDeviceGrant(ctx, request)
+			return err
+		})
+		return grant, err
+	}
+	if request.Now.IsZero() {
+		return idpstore.DeviceGrant{}, idpstore.ErrInvalidDeviceGrant
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	grant, err := s.InspectDeviceGrantByDeviceCodeHash(ctx, request.DeviceCodeHash, request.ClientID)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	now := request.Now.UTC()
+	if deviceGrantExpired(grant, now) {
+		return idpstore.DeviceGrant{}, idpstore.ErrExpired
+	}
+	if grant.Status == idpstore.DeviceGrantConsumed {
+		return idpstore.DeviceGrant{}, idpstore.ErrAlreadyConsumed
+	}
+	if grant.Status != idpstore.DeviceGrantApproved {
+		return idpstore.DeviceGrant{}, idpstore.ErrDeviceGrantNotApproved
+	}
+	grant.Status = idpstore.DeviceGrantConsumed
+	grant.ConsumedAt = &now
+	grant.Version++
+	data, err := enc(grant)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	result, err := s.conn().ExecContext(ctx, `UPDATE device_grants SET status=?,data=? WHERE device_code_hash=? AND client_id=? AND status='approved' AND expires_at>?`, grant.Status, data, hashKey(request.DeviceCodeHash), request.ClientID, now)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	if count != 1 {
+		return idpstore.DeviceGrant{}, idpstore.ErrDeviceGrantNotApproved
+	}
+	return grant, nil
+}
+
+func deviceGrantExpired(grant idpstore.DeviceGrant, now time.Time) bool {
+	return !grant.ExpiresAt.IsZero() && !now.Before(grant.ExpiresAt)
+}
+
 func (s *Store) CreateSigningKey(ctx context.Context, k idpstore.SigningKey) error {
 	b, _ := enc(k)
 	active := 0

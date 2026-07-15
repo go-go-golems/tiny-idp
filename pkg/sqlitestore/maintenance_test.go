@@ -96,3 +96,27 @@ func TestMaintenanceRejectsUnsafePolicyWithoutMutation(t *testing.T) {
 		t.Fatal("expected invalid maintenance policy")
 	}
 }
+
+func TestMaintenanceDeletesExpiredDeviceGrantsAfterRetention(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Date(2026, 7, 15, 16, 0, 0, 0, time.UTC)
+	if err := store.PutClient(ctx, idpstore.Client{ID: "device-client"}); err != nil {
+		t.Fatal(err)
+	}
+	grant := idpstore.DeviceGrant{ID: "expired-device", DeviceCodeHash: []byte("expired-device-hash"), UserCodeHash: []byte("expired-user-hash"), ClientID: "device-client", Status: idpstore.DeviceGrantPending, CreatedAt: now.Add(-72 * time.Hour), ExpiresAt: now.Add(-48 * time.Hour), PollInterval: time.Second, NextPollAt: now.Add(-72 * time.Hour)}
+	if err := store.CreateDeviceGrant(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	report, err := store.Maintain(ctx, now, idpstore.MaintenancePolicy{RetainExpiredFor: 24 * time.Hour, ProtocolStateRetention: time.Hour, SigningKeyRetention: time.Hour})
+	if err != nil || report.DomainRecords != 1 {
+		t.Fatalf("maintenance = %#v, %v", report, err)
+	}
+	if _, err := store.InspectDeviceGrantByDeviceCodeHash(ctx, grant.DeviceCodeHash, grant.ClientID); !errors.Is(err, idpstore.ErrNotFound) {
+		t.Fatalf("expired device grant survived maintenance: %v", err)
+	}
+}

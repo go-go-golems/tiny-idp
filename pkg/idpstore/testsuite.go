@@ -11,6 +11,93 @@ import (
 // RunStoreSuite verifies invariants every store implementation must satisfy.
 func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
+	t.Run("device grants use named durable transitions", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Date(2026, time.July, 15, 14, 0, 0, 0, time.UTC)
+		if err := st.PutClient(ctx, Client{ID: "device-client"}); err != nil {
+			t.Fatal(err)
+		}
+		grant := DeviceGrant{
+			ID: "grant-1", DeviceCodeHash: []byte("device-code-hash"), UserCodeHash: []byte("user-code-hash"), ClientID: "device-client",
+			RequestedScopes: []string{"openid", "profile"}, Status: DeviceGrantPending,
+			CreatedAt: now, ExpiresAt: now.Add(time.Minute), PollInterval: 5 * time.Second, NextPollAt: now,
+		}
+		if err := st.CreateDeviceGrant(ctx, grant); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateDeviceGrant(ctx, grant); !errors.Is(err, ErrDuplicate) {
+			t.Fatalf("duplicate device grant error = %v", err)
+		}
+		if _, err := st.InspectDeviceGrantByDeviceCodeHash(ctx, grant.DeviceCodeHash, "wrong-client"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("wrong-client inspect error = %v", err)
+		}
+		canceled, cancel := context.WithCancel(ctx)
+		cancel()
+		if _, err := st.PollDeviceGrant(canceled, DevicePollRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now}); !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled poll error = %v", err)
+		}
+		pending, err := st.PollDeviceGrant(ctx, DevicePollRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now})
+		if err != nil || pending.Outcome != DevicePollPending || !pending.Grant.NextPollAt.Equal(now.Add(5*time.Second)) {
+			t.Fatalf("first poll = %#v, %v", pending, err)
+		}
+		slow, err := st.PollDeviceGrant(ctx, DevicePollRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(time.Second)})
+		if err != nil || slow.Outcome != DevicePollSlowDown || slow.Grant.PollInterval != 10*time.Second || slow.Grant.SlowDownCount != 1 {
+			t.Fatalf("early poll = %#v, %v", slow, err)
+		}
+		approved, err := st.DecideDeviceGrant(ctx, DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: DeviceGrantApprove, UserID: "u1", Subject: "subject-1", AuthTime: now.Add(2 * time.Second), AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, Now: now.Add(2 * time.Second)})
+		if err != nil || approved.Status != DeviceGrantApproved || approved.DecidedAt == nil || approved.UserID != "u1" {
+			t.Fatalf("approve = %#v, %v", approved, err)
+		}
+		earlyApproved, err := st.PollDeviceGrant(ctx, DevicePollRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(3 * time.Second)})
+		if err != nil || earlyApproved.Outcome != DevicePollSlowDown || earlyApproved.Grant.PollInterval != 15*time.Second {
+			t.Fatalf("early approved poll = %#v, %v", earlyApproved, err)
+		}
+		ready, err := st.PollDeviceGrant(ctx, DevicePollRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(20 * time.Second)})
+		if err != nil || ready.Outcome != DevicePollApproved {
+			t.Fatalf("approved poll = %#v, %v", ready, err)
+		}
+		if err := st.Update(ctx, func(tx TxStore) error {
+			if _, err := tx.ConsumeDeviceGrant(ctx, DeviceConsumeRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(21 * time.Second)}); err != nil {
+				return err
+			}
+			return errors.New("rollback device consumption")
+		}); err == nil {
+			t.Fatal("rollback transaction returned nil")
+		}
+		afterRollback, err := st.InspectDeviceGrantByDeviceCodeHash(ctx, grant.DeviceCodeHash, grant.ClientID)
+		if err != nil || afterRollback.Status != DeviceGrantApproved {
+			t.Fatalf("rollback left grant = %#v, %v", afterRollback, err)
+		}
+		consumed, err := st.ConsumeDeviceGrant(ctx, DeviceConsumeRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(21 * time.Second)})
+		if err != nil || consumed.Status != DeviceGrantConsumed || consumed.ConsumedAt == nil {
+			t.Fatalf("consume = %#v, %v", consumed, err)
+		}
+		if _, err := st.ConsumeDeviceGrant(ctx, DeviceConsumeRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(22 * time.Second)}); !errors.Is(err, ErrAlreadyConsumed) {
+			t.Fatalf("replay consume error = %v", err)
+		}
+	})
+	t.Run("device grants expire before decision and consumption", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		now := time.Date(2026, time.July, 15, 14, 0, 0, 0, time.UTC)
+		if err := st.PutClient(ctx, Client{ID: "device-client"}); err != nil {
+			t.Fatal(err)
+		}
+		grant := DeviceGrant{ID: "expired", DeviceCodeHash: []byte("expired-device"), UserCodeHash: []byte("expired-user"), ClientID: "device-client", Status: DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(time.Second), PollInterval: time.Second, NextPollAt: now}
+		if err := st.CreateDeviceGrant(ctx, grant); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := st.PollDeviceGrant(ctx, DevicePollRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(time.Second)}); err != nil || result.Outcome != DevicePollExpired {
+			t.Fatalf("expired poll = %#v, %v", result, err)
+		}
+		if _, err := st.DecideDeviceGrant(ctx, DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: DeviceGrantDeny, Now: now.Add(time.Second)}); !errors.Is(err, ErrExpired) {
+			t.Fatalf("expired decision error = %v", err)
+		}
+		if _, err := st.ConsumeDeviceGrant(ctx, DeviceConsumeRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(time.Second)}); !errors.Is(err, ErrExpired) {
+			t.Fatalf("expired consume error = %v", err)
+		}
+	})
 	t.Run("maintenance removes expired browser contexts and orphaned remembered sessions", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)

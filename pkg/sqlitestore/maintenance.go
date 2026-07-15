@@ -90,6 +90,15 @@ func (s *Store) Maintain(ctx context.Context, now time.Time, policy idpstore.Mai
 		})); err != nil {
 			return err
 		}
+		if err = add(deleteJSONRecords[idpstore.DeviceGrant](ctx, scoped.conn(), "device_grants", "device_code_hash", func(v idpstore.DeviceGrant) bool {
+			terminal := v.ConsumedAt
+			if terminal == nil && v.Status == idpstore.DeviceGrantDenied {
+				terminal = v.DecidedAt
+			}
+			return expiredOrTerminal(v.ExpiresAt, terminal, domainCutoff)
+		})); err != nil {
+			return err
+		}
 
 		protocolCutoff := now.Add(-policy.ProtocolStateRetention)
 		for _, table := range []string{"fosite_authorize_codes", "fosite_pkces", "fosite_oidc_sessions", "fosite_access_tokens", "fosite_refresh_tokens"} {

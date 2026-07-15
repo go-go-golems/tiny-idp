@@ -264,6 +264,117 @@ type InteractionRecord struct {
 	Outcome            InteractionOutcome
 }
 
+// DeviceGrantStatus is the durable state of an RFC 8628 authorization. Expiry
+// is derived from DeviceGrant.ExpiresAt at the transaction clock, rather than
+// persisted as a mutable status.
+type DeviceGrantStatus string
+
+const (
+	DeviceGrantPending  DeviceGrantStatus = "pending"
+	DeviceGrantApproved DeviceGrantStatus = "approved"
+	DeviceGrantDenied   DeviceGrantStatus = "denied"
+	DeviceGrantConsumed DeviceGrantStatus = "consumed"
+)
+
+func (s DeviceGrantStatus) Valid() bool {
+	switch s {
+	case DeviceGrantPending, DeviceGrantApproved, DeviceGrantDenied, DeviceGrantConsumed:
+		return true
+	default:
+		return false
+	}
+}
+
+// DeviceGrant holds only hashed protocol credentials. DeviceCodeHash and
+// UserCodeHash are domain-separated keyed hashes; raw device and user codes
+// must never enter this type, persistence, audit, or metrics.
+type DeviceGrant struct {
+	ID                    string
+	DeviceCodeHash        []byte
+	UserCodeHash          []byte
+	ClientID              string
+	RequestedScopes       []string
+	ApprovedScopes        []string
+	Status                DeviceGrantStatus
+	UserID                string
+	Subject               string
+	AuthTime              time.Time
+	AuthenticationMethods []string
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	PollInterval          time.Duration
+	NextPollAt            time.Time
+	SlowDownCount         uint32
+	DecidedAt             *time.Time
+	ConsumedAt            *time.Time
+	Version               uint64
+}
+
+// ValidateForCreate ensures the store is given a complete pending record. It
+// deliberately does not accept any terminal state from a caller; named store
+// transitions own all later status changes.
+func (g DeviceGrant) ValidateForCreate() error {
+	if g.ID == "" || len(g.DeviceCodeHash) == 0 || len(g.UserCodeHash) == 0 || g.ClientID == "" || g.Status != DeviceGrantPending || g.CreatedAt.IsZero() || g.ExpiresAt.IsZero() || g.PollInterval <= 0 || g.NextPollAt.IsZero() {
+		return ErrInvalidDeviceGrant
+	}
+	if !g.CreatedAt.Before(g.ExpiresAt) {
+		return ErrInvalidDeviceGrant
+	}
+	return nil
+}
+
+// DevicePollOutcome is deliberately protocol-neutral. The endpoint and Fosite
+// handler map these durable outcomes to RFC 8628 error responses later.
+type DevicePollOutcome string
+
+const (
+	DevicePollPending  DevicePollOutcome = "pending"
+	DevicePollSlowDown DevicePollOutcome = "slow_down"
+	DevicePollApproved DevicePollOutcome = "approved"
+	DevicePollDenied   DevicePollOutcome = "denied"
+	DevicePollExpired  DevicePollOutcome = "expired"
+	DevicePollConsumed DevicePollOutcome = "consumed"
+)
+
+type DevicePollRequest struct {
+	DeviceCodeHash []byte
+	ClientID       string
+	Now            time.Time
+}
+
+type DevicePollResult struct {
+	Outcome DevicePollOutcome
+	Grant   DeviceGrant
+}
+
+type DeviceGrantDecision string
+
+const (
+	DeviceGrantApprove DeviceGrantDecision = "approve"
+	DeviceGrantDeny    DeviceGrantDecision = "deny"
+)
+
+func (d DeviceGrantDecision) Valid() bool {
+	return d == DeviceGrantApprove || d == DeviceGrantDeny
+}
+
+type DeviceDecisionRequest struct {
+	UserCodeHash          []byte
+	Decision              DeviceGrantDecision
+	UserID                string
+	Subject               string
+	AuthTime              time.Time
+	AuthenticationMethods []string
+	ApprovedScopes        []string
+	Now                   time.Time
+}
+
+type DeviceConsumeRequest struct {
+	DeviceCodeHash []byte
+	ClientID       string
+	Now            time.Time
+}
+
 // SigningKey is a persisted signing key plus lifecycle metadata.
 type SigningKey struct {
 	ID            string

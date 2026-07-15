@@ -34,6 +34,8 @@ type Store struct {
 	browserContexts    map[string]idpstore.BrowserContext
 	rememberedSessions map[string]idpstore.RememberedBrowserSession
 	interactions       map[string]idpstore.InteractionRecord
+	deviceGrants       map[string]idpstore.DeviceGrant
+	deviceByUserCode   map[string]string
 	keys               map[string]idpstore.SigningKey
 }
 
@@ -57,6 +59,8 @@ func New() *Store {
 		browserContexts:    map[string]idpstore.BrowserContext{},
 		rememberedSessions: map[string]idpstore.RememberedBrowserSession{},
 		interactions:       map[string]idpstore.InteractionRecord{},
+		deviceGrants:       map[string]idpstore.DeviceGrant{},
+		deviceByUserCode:   map[string]string{},
 		keys:               map[string]idpstore.SigningKey{},
 	}
 }
@@ -660,6 +664,220 @@ func cloneInteraction(interaction idpstore.InteractionRecord) idpstore.Interacti
 	return interaction
 }
 
+const deviceGrantSlowDownIncrement = 5 * time.Second
+
+func (s *Store) CreateDeviceGrant(_ context.Context, grant idpstore.DeviceGrant) error {
+	if s.inTransaction {
+		return s.createDeviceGrant(grant)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.createDeviceGrant(grant)
+}
+
+func (s *Store) createDeviceGrant(grant idpstore.DeviceGrant) error {
+	if err := grant.ValidateForCreate(); err != nil {
+		return err
+	}
+	deviceKey := hashKey(grant.DeviceCodeHash)
+	userKey := hashKey(grant.UserCodeHash)
+	if _, exists := s.deviceGrants[deviceKey]; exists {
+		return idpstore.ErrDuplicate
+	}
+	if _, exists := s.deviceByUserCode[userKey]; exists {
+		return idpstore.ErrDuplicate
+	}
+	grant.CreatedAt = grant.CreatedAt.UTC()
+	grant.ExpiresAt = grant.ExpiresAt.UTC()
+	grant.NextPollAt = grant.NextPollAt.UTC()
+	grant.Version = 1
+	s.deviceGrants[deviceKey] = cloneDeviceGrant(grant)
+	s.deviceByUserCode[userKey] = deviceKey
+	return nil
+}
+
+func (s *Store) GetDeviceGrantByUserCodeHash(_ context.Context, userCodeHash []byte) (idpstore.DeviceGrant, error) {
+	if s.inTransaction {
+		return s.deviceGrantByUserCodeHash(userCodeHash)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deviceGrantByUserCodeHash(userCodeHash)
+}
+
+func (s *Store) deviceGrantByUserCodeHash(userCodeHash []byte) (idpstore.DeviceGrant, error) {
+	deviceKey, exists := s.deviceByUserCode[hashKey(userCodeHash)]
+	if !exists {
+		return idpstore.DeviceGrant{}, idpstore.ErrNotFound
+	}
+	grant, exists := s.deviceGrants[deviceKey]
+	if !exists {
+		return idpstore.DeviceGrant{}, idpstore.ErrNotFound
+	}
+	return cloneDeviceGrant(grant), nil
+}
+
+func (s *Store) InspectDeviceGrantByDeviceCodeHash(_ context.Context, deviceCodeHash []byte, clientID string) (idpstore.DeviceGrant, error) {
+	if s.inTransaction {
+		return s.inspectDeviceGrant(deviceCodeHash, clientID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inspectDeviceGrant(deviceCodeHash, clientID)
+}
+
+func (s *Store) inspectDeviceGrant(deviceCodeHash []byte, clientID string) (idpstore.DeviceGrant, error) {
+	grant, exists := s.deviceGrants[hashKey(deviceCodeHash)]
+	if !exists || grant.ClientID != clientID {
+		return idpstore.DeviceGrant{}, idpstore.ErrNotFound
+	}
+	return cloneDeviceGrant(grant), nil
+}
+
+func (s *Store) PollDeviceGrant(ctx context.Context, request idpstore.DevicePollRequest) (idpstore.DevicePollResult, error) {
+	if !s.inTransaction {
+		var result idpstore.DevicePollResult
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			var err error
+			result, err = tx.PollDeviceGrant(ctx, request)
+			return err
+		})
+		return result, err
+	}
+	if request.Now.IsZero() {
+		return idpstore.DevicePollResult{}, idpstore.ErrInvalidDeviceGrant
+	}
+	grant, err := s.inspectDeviceGrant(request.DeviceCodeHash, request.ClientID)
+	if err != nil {
+		return idpstore.DevicePollResult{}, err
+	}
+	now := request.Now.UTC()
+	if deviceGrantExpired(grant, now) {
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollExpired, Grant: grant}, nil
+	}
+	switch grant.Status {
+	case idpstore.DeviceGrantDenied:
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollDenied, Grant: grant}, nil
+	case idpstore.DeviceGrantConsumed:
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollConsumed, Grant: grant}, nil
+	case idpstore.DeviceGrantPending, idpstore.DeviceGrantApproved:
+	default:
+		return idpstore.DevicePollResult{}, idpstore.ErrInvalidDeviceGrant
+	}
+	if now.Before(grant.NextPollAt) {
+		grant.PollInterval += deviceGrantSlowDownIncrement
+		grant.NextPollAt = now.Add(grant.PollInterval)
+		grant.SlowDownCount++
+		grant.Version++
+		s.deviceGrants[hashKey(grant.DeviceCodeHash)] = cloneDeviceGrant(grant)
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollSlowDown, Grant: cloneDeviceGrant(grant)}, nil
+	}
+	if grant.Status == idpstore.DeviceGrantApproved {
+		return idpstore.DevicePollResult{Outcome: idpstore.DevicePollApproved, Grant: grant}, nil
+	}
+	grant.NextPollAt = now.Add(grant.PollInterval)
+	grant.Version++
+	s.deviceGrants[hashKey(grant.DeviceCodeHash)] = cloneDeviceGrant(grant)
+	return idpstore.DevicePollResult{Outcome: idpstore.DevicePollPending, Grant: cloneDeviceGrant(grant)}, nil
+}
+
+func (s *Store) DecideDeviceGrant(ctx context.Context, request idpstore.DeviceDecisionRequest) (idpstore.DeviceGrant, error) {
+	if !s.inTransaction {
+		var grant idpstore.DeviceGrant
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			var err error
+			grant, err = tx.DecideDeviceGrant(ctx, request)
+			return err
+		})
+		return grant, err
+	}
+	if request.Now.IsZero() || !request.Decision.Valid() {
+		return idpstore.DeviceGrant{}, idpstore.ErrInvalidDeviceDecision
+	}
+	grant, err := s.deviceGrantByUserCodeHash(request.UserCodeHash)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	now := request.Now.UTC()
+	if deviceGrantExpired(grant, now) {
+		return idpstore.DeviceGrant{}, idpstore.ErrExpired
+	}
+	if grant.Status != idpstore.DeviceGrantPending {
+		return idpstore.DeviceGrant{}, idpstore.ErrDeviceGrantNotPending
+	}
+	if request.Decision == idpstore.DeviceGrantApprove && (request.UserID == "" || request.Subject == "" || request.AuthTime.IsZero()) {
+		return idpstore.DeviceGrant{}, idpstore.ErrInvalidDeviceDecision
+	}
+	grant.Status = idpstore.DeviceGrantDenied
+	grant.DecidedAt = &now
+	if request.Decision == idpstore.DeviceGrantApprove {
+		grant.Status = idpstore.DeviceGrantApproved
+		grant.UserID = request.UserID
+		grant.Subject = request.Subject
+		grant.AuthTime = request.AuthTime.UTC()
+		grant.AuthenticationMethods = append([]string(nil), request.AuthenticationMethods...)
+		grant.ApprovedScopes = append([]string(nil), request.ApprovedScopes...)
+	}
+	grant.Version++
+	s.deviceGrants[hashKey(grant.DeviceCodeHash)] = cloneDeviceGrant(grant)
+	return cloneDeviceGrant(grant), nil
+}
+
+func (s *Store) ConsumeDeviceGrant(ctx context.Context, request idpstore.DeviceConsumeRequest) (idpstore.DeviceGrant, error) {
+	if !s.inTransaction {
+		var grant idpstore.DeviceGrant
+		err := s.Update(ctx, func(tx idpstore.TxStore) error {
+			var err error
+			grant, err = tx.ConsumeDeviceGrant(ctx, request)
+			return err
+		})
+		return grant, err
+	}
+	if request.Now.IsZero() {
+		return idpstore.DeviceGrant{}, idpstore.ErrInvalidDeviceGrant
+	}
+	grant, err := s.inspectDeviceGrant(request.DeviceCodeHash, request.ClientID)
+	if err != nil {
+		return idpstore.DeviceGrant{}, err
+	}
+	now := request.Now.UTC()
+	if deviceGrantExpired(grant, now) {
+		return idpstore.DeviceGrant{}, idpstore.ErrExpired
+	}
+	if grant.Status == idpstore.DeviceGrantConsumed {
+		return idpstore.DeviceGrant{}, idpstore.ErrAlreadyConsumed
+	}
+	if grant.Status != idpstore.DeviceGrantApproved {
+		return idpstore.DeviceGrant{}, idpstore.ErrDeviceGrantNotApproved
+	}
+	grant.Status = idpstore.DeviceGrantConsumed
+	grant.ConsumedAt = &now
+	grant.Version++
+	s.deviceGrants[hashKey(grant.DeviceCodeHash)] = cloneDeviceGrant(grant)
+	return cloneDeviceGrant(grant), nil
+}
+
+func deviceGrantExpired(grant idpstore.DeviceGrant, now time.Time) bool {
+	return !grant.ExpiresAt.IsZero() && !now.Before(grant.ExpiresAt)
+}
+
+func cloneDeviceGrant(grant idpstore.DeviceGrant) idpstore.DeviceGrant {
+	grant.DeviceCodeHash = append([]byte(nil), grant.DeviceCodeHash...)
+	grant.UserCodeHash = append([]byte(nil), grant.UserCodeHash...)
+	grant.RequestedScopes = append([]string(nil), grant.RequestedScopes...)
+	grant.ApprovedScopes = append([]string(nil), grant.ApprovedScopes...)
+	grant.AuthenticationMethods = append([]string(nil), grant.AuthenticationMethods...)
+	if grant.DecidedAt != nil {
+		decidedAt := *grant.DecidedAt
+		grant.DecidedAt = &decidedAt
+	}
+	if grant.ConsumedAt != nil {
+		consumedAt := *grant.ConsumedAt
+		grant.ConsumedAt = &consumedAt
+	}
+	return grant
+}
+
 func (s *Store) CreateSigningKey(_ context.Context, key idpstore.SigningKey) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -935,6 +1153,8 @@ func (s *Store) cloneLocked() *Store {
 		browserContexts:    cloneBrowserContextMap(s.browserContexts),
 		rememberedSessions: cloneRememberedBrowserSessionMap(s.rememberedSessions),
 		interactions:       cloneInteractionMap(s.interactions),
+		deviceGrants:       cloneDeviceGrantMap(s.deviceGrants),
+		deviceByUserCode:   cloneMap(s.deviceByUserCode),
 		keys:               cloneMap(s.keys),
 	}
 }
@@ -955,7 +1175,17 @@ func (s *Store) replaceLocked(next *Store) {
 	s.browserContexts = next.browserContexts
 	s.rememberedSessions = next.rememberedSessions
 	s.interactions = next.interactions
+	s.deviceGrants = next.deviceGrants
+	s.deviceByUserCode = next.deviceByUserCode
 	s.keys = next.keys
+}
+
+func cloneDeviceGrantMap(source map[string]idpstore.DeviceGrant) map[string]idpstore.DeviceGrant {
+	clone := make(map[string]idpstore.DeviceGrant, len(source))
+	for key, value := range source {
+		clone[key] = cloneDeviceGrant(value)
+	}
+	return clone
 }
 
 func cloneInteractionMap(source map[string]idpstore.InteractionRecord) map[string]idpstore.InteractionRecord {

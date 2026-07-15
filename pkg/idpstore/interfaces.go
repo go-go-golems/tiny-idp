@@ -17,6 +17,10 @@ var (
 	ErrSigningKeyNotRetired      = errors.New("cannot purge a signing key that has not been retired")
 	ErrNestedTransaction         = errors.New("nested store transactions are not supported")
 	ErrInvalidInteractionOutcome = errors.New("invalid interaction outcome")
+	ErrInvalidDeviceGrant        = errors.New("invalid device grant")
+	ErrInvalidDeviceDecision     = errors.New("invalid device grant decision")
+	ErrDeviceGrantNotPending     = errors.New("device grant is not pending")
+	ErrDeviceGrantNotApproved    = errors.New("device grant is not approved")
 )
 
 type ClientStore interface {
@@ -102,6 +106,18 @@ type InteractionStore interface {
 	ConsumeInteraction(ctx context.Context, idHash []byte, now time.Time, outcome InteractionOutcome) (InteractionRecord, error)
 }
 
+// DeviceGrantStore exposes the complete security state machine through named
+// operations. It intentionally has no general update method: callers cannot
+// bypass status, expiry, client-binding, or polling predicates.
+type DeviceGrantStore interface {
+	CreateDeviceGrant(ctx context.Context, grant DeviceGrant) error
+	GetDeviceGrantByUserCodeHash(ctx context.Context, userCodeHash []byte) (DeviceGrant, error)
+	InspectDeviceGrantByDeviceCodeHash(ctx context.Context, deviceCodeHash []byte, clientID string) (DeviceGrant, error)
+	PollDeviceGrant(ctx context.Context, request DevicePollRequest) (DevicePollResult, error)
+	DecideDeviceGrant(ctx context.Context, request DeviceDecisionRequest) (DeviceGrant, error)
+	ConsumeDeviceGrant(ctx context.Context, request DeviceConsumeRequest) (DeviceGrant, error)
+}
+
 type KeyStore interface {
 	ActiveSigningKey(ctx context.Context) (SigningKey, error)
 	VerificationKeys(ctx context.Context) ([]SigningKey, error)
@@ -124,6 +140,7 @@ type StoreOperations interface {
 	SessionStore
 	BrowserContextStore
 	InteractionStore
+	DeviceGrantStore
 	KeyStore
 }
 
@@ -146,6 +163,8 @@ type ReadStore interface {
 	GetBrowserContext(ctx context.Context, contextHash []byte) (BrowserContext, error)
 	ListRememberedBrowserSessions(ctx context.Context, contextHash []byte, now time.Time) ([]RememberedBrowserSession, error)
 	GetInteraction(ctx context.Context, idHash []byte) (InteractionRecord, error)
+	GetDeviceGrantByUserCodeHash(ctx context.Context, userCodeHash []byte) (DeviceGrant, error)
+	InspectDeviceGrantByDeviceCodeHash(ctx context.Context, deviceCodeHash []byte, clientID string) (DeviceGrant, error)
 	ActiveSigningKey(ctx context.Context) (SigningKey, error)
 	VerificationKeys(ctx context.Context) ([]SigningKey, error)
 }

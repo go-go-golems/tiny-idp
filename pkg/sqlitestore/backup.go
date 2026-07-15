@@ -48,6 +48,7 @@ var manifestTables = []string{
 	"grants", "authorization_codes", "access_tokens", "refresh_tokens",
 	"consents", "sessions", "signing_keys", "fosite_authorize_codes",
 	"browser_contexts", "remembered_browser_sessions",
+	"device_grants",
 	"fosite_pkces", "fosite_oidc_sessions", "fosite_access_tokens",
 	"fosite_refresh_tokens", "fosite_jtis",
 }

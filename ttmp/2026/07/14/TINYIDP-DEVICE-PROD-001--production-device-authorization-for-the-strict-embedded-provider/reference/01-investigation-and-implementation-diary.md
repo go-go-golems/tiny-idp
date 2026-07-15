@@ -558,3 +558,123 @@ legacy SQLite client JSON
   public + PKCE/no URI  -> [device_code]
   anything ambiguous    -> [] -> strict production validation error
 ```
+
+## Step 3: Build the durable device-grant state machine
+
+This step implements the state substrate that later public endpoints and the
+Fosite extension will use. It deliberately contains no raw-code generation,
+HTTP parsing, rendering, discovery, or token issuance. The result is a small
+durable protocol machine with no caller-exposed mutable-record API.
+
+### What I did
+
+- Added `DeviceGrant`, four stored statuses, typed poll outcomes, and typed
+  poll/decision/consume requests to `pkg/idpstore`.
+- Added `ValidateForCreate`; only complete pending records can enter storage.
+  Named operations own every subsequent status transition.
+- Extended `Store`, `ReadStore`, and transaction-scoped `TxStore` with
+  creation, code lookup, client-bound inspection, polling, decision, and
+  consumption operations.
+- Implemented both in-memory and SQLite versions. The memory implementation
+  clones all secret-hash and slice fields across transaction snapshots; SQLite
+  migration `009` stores fixed hash lookup columns, client binding, status,
+  expiry, next-poll time, a JSON payload, check constraints, and maintenance
+  indexes.
+- Implemented durable poll discipline: a permitted pending poll advances the
+  next poll time; an early pending or approved poll adds five seconds,
+  increments the slowdown count, and stores the new interval.
+- Implemented exactly-once decisions and consumption. SQLite uses conditional
+  `UPDATE` predicates for pending/approved status and unexpired time, while a
+  transaction callback lets later Fosite persistence share one commit.
+- Added generic store-suite tests for client binding, cancellation, polling,
+  approval, rollback, replay, and expiry. Added SQLite restart plus concurrent
+  consume and decision-race tests. Added maintenance and online backup/restore
+  tests for device records.
+
+### Why
+
+- A device code is a bearer credential. A generic update method would let an
+  endpoint accidentally bypass client binding, expiry, polling, or one-time
+  consumption. Named operations put those predicates beside their durable data.
+- The device poll interval must survive a process restart. A memory-only rate
+  limiter cannot enforce RFC 8628 slowdown semantics across failures.
+- Token issuance later needs a single database transaction. Making consume
+  available on `TxStore` is the prerequisite for all-or-nothing device-code
+  consumption plus Fosite token persistence.
+
+### What worked
+
+- `go test ./pkg/idpstore ./internal/store/memory ./pkg/sqlitestore` passed,
+  including the cross-store state-machine suite.
+- The SQLite restart test proves approval context survives reopening the DB;
+  its 16 concurrent consumers and 16 concurrent decision attempts each have
+  exactly one winner.
+- Backup manifests now count `device_grants`, and restore reopens the copy and
+  retrieves the pending grant by its device-code hash.
+
+### What didn't work
+
+- A repository-wide test run caught two Phase 1 probe files that used the new
+  `idpstore` grant constants without importing the package. Adding the missing
+  imports made both probes compile and their focused package tests pass.
+- The same broad run continued to report the unrelated existing xapp CSP/header
+  expectations. No Phase 2 source is in that application; it remains an
+  external test-health issue rather than a device-state-machine defect.
+
+### What I learned
+
+- The existing store architecture already supports the required atomic shape:
+  `Update` passes a `TxStore` to a callback. The device API can therefore avoid
+  a special transaction abstraction while still sharing SQL state with Fosite.
+- Deriving expiry from `ExpiresAt` avoids a background-job race. At the exact
+  expiry instant, decide and consume reject before status predicates run;
+  maintenance later removes the retained terminal record.
+
+### What was tricky to build
+
+- Transaction snapshots in the memory store need deep copies for hashes,
+  slices, and optional timestamps. Shallow map copies would allow a caller to
+  mutate a snapshot and corrupt committed state even when its transaction
+  rolls back.
+- SQLite has both JSON payload state and searchable constrained columns. Each
+  transition updates the payload while predicates use the columns, which keeps
+  lookup efficient and legal transitions visible in SQL.
+
+### What warrants a second pair of eyes
+
+- Review the exact `expires_at > now` semantics and fixed five-second slowdown
+  increment against the RFC before it becomes compatibility behavior.
+- Review whether denied-grant maintenance should retain by decision time or
+  solely by expiry; the current conservative policy removes only after the
+  configured retention criterion is met.
+- Check the transaction boundary again when Phase 5 adds Fosite writes; a
+  standalone `ConsumeDeviceGrant` call must never be used outside that shared
+  callback for the final token path.
+
+### What should be done in the future
+
+- Begin Phase 3: domain-separated code hashing and generators, then bounded
+  device-authorization request parsing and creation. The store must receive
+  hashes only; raw code handling belongs at that endpoint boundary.
+
+### Code review instructions
+
+- Start with `DeviceGrantStore` in `pkg/idpstore/interfaces.go`; confirm there
+  is no `UpdateDeviceGrant` escape hatch.
+- Review `009_device_grants.sql` and the three SQLite transition predicates in
+  `pkg/sqlitestore/store.go` together.
+- Run `go test ./pkg/sqlitestore -run DeviceGrant -count=1` to exercise restart
+  and concurrent one-winner behavior.
+- Read the generic `RunStoreSuite` device tests to compare memory and SQLite
+  observable behavior.
+
+### Technical details
+
+```text
+create -> pending
+pending + permitted poll -> pending; next_poll += interval
+pending|approved + early poll -> same status; interval += 5s
+pending + approve/deny -> approved|denied
+approved + consume (same tx as token persistence later) -> consumed
+any active status at expires_at <= now -> derived expired outcome
+```

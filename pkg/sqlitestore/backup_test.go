@@ -24,6 +24,10 @@ func TestOnlineBackupVerifyAndRestore(t *testing.T) {
 	if err := st.PutClient(ctx, idpstore.Client{ID: "wal-client", RedirectURIs: []string{"https://rp.example/cb"}, AllowedScopes: []string{"openid"}, RequirePKCE: true}); err != nil {
 		t.Fatal(err)
 	}
+	deviceGrant := idpstore.DeviceGrant{ID: "backup-device", DeviceCodeHash: []byte("backup-device-hash"), UserCodeHash: []byte("backup-user-hash"), ClientID: "wal-client", Status: idpstore.DeviceGrantPending, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour), PollInterval: 5 * time.Second, NextPollAt: time.Now().UTC()}
+	if err := st.CreateDeviceGrant(ctx, deviceGrant); err != nil {
+		t.Fatal(err)
+	}
 	wal, err := os.Stat(source + "-wal")
 	if err != nil || wal.Size() == 0 {
 		t.Fatalf("expected committed WAL content before backup: info=%v err=%v", wal, err)
@@ -39,6 +43,9 @@ func TestOnlineBackupVerifyAndRestore(t *testing.T) {
 	}
 	if result.Manifest.TableCounts["clients"] != 1 {
 		t.Fatalf("backup manifest = %#v", result.Manifest)
+	}
+	if result.Manifest.TableCounts["device_grants"] != 1 {
+		t.Fatalf("device grant count = %#v", result.Manifest)
 	}
 	assertMode(t, backupDir, 0o700)
 	assertMode(t, backupPath, 0o600)
@@ -78,6 +85,9 @@ func TestOnlineBackupVerifyAndRestore(t *testing.T) {
 	client, err := copyStore.GetClient(ctx, "wal-client")
 	if err != nil || client.ID != "wal-client" {
 		t.Fatalf("restored client = %#v, err=%v", client, err)
+	}
+	if restoredGrant, err := copyStore.InspectDeviceGrantByDeviceCodeHash(ctx, deviceGrant.DeviceCodeHash, deviceGrant.ClientID); err != nil || restoredGrant.ID != deviceGrant.ID {
+		t.Fatalf("restored device grant = %#v, err=%v", restoredGrant, err)
 	}
 }
 

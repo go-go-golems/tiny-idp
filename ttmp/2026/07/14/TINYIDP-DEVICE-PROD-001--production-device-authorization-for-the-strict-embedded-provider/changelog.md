@@ -10,6 +10,19 @@ durably migrated client property. Browser and device bootstrap profiles, the
 admin client command, strict Fosite clients, review probes, and external
 consumer fixtures now declare capabilities deliberately.
 
+Completed Phase 2 with a durable, secret-free `DeviceGrant` state machine.
+Named store transitions now cover creation, code lookup, polling, decision,
+and one-time consumption in memory and SQLite, with constrained schema,
+maintenance, backup/restore, restart, rollback, cancellation, and concurrency
+coverage.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpstore/types.go — device state and typed requests/results
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpstore/interfaces.go — named transition contract
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/migrations/009_device_grants.sql — constrained durable schema
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/store.go — atomic SQLite transition predicates
+
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpstore/types.go — public grant-capability model

@@ -9,12 +9,12 @@
 - [x] Phase 1: Add SQLite migration and deterministic backfill for existing browser clients <!-- t:6hxv -->
 - [x] Phase 1: Update BrowserClient, DeviceClient, bootstrap drift, admin CLI, and Fosite client adaptation <!-- t:2ts2 -->
 - [x] Phase 1: Add client capability migration, validation, and negative authorization tests <!-- t:3cml -->
-- [ ] Phase 2: Define DeviceGrant records, statuses, poll/decision/consume request and result types <!-- t:u1bx -->
-- [ ] Phase 2: Add named device store operations to Store and transaction-scoped TxStore <!-- t:6cl8 -->
-- [ ] Phase 2: Implement memory-store device operations with invariant tests <!-- t:ulnd -->
-- [ ] Phase 2: Add constrained SQLite device-grant schema, indexes, and atomic transitions <!-- t:klm8 -->
-- [ ] Phase 2: Add transition concurrency, cancellation, rollback, restart, and expiry tests <!-- t:y2iq -->
-- [ ] Phase 2: Integrate device records with maintenance, backup verification, and restore tests <!-- t:n2k6 -->
+- [x] Phase 2: Define DeviceGrant records, statuses, poll/decision/consume request and result types <!-- t:u1bx -->
+- [x] Phase 2: Add named device store operations to Store and transaction-scoped TxStore <!-- t:6cl8 -->
+- [x] Phase 2: Implement memory-store device operations with invariant tests <!-- t:ulnd -->
+- [x] Phase 2: Add constrained SQLite device-grant schema, indexes, and atomic transitions <!-- t:klm8 -->
+- [x] Phase 2: Add transition concurrency, cancellation, rollback, restart, and expiry tests <!-- t:y2iq -->
+- [x] Phase 2: Integrate device records with maintenance, backup verification, and restore tests <!-- t:n2k6 -->
 - [ ] Phase 3: Implement domain-separated keyed hashing and code generators with collision retry <!-- t:xdur -->
 - [ ] Phase 3: Implement strict bounded POST device authorization parsing and client authentication <!-- t:16og -->
 - [ ] Phase 3: Enforce device grant capability and requested-scope policy <!-- t:3cwn -->

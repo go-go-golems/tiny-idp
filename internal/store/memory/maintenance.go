@@ -83,6 +83,17 @@ func (s *Store) Maintain(ctx context.Context, now time.Time, policy idpstore.Mai
 			report.DomainRecords++
 		}
 	}
+	for key, value := range s.deviceGrants {
+		terminal := value.ConsumedAt
+		if terminal == nil && value.Status == idpstore.DeviceGrantDenied {
+			terminal = value.DecidedAt
+		}
+		if expiredMemory(value.ExpiresAt, terminal, cutoff) {
+			delete(s.deviceGrants, key)
+			delete(s.deviceByUserCode, hashKey(value.UserCodeHash))
+			report.DomainRecords++
+		}
+	}
 	keyCutoff := now.Add(-policy.SigningKeyRetention)
 	for key, value := range s.keys {
 		if !value.Active && !value.NotAfter.IsZero() && value.NotAfter.Before(keyCutoff) {

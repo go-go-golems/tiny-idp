@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -81,6 +82,94 @@ func TestClientGrantCapabilityMigrationBackfillsKnownLegacyProfiles(t *testing.T
 	}
 	if err := ambiguous.Validate(idpstore.ProductionMode); !errors.Is(err, idpstore.ErrClientMissingGrantTypes) {
 		t.Fatalf("ambiguous client validation error = %v", err)
+	}
+}
+
+func TestDeviceGrantSurvivesRestartAndConcurrentConsumptionHasOneWinner(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "device-grant.db")
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.July, 15, 15, 0, 0, 0, time.UTC)
+	if err := store.PutClient(ctx, idpstore.Client{ID: "device-client"}); err != nil {
+		t.Fatal(err)
+	}
+	grant := idpstore.DeviceGrant{ID: "restartable", DeviceCodeHash: []byte("device-hash"), UserCodeHash: []byte("user-hash"), ClientID: "device-client", Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(time.Hour), PollInterval: 5 * time.Second, NextPollAt: now}
+	if err := store.CreateDeviceGrant(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DecideDeviceGrant(ctx, idpstore.DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: idpstore.DeviceGrantApprove, UserID: "u1", Subject: "subject-1", AuthTime: now, AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = sqlitestore.Open(ctx, sqlitestore.DefaultConfig(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	loaded, err := store.InspectDeviceGrantByDeviceCodeHash(ctx, grant.DeviceCodeHash, grant.ClientID)
+	if err != nil || loaded.Status != idpstore.DeviceGrantApproved || loaded.Subject != "subject-1" {
+		t.Fatalf("restarted grant = %#v, %v", loaded, err)
+	}
+
+	const workers = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := store.ConsumeDeviceGrant(ctx, idpstore.DeviceConsumeRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(time.Second)})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	winners := 0
+	for err := range errs {
+		if err == nil {
+			winners++
+			continue
+		}
+		if !errors.Is(err, idpstore.ErrAlreadyConsumed) {
+			t.Fatalf("concurrent consume error = %v", err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("consume winners = %d, want 1", winners)
+	}
+
+	decisionGrant := idpstore.DeviceGrant{ID: "decision-race", DeviceCodeHash: []byte("decision-device-hash"), UserCodeHash: []byte("decision-user-hash"), ClientID: "device-client", Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(time.Hour), PollInterval: 5 * time.Second, NextPollAt: now}
+	if err := store.CreateDeviceGrant(ctx, decisionGrant); err != nil {
+		t.Fatal(err)
+	}
+	errs = make(chan error, workers)
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := store.DecideDeviceGrant(ctx, idpstore.DeviceDecisionRequest{UserCodeHash: decisionGrant.UserCodeHash, Decision: idpstore.DeviceGrantDeny, Now: now.Add(time.Second)})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	winners = 0
+	for err := range errs {
+		if err == nil {
+			winners++
+			continue
+		}
+		if !errors.Is(err, idpstore.ErrDeviceGrantNotPending) {
+			t.Fatalf("concurrent decision error = %v", err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("decision winners = %d, want 1", winners)
 	}
 }
 
