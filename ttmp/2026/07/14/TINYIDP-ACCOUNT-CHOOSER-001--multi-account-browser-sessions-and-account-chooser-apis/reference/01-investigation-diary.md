@@ -13,9 +13,13 @@ Intent: long-term
 Owners: []
 RelatedFiles:
     - Path: repo://examples/tinyidp-message-app/app_http.go
-      Note: Creates a protected relying-party session after self-registration and preserves local continuation.
+      Note: |-
+        Creates a protected relying-party session after self-registration and preserves local continuation.
+        Separates local relying-party logout from provider-wide logout (commit 96f531d).
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
-      Note: Verifies automatic post-registration session and independent OIDC login behavior.
+      Note: |-
+        Verifies automatic post-registration session and independent OIDC login behavior.
+        Regression tests for logout scopes and authenticated account-switch routing (commit 96f531d).
     - Path: repo://examples/tinyidp-message-app/loginui/renderer_test.go
       Note: Conformance and presentation assertions for chooser rendering.
     - Path: repo://examples/tinyidp-message-app/loginui/static/login.css
@@ -26,6 +30,10 @@ RelatedFiles:
         Semantic account-card chooser markup for the custom renderer.
     - Path: repo://examples/tinyidp-message-app/oidc_client.go
       Note: Message Desk requests the standard OIDC select_account prompt.
+    - Path: repo://examples/tinyidp-message-app/ui/src/App.tsx
+      Note: Explicit local and global logout controls (commit 96f531d).
+    - Path: repo://examples/tinyidp-message-app/ui/src/api.ts
+      Note: Typed endpoint contract for the two logout scopes (commit 96f531d).
     - Path: repo://internal/fositeadapter/account_chooser.go
       Note: Opt-in privacy and capacity configuration.
     - Path: repo://internal/fositeadapter/account_chooser_test.go
@@ -76,12 +84,15 @@ RelatedFiles:
       Note: Repeatable account chooser state-machine validation.
     - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/05-message-desk-smoke.spec.mjs
       Note: Prepared local browser smoke scenario.
+    - Path: repo://ttmp/2026/07/14/TINYIDP-ACCOUNT-CHOOSER-001--multi-account-browser-sessions-and-account-chooser-apis/scripts/06-live-account-switch.spec.mjs
+      Note: Credential-free browser regression specification for switch and local logout.
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-14T17:53:02.926941303-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -1251,4 +1262,206 @@ registration password accepted
   -> 303 local return_to page
 
 This does not set tinyidp_session.
+```
+
+## Step 10: Separate local Message Desk logout from provider-wide logout
+
+The running demo made a real product ambiguity visible: a person who logged
+out of Message Desk could not return to the account chooser, because the only
+logout action also ended tiny-idp's browser context. The application now
+offers two explicit controls. “Log out of Message Desk” revokes only the
+relying-party session. “Log out everywhere” revokes that session and then
+navigates the browser through the provider's RP-initiated end-session endpoint.
+
+This is a security boundary rather than merely a presentation change. The
+Message Desk server owns its opaque app session cookie and CSRF secret;
+tiny-idp owns the `tinyidp_session` browser cookie and remembered-account
+context. The local operation does not reach across that boundary. The global
+operation deliberately uses a browser navigation so the provider receives its
+own cookie and can atomically invalidate the browser context it owns.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, do it"
+
+**Assistant interpretation:** Implement the proposed distinction between an
+application-only logout and a provider-wide logout, test it in the live
+Message Desk browser experience, and retain evidence for later review.
+
+**Inferred user intent:** Make account switching and account-chooser access
+predictable without reducing the user-visible meaning or security coverage of
+an explicit global sign-out.
+
+**Commit (code):** `96f531dccdbe92c568532a6adbb63b71392c523a` —
+"feat(message-app): distinguish local and global logout"
+
+### What I did
+
+- Added `POST /auth/logout/local` in `app_http.go`; it shares CSRF checking,
+  app-session revocation, and app-cookie clearing with the existing logout
+  handler, but returns `204 No Content` before constructing an IdP end-session
+  URL.
+- Refactored the shared checks into `logoutApplicationSession`, controlled by
+  an explicit `endProviderSession` boolean. `POST /auth/logout` remains the
+  global operation and returns its browser-navigable `endSessionUrl` JSON
+  payload.
+- Added Go tests proving local logout revokes the Message Desk session and
+  returns no end-session navigation; retained the test that proves global
+  logout returns an allowlisted provider URL and revokes the local session.
+- Added a Message Desk “Change account” link that explicitly starts
+  `prompt=select_account` even when a local app session exists, and a unit
+  test for that authenticated-app-session branch.
+- Added two unambiguous UI controls: “Log out of Message Desk” invokes the
+  local mutation; “Log out everywhere” invokes the global mutation and calls
+  `location.assign` only for the returned provider URL.
+- Formatted the touched Go code, made the touched TypeScript API surface
+  readable, rebuilt the embedded production bundle, and added
+  `scripts/06-live-account-switch.spec.mjs`. The saved script keeps operator
+  credentials in environment variables and includes a local-logout chooser
+  regression scenario.
+- Restarted the demo in tmux and used the configured Playwright browser MCP
+  against `http://127.0.0.1:8090`.
+
+### Why
+
+- A host-local sign-out should not silently erase an identity-provider browser
+  context. Doing so makes account selection unavailable precisely when users
+  expect it after leaving an application.
+- A global sign-out must remain explicit because it has broader effect: it
+  invalidates provider state and removes every remembered account from that
+  browser context. Its name communicates this scope to the user.
+- Returning an IdP endpoint rather than making a server-side request ensures
+  the browser carries the provider-owned cookie and follows the OIDC
+  RP-initiated logout interaction in its normal trust boundary.
+
+### What worked
+
+- `gofmt -w examples/tinyidp-message-app/app_http.go
+  examples/tinyidp-message-app/app_http_test.go` completed successfully.
+- `go test ./examples/tinyidp-message-app
+  ./examples/tinyidp-message-app/loginui -count=1` passed.
+- `pnpm build` in `examples/tinyidp-message-app/ui` passed with TypeScript
+  checking and Vite production bundling.
+- `go test ./... -count=1` passed across tiny-idp, including the provider,
+  store, UI, embedded, Message Desk, verifier, analyzer, and xapp packages.
+- The restarted tmux server reported `message application listening
+  addr=127.0.0.1:8090 origin=http://127.0.0.1:8090`.
+- Direct Playwright validation established a known account, clicked “Log out
+  of Message Desk,” observed guest mode, clicked Sign in, and observed the
+  branded “Choose an account” page with the remembered account radio control.
+- The same browser then selected that account, clicked “Log out everywhere,”
+  observed guest mode, clicked Sign in, and observed the credential page
+  rather than an account chooser. This proves the two actions differ at the
+  user-visible and provider-session layers.
+
+### What didn't work
+
+- The initial Playwright MCP calls used `ref` in tool arguments. This MCP
+  expects the accessibility snapshot reference in `target`, producing the
+  exact validation error `Invalid input: expected string, received undefined
+  → at target`. Retrying with `target` succeeded; this was a test-driver
+  invocation correction, not an application defect.
+- The initial sandboxed `tmux capture-pane` could not access the tmux socket
+  (`error connecting to /tmp/tmux-1000/default (Operation not permitted)`).
+  The approved inspection command succeeded and showed the healthy listener.
+- Browser console output contains the existing missing `favicon.ico` 404.
+  It does not affect authentication, account choice, logout, or the tested
+  API responses, so it is recorded but not expanded into unrelated work here.
+
+### What I learned
+
+- The account chooser is reachable after app sign-out only if the host
+  preserves the IdP session cookie and remembered context. This behavior can
+  be tested externally without inspecting database internals.
+- A separate “Change account” control is necessary even for an authenticated
+  local app session: `/auth/login` normally optimizes back to the app, while
+  `switch_account=1` deliberately requests a new OIDC authorization with
+  `prompt=select_account`.
+- Treating the global navigation payload as a typed `Logout` response makes
+  it clear why the local endpoint returns no JSON body and cannot accidentally
+  trigger provider logout from the local action.
+
+### What was tricky to build
+
+The implementation must share the local session-revocation security checks
+without creating two subtly divergent logout handlers. The shared helper
+therefore authenticates the app cookie, compares the CSRF header, revokes the
+hashed server-side session, and clears the HttpOnly app cookie before it
+branches. The `endProviderSession` branch then derives the end-session target
+only from the bootstrap-owned public origin and registered client constants.
+This avoids accepting a user-controlled redirect target and avoids a server
+side call that would lack the provider browser cookie.
+
+The UI is also asynchronous: RTK Query invalidates the `Session` and `Feed`
+tags after either mutation. The local logout completes with a `204`, and the
+normal session query rerenders the same application document as guest mode.
+The global mutation receives JSON, then explicitly changes the browser
+location, allowing the IdP to clear its own session and redirect back.
+
+### What warrants a second pair of eyes
+
+- Review `logoutApplicationSession` to confirm every future logout route uses
+  the same CSRF, durable revocation, and cookie-clearing sequence; do not add
+  a convenience logout endpoint that bypasses it.
+- Review the product wording with the UI owner. “Log out everywhere” accurately
+  describes provider-context removal in this self-contained demo, but a host
+  embedding tiny-idp with several relying parties may want more specific
+  scope copy.
+- Confirm the `post_logout_redirect_uri` registration remains valid whenever
+  deployments change `publicOrigin`; this endpoint is intentionally built
+  from canonical bootstrap configuration rather than request data.
+
+### What should be done in the future
+
+- Add the new Playwright specification to a repository-owned browser-test
+  toolchain/CI job once that dependency is intentionally provisioned, so it
+  can run without operator-supplied ad hoc setup.
+- Exercise provider context removal and bounded remembered-account maintenance
+  as part of the remaining Phase 3 lifecycle work, then check that phase.
+- Consider a small non-authentication asset cleanup for the documented
+  favicon 404 in a dedicated UI task.
+
+### Code review instructions
+
+- Start with `examples/tinyidp-message-app/app_http.go`, especially
+  `handleLogout`, `handleLocalLogout`, `logoutApplicationSession`, and
+  `endSessionURL`.
+- Read `examples/tinyidp-message-app/app_http_test.go` beside the handlers;
+  verify the tests distinguish a `204` local response from a JSON global
+  response and ensure the authenticated switch-account route emits
+  `prompt=select_account`.
+- Inspect `examples/tinyidp-message-app/ui/src/App.tsx` and `ui/src/api.ts`;
+  check that local logout never receives or navigates an end-session URL.
+- Run:
+
+```text
+go test ./examples/tinyidp-message-app ./examples/tinyidp-message-app/loginui -count=1
+go test ./... -count=1
+cd examples/tinyidp-message-app/ui && pnpm build
+```
+
+- To reproduce the browser scenario, start the documented tmux server, sign
+  in to Message Desk, use “Log out of Message Desk,” then Sign in and verify
+  the chooser. Repeat with “Log out everywhere” and verify Sign in requests
+  credentials.
+
+### Technical details
+
+```text
+local action
+  POST /auth/logout/local + app CSRF
+  -> revoke Message Desk app-session hash
+  -> clear tinyidp_message_app cookie
+  -> 204
+  -> next /auth/login sends prompt=select_account
+  -> IdP sees tinyidp_session and renders remembered accounts
+
+global action
+  POST /auth/logout + app CSRF
+  -> same local revocation and cookie clear
+  -> JSON { endSessionUrl }
+  -> browser GET /idp/end-session?client_id=...&post_logout_redirect_uri=...
+  -> IdP clears tinyidp_session and browser-context membership
+  -> redirect /
+  -> next /auth/login renders credentials
 ```

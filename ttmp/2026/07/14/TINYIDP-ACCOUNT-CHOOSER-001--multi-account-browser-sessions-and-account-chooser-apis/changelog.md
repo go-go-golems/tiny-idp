@@ -67,3 +67,12 @@ Improved Message Desk chooser presentation and established a protected relying-p
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Registration-to-RP-session continuation.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/loginui/static/login.css — Account chooser visual integration.
 
+
+## 2026-07-14
+
+Separated Message Desk local logout from provider-wide logout; live Playwright verified chooser preservation and global-session clearing (commit 96f531d).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — Explicit logout scope boundary.
+
