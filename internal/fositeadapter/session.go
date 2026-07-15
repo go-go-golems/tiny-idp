@@ -52,7 +52,7 @@ func (p *Provider) createBrowserSession(w http.ResponseWriter, r *http.Request, 
 // enabled, atomically attaches it to a valid browser context. The returned raw
 // context handle is emitted only when a new context was created; session and
 // remembered-entry raw handles are never stored.
-func (p *Provider) persistBrowserSession(r *http.Request, user idpstore.User, session idpstore.Session, now time.Time) (newContextHandle string, remembered bool, err error) {
+func (p *Provider) persistBrowserSession(r *http.Request, user idpstore.User, session idpstore.Session, now time.Time) (string, bool, error) {
 	if !p.chooser.Enabled || !p.chooser.RememberOnPasswordLogin {
 		return "", false, p.store.CreateSession(r.Context(), session)
 	}
@@ -61,7 +61,7 @@ func (p *Provider) persistBrowserSession(r *http.Request, user idpstore.User, se
 		return "", false, err
 	}
 	candidateContextHash := p.browserContextHash(r)
-	newContextHandle, err = randomB64(32)
+	newContextHandle, err := randomB64(32)
 	if err != nil {
 		return "", false, err
 	}
@@ -72,6 +72,7 @@ func (p *Provider) persistBrowserSession(r *http.Request, user idpstore.User, se
 	}
 	entryHash := idpstore.HashSecret(p.csrfKey, entryHandle)
 	createdContext := false
+	remembered := false
 	err = p.store.Update(r.Context(), func(tx idpstore.TxStore) error {
 		contextHash := candidateContextHash
 		if len(contextHash) != 0 {

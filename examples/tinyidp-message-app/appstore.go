@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -146,7 +145,7 @@ CREATE TABLE IF NOT EXISTS app_schema_migrations (
 	return nil
 }
 
-func (s *appStore) applyMigration(ctx context.Context, migration appMigration) (retErr error) {
+func (s *appStore) applyMigration(ctx context.Context, migration appMigration) error {
 	checksum := appMigrationChecksum(migration)
 	var existingFilename, existingChecksum string
 	err := s.db.QueryRowContext(ctx,
@@ -165,8 +164,9 @@ func (s *appStore) applyMigration(ctx context.Context, migration appMigration) (
 	if err != nil {
 		return errors.Wrap(err, "begin application migration")
 	}
+	committed := false
 	defer func() {
-		if retErr != nil {
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
@@ -182,6 +182,7 @@ func (s *appStore) applyMigration(ctx context.Context, migration appMigration) (
 	if err := tx.Commit(); err != nil {
 		return errors.Wrap(err, "commit application migration")
 	}
+	committed = true
 	return nil
 }
 
@@ -209,11 +210,4 @@ func parseAppTime(raw string) (time.Time, error) {
 		return time.Time{}, errors.Wrapf(err, "parse application timestamp %q", raw)
 	}
 	return value.UTC(), nil
-}
-
-func requireHash32(value []byte, label string) error {
-	if len(value) != sha256.Size {
-		return fmt.Errorf("%s must be exactly %d bytes", label, sha256.Size)
-	}
-	return nil
 }

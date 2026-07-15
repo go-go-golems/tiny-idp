@@ -34,7 +34,7 @@ func newDeviceTokenHandler(provider *Provider, core oauth2.CoreStrategy, oidc op
 	}
 	storage, ok := store.(oauth2.CoreStorage)
 	if !ok {
-		return nil, fmt.Errorf("Fosite store does not provide core token storage")
+		return nil, fmt.Errorf("fosite store does not provide core token storage")
 	}
 	return &deviceTokenHandler{provider: provider, core: core, oidc: oidc, storage: storage}, nil
 }
@@ -109,7 +109,7 @@ func (h *deviceTokenHandler) HandleTokenEndpointRequest(ctx context.Context, req
 	return nil
 }
 
-func (h *deviceTokenHandler) PopulateTokenEndpointResponse(ctx context.Context, requester fosite.AccessRequester, responder fosite.AccessResponder) (err error) {
+func (h *deviceTokenHandler) PopulateTokenEndpointResponse(ctx context.Context, requester fosite.AccessRequester, responder fosite.AccessResponder) error {
 	if !h.CanHandleTokenEndpointRequest(ctx, requester) {
 		return fosite.ErrUnknownRequest
 	}
@@ -151,11 +151,7 @@ func (h *deviceTokenHandler) PopulateTokenEndpointResponse(ctx context.Context, 
 	if err != nil {
 		return fosite.ErrServerError
 	}
-	defer func() {
-		if err != nil {
-			_ = storage.MaybeRollbackTx(ctx, h.storage)
-		}
-	}()
+	rollback := func() { _ = storage.MaybeRollbackTx(ctx, h.storage) }
 	consume := idpstore.DeviceConsumeRequest{DeviceCodeHash: deviceCodeHash(h.provider.csrfKey, deviceCode), ClientID: requester.GetClient().GetID(), Now: h.provider.now()}
 	if h.provider.sqlStore != nil {
 		_, err = h.provider.sqlStore.consumeDeviceGrantInTokenTransaction(ctx, consume)
@@ -166,20 +162,24 @@ func (h *deviceTokenHandler) PopulateTokenEndpointResponse(ctx context.Context, 
 		_, err = h.provider.store.ConsumeDeviceGrant(ctx, consume)
 	}
 	if err != nil {
+		rollback()
 		return deviceConsumeError(err)
 	}
 	// Device code material is accepted only at this boundary. Never let it enter
 	// Fosite's persisted sanitized requester representation.
 	requester.GetRequestForm().Del("device_code")
 	if err = h.storage.CreateAccessTokenSession(ctx, accessSignature, requester.Sanitize([]string{})); err != nil {
+		rollback()
 		return fosite.ErrServerError
 	}
 	if refreshSignature != "" {
 		if err = h.storage.CreateRefreshTokenSession(ctx, refreshSignature, accessSignature, requester.Sanitize([]string{})); err != nil {
+			rollback()
 			return fosite.ErrServerError
 		}
 	}
 	if err = storage.MaybeCommitTx(ctx, h.storage); err != nil {
+		rollback()
 		return fosite.ErrServerError
 	}
 	return nil

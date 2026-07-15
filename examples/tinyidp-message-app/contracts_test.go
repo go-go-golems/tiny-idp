@@ -1,28 +1,24 @@
 package main
 
 import (
-	"go/parser"
-	"go/token"
-	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 func TestExternalImportBoundary(t *testing.T) {
-	packages, err := parser.ParseDir(token.NewFileSet(), ".", nil, parser.ImportsOnly)
+	loaded, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedImports}, ".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, pkg := range packages {
-		for filename, file := range pkg.Files {
-			for _, imported := range file.Imports {
-				path, err := strconv.Unquote(imported.Path.Value)
-				if err != nil {
-					t.Fatalf("%s has malformed import %q", filename, imported.Path.Value)
-				}
-				if strings.HasPrefix(path, "github.com/manuel/tinyidp/internal/") {
-					t.Errorf("%s imports forbidden internal package %q", filename, path)
-				}
+	if packages.PrintErrors(loaded) != 0 {
+		t.Fatal("load example package imports")
+	}
+	for _, pkg := range loaded {
+		for path := range pkg.Imports {
+			if strings.HasPrefix(path, "github.com/manuel/tinyidp/internal/") {
+				t.Errorf("%s imports forbidden internal package %q", pkg.PkgPath, path)
 			}
 		}
 	}

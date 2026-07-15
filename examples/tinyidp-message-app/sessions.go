@@ -92,12 +92,3 @@ WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?`,
 	}
 	return nil
 }
-
-func (s *appStore) touchAppSession(ctx context.Context, rawToken string, previous, now time.Time) error {
-	hash := sha256.Sum256([]byte(rawToken))
-	_, err := s.db.ExecContext(ctx, `
-UPDATE app_sessions SET last_seen_at = ?
-WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ? AND last_seen_at = ?`,
-		formatAppTime(now), hash[:], formatAppTime(now), formatAppTime(previous))
-	return errors.Wrap(err, "touch application session")
-}
