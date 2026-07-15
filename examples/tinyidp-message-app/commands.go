@@ -18,6 +18,7 @@ import (
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
+	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -218,6 +219,16 @@ func openInitializedMessageApplication(ctx context.Context, stateRoot string) (*
 		Token:  embeddedidp.TokenConfig{SecretKey: tokenSecret}, Audit: audit,
 		RateLimiter: idp.NewFixedWindowRateLimiter(30, time.Minute), ClientAddress: idp.DirectClientAddressResolver{},
 		Authenticator: accounts, UI: embeddedidp.UIConfig{Renderer: renderer},
+		AccountChooser: embeddedidp.AccountChooserConfig{
+			Enabled:                 true,
+			RememberOnPasswordLogin: true,
+			DisplayLabel: func(user idpstore.User) (string, error) {
+				if label := strings.TrimSpace(user.Name); label != "" {
+					return label, nil
+				}
+				return user.PreferredUsername, nil
+			},
+		},
 	})
 	for index := range tokenSecret {
 		tokenSecret[index] = 0

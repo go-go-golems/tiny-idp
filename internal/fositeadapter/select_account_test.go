@@ -15,10 +15,22 @@ import (
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
-func TestPromptSelectAccountActivatesSelectedRememberedSession(t *testing.T) {
+type selectAccountFixture struct {
+	ctx           context.Context
+	store         *memory.Store
+	secret        []byte
+	activeHandle  string
+	contextHandle string
+	entryHash     []byte
+	server        *httptest.Server
+}
+
+func newSelectAccountFixture(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy) *selectAccountFixture {
+	t.Helper()
 	ctx := context.Background()
 	store := memory.New()
 	if err := store.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
@@ -58,18 +70,27 @@ func TestPromptSelectAccountActivatesSelectedRememberedSession(t *testing.T) {
 	if err := store.CreateRememberedBrowserSession(ctx, idpstore.RememberedBrowserSession{IDHash: entryHash, ContextIDHash: contextHash, SessionIDHash: selectedHash, UserID: "u2", DisplayLabel: "Two", CreatedAt: now, LastUsedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, AccountChooser: fositeadapter.AccountChooserConfig{Enabled: true}})
+	var consent idp.ConsentPolicy
+	if consentFactory != nil {
+		consent = consentFactory(store)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, Consent: consent, AccountChooser: fositeadapter.AccountChooserConfig{Enabled: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(provider.Handler())
-	defer server.Close()
+	t.Cleanup(server.Close)
+	return &selectAccountFixture{ctx: ctx, store: store, secret: secret, activeHandle: activeHandle, contextHandle: contextHandle, entryHash: entryHash, server: server}
+}
+
+func (f *selectAccountFixture) begin(t *testing.T) (url.Values, *http.Cookie) {
+	t.Helper()
 	query := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	query.Del("login")
 	query.Set("prompt", "select_account")
-	request, _ := http.NewRequest(http.MethodGet, server.URL+"/authorize?"+query.Encode(), nil)
-	request.AddCookie(&http.Cookie{Name: "tinyidp_session", Value: activeHandle})
-	request.AddCookie(&http.Cookie{Name: "tinyidp_browser_context", Value: contextHandle})
+	request, _ := http.NewRequest(http.MethodGet, f.server.URL+"/authorize?"+query.Encode(), nil)
+	request.AddCookie(&http.Cookie{Name: "tinyidp_session", Value: f.activeHandle})
+	request.AddCookie(&http.Cookie{Name: "tinyidp_browser_context", Value: f.contextHandle})
 	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := noRedirect.Do(request)
 	if err != nil {
@@ -91,17 +112,28 @@ func TestPromptSelectAccountActivatesSelectedRememberedSession(t *testing.T) {
 	if csrfCookie == nil {
 		t.Fatal("csrf cookie missing")
 	}
-	form := url.Values{"interaction": {interaction}, "csrf_token": {csrf}, "action": {"continue"}, "account": {base64.RawURLEncoding.EncodeToString(entryHash)}}
-	post, _ := http.NewRequest(http.MethodPost, server.URL+"/authorize", strings.NewReader(form.Encode()))
+	return url.Values{"interaction": {interaction}, "csrf_token": {csrf}, "action": {"continue"}, "account": {base64.RawURLEncoding.EncodeToString(f.entryHash)}}, csrfCookie
+}
+
+func (f *selectAccountFixture) submit(t *testing.T, form url.Values, csrfCookie *http.Cookie) *http.Response {
+	t.Helper()
+	post, _ := http.NewRequest(http.MethodPost, f.server.URL+"/authorize", strings.NewReader(form.Encode()))
 	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	post.AddCookie(&http.Cookie{Name: "tinyidp_session", Value: activeHandle})
-	post.AddCookie(&http.Cookie{Name: "tinyidp_browser_context", Value: contextHandle})
+	post.AddCookie(&http.Cookie{Name: "tinyidp_session", Value: f.activeHandle})
+	post.AddCookie(&http.Cookie{Name: "tinyidp_browser_context", Value: f.contextHandle})
 	post.AddCookie(csrfCookie)
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	completed, err := client.Do(post)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return completed
+}
+
+func TestPromptSelectAccountActivatesSelectedRememberedSession(t *testing.T) {
+	fixture := newSelectAccountFixture(t, nil)
+	form, csrfCookie := fixture.begin(t)
+	completed := fixture.submit(t, form, csrfCookie)
 	defer completed.Body.Close()
 	if completed.StatusCode != http.StatusSeeOther {
 		t.Fatalf("selection status=%d", completed.StatusCode)
@@ -116,12 +148,63 @@ func TestPromptSelectAccountActivatesSelectedRememberedSession(t *testing.T) {
 			fresh = cookie
 		}
 	}
-	if fresh == nil || fresh.Value == activeHandle {
+	if fresh == nil || fresh.Value == fixture.activeHandle {
 		t.Fatalf("fresh session cookie=%#v", fresh)
 	}
-	activated, err := store.GetSession(ctx, idpstore.HashSecret(secret, fresh.Value))
+	activated, err := fixture.store.GetSession(fixture.ctx, idpstore.HashSecret(fixture.secret, fresh.Value))
 	if err != nil || activated.UserID != "u2" {
 		t.Fatalf("activated session=%#v err=%v", activated, err)
+	}
+}
+
+func TestPromptSelectAccountCreatesFreshConsentInteraction(t *testing.T) {
+	fixture := newSelectAccountFixture(t, func(store *memory.Store) idp.ConsentPolicy {
+		return fositeadapter.NewStoredConsent(store, 0)
+	})
+	form, csrfCookie := fixture.begin(t)
+	completed := fixture.submit(t, form, csrfCookie)
+	defer completed.Body.Close()
+	body, err := io.ReadAll(completed.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.StatusCode != http.StatusOK || !strings.Contains(string(body), "Approve access") || strings.Contains(string(body), "Choose an account") {
+		t.Fatalf("selection should transition to consent status=%d body=%s", completed.StatusCode, body)
+	}
+	consentHandle := chooserInput(t, body, "interaction")
+	consentCSRF := chooserInput(t, body, "csrf_token")
+	var fresh *http.Cookie
+	for _, cookie := range completed.Cookies() {
+		if cookie.Name == "tinyidp_session" {
+			fresh = cookie
+		}
+	}
+	if fresh == nil || fresh.Value == fixture.activeHandle {
+		t.Fatalf("fresh session cookie=%#v", fresh)
+	}
+	approval := url.Values{"interaction": {consentHandle}, "csrf_token": {consentCSRF}, "action": {"approve"}}
+	post, _ := http.NewRequest(http.MethodPost, fixture.server.URL+"/authorize", strings.NewReader(approval.Encode()))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	post.AddCookie(fresh)
+	post.AddCookie(&http.Cookie{Name: "tinyidp_browser_context", Value: fixture.contextHandle})
+	for _, cookie := range completed.Cookies() {
+		if cookie.Name == "tinyidp_csrf" {
+			post.AddCookie(cookie)
+		}
+	}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	approved, err := client.Do(post)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer approved.Body.Close()
+	if approved.StatusCode != http.StatusSeeOther {
+		body, _ := io.ReadAll(approved.Body)
+		t.Fatalf("consent approval status=%d body=%s", approved.StatusCode, body)
+	}
+	location, _ := url.Parse(approved.Header.Get("Location"))
+	if location.Query().Get("code") == "" {
+		t.Fatalf("consent approval did not issue code: %s", location)
 	}
 }
 

@@ -643,6 +643,33 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: p.sessionCookieName, Value: newHandle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.sessionTTL.Seconds())})
 		u, sess, hasSession, authTime = selectedUser, selectedSession, true, selectedSession.AuthTime
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account_selection.success", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
+
+		// Account selection replaces the active browser session. If the selected
+		// account must grant consent, finish this interaction and issue a second
+		// continuation bound to the freshly created session. Reusing the account
+		// selection record here would incorrectly accept `continue` as consent and
+		// leave the old session binding in the stored record.
+		requireConsent, consentErr := p.consent.RequireConsent(r.Context(), u, client, []string(ar.GetRequestedScopes()))
+		if consentErr != nil {
+			http.Error(w, "consent policy failed", http.StatusInternalServerError)
+			return
+		}
+		if requireConsent {
+			if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
+				http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
+				return
+			}
+			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+			freshSessionHash := idpstore.HashSecret(p.csrfKey, newHandle)
+			consentHandle, consentCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireConsent, freshSessionHash)
+			if err != nil {
+				http.Error(w, "create consent interaction failed", http.StatusInternalServerError)
+				return
+			}
+			page := p.newInteractionPage(consentHandle, consentCSRF, idpstore.InteractionRequireConsent, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
+			p.renderInteraction(w, r, http.StatusOK, page)
+			return
+		}
 	}
 	requiresLogin := record.RequiredActions.Has(idpstore.InteractionRequireLogin) || record.RequiredActions.Has(idpstore.InteractionRequireFreshLogin)
 	login := strings.ToLower(strings.TrimSpace(r.PostForm.Get("login")))

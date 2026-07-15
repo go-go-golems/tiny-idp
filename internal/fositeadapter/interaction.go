@@ -65,6 +65,15 @@ func clientGenerationHash(client idpstore.Client) []byte {
 }
 
 func (p *Provider) createInteraction(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, actions idpstore.InteractionRequiredAction) (string, string, error) {
+	return p.createInteractionForSession(w, r, ar, actions, p.browserSessionHash(r))
+}
+
+// createInteractionForSession records a continuation bound to sessionIDHash.
+// It is used when an interaction itself rotates the browser session, such as
+// selecting a remembered account. The request still contains the old cookie,
+// so relying on browserSessionHash(r) would bind the next interaction to a
+// session that is deliberately no longer active.
+func (p *Provider) createInteractionForSession(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, actions idpstore.InteractionRequiredAction, sessionIDHash []byte) (string, string, error) {
 	handle, err := randomB64(32)
 	if err != nil {
 		return "", "", err
@@ -82,10 +91,9 @@ func (p *Provider) createInteraction(w http.ResponseWriter, r *http.Request, ar 
 	}
 	canonical := canonicalAuthorizeForm(ar)
 	now := p.now()
-	var sessionIDHash []byte
 	var browserContextHash []byte
-	if !actions.Has(idpstore.InteractionRequireLogin) {
-		sessionIDHash = p.browserSessionHash(r)
+	if actions.Has(idpstore.InteractionRequireLogin) {
+		sessionIDHash = nil
 	}
 	if actions.Has(idpstore.InteractionRequireAccountSelection) {
 		browserContextHash = p.browserContextHash(r)
