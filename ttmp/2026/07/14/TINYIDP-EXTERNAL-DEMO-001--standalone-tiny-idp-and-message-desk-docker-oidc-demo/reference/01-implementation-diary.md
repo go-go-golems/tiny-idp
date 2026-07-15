@@ -260,3 +260,76 @@ missing account -> create via idpaccounts.Service
 duplicate account -> compare identity fields + authenticate configured password
 any mismatch -> startup failure
 ```
+
+## Step 4: Compose a standalone provider from public APIs
+
+`NewStandaloneIDP` now composes a provider process from a store, account
+service, seed manifest, token secret, renderer, and explicit cookie mode. It
+does not return the store to the application and it does not require Message
+Desk imports. This is the service boundary Docker will run.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Continue implementing the independent provider
+service after completing the seeding contract.
+
+**Inferred user intent:** Make the identity service independently runnable
+while preserving the same login, consent, chooser, and logout capabilities.
+
+### What I did
+
+- Added `NewStandaloneIDP` with public embedded/provider/account APIs.
+- Added standalone issuer normalization because command-private Message Desk
+  helpers are not an independent-service API.
+- Compiled and tested the standalone package.
+
+### Why
+
+- Docker is a deployment wrapper, not an authorization architecture. The
+  provider constructor needs a direct testable boundary before a container
+  command can safely call it.
+
+### What worked
+
+- `go test ./examples/tinyidp-external-message-desk -count=1` passed.
+
+### What didn't work
+
+- The first compile referenced the Message Desk private issuer helper. The
+  standalone package now owns equivalent canonical validation instead.
+
+### What I learned
+
+- The public packages are sufficient to construct an independent provider;
+  the only remaining work is process configuration, durable storage opening,
+  and wiring the external RP/container topology.
+
+### What was tricky to build
+
+- An independent package cannot import a `main` package's private helpers.
+  Duplicating a small validation rule is preferable to coupling the provider
+  service to an application command package.
+
+### What warrants a second pair of eyes
+
+- Consolidate issuer normalization into a public shared package only if more
+  than this demo needs it; do not expose an API prematurely.
+
+### What should be done in the future
+
+- Add the standalone command, SQLite lifecycle, renderer asset package, and
+  Compose files, then run the two-origin browser flow.
+
+### Code review instructions
+
+- Review `NewStandaloneIDP` and run the standalone package test.
+
+### Technical details
+
+```text
+store + accounts + seed + token secret + renderer
+  -> embeddedidp.New
+  -> independent HTTP provider handler
+```
