@@ -38,8 +38,15 @@ func TestBootstrapCreatesBrowserDeviceAndKeyIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(device.RedirectURIs) != 0 || !device.Public || !device.RequirePKCE || !reflect.DeepEqual(device.AllowedScopes, []string{"openid", "profile"}) {
+	if len(device.RedirectURIs) != 0 || !device.Public || !device.RequirePKCE || !reflect.DeepEqual(device.AllowedScopes, []string{"openid", "profile"}) || !reflect.DeepEqual(device.AllowedGrantTypes, []string{idpstore.GrantDeviceCode}) {
 		t.Fatalf("device client = %#v", device)
+	}
+	browser, err := store.GetClient(ctx, "browser-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(browser.AllowedGrantTypes, []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}) {
+		t.Fatalf("browser grant types = %#v", browser.AllowedGrantTypes)
 	}
 
 	report, err = Bootstrap(ctx, store, cfg)

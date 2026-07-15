@@ -21,6 +21,19 @@ func (c Client) Validate(mode Mode) error {
 	} else if mode == ProductionMode && len(c.SecretHash) == 0 {
 		return ErrConfidentialMissingSecret
 	}
+	if len(c.AllowedGrantTypes) == 0 {
+		return ErrClientMissingGrantTypes
+	}
+	seenGrantTypes := make(map[string]struct{}, len(c.AllowedGrantTypes))
+	for _, grantType := range c.AllowedGrantTypes {
+		if !supportedGrantType(grantType) {
+			return ErrClientGrantTypeInvalid
+		}
+		if _, seen := seenGrantTypes[grantType]; seen {
+			return ErrClientGrantTypeDuplicate
+		}
+		seenGrantTypes[grantType] = struct{}{}
+	}
 	for _, ru := range c.RedirectURIs {
 		if err := ValidateRedirectURI(ru, mode); err != nil {
 			return err
@@ -32,6 +45,26 @@ func (c Client) Validate(mode Mode) error {
 		}
 	}
 	return nil
+}
+
+// AllowsGrantType reports whether the client has explicitly been granted use
+// of the OAuth grant type. Empty client grant lists never authorize a grant.
+func (c Client) AllowsGrantType(grantType string) bool {
+	for _, allowed := range c.AllowedGrantTypes {
+		if allowed == grantType {
+			return true
+		}
+	}
+	return false
+}
+
+func supportedGrantType(grantType string) bool {
+	switch grantType {
+	case GrantAuthorizationCode, GrantRefreshToken, GrantDeviceCode:
+		return true
+	default:
+		return false
+	}
 }
 
 // AllowsRedirectURI reports whether uri exactly matches one registered URI.

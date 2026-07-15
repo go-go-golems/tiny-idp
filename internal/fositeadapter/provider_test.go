@@ -27,7 +27,7 @@ import (
 func TestUnsupportedRequestObjectRedirectsWithStableError(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}); err != nil {
 		t.Fatal(err)
 	}
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
@@ -64,7 +64,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	ctx := context.Background()
 	secretKey := []byte("test-secret-key-32-bytes-minimum!!")
 	st := memory.New()
-	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"}); err != nil {
@@ -250,7 +250,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 func TestProductionProviderRejectsMissingSecretKey(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	_ = st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}})
+	_ = st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = st.CreateSigningKey(ctx, key)
 	if _, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "https://issuer.example.test", Store: st, Mode: idpstore.ProductionMode}); err == nil {
@@ -417,7 +417,7 @@ func TestStrictLoginRequiresStoredPasswordWhenAuthenticatorConfigured(t *testing
 	ctx := context.Background()
 	secretKey := []byte("password-auth-secret-32-bytes!!!!")
 	st := memory.New()
-	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := keys.GenerateRSA("kid-1", time.Now())

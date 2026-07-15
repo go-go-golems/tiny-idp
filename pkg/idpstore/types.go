@@ -11,6 +11,14 @@ const (
 	ProductionMode Mode = "production"
 )
 
+// OAuth grant types supported by tiny-idp. A client must declare every grant
+// type it is permitted to use; there is intentionally no implicit default.
+const (
+	GrantAuthorizationCode = "authorization_code"
+	GrantRefreshToken      = "refresh_token"
+	GrantDeviceCode        = "urn:ietf:params:oauth:grant-type:device_code"
+)
+
 // Client is a configured relying party/OAuth client.
 type Client struct {
 	ID                     string
@@ -19,6 +27,7 @@ type Client struct {
 	RedirectURIs           []string
 	PostLogoutRedirectURIs []string
 	AllowedScopes          []string
+	AllowedGrantTypes      []string
 	RequirePKCE            bool
 	AccessTokenTTL         time.Duration
 	IDTokenTTL             time.Duration

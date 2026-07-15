@@ -57,7 +57,7 @@ func TestPromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent(t *testing.T) 
 	ctx := context.Background()
 	st := memory.New()
 	user := idpstore.User{ID: "u1", Sub: "sub-1"}
-	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}}
+	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}
 	_ = st.PutClient(ctx, client)
 	_ = st.PutUser(ctx, "alice", user)
 	key, err := keys.GenerateRSA("kid-1", time.Now())
@@ -127,7 +127,7 @@ func TestPromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent(t *testing.T) 
 func TestProductionProviderDefaultsToStoredConsent(t *testing.T) {
 	ctx := context.Background()
 	st := memory.New()
-	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}}
+	client := idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "email"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}
 	_ = st.PutClient(ctx, client)
 	svc, err := idpaccounts.NewService(st, idpaccounts.Options{})
 	if err != nil {

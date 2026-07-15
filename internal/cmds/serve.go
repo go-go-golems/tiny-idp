@@ -237,6 +237,7 @@ func buildStrictProvider(cfg *oidc.Settings, clients *client.Registry, scenarios
 			RedirectURIs:           c.RedirectURIs,
 			PostLogoutRedirectURIs: c.PostLogoutRedirectURIs,
 			AllowedScopes:          c.AllowedScopes,
+			AllowedGrantTypes:      []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken},
 			RequirePKCE:            true,
 			AccessTokenTTL:         time.Hour,
 			IDTokenTTL:             time.Hour,

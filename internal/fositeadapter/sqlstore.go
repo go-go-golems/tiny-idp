@@ -203,7 +203,7 @@ func (s *sqlFositeStore) toFositeClient(ctx context.Context, c idpstore.Client) 
 		Public:        c.Public,
 		RedirectURIs:  append([]string(nil), c.RedirectURIs...),
 		ResponseTypes: []string{"code"},
-		GrantTypes:    []string{"authorization_code", "refresh_token"},
+		GrantTypes:    append([]string(nil), c.AllowedGrantTypes...),
 		Scopes:        append([]string(nil), c.AllowedScopes...),
 	}
 	if !c.Public {

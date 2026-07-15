@@ -21,7 +21,7 @@ func TestServiceClientLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, secret, err := svc.CreateClient(ctx, admin.CreateClientRequest{ID: "web-app", GenerateSecret: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid", "email"}, RequirePKCE: true})
+	client, secret, err := svc.CreateClient(ctx, admin.CreateClientRequest{ID: "web-app", GenerateSecret: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid", "email"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}, RequirePKCE: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,6 +47,22 @@ func TestServiceClientLifecycle(t *testing.T) {
 	}
 }
 
+func TestServiceClientCreationRequiresExplicitGrantCapability(t *testing.T) {
+	svc, err := admin.NewService(memory.New(), admin.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = svc.CreateClient(context.Background(), admin.CreateClientRequest{
+		ID:           "missing-grant",
+		Public:       true,
+		RedirectURIs: []string{"http://localhost/callback"},
+		RequirePKCE:  true,
+	})
+	if !errors.Is(err, idpstore.ErrClientMissingGrantTypes) {
+		t.Fatalf("CreateClient() error = %v, want %v", err, idpstore.ErrClientMissingGrantTypes)
+	}
+}
+
 func TestServiceKeysDoctorAndBackup(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "idp.db")
@@ -68,7 +84,7 @@ func TestServiceKeysDoctorAndBackup(t *testing.T) {
 	if key.PrivateKeyPEM == nil || !key.Active {
 		t.Fatalf("bad generated key: %#v", key)
 	}
-	client, _, err := svc.CreateClient(ctx, admin.CreateClientRequest{ID: "spa", Public: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, RequirePKCE: true})
+	client, _, err := svc.CreateClient(ctx, admin.CreateClientRequest{ID: "spa", Public: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}, RequirePKCE: true})
 	if err != nil {
 		t.Fatal(err)
 	}

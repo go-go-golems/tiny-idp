@@ -1,6 +1,8 @@
 package fositeadapter
 
 import (
+	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -27,6 +29,21 @@ func TestClientWithLifespansAppliesPerClientTokenTTLs(t *testing.T) {
 		if got := fosite.GetEffectiveLifespan(wrapped, test.grant, test.token, time.Second); got != test.want {
 			t.Fatalf("%s/%s lifespan = %s, want %s", test.grant, test.token, got, test.want)
 		}
+	}
+}
+
+func TestFositeClientPreservesExplicitGrantCapabilities(t *testing.T) {
+	configured := idpstore.Client{
+		ID:                "device-cli",
+		Public:            true,
+		AllowedGrantTypes: []string{idpstore.GrantDeviceCode},
+	}
+	client, err := (&sqlFositeStore{}).toFositeClient(context.Background(), configured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string(client.GetGrantTypes()); !reflect.DeepEqual(got, configured.AllowedGrantTypes) {
+		t.Fatalf("Fosite grant types = %#v, want %#v", got, configured.AllowedGrantTypes)
 	}
 }
 

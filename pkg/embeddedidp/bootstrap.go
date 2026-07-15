@@ -33,14 +33,16 @@ func BrowserClient(id string, redirectURIs, postLogoutRedirectURIs, scopes []str
 	return ClientSpec{Profile: ClientProfileBrowser, Client: idpstore.Client{
 		ID: id, Public: true, RequirePKCE: true, RedirectURIs: redirectURIs,
 		PostLogoutRedirectURIs: postLogoutRedirectURIs, AllowedScopes: scopes,
-		AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, RefreshTokenTTL: 24 * time.Hour,
+		AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken},
+		AccessTokenTTL:    time.Hour, IDTokenTTL: time.Hour, RefreshTokenTTL: 24 * time.Hour,
 	}}
 }
 
 func DeviceClient(id string, scopes []string) ClientSpec {
 	return ClientSpec{Profile: ClientProfileDevice, Client: idpstore.Client{
 		ID: id, Public: true, RequirePKCE: true, AllowedScopes: scopes,
-		AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, RefreshTokenTTL: 24 * time.Hour,
+		AllowedGrantTypes: []string{idpstore.GrantDeviceCode},
+		AccessTokenTTL:    time.Hour, IDTokenTTL: time.Hour, RefreshTokenTTL: 24 * time.Hour,
 	}}
 }
 
@@ -197,12 +199,18 @@ func normalizeClientSpec(spec ClientSpec, mode idpstore.Mode) (idpstore.Client, 
 		if !client.Public || !client.RequirePKCE || len(client.SecretHash) != 0 {
 			return idpstore.Client{}, fmt.Errorf("browser client %q must be public and require PKCE", client.ID)
 		}
+		if !equalStrings(client.AllowedGrantTypes, []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}) {
+			return idpstore.Client{}, fmt.Errorf("browser client %q must allow authorization_code and refresh_token only", client.ID)
+		}
 	case ClientProfileDevice:
 		if len(client.RedirectURIs) != 0 || len(client.PostLogoutRedirectURIs) != 0 {
 			return idpstore.Client{}, fmt.Errorf("device client %q must not declare redirect URIs", client.ID)
 		}
 		if !client.Public || !client.RequirePKCE || len(client.SecretHash) != 0 {
 			return idpstore.Client{}, fmt.Errorf("device client %q must be public", client.ID)
+		}
+		if !equalStrings(client.AllowedGrantTypes, []string{idpstore.GrantDeviceCode}) {
+			return idpstore.Client{}, fmt.Errorf("device client %q must allow device_code only", client.ID)
 		}
 	case ClientProfileGeneric:
 	default:
@@ -219,6 +227,7 @@ func normalizeClient(client idpstore.Client) idpstore.Client {
 	client.RedirectURIs = normalizedStrings(client.RedirectURIs)
 	client.PostLogoutRedirectURIs = normalizedStrings(client.PostLogoutRedirectURIs)
 	client.AllowedScopes = normalizedStrings(client.AllowedScopes)
+	client.AllowedGrantTypes = normalizedStrings(client.AllowedGrantTypes)
 	if client.AccessTokenTTL == 0 {
 		client.AccessTokenTTL = time.Hour
 	}
@@ -249,7 +258,7 @@ func normalizedStrings(values []string) []string {
 }
 
 func clientConflictFields(existing, desired idpstore.Client) []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if existing.ID != desired.ID {
 		fields = append(fields, "id")
 	}
@@ -267,6 +276,9 @@ func clientConflictFields(existing, desired idpstore.Client) []string {
 	}
 	if !equalStrings(existing.AllowedScopes, desired.AllowedScopes) {
 		fields = append(fields, "allowed_scopes")
+	}
+	if !equalStrings(existing.AllowedGrantTypes, desired.AllowedGrantTypes) {
+		fields = append(fields, "allowed_grant_types")
 	}
 	if existing.RequirePKCE != desired.RequirePKCE {
 		fields = append(fields, "require_pkce")

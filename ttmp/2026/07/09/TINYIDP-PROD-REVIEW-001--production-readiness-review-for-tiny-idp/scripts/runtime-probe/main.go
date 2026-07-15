@@ -158,14 +158,15 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("create admin service: %w", err)
 	}
 	_, _, err = adminService.CreateClient(ctx, admin.CreateClientRequest{
-		ID:              "runtime-spa",
-		Public:          true,
-		RequirePKCE:     true,
-		RedirectURIs:    []string{"http://127.0.0.1/callback"},
-		AllowedScopes:   []string{"openid", "profile", "email", "offline_access"},
-		AccessTokenTTL:  time.Hour,
-		IDTokenTTL:      time.Hour,
-		RefreshTokenTTL: 24 * time.Hour,
+		ID:                "runtime-spa",
+		Public:            true,
+		RequirePKCE:       true,
+		RedirectURIs:      []string{"http://127.0.0.1/callback"},
+		AllowedScopes:     []string{"openid", "profile", "email", "offline_access"},
+		AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken},
+		AccessTokenTTL:    time.Hour,
+		IDTokenTTL:        time.Hour,
+		RefreshTokenTTL:   24 * time.Hour,
 	})
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)

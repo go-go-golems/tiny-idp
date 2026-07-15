@@ -23,6 +23,7 @@ func TestEndSessionRevokesCurrentBrowserSessionAndRedirects(t *testing.T) {
 		RedirectURIs:           []string{"https://app.example.test/auth/callback"},
 		PostLogoutRedirectURIs: []string{"https://app.example.test/"},
 		AllowedScopes:          []string{"openid"},
+		AllowedGrantTypes:      []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +99,7 @@ func TestEndSessionRevokesCurrentBrowserSessionAndRedirects(t *testing.T) {
 func TestEndSessionRejectsUnregisteredRedirectBeforeRevocation(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
-	_ = store.PutClient(ctx, idpstore.Client{ID: "tinyidp-xapp", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/auth/callback"}, PostLogoutRedirectURIs: []string{"https://app.example.test/"}, AllowedScopes: []string{"openid"}})
+	_ = store.PutClient(ctx, idpstore.Client{ID: "tinyidp-xapp", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/auth/callback"}, PostLogoutRedirectURIs: []string{"https://app.example.test/"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}})
 	key, _ := keys.GenerateRSA("kid-1", time.Now())
 	_ = store.CreateSigningKey(ctx, key)
 	secret := []byte("end-session-secret-key-32-bytes!!")

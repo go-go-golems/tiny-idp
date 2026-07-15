@@ -434,3 +434,127 @@ into a production-quality implementation rather than reuse the mock server.
 raw device/user codes -> domain-separated HMAC hashes -> durable grant
 pending -> approved|denied|expired -> consumed once with Fosite tokens
 ```
+
+## Step 2: Make client grant capability explicit, validated, and durable
+
+Phase 0 established that no endpoint may infer authority from a client shape.
+This step implements that principle before device-grant records or public
+routes exist. Every real strict-provider client now carries a finite list of
+OAuth grants, and every provisioning surface must supply it.
+
+### What I did
+
+- Added `AllowedGrantTypes` and the three currently supported grant constants
+  to `pkg/idpstore.Client`.
+- Made empty, unsupported, and duplicate declarations fail validation; added
+  `AllowsGrantType` as the future endpoint's policy predicate.
+- Added SQLite migration `008_client_grant_capabilities.sql`. It classifies a
+  legacy client with a redirect URI as browser (`authorization_code`,
+  `refresh_token`), a redirect-less public PKCE client as device
+  (`device_code`), and all ambiguous records as an empty capability list.
+- Added a restart migration test that removes the new JSON field from three
+  stored clients and proves the database receives those exact results.
+- Made `BrowserClient` and `DeviceClient` set and enforce their exact profile
+  grants, and added the field to bootstrap drift detection.
+- Propagated the field into both memory and SQLite Fosite `DefaultClient`
+  projections. The adapter has no fallback grant list.
+- Extended the admin service and `tinyidp admin client create` with a required,
+  repeatable `--grant-type`; created clients are validated in production mode.
+- Updated strict-provider fixtures, review probes, the external-consumer test,
+  and the legacy strict development adapter to use explicit browser grants.
+
+### Why
+
+- Fosite evaluates a client's grant list at token issuance. Leaving an adapter
+  default would silently grant a newly introduced client more authority than
+  its persisted configuration declares.
+- Migration ambiguity is an operational security decision. A historical
+  confidential or atypical client cannot safely be guessed, so it must fail
+  closed and be repaired by an operator.
+
+### What worked
+
+- `go test ./pkg/idpstore ./pkg/sqlitestore ./pkg/embeddedidp ./internal/admin
+  ./internal/cmds ./internal/fositeadapter
+  ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts
+  ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-consumer`
+  passed after the changes.
+- The migration test exercised close/reopen, migration-ledger replay, browser
+  classification, device classification, and ambiguous-client fail-closed
+  validation.
+- The Fosite adapter test proves a device-only configuration remains
+  device-only at the protocol library boundary.
+
+### What didn't work
+
+- The first affected-suite run exposed direct embedded-provider test clients
+  with no grant declaration. Updating the fixtures explicitly fixed the
+  expected consequence of removing the implicit adapter list.
+- A first Fosite projection assertion compared `fosite.Arguments` directly
+  with `[]string`; the values were correct but Go's distinct slice types are
+  not deeply equal. Converting to `[]string` made the intended assertion exact.
+- `go test ./...` still fails only in `cmd/tinyidp-xapp` on existing interaction
+  CSP/header expectations (`form-action` includes its test-server origin).
+  Phase 1 did not edit that application or its UI/header code; its own package
+  had already been failing independently of grant-type work. All packages
+  touched by this increment pass.
+- A focused `docmgr validate frontmatter` invocation initially used positional
+  arguments rather than its required `--doc` flag; the corrected diary
+  validation passed. `changelog.md` intentionally has no frontmatter, so its
+  focused validation reports missing delimiters while ticket-level
+  `docmgr doctor` correctly passes.
+
+### What I learned
+
+- The former hard-coded Fosite list appeared in both in-memory and SQLite
+  projection paths. Updating only one would create storage-dependent OAuth
+  behavior, which is precisely the class of split-brain policy this phase
+  prevents.
+- JSON data migrations can preserve the schema while still requiring an
+  explicit transition for semantic fields. The migration conditions handle both
+  absent fields from old binaries and JSON `null` written by transitional code.
+
+### What was tricky to build
+
+- Client profiles are normalised before their exact grant sets are compared.
+  This permits harmless ordering/whitespace differences while rejecting extra
+  authority, omitted refresh authority, or device authority on a browser
+  profile.
+
+### What warrants a second pair of eyes
+
+- Verify the migration classification rules against every production database
+  before rollout; ambiguous records intentionally stop strict startup until
+  repaired.
+- Confirm whether a future device client should opt into refresh tokens with a
+  separate explicit profile rather than silently inheriting it.
+- Review CLI/documentation migration communications: `--grant-type` is now
+  required and existing operational examples need an explicit browser list.
+
+### What should be done in the future
+
+- Begin Phase 2: introduce the durable `DeviceGrant` state model and named
+  memory/SQLite operations. Do not expose device endpoints or discovery yet.
+
+### Code review instructions
+
+- Review `pkg/idpstore/validate.go` first: empty grant lists have no authority.
+- Read migration `008` together with `TestClientGrantCapabilityMigrationBackfillsKnownLegacyProfiles`.
+- Check both Fosite projections in `provider.go` and `sqlstore.go`; neither may
+  restore a hard-coded authorization-code/refresh default.
+- Invoke `tinyidp admin client create --help` and confirm `--grant-type` is
+  documented as required.
+
+### Technical details
+
+```text
+admin/bootstrap input
+  -> AllowedGrantTypes (sorted, validated, persisted)
+  -> Fosite DefaultClient.GrantTypes
+  -> later /device_authorization and /token capability checks
+
+legacy SQLite client JSON
+  redirect URI          -> [authorization_code, refresh_token]
+  public + PKCE/no URI  -> [device_code]
+  anything ambiguous    -> [] -> strict production validation error
+```

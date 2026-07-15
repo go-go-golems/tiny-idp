@@ -74,7 +74,7 @@ func FuzzParseMaxAgeAcceptsOnlyBoundedDecimal(f *testing.F) {
 func TestBrowserSessionStorageFailureDoesNotRenderLogin(t *testing.T) {
 	ctx := context.Background()
 	base := memory.New()
-	if err := base.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}}); err != nil {
+	if err := base.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := keys.GenerateRSA("kid-session-failure", time.Now())

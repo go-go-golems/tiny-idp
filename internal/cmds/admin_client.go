@@ -23,7 +23,7 @@ func newAdminClientCommand(dbPath *string) *cobra.Command {
 func newAdminClientCreateCommand(dbPath *string) *cobra.Command {
 	var id, secret string
 	var public, generateSecret, requirePKCE bool
-	var redirectURIs, scopes, postLogout []string
+	var redirectURIs, scopes, grantTypes, postLogout []string
 	var accessTTL, idTTL, refreshTTL time.Duration
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -34,7 +34,7 @@ func newAdminClientCreateCommand(dbPath *string) *cobra.Command {
 				return err
 			}
 			defer closeFn()
-			client, secretResult, err := svc.CreateClient(cmd.Context(), admin.CreateClientRequest{ID: id, Public: public, Secret: secret, GenerateSecret: generateSecret, RedirectURIs: redirectURIs, PostLogoutRedirectURIs: postLogout, AllowedScopes: scopes, RequirePKCE: requirePKCE, AccessTokenTTL: accessTTL, IDTokenTTL: idTTL, RefreshTokenTTL: refreshTTL})
+			client, secretResult, err := svc.CreateClient(cmd.Context(), admin.CreateClientRequest{ID: id, Public: public, Secret: secret, GenerateSecret: generateSecret, RedirectURIs: redirectURIs, PostLogoutRedirectURIs: postLogout, AllowedScopes: scopes, AllowedGrantTypes: grantTypes, RequirePKCE: requirePKCE, AccessTokenTTL: accessTTL, IDTokenTTL: idTTL, RefreshTokenTTL: refreshTTL})
 			if err != nil {
 				return err
 			}
@@ -48,11 +48,13 @@ func newAdminClientCreateCommand(dbPath *string) *cobra.Command {
 	cmd.Flags().StringArrayVar(&redirectURIs, "redirect-uri", nil, "Allowed redirect URI (repeatable)")
 	cmd.Flags().StringArrayVar(&postLogout, "post-logout-redirect-uri", nil, "Allowed post-logout redirect URI (repeatable)")
 	cmd.Flags().StringArrayVar(&scopes, "scope", []string{"openid", "profile", "email"}, "Allowed scope (repeatable)")
+	cmd.Flags().StringArrayVar(&grantTypes, "grant-type", nil, "Allowed OAuth grant type (repeatable)")
 	cmd.Flags().BoolVar(&requirePKCE, "require-pkce", true, "Require PKCE")
 	cmd.Flags().DurationVar(&accessTTL, "access-token-ttl", time.Hour, "Access token TTL")
 	cmd.Flags().DurationVar(&idTTL, "id-token-ttl", time.Hour, "ID token TTL")
 	cmd.Flags().DurationVar(&refreshTTL, "refresh-token-ttl", 30*24*time.Hour, "Refresh token TTL")
 	_ = cmd.MarkFlagRequired("id")
+	_ = cmd.MarkFlagRequired("grant-type")
 	return cmd
 }
 

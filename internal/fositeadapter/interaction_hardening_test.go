@@ -51,11 +51,12 @@ func newInteractionFixtureConfiguredWithRenderer(t *testing.T, consentFactory fu
 	ctx := context.Background()
 	st := memory.New()
 	if err := st.PutClient(ctx, idpstore.Client{
-		ID:            "spa",
-		Public:        true,
-		RequirePKCE:   true,
-		RedirectURIs:  []string{"http://localhost/callback"},
-		AllowedScopes: []string{"openid", "email"},
+		ID:                "spa",
+		Public:            true,
+		RequirePKCE:       true,
+		RedirectURIs:      []string{"http://localhost/callback"},
+		AllowedScopes:     []string{"openid", "email"},
+		AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -418,12 +419,13 @@ func TestAuthorizationInteractionRevalidatesClientMutation(t *testing.T) {
 		t.Fatalf("begin status=%d", status)
 	}
 	if err := fixture.store.PutClient(context.Background(), idpstore.Client{
-		ID:            "spa",
-		Public:        true,
-		RequirePKCE:   true,
-		RedirectURIs:  []string{"http://localhost/callback"},
-		AllowedScopes: []string{"openid", "email"},
-		Disabled:      true,
+		ID:                "spa",
+		Public:            true,
+		RequirePKCE:       true,
+		RedirectURIs:      []string{"http://localhost/callback"},
+		AllowedScopes:     []string{"openid", "email"},
+		AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken},
+		Disabled:          true,
 	}); err != nil {
 		t.Fatal(err)
 	}

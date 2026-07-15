@@ -52,7 +52,7 @@ func TestExternalProductionAuthorizationCodePKCE(t *testing.T) {
 	if err := store.PutUser(ctx, "alice", user); err != nil {
 		t.Fatal(err)
 	}
-	client := idpstore.Client{ID: "external-spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://client.example.test/callback"}, AllowedScopes: []string{"openid", "profile", "email"}}
+	client := idpstore.Client{ID: "external-spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://client.example.test/callback"}, AllowedScopes: []string{"openid", "profile", "email"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}
 	if err := store.PutClient(ctx, client); err != nil {
 		t.Fatal(err)
 	}

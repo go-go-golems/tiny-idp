@@ -6,7 +6,7 @@ import (
 )
 
 func TestClientValidateRedirectURIs(t *testing.T) {
-	valid := Client{ID: "web", SecretHash: []byte("hash"), RedirectURIs: []string{"https://app.example/callback"}, AllowedScopes: []string{"openid"}}
+	valid := Client{ID: "web", SecretHash: []byte("hash"), RedirectURIs: []string{"https://app.example/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{GrantAuthorizationCode, GrantRefreshToken}}
 	if err := valid.Validate(ProductionMode); err != nil {
 		t.Fatalf("valid client rejected: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestClientValidateRedirectURIs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := Client{ID: "web", SecretHash: []byte("hash"), RedirectURIs: []string{tc.uri}}
+			c := Client{ID: "web", SecretHash: []byte("hash"), RedirectURIs: []string{tc.uri}, AllowedGrantTypes: []string{GrantAuthorizationCode}}
 			if err := c.Validate(ProductionMode); !errors.Is(err, tc.want) {
 				t.Fatalf("got %v, want %v", err, tc.want)
 			}
@@ -42,9 +42,34 @@ func TestClientExactRedirectMatch(t *testing.T) {
 }
 
 func TestPublicClientRequiresPKCE(t *testing.T) {
-	c := Client{ID: "spa", Public: true, RedirectURIs: []string{"https://app.example/callback"}}
+	c := Client{ID: "spa", Public: true, RedirectURIs: []string{"https://app.example/callback"}, AllowedGrantTypes: []string{GrantAuthorizationCode}}
 	if err := c.Validate(ProductionMode); !errors.Is(err, ErrPublicClientRequiresPKCE) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestClientGrantCapabilitiesRequireExplicitKnownUniqueValues(t *testing.T) {
+	base := Client{ID: "client", SecretHash: []byte("hash"), AllowedGrantTypes: []string{GrantAuthorizationCode}}
+	if !base.AllowsGrantType(GrantAuthorizationCode) || base.AllowsGrantType(GrantDeviceCode) {
+		t.Fatalf("grant capability lookup returned unexpected result")
+	}
+	cases := []struct {
+		name   string
+		grants []string
+		want   error
+	}{
+		{name: "missing", want: ErrClientMissingGrantTypes},
+		{name: "unknown", grants: []string{"client_credentials"}, want: ErrClientGrantTypeInvalid},
+		{name: "duplicate", grants: []string{GrantAuthorizationCode, GrantAuthorizationCode}, want: ErrClientGrantTypeDuplicate},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := base
+			client.AllowedGrantTypes = tc.grants
+			if err := client.Validate(ProductionMode); !errors.Is(err, tc.want) {
+				t.Fatalf("Validate() error = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }
 

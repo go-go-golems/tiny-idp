@@ -27,6 +27,7 @@ type CreateClientRequest struct {
 	RedirectURIs           []string
 	PostLogoutRedirectURIs []string
 	AllowedScopes          []string
+	AllowedGrantTypes      []string
 	RequirePKCE            bool
 	AccessTokenTTL         time.Duration
 	IDTokenTTL             time.Duration
@@ -55,7 +56,7 @@ func (s *Service) CreateClient(ctx context.Context, req CreateClientRequest) (id
 		}
 		generated = true
 	}
-	c := idpstore.Client{ID: id, Public: req.Public, RedirectURIs: cleanList(req.RedirectURIs), PostLogoutRedirectURIs: cleanList(req.PostLogoutRedirectURIs), AllowedScopes: cleanList(req.AllowedScopes), RequirePKCE: req.RequirePKCE || req.Public, AccessTokenTTL: defaultDuration(req.AccessTokenTTL, time.Hour), IDTokenTTL: defaultDuration(req.IDTokenTTL, time.Hour), RefreshTokenTTL: defaultDuration(req.RefreshTokenTTL, 30*24*time.Hour), CreatedAt: now, UpdatedAt: now, Disabled: req.Disabled}
+	c := idpstore.Client{ID: id, Public: req.Public, RedirectURIs: cleanList(req.RedirectURIs), PostLogoutRedirectURIs: cleanList(req.PostLogoutRedirectURIs), AllowedScopes: cleanList(req.AllowedScopes), AllowedGrantTypes: cleanList(req.AllowedGrantTypes), RequirePKCE: req.RequirePKCE || req.Public, AccessTokenTTL: defaultDuration(req.AccessTokenTTL, time.Hour), IDTokenTTL: defaultDuration(req.IDTokenTTL, time.Hour), RefreshTokenTTL: defaultDuration(req.RefreshTokenTTL, 30*24*time.Hour), CreatedAt: now, UpdatedAt: now, Disabled: req.Disabled}
 	if !c.Public {
 		if secret == "" {
 			return idpstore.Client{}, SecretResult{}, fmt.Errorf("client secret is required for confidential clients")

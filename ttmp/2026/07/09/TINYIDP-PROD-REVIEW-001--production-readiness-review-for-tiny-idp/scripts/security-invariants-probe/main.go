@@ -90,11 +90,12 @@ func runSecurityProbe(ctx context.Context, rounds, attempts int) error {
 	}
 
 	_, _, err = service.CreateClient(ctx, admin.CreateClientRequest{
-		ID:            "probe-spa",
-		Public:        true,
-		RequirePKCE:   true,
-		RedirectURIs:  []string{"https://client.example.test/callback"},
-		AllowedScopes: []string{"openid"},
+		ID:                "probe-spa",
+		Public:            true,
+		RequirePKCE:       true,
+		RedirectURIs:      []string{"https://client.example.test/callback"},
+		AllowedScopes:     []string{"openid"},
+		AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken},
 	})
 	if err != nil {
 		return err

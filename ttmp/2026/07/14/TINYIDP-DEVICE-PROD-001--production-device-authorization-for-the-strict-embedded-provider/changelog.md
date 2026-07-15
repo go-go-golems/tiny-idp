@@ -5,6 +5,18 @@
 Completed Phase 0 by freezing grant capability, code secrecy, state transition,
 polling, audit/metric vocabulary, and named verification contracts.
 
+Completed Phase 1 by making OAuth grant permissions an explicit, validated,
+durably migrated client property. Browser and device bootstrap profiles, the
+admin client command, strict Fosite clients, review probes, and external
+consumer fixtures now declare capabilities deliberately.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpstore/types.go — public grant-capability model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/migrations/008_client_grant_capabilities.sql — deterministic legacy classification
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/bootstrap.go — browser and device profiles
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — strict adapter grant propagation
+
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-DEVICE-PROD-001--production-device-authorization-for-the-strict-embedded-provider/reference/02-device-grant-executable-security-specification.md — Phase 0 security/test contract

@@ -2,7 +2,9 @@ package sqlitestore_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -20,6 +22,66 @@ func TestStoreSuite(t *testing.T) {
 		t.Cleanup(func() { _ = st.Close() })
 		return st
 	})
+}
+
+func TestClientGrantCapabilityMigrationBackfillsKnownLegacyProfiles(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "grant-capabilities.db")
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyClients := []idpstore.Client{
+		{ID: "browser", Public: true, RequirePKCE: true, RedirectURIs: []string{"https://app.example.test/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}},
+		{ID: "device", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}},
+		{ID: "ambiguous", SecretHash: []byte("hash"), AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}},
+	}
+	for _, client := range legacyClients {
+		if err := store.PutClient(ctx, client); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `UPDATE clients SET data=json_remove(data, '$.AllowedGrantTypes')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx, `DELETE FROM schema_migrations WHERE version=8`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = sqlitestore.Open(ctx, sqlitestore.DefaultConfig(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	cases := []struct {
+		id   string
+		want []string
+	}{
+		{id: "browser", want: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}},
+		{id: "device", want: []string{idpstore.GrantDeviceCode}},
+		{id: "ambiguous", want: []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			client, err := store.GetClient(ctx, tc.id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(client.AllowedGrantTypes, tc.want) {
+				t.Fatalf("AllowedGrantTypes = %#v, want %#v", client.AllowedGrantTypes, tc.want)
+			}
+		})
+	}
+	ambiguous, err := store.GetClient(ctx, "ambiguous")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ambiguous.Validate(idpstore.ProductionMode); !errors.Is(err, idpstore.ErrClientMissingGrantTypes) {
+		t.Fatalf("ambiguous client validation error = %v", err)
+	}
 }
 
 func TestSigningKeyRotationPersistsRetiredVerificationKey(t *testing.T) {
