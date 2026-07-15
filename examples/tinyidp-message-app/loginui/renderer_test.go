@@ -39,7 +39,7 @@ func TestRendererRendersAccountChooserControls(t *testing.T) {
 			CSRFField:        idpui.CSRFFieldName,
 			CSRFToken:        "csrf",
 			ActionField:      idpui.ActionFieldName,
-			Actions:          []idpui.Action{idpui.ActionContinue, idpui.ActionDeny},
+			Actions:          []idpui.Action{idpui.ActionContinue, idpui.ActionUseAnotherAccount, idpui.ActionDeny},
 		},
 		AccountChooser: &idpui.AccountChooserPrompt{AccountField: idpui.AccountFieldName, Entries: []idpui.AccountChooserEntry{{Value: "opaque-account-handle", Label: "Amelie"}}},
 	}
@@ -48,7 +48,7 @@ func TestRendererRendersAccountChooserControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := rendered.String()
-	for _, required := range []string{`type="radio"`, `name="account"`, `value="opaque-account-handle"`, "Amelie", "CHOOSE AN ACCOUNT"} {
+	for _, required := range []string{`type="radio"`, `name="account"`, `value="opaque-account-handle"`, "Amelie", "CHOOSE AN ACCOUNT", `value="use_another_account"`, "Use another account"} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("account chooser is missing %q: %s", required, html)
 		}

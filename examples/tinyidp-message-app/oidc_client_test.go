@@ -33,6 +33,9 @@ func TestBeginLoginPersistsPKCEStateAndNonce(t *testing.T) {
 	if query.Get("state") == "" || query.Get("nonce") == "" || query.Get("code_challenge") == "" || query.Get("code_challenge_method") != "S256" {
 		t.Fatalf("incomplete authorization URL: %s", authorizationURL)
 	}
+	if query.Get("prompt") != "select_account" {
+		t.Fatalf("authorization URL prompt = %q, want select_account", query.Get("prompt"))
+	}
 	attempt, err := store.consumeLoginAttempt(context.Background(), query.Get("state"), now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)

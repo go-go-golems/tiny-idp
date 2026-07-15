@@ -530,6 +530,7 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 	if actions.Has(idpstore.InteractionRequireAccountSelection) {
 		page.DocumentTitle = "Choose an account"
 		page.AccountChooser = chooserPrompt(chooserEntries)
+		page.Form.Actions = []idpui.Action{idpui.ActionContinue, idpui.ActionUseAnotherAccount, idpui.ActionDeny}
 	}
 	p.renderInteraction(w, r, http.StatusOK, page)
 }
@@ -601,7 +602,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	action := idpui.Action(r.PostForm.Get(idpui.ActionFieldName))
 	selectionRequired := record.RequiredActions.Has(idpstore.InteractionRequireAccountSelection)
-	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionDeny) || (!selectionRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
+	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionDeny) || (!selectionRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
 		http.Error(w, "invalid interaction action", http.StatusBadRequest)
 		return
 	}
@@ -614,6 +615,27 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentDenied, InteractionID: traceID, ClientID: record.ClientID})
 		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeDenied)})
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
+		return
+	}
+	if selectionRequired && action == idpui.ActionUseAnotherAccount {
+		// The user explicitly declined every remembered entry. Retire the chooser
+		// continuation and require credentials in a new interaction. Its session
+		// binding is intentionally empty: it is a password-authentication path,
+		// not authority to reuse the currently active account.
+		if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
+			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
+			return
+		}
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account_selection.use_another_account", ClientID: ar.GetClient().GetID(), Result: "accepted"})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+		loginActions := idpstore.InteractionRequireFreshLogin
+		loginHandle, loginCSRF, err := p.createInteractionForSession(w, r, ar, loginActions, nil)
+		if err != nil {
+			http.Error(w, "create login interaction failed", http.StatusInternalServerError)
+			return
+		}
+		page := p.newInteractionPage(loginHandle, loginCSRF, loginActions, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
+		p.renderInteraction(w, r, http.StatusOK, page)
 		return
 	}
 	u, sess, sessionState, sessionErr := p.readBrowserSession(r)

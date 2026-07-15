@@ -21,14 +21,15 @@ const (
 type Action string
 
 const (
-	ActionContinue Action = "continue"
-	ActionApprove  Action = "approve"
-	ActionDeny     Action = "deny"
+	ActionContinue          Action = "continue"
+	ActionUseAnotherAccount Action = "use_another_account"
+	ActionApprove           Action = "approve"
+	ActionDeny              Action = "deny"
 )
 
 func (a Action) Valid() bool {
 	switch a {
-	case ActionContinue, ActionApprove, ActionDeny:
+	case ActionContinue, ActionUseAnotherAccount, ActionApprove, ActionDeny:
 		return true
 	default:
 		return false
@@ -41,6 +42,8 @@ func (a Action) Label() string {
 	switch a {
 	case ActionContinue:
 		return "Continue"
+	case ActionUseAnotherAccount:
+		return "Use another account"
 	case ActionApprove:
 		return "Approve"
 	case ActionDeny:
@@ -53,7 +56,9 @@ func (a Action) Label() string {
 // SkipsConstraintValidation reports whether an action must remain available
 // when required credential fields are empty. Denial must never be blocked by
 // browser-side form validation.
-func (a Action) SkipsConstraintValidation() bool { return a == ActionDeny }
+func (a Action) SkipsConstraintValidation() bool {
+	return a == ActionDeny || a == ActionUseAnotherAccount
+}
 
 // LoginReason explains why credentials are required for this interaction.
 type LoginReason string

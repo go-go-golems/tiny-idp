@@ -80,7 +80,10 @@ func (c *oidcClient) beginLogin(ctx context.Context, store *appStore, rawReturnT
 	}); err != nil {
 		return "", err
 	}
-	return c.config.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), nil
+	// Message Desk is deliberately an account-chooser demonstration. A browser
+	// with remembered tiny-idp accounts sees a provider-owned selection prompt;
+	// one without them receives the ordinary password login page.
+	return c.config.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier), oauth2.SetAuthURLParam("prompt", "select_account")), nil
 }
 
 func (c *oidcClient) finishLogin(ctx context.Context, store *appStore, state, code string) (loginCompletion, error) {

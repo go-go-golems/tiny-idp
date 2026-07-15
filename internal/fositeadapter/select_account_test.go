@@ -17,6 +17,7 @@ import (
 	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/idp"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/manuel/tinyidp/pkg/idpui"
 )
 
 type selectAccountFixture struct {
@@ -205,6 +206,25 @@ func TestPromptSelectAccountCreatesFreshConsentInteraction(t *testing.T) {
 	location, _ := url.Parse(approved.Header.Get("Location"))
 	if location.Query().Get("code") == "" {
 		t.Fatalf("consent approval did not issue code: %s", location)
+	}
+}
+
+func TestPromptSelectAccountUseAnotherAccountRequiresCredentials(t *testing.T) {
+	fixture := newSelectAccountFixture(t, nil)
+	form, csrfCookie := fixture.begin(t)
+	form.Del("account")
+	form.Set("action", string(idpui.ActionUseAnotherAccount))
+	response := fixture.submit(t, form, csrfCookie)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="password"`) || strings.Contains(string(body), "Choose an account") {
+		t.Fatalf("use-another should render a credential prompt status=%d body=%s", response.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `value="approve"`) || !strings.Contains(string(body), `value="deny"`) {
+		t.Fatalf("credential prompt does not have terminal actions: %s", body)
 	}
 }
 
