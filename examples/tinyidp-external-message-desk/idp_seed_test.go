@@ -2,16 +2,21 @@ package externalmessagedesk
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
-	"github.com/manuel/tinyidp/internal/store/memory"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
+	"github.com/manuel/tinyidp/pkg/sqlitestore"
 )
 
 func TestSeedManifestBootstrapIsIdempotentAndRejectsDrift(t *testing.T) {
 	ctx := context.Background()
-	store := memory.New()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
 	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{})
 	if err != nil {
 		t.Fatal(err)

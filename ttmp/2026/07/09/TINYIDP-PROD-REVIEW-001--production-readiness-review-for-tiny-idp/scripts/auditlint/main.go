@@ -326,7 +326,7 @@ var auditDeliveryAnalyzer = &analysis.Analyzer{
 
 var atomicityAnalyzer = &analysis.Analyzer{
 	Name:     "tinyidpatomicity",
-	Doc:      "reports persistence functions with multiple mutations but no explicit transaction",
+	Doc:      "reports multi-step persistence without an explicit transaction",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      runAtomicity,
 }
@@ -356,7 +356,7 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 					if !ok {
 						return true
 					}
-					if sel.Sel.Name == "Begin" || sel.Sel.Name == "BeginTx" || sel.Sel.Name == "Update" || isAtomicBoundary(sel.Sel.Name) {
+					if sel.Sel.Name == "Begin" || sel.Sel.Name == "BeginTx" || sel.Sel.Name == "MaybeBeginTx" || sel.Sel.Name == "Update" || isAtomicBoundary(sel.Sel.Name) {
 						hasTransaction = true
 					}
 					if isMutationName(sel.Sel.Name) {
@@ -382,7 +382,7 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 						return !mutationInLoop
 					}
 					sel, ok := call.Fun.(*ast.SelectorExpr)
-					if ok && isMutationName(sel.Sel.Name) {
+					if ok && isMutationName(sel.Sel.Name) && !isSingleStatementAtomicMutation(sel.Sel.Name) {
 						mutationInLoop = true
 					}
 					return !mutationInLoop
@@ -400,6 +400,19 @@ func runAtomicity(pass *analysis.Pass) (any, error) {
 func isAtomicBoundary(name string) bool {
 	switch name {
 	case "CreateUserWithCredential", "ReplacePasswordAndSecurityState", "RecordFailedLogin", "RecordSuccessfulLogin", "RotateSigningKey", "RotateRefreshToken", "RevokeRefreshTokenFamily":
+		return true
+	default:
+		return false
+	}
+}
+
+// isSingleStatementAtomicMutation lists Store operations whose implementation
+// is one durable write. Retrying one of these writes after a collision does not
+// create an observable partial multi-write state, so it is not a transaction
+// requirement merely because the retry appears in a loop.
+func isSingleStatementAtomicMutation(name string) bool {
+	switch name {
+	case "CreateDeviceGrant":
 		return true
 	default:
 		return false

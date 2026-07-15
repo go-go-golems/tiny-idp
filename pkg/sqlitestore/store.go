@@ -762,6 +762,10 @@ func (s *Store) ActivateRememberedSession(ctx context.Context, contextHash, entr
 	return s.activateRememberedSession(ctx, contextHash, entryHash, newSessionHash, now)
 }
 
+// activateRememberedSession is called only through ActivateRememberedSession,
+// with a transaction-scoped Store runner.
+//
+// tinyidp:transaction-scoped
 func (s *Store) activateRememberedSession(ctx context.Context, contextHash, entryHash, newSessionHash []byte, now time.Time) (idpstore.Session, idpstore.User, error) {
 	now = now.UTC()
 	if !s.browserContextActive(ctx, contextHash, now) {
