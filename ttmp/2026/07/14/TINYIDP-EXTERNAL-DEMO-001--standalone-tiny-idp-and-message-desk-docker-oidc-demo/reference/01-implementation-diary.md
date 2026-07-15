@@ -333,3 +333,78 @@ store + accounts + seed + token secret + renderer
   -> embeddedidp.New
   -> independent HTTP provider handler
 ```
+
+## Step 5: Add the standalone tiny-idp process
+
+The external demo now has a separate `cmd/idp` process. It opens only the
+provider SQLite database, loads an operator-mounted seed manifest, retains a
+durable owner-only token secret, composes the standalone provider, and serves
+the provider handler with health and readiness endpoints. Message Desk is not
+linked into this process.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, build the whole ticket, don't stop, i'm going out for a swim and i want you to be done and tested when I come back (use playwright MCP to test it all)"
+
+**Assistant interpretation:** Continue through service, container, application,
+and browser assurance work without pausing at the design stage.
+
+**Inferred user intent:** Return to a runnable, independently deployed demo
+with evidence rather than only an architectural proposal.
+
+### What I did
+
+- Added `examples/tinyidp-external-message-desk/cmd/idp/main.go`.
+- Added explicit flags for state root, issuer, listen address, seed file, and
+  log level; no environment-variable configuration is required.
+- Added separate SQLite/token-secret lifecycle and `/healthz`/`/readyz`.
+- Fixed token-secret handling so permission or I/O failure cannot regenerate a
+  secret; only an absent file permits initial creation.
+
+### Why
+
+- Separate containers require separate process ownership. The provider must
+  persist its own state and expose ordinary HTTP endpoints before an external
+  relying party can use it.
+
+### What worked
+
+- `go test ./examples/tinyidp-external-message-desk/... -count=1` compiled
+  both the seed package and standalone command.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- The standalone command needs no private tiny-idp implementation imports;
+  public composition, account, and SQLite APIs are sufficient.
+
+### What was tricky to build
+
+- Secret initialization must distinguish missing-file initialization from an
+  unreadable existing secret. Treating both as creation would break signing and
+  session continuity after a filesystem fault.
+
+### What warrants a second pair of eyes
+
+- The first command intentionally supports development HTTP only. The
+  production TLS/reverse-proxy profile remains a later task and must not be
+  represented as ready by this binary.
+
+### What should be done in the future
+
+- Add the external relying-party process and Compose wiring, then run a live
+  two-origin browser test.
+
+### Code review instructions
+
+- Inspect `cmd/idp/main.go`, then run the package test command above.
+
+### Technical details
+
+```text
+idp container: seed file + idp SQLite + token key -> provider HTTP
+app container: separate app SQLite -> ordinary OIDC client HTTP
+```
