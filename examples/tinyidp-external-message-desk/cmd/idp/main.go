@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	external "github.com/manuel/tinyidp/examples/tinyidp-external-message-desk"
+	"github.com/manuel/tinyidp/examples/tinyidp-message-app/loginui"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
@@ -57,12 +58,17 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("create account service")
 	}
-	provider, err := external.NewStandaloneIDP(ctx, external.StandaloneIDPConfig{Issuer: issuer, Mode: embeddedidp.DevMode, Store: store, Accounts: accounts, Seed: seed, TokenSecret: secret})
+	renderer, err := loginui.New()
+	if err != nil {
+		log.Fatal().Err(err).Msg("create interaction renderer")
+	}
+	provider, err := external.NewStandaloneIDP(ctx, external.StandaloneIDPConfig{Issuer: issuer, Mode: embeddedidp.DevMode, Store: store, Accounts: accounts, Seed: seed, TokenSecret: secret, Renderer: renderer})
 	if err != nil {
 		log.Fatal().Err(err).Msg("initialize standalone IdP")
 	}
 	defer provider.Close(context.Background())
 	mux := http.NewServeMux()
+	mux.Handle("GET /static/tinyidp/", renderer.AssetsHandler())
 	mux.Handle("/", provider.Handler())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

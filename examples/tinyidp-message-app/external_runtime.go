@@ -27,5 +27,10 @@ func openExternalMessageApplication(ctx context.Context, stateRoot, issuer strin
 		_ = store.Close()
 		return nil, err
 	}
-	return &initializedMessageApplication{manifest: manifest, paths: resolveStatePaths(stateRoot), application: store, handler: newMessageApp(store, oidc, nil, nil, cookieSecure)}, nil
+	handler := newMessageApp(store, oidc, nil, nil, cookieSecure)
+	// The external example delegates account provisioning to the separately
+	// operated identity provider, so it does not expose the embedded app's
+	// self-registration endpoints or registration form.
+	handler.registrationEnabled = false
+	return &initializedMessageApplication{manifest: manifest, paths: resolveStatePaths(stateRoot), application: store, handler: handler}, nil
 }

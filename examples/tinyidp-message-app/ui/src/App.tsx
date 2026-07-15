@@ -52,7 +52,7 @@ export default function App() {
       <div className="layout">
         <aside>
           <Intro />
-          {me.authenticated ? <Composer csrf={me.csrfToken!} /> : <Welcome />}
+          {me.authenticated ? <Composer csrf={me.csrfToken!} /> : <Welcome registrationEnabled={me.registrationEnabled === true} />}
         </aside>
         <section className="feed">
           <div className="feed-heading">
@@ -79,7 +79,14 @@ function Intro() {
   return <section className="intro"><p className="kicker accent">01 / ABOUT</p><h2>Leave a clear record.</h2><p>Messages are stored locally. Sign in to add one; everyone may read the desk.</p></section>;
 }
 
-function Welcome() {
+function Welcome({ registrationEnabled }: { registrationEnabled: boolean }) {
+  if (!registrationEnabled) {
+    return <section className="composer">
+      <p className="kicker">02 / SIGN IN</p><h2>Use a desk account</h2>
+      <p className="form-help">This standalone demo keeps accounts in tiny-idp. Use one of the operator-seeded identities to continue.</p>
+      <a className="quiet" href="/auth/login?return_to=/">Choose an account or sign in</a>
+    </section>;
+  }
   const registration = useRegistrationQuery();
   const [create, created] = useCreateAccountMutation();
   const [login, setLogin] = useState("");

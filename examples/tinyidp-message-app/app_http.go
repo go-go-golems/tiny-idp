@@ -39,6 +39,7 @@ type messageApp struct {
 	store               *appStore
 	oidc                *oidcClient
 	accounts            *idpaccounts.Service
+	registrationEnabled bool
 	provider            http.Handler
 	publicOrigin        string
 	addressResolver     idp.ClientAddressResolver
@@ -67,17 +68,17 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 		panic(err)
 	}
 	app := &messageApp{store: store, oidc: oidcClient, accounts: accounts, provider: provider, publicOrigin: publicOrigin, interactionUI: interactionUI,
-		addressResolver: idp.DirectClientAddressResolver{}, registrationLimiter: idp.NewFixedWindowRateLimiter(5, time.Minute),
+		addressResolver: idp.DirectClientAddressResolver{}, registrationEnabled: true, registrationLimiter: idp.NewFixedWindowRateLimiter(5, time.Minute),
 		audit: idp.NoopSink{}, cookieSecure: cookieSecure, now: time.Now, mux: http.NewServeMux()}
 	app.mux.HandleFunc("GET /auth/login", app.handleLogin)
 	app.mux.HandleFunc("GET /auth/callback", app.handleCallback)
 	app.mux.HandleFunc("GET /api/session", app.handleSession)
 	app.mux.HandleFunc("GET /api/registration", app.handleRegistration)
+	app.mux.HandleFunc("POST /api/accounts", app.handleCreateAccount)
 	app.mux.HandleFunc("GET /api/messages", app.handleListMessages)
 	app.mux.HandleFunc("GET /healthz", app.handleHealth)
 	app.mux.HandleFunc("GET /readyz", app.handleReady)
 	app.mux.HandleFunc("POST /api/messages", app.handleCreateMessage)
-	app.mux.HandleFunc("POST /api/accounts", app.handleCreateAccount)
 	app.mux.HandleFunc("POST /auth/logout/local", app.handleLocalLogout)
 	app.mux.HandleFunc("POST /auth/logout", app.handleLogout)
 	app.mux.Handle("GET /static/app/", http.StripPrefix("/static/app/", http.FileServer(http.FS(messageAppAssetFS()))))
@@ -203,16 +204,20 @@ func (a *messageApp) handleSession(w http.ResponseWriter, r *http.Request) {
 	session, ok := a.currentSession(r)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if !ok {
-		_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": false})
+		_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": false, "registrationEnabled": a.registrationEnabled})
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"authenticated": true, "subject": session.Subject, "displayName": session.DisplayName,
-		"csrfToken": base64.RawURLEncoding.EncodeToString(session.CSRFSecret),
+		"csrfToken": base64.RawURLEncoding.EncodeToString(session.CSRFSecret), "registrationEnabled": a.registrationEnabled,
 	})
 }
 
 func (a *messageApp) handleRegistration(w http.ResponseWriter, r *http.Request) {
+	if !a.registrationEnabled {
+		http.NotFound(w, r)
+		return
+	}
 	token, err := randomURLToken(32)
 	if err != nil {
 		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)
@@ -336,6 +341,10 @@ type createAccountRequest struct {
 }
 
 func (a *messageApp) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
+	if !a.registrationEnabled {
+		http.NotFound(w, r)
+		return
+	}
 	if a.accounts == nil {
 		a.recordRegistration(r.Context(), "rejected", "unavailable", "")
 		http.Error(w, "registration is temporarily unavailable", http.StatusServiceUnavailable)

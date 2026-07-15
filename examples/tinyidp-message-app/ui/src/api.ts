@@ -1,6 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
-export type Session = { authenticated: boolean; subject?: string; displayName?: string; csrfToken?: string };
+export type Session = { authenticated: boolean; subject?: string; displayName?: string; csrfToken?: string; registrationEnabled?: boolean };
 export type Message = { id: number; authorName: string; body: string; createdAt: string };
 export type Feed = { messages: Message[]; nextCursor?: string };
 export type Registration = { csrfToken: string };

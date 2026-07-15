@@ -60,6 +60,32 @@ func TestSessionEndpointAndLogoutUseIndependentAppSession(t *testing.T) {
 	}
 }
 
+func TestExternalModeDoesNotExposeSelfRegistration(t *testing.T) {
+	store, err := openAppStore(context.Background(), filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := newMessageApp(store, nil, nil, nil, false)
+	app.registrationEnabled = false
+
+	session := httptest.NewRecorder()
+	app.ServeHTTP(session, httptest.NewRequest(http.MethodGet, "/api/session", nil))
+	if session.Code != http.StatusOK || !strings.Contains(session.Body.String(), `"registrationEnabled":false`) {
+		t.Fatalf("external session capability = %d: %s", session.Code, session.Body.String())
+	}
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/api/registration", nil),
+		httptest.NewRequest(http.MethodPost, "/api/accounts", nil),
+	} {
+		response := httptest.NewRecorder()
+		app.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s %s status = %d: %s", request.Method, request.URL.Path, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestLogoutReturnsBrowserNavigableIDPEndSessionURL(t *testing.T) {
 	ctx := context.Background()
 	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
