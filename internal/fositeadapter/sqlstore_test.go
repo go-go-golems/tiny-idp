@@ -358,6 +358,111 @@ func TestSQLiteDeviceTokenRedemptionSignsBeforeSingleConnectionTransaction(t *te
 	}
 }
 
+func TestSQLiteApprovedDeviceGrantSurvivesRestartAndRejectsReplay(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	secret := []byte("sqlite-device-restart-secret-key-32")
+	dbPath := filepath.Join(t.TempDir(), "idp.db")
+	deviceCode := "sqlite-device-code-restart"
+
+	seed, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(dbPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-device-restart", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	grant := idpstore.DeviceGrant{
+		ID:              "device-grant-restart",
+		DeviceCodeHash:  idpstore.HashSecret(secret, "tinyidp/device-code/v1\x00"+deviceCode),
+		UserCodeHash:    idpstore.HashSecret(secret, "tinyidp/user-code/v1\x00ABCD-EFGH"),
+		ClientID:        "device-cli",
+		RequestedScopes: []string{"openid"},
+		Status:          idpstore.DeviceGrantPending,
+		CreatedAt:       now,
+		ExpiresAt:       now.Add(time.Hour),
+		PollInterval:    time.Second,
+		NextPollAt:      now,
+	}
+	if err := seed.CreateDeviceGrant(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seed.DecideDeviceGrant(ctx, idpstore.DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: idpstore.DeviceGrantApprove, UserID: "u1", Subject: "user-alice", AuthTime: now, AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	firstStart, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(dbPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: firstStart, SecretKey: secret, Clock: func() time.Time { return now }})
+	if err != nil {
+		_ = firstStart.Close()
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	status, body := postDeviceTokenFormWithTimeout(t, server.URL, deviceCode)
+	server.Close()
+	if err := firstStart.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("redemption after first restart status=%d body=%q", status, body)
+	}
+
+	secondStart, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(dbPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondStart.Close()
+	provider, err = fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: secondStart, SecretKey: secret, Clock: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server = httptest.NewServer(provider.Handler())
+	defer server.Close()
+	status, body = postDeviceTokenFormWithTimeout(t, server.URL, deviceCode)
+	if status != http.StatusBadRequest || !strings.Contains(string(body), `"error":"invalid_grant"`) {
+		t.Fatalf("device-code replay after second restart status=%d body=%q", status, body)
+	}
+}
+
+func postDeviceTokenFormWithTimeout(t *testing.T, baseURL, deviceCode string) (int, []byte) {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/token", strings.NewReader(url.Values{
+		"grant_type":  {idpstore.GrantDeviceCode},
+		"client_id":   {"device-cli"},
+		"device_code": {deviceCode},
+	}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("device token request: %v", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, body
+}
+
 func TestSQLiteRefreshRotationFailpointsAreAtomicAndRetryable(t *testing.T) {
 	points := []string{
 		"before_begin_token",
