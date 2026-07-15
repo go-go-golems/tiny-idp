@@ -2,6 +2,23 @@
 
 ## 2026-07-15
 
+Completed Phase 4 with a server-owned, browser-bound RFC 8628 verification
+interaction at `GET|POST /device`. A typed and bounded renderer receives only
+presentation data. A valid public user code creates an opaque continuation
+whose stored reference is the hash, not the raw code. Both approval and denial
+require fresh password authentication, CSRF, same-browser binding, an enabled
+device-capable client, and an atomic consume-interaction plus decide-grant
+transaction. Tests cover rendering, escaping, accessibility-relevant labels,
+invalid-code non-oracles, invalid-credential retry, CSRF/browser binding,
+replay, concurrent one-winner decisions, and renderer failure.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_verification.go — browser entry and decision protocol boundary
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/types.go — typed bounded device renderer contract
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/templates/device_verification.html — dependency-free default page
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_authorization_test.go — browser and adversarial flow tests
+
 Completed Phase 0 by freezing grant capability, code secrecy, state transition,
 polling, audit/metric vocabulary, and named verification contracts.
 

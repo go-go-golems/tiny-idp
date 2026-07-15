@@ -83,43 +83,45 @@ type Options struct {
 	AuthorizePersistenceHook func(point string) error
 	// TokenPersistenceHook is a test-only failpoint hook for authorization-code
 	// redemption and refresh-token rotation storage lifecycles.
-	TokenPersistenceHook func(point string) error
-	SecurityEvents       securitytrace.Sink
-	InteractionRenderer  idpui.InteractionRenderer
+	TokenPersistenceHook       func(point string) error
+	SecurityEvents             securitytrace.Sink
+	InteractionRenderer        idpui.InteractionRenderer
+	DeviceVerificationRenderer idpui.DeviceVerificationRenderer
 	// deviceCodeGenerator is an internal test seam. Production code always uses
 	// cryptographic randomness from generateDeviceCodes.
 	deviceCodeGenerator func() (deviceCode, userCode string, err error)
 }
 
 type Provider struct {
-	issuer              oidcmeta.Issuer
-	store               idpstore.Store
-	fositeStore         *fositememory.MemoryStore
-	sqlStore            *sqlFositeStore
-	oauth2              fosite.OAuth2Provider
-	config              *fosite.Config
-	mode                idpstore.Mode
-	csrfKey             []byte
-	cookieSecure        bool
-	cookieSameSite      http.SameSite
-	sessionCookieName   string
-	csrfCookieName      string
-	chooser             AccountChooserConfig
-	cookiePathValue     string
-	audit               idp.Sink
-	securityEvents      securitytrace.Sink
-	consent             idp.ConsentPolicy
-	rateLimiter         idp.RateLimiter
-	clientAddress       idp.ClientAddressResolver
-	authenticator       idp.PasswordAuthenticator
-	auditFailures       atomic.Uint64
-	securityFailures    atomic.Uint64
-	sessionTTL          time.Duration
-	interactionTTL      time.Duration
-	clock               func() time.Time
-	interactionUI       idpui.InteractionRenderer
-	deviceCodeGenerator func() (deviceCode, userCode string, err error)
-	renderMetrics       interactionRenderMetrics
+	issuer               oidcmeta.Issuer
+	store                idpstore.Store
+	fositeStore          *fositememory.MemoryStore
+	sqlStore             *sqlFositeStore
+	oauth2               fosite.OAuth2Provider
+	config               *fosite.Config
+	mode                 idpstore.Mode
+	csrfKey              []byte
+	cookieSecure         bool
+	cookieSameSite       http.SameSite
+	sessionCookieName    string
+	csrfCookieName       string
+	chooser              AccountChooserConfig
+	cookiePathValue      string
+	audit                idp.Sink
+	securityEvents       securitytrace.Sink
+	consent              idp.ConsentPolicy
+	rateLimiter          idp.RateLimiter
+	clientAddress        idp.ClientAddressResolver
+	authenticator        idp.PasswordAuthenticator
+	auditFailures        atomic.Uint64
+	securityFailures     atomic.Uint64
+	sessionTTL           time.Duration
+	interactionTTL       time.Duration
+	clock                func() time.Time
+	interactionUI        idpui.InteractionRenderer
+	deviceVerificationUI idpui.DeviceVerificationRenderer
+	deviceCodeGenerator  func() (deviceCode, userCode string, err error)
+	renderMetrics        interactionRenderMetrics
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -197,6 +199,17 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("build default interaction renderer: %w", rendererErr)
 		}
 		opts.InteractionRenderer = renderer
+	}
+	if opts.DeviceVerificationRenderer == nil {
+		if renderer, ok := opts.InteractionRenderer.(idpui.DeviceVerificationRenderer); ok {
+			opts.DeviceVerificationRenderer = renderer
+		} else {
+			renderer, rendererErr := idpui.NewDefaultRenderer()
+			if rendererErr != nil {
+				return nil, fmt.Errorf("build default device verification renderer: %w", rendererErr)
+			}
+			opts.DeviceVerificationRenderer = renderer
+		}
 	}
 	if opts.Consent == nil {
 		if opts.Mode == idpstore.ProductionMode {
@@ -293,7 +306,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -400,6 +413,7 @@ func (p *Provider) registerAt(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(prefix+"/jwks", p.jwks)
 	mux.HandleFunc(prefix+"/authorize", p.authorize)
 	mux.HandleFunc(prefix+"/device_authorization", p.deviceAuthorization)
+	mux.HandleFunc(prefix+"/device", p.deviceVerification)
 	mux.HandleFunc(prefix+"/token", p.token)
 	mux.HandleFunc(prefix+"/userinfo", p.userinfo)
 	mux.HandleFunc(prefix+"/end-session", p.endSession)

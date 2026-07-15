@@ -1,0 +1,47 @@
+{{- define "device-verification" -}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.DocumentTitle}}</title>
+</head>
+<body>
+  <main>
+    <h1>{{.DocumentTitle}}</h1>
+    {{with .Error}}<div id="device-verification-error" role="alert">{{.Summary}}</div>{{end}}
+    {{with .Entry}}
+    <p>Enter the code displayed by your device.</p>
+    <form method="get" action="{{$.Form.ActionURL}}">
+      <p>
+        <label for="tinyidp-user-code">Code</label>
+        <input id="tinyidp-user-code" name="{{.UserCodeField}}" value="{{.UserCodeValue}}" autocomplete="one-time-code" autofocus required>
+      </p>
+      <p><button type="submit">Continue</button></p>
+    </form>
+    {{end}}
+    {{with .Confirmation}}
+    <section aria-labelledby="device-requested-access-heading">
+      <h2 id="device-requested-access-heading">Requested access</h2>
+      <p>Client: <strong>{{.ClientID}}</strong></p>
+      <ul>{{range .Scopes}}<li><code>{{.Name}}</code>{{with .Description}} — {{.}}{{end}}</li>{{end}}</ul>
+    </section>
+    <form method="post" action="{{$.Form.ActionURL}}">
+      <p>
+        <label for="tinyidp-login">Username</label>
+        <input id="tinyidp-login" name="{{.Login.LoginField}}" value="{{.Login.LoginValue}}" autocomplete="username" required autofocus>
+      </p>
+      <p>
+        <label for="tinyidp-password">Password</label>
+        <input id="tinyidp-password" name="{{.Login.PasswordField}}" type="password" autocomplete="current-password" required>
+      </p>
+      <input type="hidden" name="{{$.Form.InteractionField}}" value="{{$.Form.Interaction}}">
+      <input type="hidden" name="{{$.Form.CSRFField}}" value="{{$.Form.CSRFToken}}">
+      <p>{{range $.Form.Actions}}<button type="submit" name="{{$.Form.ActionField}}" value="{{.}}"{{if .SkipsConstraintValidation}} formnovalidate{{end}}>{{.Label}}</button>{{end}}</p>
+    </form>
+    {{end}}
+    {{with .Notice}}<p role="status">{{.Summary}}</p>{{end}}
+  </main>
+</body>
+</html>
+{{- end -}}

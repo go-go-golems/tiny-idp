@@ -35,7 +35,8 @@ type TokenConfig struct {
 }
 
 type UIConfig struct {
-	Renderer idpui.InteractionRenderer
+	Renderer                   idpui.InteractionRenderer
+	DeviceVerificationRenderer idpui.DeviceVerificationRenderer
 }
 
 // AccountChooserConfig opts a host into provider-owned remembered-account

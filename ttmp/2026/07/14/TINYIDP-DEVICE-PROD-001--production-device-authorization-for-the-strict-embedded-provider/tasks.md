@@ -19,10 +19,10 @@
 - [x] Phase 3: Implement strict bounded POST device authorization parsing and client authentication <!-- t:16og -->
 - [x] Phase 3: Enforce device grant capability and requested-scope policy <!-- t:3cwn -->
 - [x] Phase 3: Persist grants, emit audit, return RFC 8628 response, and add endpoint tests <!-- t:gcwl -->
-- [ ] Phase 4: Define typed bounded DeviceVerificationRenderer API and default pages <!-- t:ju8o -->
-- [ ] Phase 4: Implement code entry, normalization, generic errors, and verification interaction binding <!-- t:r34p -->
-- [ ] Phase 4: Integrate browser authentication, CSRF, client/scope display, and explicit decisions <!-- t:ubvd -->
-- [ ] Phase 4: Add approve-deny races, replay, stale-session, renderer failure, and accessibility tests <!-- t:nrx9 -->
+- [x] Phase 4: Define typed bounded DeviceVerificationRenderer API and default pages <!-- t:ju8o -->
+- [x] Phase 4: Implement code entry, normalization, generic errors, and verification interaction binding <!-- t:r34p -->
+- [x] Phase 4: Integrate browser authentication, CSRF, client/scope display, and explicit decisions <!-- t:ubvd -->
+- [x] Phase 4: Add approve-deny races, replay, stale-session, renderer failure, and accessibility tests <!-- t:nrx9 -->
 - [ ] Phase 5: Implement and register the custom Fosite device token endpoint handler <!-- t:szkc -->
 - [ ] Phase 5: Map pending, slowdown, denial, expiry, wrong client, and replay to protocol errors <!-- t:akdz -->
 - [ ] Phase 5: Atomically consume approved grants and persist access, ID, and optional refresh tokens <!-- t:9tn5 -->

@@ -258,6 +258,10 @@ type InteractionRecord struct {
 	SessionIDHash      []byte
 	BrowserContextHash []byte
 	GenerationHash     []byte
+	// DeviceUserCodeHash binds an RFC 8628 browser verification continuation to
+	// a pending device grant. It is empty for ordinary OAuth authorization
+	// interactions; raw user codes never enter this record.
+	DeviceUserCodeHash []byte
 	CreatedAt          time.Time
 	ExpiresAt          time.Time
 	ConsumedAt         *time.Time

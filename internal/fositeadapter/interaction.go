@@ -45,19 +45,21 @@ func authorizeRequestDigest(values url.Values) []byte {
 
 func clientGenerationHash(client idpstore.Client) []byte {
 	policy := struct {
-		ID            string
-		RedirectURIs  []string
-		AllowedScopes []string
-		RequirePKCE   bool
-		Disabled      bool
-		UpdatedAt     string
+		ID                string
+		RedirectURIs      []string
+		AllowedScopes     []string
+		AllowedGrantTypes []string
+		RequirePKCE       bool
+		Disabled          bool
+		UpdatedAt         string
 	}{
-		ID:            client.ID,
-		RedirectURIs:  append([]string(nil), client.RedirectURIs...),
-		AllowedScopes: append([]string(nil), client.AllowedScopes...),
-		RequirePKCE:   client.RequirePKCE,
-		Disabled:      client.Disabled,
-		UpdatedAt:     client.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
+		ID:                client.ID,
+		RedirectURIs:      append([]string(nil), client.RedirectURIs...),
+		AllowedScopes:     append([]string(nil), client.AllowedScopes...),
+		AllowedGrantTypes: append([]string(nil), client.AllowedGrantTypes...),
+		RequirePKCE:       client.RequirePKCE,
+		Disabled:          client.Disabled,
+		UpdatedAt:         client.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
 	}
 	b, _ := json.Marshal(policy)
 	sum := sha256.Sum256(b)

@@ -156,6 +156,62 @@ func (p *Provider) recordRenderFailure(r *http.Request, page idpui.InteractionPa
 	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "interaction.render_failed", ClientID: clientID, Result: "rejected", Reason: reason})
 }
 
+func (p *Provider) renderDeviceVerification(w http.ResponseWriter, r *http.Request, status int, page idpui.DeviceVerificationPage) {
+	started := time.Now()
+	p.renderMetrics.attempts.Add(1)
+	succeeded := false
+	defer func() { p.renderMetrics.observe(time.Since(started), succeeded) }()
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	if err := page.Validate(); err != nil {
+		p.recordDeviceVerificationRenderFailure(r, page, "invalid_page")
+		http.Error(w, "device verification page unavailable", http.StatusInternalServerError)
+		return
+	}
+	buffer := &boundedInteractionBuffer{limit: maxInteractionDocumentBytes}
+	if err := p.deviceVerificationUI.RenderDeviceVerification(r.Context(), buffer, page.Clone()); err != nil {
+		reason := "renderer_failed"
+		if errors.Is(err, errInteractionDocumentTooLarge) {
+			reason = "document_too_large"
+			p.renderMetrics.oversizedDocuments.Add(1)
+		}
+		p.recordDeviceVerificationRenderFailure(r, page, reason)
+		http.Error(w, "device verification page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if buffer.overflowed || buffer.Len() == 0 {
+		reason := "document_too_large"
+		if buffer.Len() == 0 {
+			reason = "empty_document"
+			p.renderMetrics.emptyDocuments.Add(1)
+		} else {
+			p.renderMetrics.oversizedDocuments.Add(1)
+		}
+		p.recordDeviceVerificationRenderFailure(r, page, reason)
+		http.Error(w, "device verification page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if written, err := w.Write(buffer.Bytes()); err != nil || written != buffer.Len() {
+		p.renderMetrics.responseWriteFailures.Add(1)
+		p.recordDeviceVerificationRenderFailure(r, page, "response_write_failed")
+		return
+	}
+	succeeded = true
+}
+
+func (p *Provider) recordDeviceVerificationRenderFailure(r *http.Request, page idpui.DeviceVerificationPage, reason string) {
+	clientID := ""
+	if page.Confirmation != nil {
+		clientID = page.Confirmation.ClientID
+	}
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.verification.render_failed", ClientID: clientID, Result: "rejected", Reason: reason})
+}
+
 type boundedInteractionBuffer struct {
 	bytes.Buffer
 	limit      int

@@ -785,3 +785,209 @@ bounded form + authenticated/identified client + allowed openid scope
   -> CreateDeviceGrant(pending, hashes only)
   -> audit(event/reason only) + no-store RFC 8628 JSON
 ```
+
+## Step 5: Build the browser verification continuation and decision boundary
+
+This step turns the durable pending grant into a browser interaction without
+turning the browser into an authority. The browser may enter a public user
+code, but it receives neither a device code nor a database key. It can only
+submit a provider-generated opaque interaction handle that is independently
+bound to the CSRF cookie and then consumed together with the irreversible
+grant decision.
+
+The implementation deliberately requires fresh password authentication for
+both approve and deny. It does not treat an ambient `tinyidp_session` as proof
+for this RFC 8628 decision and it does not create a browser session as a side
+effect. This avoids repeating the forced-reauthentication/session-reuse class
+of error already identified in the main browser authorization flow.
+
+### Prompt Context
+
+`continue` — same short continuation prompt as the immediately preceding
+implementation turn. The active ticket objective remained to implement the
+production device-authorization phases incrementally with a detailed diary,
+tests, and commits.
+
+### What I did
+
+- Added a public `idpui.DeviceVerificationRenderer` interface and a typed
+  `DeviceVerificationPage` contract. Its three exclusive states are code entry,
+  authenticated decision, and terminal notice.
+- Added a dependency-free default HTML renderer at
+  `pkg/idpui/templates/device_verification.html`. The entry form is GET-only;
+  the confirmation form is POST-only and carries the opaque interaction and
+  CSRF fields. Labels, autocomplete values, explicit headings, status/error
+  roles, and a `formnovalidate` deny button are part of the template contract.
+- Exposed the new renderer through `fositeadapter.Options` and
+  `embeddedidp.UIConfig`. If a host provides one default renderer implementing
+  both interfaces, the provider reuses it; otherwise it constructs the safe
+  built-in device renderer.
+- Added `GET|POST /device`. GET normalizes the user code, rate-limits code
+  entry, and renders a generic error for malformed, unknown, expired, denied,
+  consumed, or otherwise unavailable codes. For a pending grant it creates a
+  durable `InteractionRecord` with an independently domain-separated opaque
+  handle hash, the existing browser-binding hash, the client generation hash,
+  and `DeviceUserCodeHash` only.
+- Extended `InteractionRecord` and the memory clone path with
+  `DeviceUserCodeHash`. SQLite already stores the record as an encoded payload,
+  so the existing interaction migration, transaction, backup, and maintenance
+  machinery preserve the new hash field without a raw-code column or a second
+  mutable state table.
+- Made POST reject oversized/duplicated forms, rate-limit decisions, validate
+  CSRF and browser binding, re-check the pending grant and current client
+  policy, authenticate the entered credentials, and atomically consume the
+  interaction plus decide the grant through `Store.Update`.
+- Added focused renderer tests (page shapes, HTML escaping, invalid-contract
+  rejection, cancellation) and endpoint tests for approval, denial, retry
+  after bad credentials, cross-browser rejection, replay, equal generic error
+  pages, concurrent decisions, renderer failure, no browser-session creation,
+  and audit records.
+- Tightened `clientGenerationHash` to include `AllowedGrantTypes`, so removal
+  of the device capability invalidates a pending browser continuation rather
+  than allowing it to complete against a materially changed client policy.
+
+### Why
+
+- A raw `user_code` is intentionally human-entered and observable in a device
+  screen/complete URI; it is not a durable capability to authorize tokens. The
+  server must translate it once into a keyed hash and then continue with an
+  opaque, browser-bound interaction identifier.
+- Reusing the durable interaction primitive retains existing one-time,
+  expiry, browser-binding, maintenance, and transaction semantics. A new
+  generic verification-session subsystem would duplicate state transitions and
+  risk divergent expiry or replay behavior.
+- The decision transaction consumes the interaction first and decides the
+  grant second, but the `Update` callback rolls both changes back if either
+  operation fails. Thus an attacker cannot consume a UI continuation without
+  producing a legal decision, nor can two submissions produce two decisions.
+- A generic unavailable-code response avoids exposing whether a guessed code
+  is unknown, expired, previously denied, already approved, or consumed.
+
+### What worked
+
+- `go test ./pkg/idpui ./internal/fositeadapter ./pkg/embeddedidp
+  ./internal/store/memory ./pkg/sqlitestore` passed after the Phase 4 changes.
+- `go test ./internal/fositeadapter -run
+  'TestDevice(Authorization|Verification|Code)' -count=1` passed the focused
+  endpoint suite, including the concurrent one-winner decision test.
+- The renderer test parses generated HTML and confirms the entry form uses GET,
+  the decision form uses POST, the hidden values are present only on the
+  decision page, labels exist for credentials and code entry, and untrusted
+  client/login/scope/error values cannot create active HTML nodes or handlers.
+- The success test demonstrates that an approved grant stores subject,
+  `auth_time`, AMR, and requested/approved scopes while the response body never
+  contains the device bearer code and no browser session cookie is issued.
+
+### What didn't work
+
+- The first focused compile after adding the handler failed because the new
+  file still imported `time` after the implementation stopped using it. The
+  exact compiler error was `"time" imported and not used`. Removing that
+  unused import restored the build.
+- The initial endpoint-test compilation omitted imports for `idpui`,
+  `idpaccounts`, `io`, and `net/http/cookiejar`. The compiler reported each as
+  undefined; importing the test dependencies fixed the test harness without
+  changing production code.
+- While wiring the embedded option I briefly wrote the nonexistent field name
+  `opts.Cookie.CSRFCookieName`. The real public field is `opts.Cookie.CSRFName`;
+  the typo was corrected before any test or commit.
+
+### What I learned
+
+- The existing `InteractionRecord` is already the correct durable shape for a
+  device verification continuation: it is keyed by a hash, has explicit expiry
+  and terminal outcome, records a browser binding, participates in `TxStore`,
+  and is included in the established maintenance/backup path. Adding one
+  explicitly documented hash field is less risky than another store interface.
+- CSRF validation alone is insufficient if an interaction can be copied to a
+  browser profile with a matching form token. Storing and comparing the hash of
+  the HttpOnly CSRF cookie binds the interaction to the issuing profile.
+- Browser convenience does not require creating a session. A device page can
+  authenticate a password solely to produce a durable device-grant decision;
+  that choice reduces session lifecycle coupling and makes fresh-auth behavior
+  obvious in review.
+
+### What was tricky to build
+
+- The GET entry page cannot need an interaction handle yet, because it has no
+  valid code to bind. Making it a no-state GET avoids a pre-code CSRF/session
+  record. Only the valid-code path emits a cookie, CSRF MAC, and durable
+  continuation.
+- Error rerenders after a wrong password must preserve the original opaque
+  handle and valid CSRF MAC without consuming the record. The code therefore
+  reuses the submitted MAC only after it has validated the cookie and loaded
+  the server-owned record.
+- Client policy changes must invalidate the continuation. The grant itself
+  captures the original scopes, but the record also captures a generation hash
+  that now includes allowed grant types; the POST re-loads and re-validates the
+  enabled client before authenticating and deciding.
+
+### What warrants a second pair of eyes
+
+- Confirm the product requirement that even **deny** requires password entry.
+  It is the conservative interpretation of authenticated explicit decision,
+  but a future UX policy might use an existing recently authenticated session
+  with a separate freshness proof. That would need its own invariant design;
+  it must not silently accept a stale session.
+- Review the wording of generic invalid-code messages with UX and support.
+  The equal-body test intentionally protects against a status oracle, so more
+  detailed messages must not distinguish unknown from terminal codes.
+- Review host custom-renderer integration. A custom OAuth interaction renderer
+  that does not implement `DeviceVerificationRenderer` gets the safe default
+  page; a product that requires a fully unified visual design should explicitly
+  supply both bounded renderer interfaces.
+
+### What should be done in the future
+
+- Begin Phase 5: implement the Fosite token endpoint support for
+  `urn:ietf:params:oauth:grant-type:device_code`. It must map every durable
+  polling/terminal result to RFC 8628 errors and consume an approved grant in
+  the exact same SQL transaction as Fosite token persistence.
+- Do not advertise `device_authorization_endpoint` or device grant support in
+  discovery until Phase 5 token exchange and its failure-path tests are
+  complete.
+- Add the remaining Phase 6 durable rate-limit and operator-readiness work;
+  today the endpoint invokes the configured limiter, but a process-local
+  limiter alone is not a restart-safe production abuse-control guarantee.
+
+### Code review instructions
+
+- Start at `internal/fositeadapter/device_verification.go`. Trace GET from
+  normalization through `createDeviceVerificationInteraction`, then trace POST
+  from `validateCSRF` through the `Store.Update` callback. Confirm no raw
+  user/device code reaches `InteractionRecord`, audit events, or rendering.
+- Compare `deviceVerificationHandleHash` with existing interaction and device
+  code hash domains. The prefix must remain unique and versioned.
+- Read `DeviceVerificationPage.Validate` and the default template together.
+  The renderer contract must reject malformed host page models before output;
+  renderers must not receive response writers, cookies, or redirect authority.
+- Run `go test ./internal/fositeadapter -run TestDeviceVerification -count=1`
+  and inspect the one-winner race plus renderer-failure assertions.
+- Review the added `AllowedGrantTypes` input to `clientGenerationHash`; it is
+  security-relevant policy material, not incidental client metadata.
+
+### Technical details
+
+```text
+GET /device?user_code=ABCD-EFGH
+  normalize + HMAC(user-code domain)
+  -> pending, unexpired DeviceGrant?
+  -> random opaque handle + CSRF(cookie, handle)
+  -> InteractionRecord{
+       IDHash=HMAC(device-verification domain, handle),
+       DeviceUserCodeHash=HMAC(user-code domain, normalized code),
+       BrowserBindingHash=HMAC(csrf-cookie),
+       ClientID, GenerationHash, expires=min(interaction TTL, grant TTL)
+     }
+  -> typed confirmation page
+
+POST /device
+  bounded form + rate limit + CSRF + interaction/binding/client validation
+  -> fresh AuthenticatePassword
+  -> Store.Update:
+       require pending and current grant/client
+       ConsumeInteraction(approved|denied)
+       DecideDeviceGrant(approved identity/scopes | denied)
+     // any error rolls back both state changes
+  -> secret-free audit + terminal no-store page
+```

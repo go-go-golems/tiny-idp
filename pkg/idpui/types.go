@@ -13,6 +13,7 @@ const (
 	LoginFieldName       = "login"
 	PasswordFieldName    = "password"
 	AccountFieldName     = "account"
+	UserCodeFieldName    = "user_code"
 )
 
 // Action is a browser-submitted interaction decision. The provider validates
@@ -105,11 +106,12 @@ const (
 	ErrorMissingLogin       ErrorCode = "missing_login"
 	ErrorInvalidCredentials ErrorCode = "invalid_credentials"
 	ErrorConsentRequired    ErrorCode = "consent_required"
+	ErrorInvalidUserCode    ErrorCode = "invalid_user_code"
 )
 
 func (c ErrorCode) Valid() bool {
 	switch c {
-	case ErrorMissingLogin, ErrorInvalidCredentials, ErrorConsentRequired:
+	case ErrorMissingLogin, ErrorInvalidCredentials, ErrorConsentRequired, ErrorInvalidUserCode:
 		return true
 	default:
 		return false
@@ -122,11 +124,12 @@ type FieldName string
 const (
 	FieldCredentials FieldName = "credentials"
 	FieldConsent     FieldName = "consent"
+	FieldUserCode    FieldName = "user_code"
 )
 
 func (f FieldName) Valid() bool {
 	switch f {
-	case FieldCredentials, FieldConsent:
+	case FieldCredentials, FieldConsent, FieldUserCode:
 		return true
 	default:
 		return false
@@ -194,6 +197,108 @@ type PublicError struct {
 	Code    ErrorCode
 	Summary string
 	Field   FieldName
+}
+
+// DeviceVerificationPage is the complete presentation model for the browser
+// side of an RFC 8628 device authorization. It deliberately contains an
+// opaque interaction handle, never a raw device code or a persisted browser
+// credential. A code-entry page has Entry set; a decision page has
+// Confirmation set; and a terminal result has Notice set.
+type DeviceVerificationPage struct {
+	DocumentTitle string
+	Form          DeviceVerificationForm
+	Entry         *DeviceCodeEntryPrompt
+	Confirmation  *DeviceConfirmationPrompt
+	Notice        *DeviceVerificationNotice
+	Error         *PublicError
+}
+
+type DeviceVerificationForm struct {
+	ActionURL        string
+	InteractionField string
+	Interaction      string
+	CSRFField        string
+	CSRFToken        string
+	ActionField      string
+	Actions          []Action
+}
+
+type DeviceCodeEntryPrompt struct {
+	UserCodeField string
+	UserCodeValue string
+}
+
+// DeviceConfirmationPrompt contains only the relying client identity and
+// requested scopes needed for an informed browser decision.
+type DeviceConfirmationPrompt struct {
+	ClientID string
+	Scopes   []Scope
+	Login    LoginPrompt
+}
+
+type DeviceVerificationNotice struct {
+	Summary string
+}
+
+// Validate checks the device-verification presentation contract before a
+// renderer is invoked. It has intentionally separate rules from an OAuth
+// browser authorization interaction: entering a public user code is a GET,
+// while a decision always carries an opaque interaction handle and CSRF token.
+func (p DeviceVerificationPage) Validate() error {
+	if strings.TrimSpace(p.DocumentTitle) == "" {
+		return fmt.Errorf("document title is required")
+	}
+	actionURL, err := url.Parse(p.Form.ActionURL)
+	if err != nil || actionURL.Scheme == "" || actionURL.Host == "" || actionURL.User != nil || actionURL.Fragment != "" || (actionURL.Scheme != "http" && actionURL.Scheme != "https") {
+		return fmt.Errorf("action URL must be an absolute HTTP(S) URL without user info or fragment")
+	}
+	promptCount := 0
+	if p.Entry != nil {
+		promptCount++
+		if p.Entry.UserCodeField != UserCodeFieldName {
+			return fmt.Errorf("user code field must use the provider contract")
+		}
+	}
+	if p.Confirmation != nil {
+		promptCount++
+		if strings.TrimSpace(p.Confirmation.ClientID) == "" {
+			return fmt.Errorf("device confirmation client ID is required")
+		}
+		if p.Confirmation.Login.LoginField != LoginFieldName || p.Confirmation.Login.PasswordField != PasswordFieldName || !p.Confirmation.Login.Reason.Valid() {
+			return fmt.Errorf("device confirmation login must use the provider contract")
+		}
+		if err := p.Form.validateDecision(); err != nil {
+			return err
+		}
+	}
+	if p.Notice != nil {
+		promptCount++
+		if strings.TrimSpace(p.Notice.Summary) == "" {
+			return fmt.Errorf("device verification notice summary is required")
+		}
+	}
+	if promptCount != 1 {
+		return fmt.Errorf("exactly one device verification prompt is required")
+	}
+	if p.Error != nil {
+		if !p.Error.Code.Valid() || !p.Error.Field.Valid() || strings.TrimSpace(p.Error.Summary) == "" {
+			return fmt.Errorf("invalid public device verification error")
+		}
+	}
+	return nil
+}
+
+func (f DeviceVerificationForm) validateDecision() error {
+	if f.InteractionField != InteractionFieldName || f.CSRFField != CSRFFieldName || f.ActionField != ActionFieldName {
+		return fmt.Errorf("form fields must use the provider contract")
+	}
+	if f.Interaction == "" || f.CSRFToken == "" {
+		return fmt.Errorf("interaction and CSRF values are required")
+	}
+	if len(f.Actions) != 2 || f.Actions[0] != ActionApprove || f.Actions[1] != ActionDeny {
+		return fmt.Errorf("device decision requires approve and deny actions")
+	}
+	return nil
 }
 
 // Validate checks the presentation contract before a renderer is invoked.
@@ -297,6 +402,30 @@ func (p InteractionPage) Clone() InteractionPage {
 		chooser := *p.AccountChooser
 		chooser.Entries = append([]AccountChooserEntry(nil), p.AccountChooser.Entries...)
 		clone.AccountChooser = &chooser
+	}
+	if p.Error != nil {
+		publicError := *p.Error
+		clone.Error = &publicError
+	}
+	return clone
+}
+
+// Clone makes a defensive copy suitable for crossing into host renderer code.
+func (p DeviceVerificationPage) Clone() DeviceVerificationPage {
+	clone := p
+	clone.Form.Actions = append([]Action(nil), p.Form.Actions...)
+	if p.Entry != nil {
+		entry := *p.Entry
+		clone.Entry = &entry
+	}
+	if p.Confirmation != nil {
+		confirmation := *p.Confirmation
+		confirmation.Scopes = append([]Scope(nil), p.Confirmation.Scopes...)
+		clone.Confirmation = &confirmation
+	}
+	if p.Notice != nil {
+		notice := *p.Notice
+		clone.Notice = &notice
 	}
 	if p.Error != nil {
 		publicError := *p.Error
