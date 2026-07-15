@@ -10,7 +10,7 @@
 - [ ] Phase 6: Add two-origin integration, browser, logout, scope, CSRF, and failure-path assurance <!-- t:xaai -->
 - [ ] Phase 7: Complete delivery diary, security review, reMarkable bundle, and handoff <!-- t:f4gs -->
 - [x] Phase 1.1: Define external RP configuration schema and canonical origin validation <!-- t:enhj -->
-- [ ] Phase 1.2: Define IdP seed manifest, client redirect/logout registration, and idempotency semantics <!-- t:qg9j -->
+- [x] Phase 1.2: Define IdP seed manifest, client redirect/logout registration, and idempotency semantics <!-- t:qg9j -->
 - [ ] Phase 1.3: Define development HTTP versus production HTTPS/cookie profile boundaries <!-- t:dxv2 -->
 - [ ] Phase 2.1: Add standalone tiny-idp container command and Dockerfile <!-- t:98rp -->
 - [ ] Phase 2.2: Add idempotent seeded-account and browser-client bootstrap <!-- t:8w1h -->

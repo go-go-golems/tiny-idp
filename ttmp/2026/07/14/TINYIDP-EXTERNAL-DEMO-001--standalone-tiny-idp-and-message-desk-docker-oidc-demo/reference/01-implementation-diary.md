@@ -186,3 +186,77 @@ public origin != issuer
 issuer and end-session endpoint share origin
 https public origin <=> Secure app cookie
 ```
+
+## Step 3: Implement idempotent standalone client and account seeding
+
+The external demo needs a reproducible identity state without exposing its
+database to Message Desk. `SeedManifest` now bootstraps the public browser
+client and reconciles seed accounts exclusively through `embeddedidp.Bootstrap`
+and `idpaccounts.Service`. A repeat run verifies persisted identity fields and
+passwords; it never silently changes a client or account.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 2)
+
+**Assistant interpretation:** Implement the next planned bootstrap task and
+record its security behavior and validation result.
+
+**Inferred user intent:** Make the Docker demo restartable and safe to run
+repeatedly while retaining clear identity-state ownership.
+
+### What I did
+
+- Added `examples/tinyidp-external-message-desk/idp_seed.go` with
+  `SeedManifest`, `SeedAccount`, bootstrap, and duplicate reconciliation.
+- Added a memory-store test proving repeat bootstrap succeeds and account
+  identity drift fails.
+- Corrected a compile failure by replacing unsupported `%w` use in
+  `pkg/errors.Errorf` with `errors.Wrapf`.
+
+### Why
+
+- A seed process must make desired state explicit but must never act as a
+  password-reset or account-mutation mechanism on every container start.
+
+### What worked
+
+- `go test ./examples/tinyidp-external-message-desk -count=1` passed.
+
+### What didn't work
+
+- The first compile failed with `github.com/pkg/errors.Errorf does not support
+  error-wrapping directive %w`; using `errors.Wrapf` corrected the wrapping.
+
+### What I learned
+
+- Existing public bootstrap and account APIs are sufficient for standalone
+  seeding; no direct SQLite access or internal package import is required.
+
+### What was tricky to build
+
+- Duplicate account creation alone is not idempotence. The reconciler checks
+  ID, subject, email, name, and password authentication so a changed fixture
+  fails instead of silently diverging from durable state.
+
+### What warrants a second pair of eyes
+
+- The future command must obtain seed passwords from a development-only secret
+  file or operator input and must avoid storing them in image layers or logs.
+
+### What should be done in the future
+
+- Implement Phase 1.3 and then expose this seeder through the standalone IdP
+  container command.
+
+### Code review instructions
+
+- Review `SeedManifest.Bootstrap` and run the package test command above.
+
+### Technical details
+
+```text
+missing account -> create via idpaccounts.Service
+duplicate account -> compare identity fields + authenticate configured password
+any mismatch -> startup failure
+```
