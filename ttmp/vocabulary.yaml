@@ -31,6 +31,8 @@ topics:
       description: OAuth 2.0 protocols, grants, clients, and authorization-server security
     - slug: docker
       description: Containerized deployment topology and Docker Compose operations.
+    - slug: operations
+      description: Operational deployment, supervision, and recovery work
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes

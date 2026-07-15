@@ -18,13 +18,14 @@ This document summarizes the production strict-engine baseline.
 - Rate-limiting hook with a fixed-window implementation available to embedders.
 - Structured audit sink with stable reason codes for Fosite/OAuth errors.
 - Persistent signing keys and rotation helper that keeps retired keys verifiable.
+- Strict device authorization endpoint and browser verification flow, pending
+  completion of its release smoke and concurrency gates.
 
 ## Explicitly unsupported in strict mode today
 
 - Debug routes.
 - Scenario-driven malformed token/JWKS behavior.
 - Implicit and hybrid response types.
-- Production Device Authorization Grant.
 - Production DPoP.
 - Dynamic client registration.
 
@@ -36,4 +37,5 @@ A production release candidate must pass:
 go test ./...
 scripts/run-conformance.sh
 docmgr doctor --ticket TINYIDP-PROD-001 --stale-after 30
+docmgr doctor --ticket TINYIDP-PROD-DEPLOY-001 --stale-after 30
 ```

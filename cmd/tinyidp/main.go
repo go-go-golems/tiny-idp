@@ -4,7 +4,7 @@
 // Bind to loopback (the default) and never expose it publicly.
 //
 // The CLI is built on the Glazed command framework: the root command owns
-// logging and help initialization, and child commands (currently `serve`)
+// logging and help initialization, and child commands (including `serve-dev`)
 // compose reusable field sections such as the `oidc` provider-config
 // section. See `tinyidp help` for topics.
 package main
@@ -52,8 +52,8 @@ func main() {
 	}
 	help_cmd.SetupCobraRootCommand(helpSystem, rootCmd)
 
-	// `tinyidp serve` — run the mock IdP HTTP server.
-	serveCmd, err := cmds.NewServeCommand()
+	// `tinyidp serve-dev` — run the local-only development IdP HTTP server.
+	serveCmd, err := cmds.NewServeDevCommand()
 	cobra.CheckErr(err)
 	serveCobraCmd, err := cli.BuildCobraCommand(serveCmd,
 		cli.WithParserConfig(cli.CobraParserConfig{

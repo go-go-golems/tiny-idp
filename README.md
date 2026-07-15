@@ -7,18 +7,18 @@ There are two engines, and picking the right one matters:
 | Engine | Flag | Store | Intended use | Notes |
 |--------|------|-------|--------------|-------|
 | **mock** | `--engine mock` (default) | in-memory | Local dev, integration tests, **failure simulation** | Rich scenario catalog, debug routes, device grant, DPoP, JWKS failure modes. Not for production. |
-| **strict** | `--engine fosite` | in-memory (via `serve`) or a persistent `idpstore.Store` (via `pkg/embeddedidp`) | Production-like OAuth/OIDC behavior | Fosite validation, Auth-Code + PKCE only, CSRF, security headers, persistent consent/keys, Argon2id login. |
+| **strict** | `--engine fosite` | in-memory (via `serve-dev`) or a persistent `idpstore.Store` (via `pkg/embeddedidp` or `serve-production`) | Production-like OAuth/OIDC behavior | Fosite validation, Auth-Code + PKCE, CSRF, security headers, persistent consent/keys, Argon2id login. |
 
-> **Maturity, read this.** The `mock` engine and **`tinyidp serve` are for local/testing use** — bind to loopback (`127.0.0.1`) and never expose them to the internet. A **production deployment is the _strict_ engine embedded through `pkg/embeddedidp`** with a **persistent store** (for example `pkg/sqlitestore`), `ProductionMode`, secure cookies, a ≥32-byte token secret, and an active persistent signing key — these are enforced by `embeddedidp.Options.Validate(ctx)`. `serve --engine fosite` currently runs the strict engine in **dev mode with an in-memory store**, so it is a preview of strict behavior, not a production server. See [`docs/security-profile.md`](docs/security-profile.md).
+> **Maturity, read this.** The `mock` engine and **`tinyidp serve-dev` are for local/testing use** — bind to loopback (`127.0.0.1`) and never expose them to the internet. `tinyidp serve-production` is the durable strict host: it requires an HTTPS issuer, SQLite database, owner-only token-secret file, audit sink, TLS certificate/key, and pre-provisioned active signing key. A custom production deployment may instead embed the strict engine through `pkg/embeddedidp` with those same requirements; `embeddedidp.Options.Validate(ctx)` enforces them. `serve-dev --engine fosite` remains an in-memory development preview, not a production server. See [`docs/security-profile.md`](docs/security-profile.md) and [`examples/production-host/README.md`](examples/production-host/README.md).
 >
-> **Honest caveats.** The strict engine has passed a **hosted OpenID Foundation Basic OP conformance run with zero hard failures** (suite 5.2.0; discovery + static clients) — this is *not* a claim of formal certification. Still missing/in progress: a config-backed runtime store loader for `serve` (today the durable path is `admin` + `pkg/embeddedidp`), a token `/revoke` or `/introspect` HTTP route, and device/DPoP in strict mode. `serve` uses plain `http.ListenAndServe`; production expects TLS to be terminated at a reverse proxy (the strict profile requires an `https://` issuer and secure cookies, not in-process TLS).
+> **Honest caveats.** The strict engine has passed a **hosted OpenID Foundation Basic OP conformance run with zero hard failures** (suite 5.2.0; discovery + static clients) — this is *not* a claim of formal certification. Strict device authorization has implementation work in progress and is not release-ready until its durable browser-to-token smoke gate passes. Still missing/in progress: a config-backed runtime loader, token `/revoke` or `/introspect` HTTP routes, DPoP, and a first-class reverse-proxy TLS-termination mode. `serve-production` supports direct TLS; a proxy deployment must retain end-to-end TLS or use a future, explicitly trusted proxy mode.
 
 ---
 
 ## Quick start (mock engine, local dev)
 
 ```bash
-go run ./cmd/tinyidp serve
+go run ./cmd/tinyidp serve-dev
 ```
 
 Point your OIDC client at:
@@ -58,7 +58,7 @@ The OIDC provider config is a **reusable Glazed field section** (`internal/secti
 Flags:
 
 ```bash
-go run ./cmd/tinyidp serve \
+go run ./cmd/tinyidp serve-dev \
   --issuer http://localhost:5556 \
   --client-id dev-client \
   --redirect-uris http://localhost:8080/callback
@@ -70,7 +70,7 @@ Env vars:
 TINYIDP_CLIENT_ID=my-app \
 TINYIDP_CLIENT_SECRET=dev-secret \
 TINYIDP_REDIRECT_URIS=http://localhost:8080/callback \
-go run ./cmd/tinyidp serve
+go run ./cmd/tinyidp serve-dev
 ```
 
 Config file (`tinyidp.yaml`):
@@ -85,7 +85,7 @@ oidc:
 ```
 
 ```bash
-go run ./cmd/tinyidp serve --config-file tinyidp.yaml
+go run ./cmd/tinyidp serve-dev --config-file tinyidp.yaml
 ```
 
 Checked-in portable examples live under `examples/configs/`:
@@ -137,7 +137,7 @@ users:
 ```
 
 ```bash
-go run ./cmd/tinyidp serve --users-file ./users.yaml
+go run ./cmd/tinyidp serve-dev --users-file ./users.yaml
 ```
 
 A ready-to-copy personal-inbox fixture is available at `examples/users/personal-inbox-users.yaml`.
@@ -165,9 +165,9 @@ ci:
 ```
 
 ```bash
-go run ./cmd/tinyidp serve --profile dev
-go run ./cmd/tinyidp serve --profile ci --profile-file /path/to/profiles.yaml
-TINYIDP_PROFILE=dev go run ./cmd/tinyidp serve   # or via env
+go run ./cmd/tinyidp serve-dev --profile dev
+go run ./cmd/tinyidp serve-dev --profile ci --profile-file /path/to/profiles.yaml
+TINYIDP_PROFILE=dev go run ./cmd/tinyidp serve-dev   # or via env
 ```
 
 Profiles sit above defaults and below config/env/flags in precedence, so a local override always wins. The default file missing + `default` profile = silent skip (works out of the box). See `tinyidp help reference`.
@@ -178,11 +178,11 @@ Profiles sit above defaults and below config/env/flags in precedence, so a local
 go run ./cmd/tinyidp print-config                          # print resolved config (yaml)
 go run ./cmd/tinyidp print-config --profile dev             # what serve would use with --profile dev
 go run ./cmd/tinyidp print-config --output json            # json instead of yaml
-go run ./cmd/tinyidp serve --print-parsed-fields            # show resolved values + sources (incl. profiles)
-go run ./cmd/tinyidp serve --print-schema                   # show the command's schema
+go run ./cmd/tinyidp serve-dev --print-parsed-fields            # show resolved values + sources (incl. profiles)
+go run ./cmd/tinyidp serve-dev --print-schema                   # show the command's schema
 ```
 
-`print-config` composes the same reusable `oidc` section as `serve`, so its output is exactly what `serve` would use.
+`print-config` composes the same reusable `oidc` section as `serve-dev`, so its output is exactly what `serve-dev` would use.
 
 ```bash
 go run ./cmd/tinyidp help                # browse topics

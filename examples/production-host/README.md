@@ -1,7 +1,9 @@
 # Production host example
 
-`tinyidp serve-production` is the executable example for embedding tiny-idp in
-a production-shaped process. Unlike `tinyidp serve`, it uses the public
+`tinyidp serve-production` is the executable strict host for tiny-idp. It is
+not the same command as `tinyidp serve-dev`, which is local-only and never a
+production deployment. The strict host is an executable example for embedding
+tiny-idp in a production-shaped process. Unlike `tinyidp serve-dev`, it uses the public
 `pkg/embeddedidp` API, durable SQLite, a synchronous fsync audit sink, bounded
 login work, explicit proxy trust, scheduled retention, HTTPS, request limits,
 HTTP timeouts, liveness/readiness endpoints, and graceful SIGINT/SIGTERM
@@ -14,7 +16,8 @@ go run ./cmd/tinyidp admin --db ./var/idp.db init --generate-signing-key --kid i
 go run ./cmd/tinyidp admin --db ./var/idp.db client create \
   --id example-spa --public \
   --redirect-uri https://app.example.test/callback \
-  --scope openid --scope profile --scope email
+  --scope openid --scope profile --scope email \
+  --grant-type authorization_code --grant-type refresh_token
 printf '%s' 'a production password with enough length' | \
   go run ./cmd/tinyidp admin --db ./var/idp.db user create \
     --login alice --password-from-stdin
@@ -53,3 +56,6 @@ filesystem database, and exactly one open database connection. Network
 filesystems, shared-volume multi-writer deployments, and active/active replicas
 are unsupported. Use verified online backups for recovery and a planned
 single-writer failover procedure.
+
+For a repeatable localhost provisioning and smoke workflow, see
+`TINYIDP-PROD-DEPLOY-001` under `ttmp/`.

@@ -29,6 +29,7 @@ tinyidp admin --db ./tinyidp.db client create \
   --generate-secret \
   --redirect-uri https://app.example.test/callback \
   --scope openid --scope profile --scope email --scope offline_access \
+  --grant-type authorization_code --grant-type refresh_token \
   --require-pkce
 
 tinyidp admin --db ./tinyidp.db client list

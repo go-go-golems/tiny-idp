@@ -27,7 +27,7 @@ tinyidp is still a local/test identity provider. Device authorization state is i
 
 From the tinyidp repository root:
 
-    go run ./cmd/tinyidp serve \
+    go run ./cmd/tinyidp serve-dev \
       --issuer http://127.0.0.1:5556 \
       --addr 127.0.0.1:5556 \
       --client-id dev-client \
@@ -113,7 +113,7 @@ The device code is one-time use. A second token request with the same `device_co
 
 If an app expects a Keycloak-shaped issuer URL, start tinyidp with a path issuer:
 
-    go run ./cmd/tinyidp serve \
+    go run ./cmd/tinyidp serve-dev \
       --issuer http://127.0.0.1:5556/realms/personal-inbox \
       --addr 127.0.0.1:5556 \
       --client-id dev-client \

@@ -25,7 +25,7 @@ tinyidp implements DPoP for local and integration tests. Tokens are still opaque
 
 ## Start tinyidp
 
-    go run ./cmd/tinyidp serve \
+    go run ./cmd/tinyidp serve-dev \
       --issuer http://127.0.0.1:5556 \
       --addr 127.0.0.1:5556 \
       --client-id dev-client

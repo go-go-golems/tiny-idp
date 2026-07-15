@@ -47,7 +47,7 @@ For hosted Basic OP refresh-token tests, configure distinct static clients in th
 
 ```bash
 CB='https://www.certification.openid.net/test/a/<alias>/callback'
-tinyidp serve --engine fosite \
+tinyidp serve-dev --engine fosite \
   --issuer '<public issuer>' \
   --client-id web-app \
   --client-secret dev-secret \

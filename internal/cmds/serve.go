@@ -29,19 +29,19 @@ import (
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
 
-// ServeCommand runs the mock OIDC IdP HTTP server. It implements
+// ServeDevCommand runs the local-only OIDC development server. It implements
 // cmds.BareCommand (Run returns an error, no row emission) because a
 // long-running server has no tabular output.
-type ServeCommand struct {
+type ServeDevCommand struct {
 	*cmds.CommandDescription
 }
 
-// NewServeCommand builds the `serve` command, composing the reusable OIDC
+// NewServeDevCommand builds the `serve-dev` command, composing the reusable OIDC
 // section (issuer/client/redirect config) and the Glazed command-settings
 // section (--print-parsed-fields / --print-schema / --print-yaml for
 // introspection). Profile support is enabled at the root via
 // cli.WithProfileSettingsSection().
-func NewServeCommand() (*ServeCommand, error) {
+func NewServeDevCommand() (*ServeDevCommand, error) {
 	oidcSection, err := oidc.NewSection()
 	if err != nil {
 		return nil, fmt.Errorf("build oidc section: %w", err)
@@ -52,9 +52,9 @@ func NewServeCommand() (*ServeCommand, error) {
 	}
 
 	cmdDesc := cmds.NewCommandDescription(
-		"serve",
-		cmds.WithShort("Run the mock OIDC IdP HTTP server"),
-		cmds.WithLong(`Run the mock OIDC Identity Provider.
+		"serve-dev",
+		cmds.WithShort("Run the local-only OIDC development server"),
+		cmds.WithLong(`Run the local-only OIDC development server.
 
 This is a local development and integration testing tool, NOT production
 grade. It binds to loopback (127.0.0.1:5556) by default; never expose it
@@ -64,26 +64,26 @@ Configuration precedence (low to high): section defaults < profiles <
 config files < environment variables (TINYIDP_*) < CLI flags.
 
 Examples:
-  tinyidp serve
-  tinyidp serve --issuer http://localhost:5556 --client-id dev-client
-  tinyidp serve --redirect-uris http://localhost:8080/callback
-  tinyidp serve --client-secret dev-secret
-  tinyidp serve --users-file ./users.yaml
+  tinyidp serve-dev
+  tinyidp serve-dev --issuer http://localhost:5556 --client-id dev-client
+  tinyidp serve-dev --redirect-uris http://localhost:8080/callback
+  tinyidp serve-dev --client-secret dev-secret
+  tinyidp serve-dev --users-file ./users.yaml
 
 Introspect the resolved configuration:
-  tinyidp serve --print-parsed-fields
+  tinyidp serve-dev --print-parsed-fields
 
 Use a named profile (requires profiles.yaml, see `+"`tinyidp help reference`"+`):
-  tinyidp serve --profile dev
+  tinyidp serve-dev --profile dev
 `),
 		cmds.WithSections(oidcSection, commandSettingsSection),
 	)
-	return &ServeCommand{CommandDescription: cmdDesc}, nil
+	return &ServeDevCommand{CommandDescription: cmdDesc}, nil
 }
 
 // Run starts the HTTP server and blocks until the context is cancelled
 // (e.g. Ctrl+C) or the server stops. It is the BareCommand entry point.
-func (c *ServeCommand) Run(ctx context.Context, vals *values.Values) error {
+func (c *ServeDevCommand) Run(ctx context.Context, vals *values.Values) error {
 	cfg, err := oidc.GetSettings(vals)
 	if err != nil {
 		return err

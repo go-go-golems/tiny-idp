@@ -35,7 +35,7 @@ reading top to bottom. For a guided introduction, start with
 
 tinyidp is configured through the Glazed command framework. A reusable
 `oidc` field section defines the provider settings; it is composed into
-the `serve` and `print-config` commands so flags, environment variables,
+the `serve-dev` and `print-config` commands so flags, environment variables,
 and config-file schema never drift between them.
 
 ### Fields
@@ -60,7 +60,7 @@ From lowest to highest:
 5. Positional arguments
 6. CLI flags
 
-A local override always wins. Use `tinyidp serve --print-parsed-fields`
+A local override always wins. Use `tinyidp serve-dev --print-parsed-fields`
 to see which source won each field, or `tinyidp print-config` to print
 the resolved configuration without starting the server.
 
@@ -78,7 +78,7 @@ live under the `oidc` section slug:
         - http://localhost:8080/callback
       users-file: ./users.yaml
 
-Pass it with `tinyidp serve --config-file config.yaml`.
+Pass it with `tinyidp serve-dev --config-file config.yaml`.
 
 Portable examples are checked in under `examples/configs/`:
 
@@ -115,8 +115,8 @@ is missing and the requested profile is `default`, loading is skipped
 silently — tinyidp works out of the box with no `profiles.yaml`. A
 non-default profile with no file is an error, never a silent fallback.
 
-    tinyidp serve --profile dev
-    TINYIDP_PROFILE=ci tinyidp serve
+    tinyidp serve-dev --profile dev
+    TINYIDP_PROFILE=ci tinyidp serve-dev
 
 ## Seeded users
 
@@ -268,7 +268,7 @@ The `auth_time` claim in the ID token is the original login time, not
 the token-issuance time. This is what makes `max_age` checks honest: a
 silent re-issue minutes after login still reports the true age of the
 session. The cookie is `HttpOnly` and `SameSite=Lax` but not `Secure`,
-because tinyidp serves plain HTTP on loopback and a `Secure` cookie
+because tinyidp serve-devs plain HTTP on loopback and a `Secure` cookie
 would never be sent.
 
 ### Refresh tokens
@@ -330,8 +330,8 @@ against a log without exposing the full token in a listing.
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| `prompt=none` always returns `login_required`. | The session cookie is not being sent. | tinyidp serves plain HTTP; ensure the cookie is not marked `Secure` by a proxy, and that the RP and IdP share a context. |
-| Config flag has no effect. | A higher-precedence source overrode it. | Run `tinyidp serve --print-parsed-fields` to see which source won. |
+| `prompt=none` always returns `login_required`. | The session cookie is not being sent. | tinyidp serve-devs plain HTTP; ensure the cookie is not marked `Secure` by a proxy, and that the RP and IdP share a context. |
+| Config flag has no effect. | A higher-precedence source overrode it. | Run `tinyidp serve-dev --print-parsed-fields` to see which source won. |
 | `--redirect-uris` replaced the builtin's URIs. | It does not — it unions them. | The merge preserves builtin properties; the configured URI is added, not swapped. |
 | Debug endpoints return 403. | The request is not from loopback. | Call them from the same host; they are loopback-only by design. |
 | Users file cannot be read. | `oidc.users-file` was relative to a different working directory. | Run from the tinyidp repository root or pass an absolute users-file path. |
