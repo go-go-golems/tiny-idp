@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-15
+
+Completed Phase 0 by freezing grant capability, code secrecy, state transition,
+polling, audit/metric vocabulary, and named verification contracts.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-DEVICE-PROD-001--production-device-authorization-for-the-strict-embedded-provider/reference/02-device-grant-executable-security-specification.md — Phase 0 security/test contract
+
 ## 2026-07-14
 
 - Initial workspace created
@@ -18,4 +27,3 @@ Preserved primary specifications, mapped RFC 8628 onto strict Fosite and durable
 ## 2026-07-14 - Validated and published
 
 Recorded the passing repository suite, scoped commits, clean docmgr audit, and successful bundled reMarkable publication.
-

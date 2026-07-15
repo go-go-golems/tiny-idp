@@ -354,3 +354,83 @@ TINYIDP Device Production Design Bundle.pdf
   verification, and atomic Fosite token issuance phases pass together.
 - Obtain an independent security review before declaring RFC 8628 production
   ready.
+
+## Step 1: Freeze executable device-grant security contracts
+
+The existing design describes the production device authorization architecture,
+but Phase 0 was deliberately left open until every important security choice
+had a concrete test, transition, or observability consequence. This step adds
+that compact specification before any client field, migration, or endpoint.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, implement the ticket, task by task, commit at appropriate intervals."
+
+**Assistant interpretation:** Execute the production device-authorization
+ticket in dependency order with focused commits and continuation-quality docs.
+
+**Inferred user intent:** Turn the researched strict-provider device design
+into a production-quality implementation rather than reuse the mock server.
+
+### What I did
+
+- Added `reference/02-device-grant-executable-security-specification.md`.
+- Fixed grant constants, code entropy/lifetime, poll behavior, refresh
+  capability, client-profile, state-machine, keyed-hash, endpoint, token,
+  audit, metric, and release-gate contracts.
+- Named the tests later phases must add before discovery can advertise device
+  authorization.
+- Completed the three Phase 0 task entries.
+
+### Why
+
+- Device authorization combines a bearer credential, human code, browser
+  authentication, polling, and token issuance. Implicit contracts risk replay,
+  logging, or authority expansion in an otherwise valid-looking endpoint.
+
+### What worked
+
+- The existing production design, preserved RFC sources, mock behavior, and
+  strict Fosite/store analysis gave sufficient evidence for a test-oriented
+  specification without changing runtime behavior.
+
+### What didn't work
+
+- Two initial document patches were rejected with `invalid hunk ... is not a
+  valid hunk header` because wrapped lines lacked an add marker. No file was
+  changed; a compact line-oriented patch applied successfully.
+
+### What I learned
+
+- The mock endpoint behavior is a useful test source, but its map/raw-code
+  state cannot influence strict implementation. The strict provider needs
+  keyed hashes, named durable transitions, and one Fosite token lifecycle.
+
+### What was tricky to build
+
+- Atomic consumption is the key invariant: consume-first can lose an approved
+  grant after token persistence fails, while persist-first can leave a replayable
+  device code. The specification requires one transaction boundary.
+
+### What warrants a second pair of eyes
+
+- Review the fixed ten-minute lifetime and five-second initial interval before
+  they become external compatibility commitments.
+- Review the migration rule: ambiguous historical clients must fail closed.
+
+### What should be done in the future
+
+- Implement Phase 1: explicit client grant capabilities, SQLite migration,
+  bootstrap profiles, Fosite adaptation, and negative tests.
+
+### Code review instructions
+
+- Read the new specification with design sections 5 through 12.
+- Confirm this increment changes no discovery, endpoint, token, or DB behavior.
+
+### Technical details
+
+```text
+raw device/user codes -> domain-separated HMAC hashes -> durable grant
+pending -> approved|denied|expired -> consumed once with Fosite tokens
+```

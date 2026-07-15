@@ -2,9 +2,9 @@
 
 ## TODO
 
-- [ ] Phase 0: Record grant-type, code entropy, lifetime, polling, refresh, hashing, and UI decisions <!-- t:vkvx -->
-- [ ] Phase 0: Convert every documented device security invariant into a named test specification <!-- t:zzjv -->
-- [ ] Phase 0: Define secret-free audit events, reason codes, and low-cardinality metrics <!-- t:ky29 -->
+- [x] Phase 0: Record grant-type, code entropy, lifetime, polling, refresh, hashing, and UI decisions <!-- t:vkvx -->
+- [x] Phase 0: Convert every documented device security invariant into a named test specification <!-- t:zzjv -->
+- [x] Phase 0: Define secret-free audit events, reason codes, and low-cardinality metrics <!-- t:ky29 -->
 - [ ] Phase 1: Add explicit allowed grant types to the public client model and validation <!-- t:2epf -->
 - [ ] Phase 1: Add SQLite migration and deterministic backfill for existing browser clients <!-- t:6hxv -->
 - [ ] Phase 1: Update BrowserClient, DeviceClient, bootstrap drift, admin CLI, and Fosite client adaptation <!-- t:2ts2 -->
