@@ -299,6 +299,65 @@ func TestSQLiteDeviceTokenRedemptionFailpointsRollbackGrantAndTokens(t *testing.
 	}
 }
 
+func TestSQLiteDeviceTokenRedemptionSignsBeforeSingleConnectionTransaction(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	secret := []byte("sqlite-device-token-secret-key-32b")
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-device-token-success", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	deviceCode := "sqlite-device-code-success"
+	grant := idpstore.DeviceGrant{ID: "device-grant-success", DeviceCodeHash: idpstore.HashSecret(secret, "tinyidp/device-code/v1\x00"+deviceCode), UserCodeHash: idpstore.HashSecret(secret, "tinyidp/user-code/v1\x00ABCD-EFGH"), ClientID: "device-cli", RequestedScopes: []string{"openid"}, Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(time.Hour), PollInterval: time.Second, NextPollAt: now}
+	if err := store.CreateDeviceGrant(ctx, grant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DecideDeviceGrant(ctx, idpstore.DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: idpstore.DeviceGrantApprove, UserID: "u1", Subject: "user-alice", AuthTime: now, AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, Clock: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/token", strings.NewReader(url.Values{"grant_type": {idpstore.GrantDeviceCode}, "client_id": {"device-cli"}, "device_code": {deviceCode}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("device token redemption blocked: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("device token status = %d body=%q", response.StatusCode, body)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["access_token"] == "" || body["id_token"] == "" {
+		t.Fatalf("device token response = %#v", body)
+	}
+}
+
 func TestSQLiteRefreshRotationFailpointsAreAtomicAndRetryable(t *testing.T) {
 	points := []string{
 		"before_begin_token",

@@ -13,6 +13,10 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://internal/fositeadapter/device_token_handler.go
+      Note: Moves ID-token signing before the one-connection SQLite token transaction
+    - Path: repo://internal/fositeadapter/sqlstore_test.go
+      Note: Regression test prevents device-token signing self-deadlock
     - Path: repo://ttmp/2026/07/15/TINYIDP-PROD-DEPLOY-001--production-deployment-ergonomics-and-strict-host-validation/scripts/01-provision-local-strict-host.sh
       Note: Exact local fixture provisioning sequence
     - Path: repo://ttmp/2026/07/15/TINYIDP-PROD-DEPLOY-001--production-deployment-ergonomics-and-strict-host-validation/scripts/02-run-local-strict-host.sh
@@ -23,6 +27,7 @@ LastUpdated: 2026-07-15T18:10:00Z
 WhatFor: Preserve exact operational commands, outcomes, and review guidance for strict-host deployment work.
 WhenToUse: Read before resuming this ticket or evaluating strict device authorization for release.
 ---
+
 
 
 # Investigation and Implementation Diary
@@ -231,6 +236,133 @@ secret file must be regular, owner-only, and at least 32 bytes. The local
 provisioning evidence used issuer `https://localhost:9443`, a certificate with
 SANs `DNS:localhost` and `IP:127.0.0.1`, and a public client with grant type
 `urn:ietf:params:oauth:grant-type:device_code`.
+
+## Step 2: Fix the SQLite device-token self-deadlock
+
+The persistent tmux shell made the failure diagnosable. A fresh host accepted
+the browser approval and remained ready, but the approved device-code request
+to `/token` blocked. Holding that request open and sending `SIGQUIT` produced
+the needed goroutine dump without losing the pane.
+
+The dump showed the token handler held the sole SQLite connection in Fosite's
+token transaction while Fosite tried to sign the ID token. Signing calls
+`Provider.activePrivateKey`, which reads the active signing key through the
+same project store. `sqlitestore.DefaultConfig` correctly limits production
+SQLite to one open connection, so the second query waited indefinitely for the
+connection owned by its own transaction.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok now figure out the bug"
+
+**Assistant interpretation:** Reproduce the strict device-token failure,
+capture decisive runtime evidence, identify the root cause, fix it narrowly,
+and validate it through tests and a real host.
+
+**Inferred user intent:** Replace a suspected production blocker with an
+evidence-backed diagnosis and a regression-protected implementation.
+
+### What I did
+
+- Restarted the disposable host in a persistent tmux `zsh` shell.
+- Reproduced the flow with a fresh device grant and Playwright browser approval.
+- Confirmed `/readyz` returned 200 after approval while `/token` timed out.
+- Held a token request open, sent `SIGQUIT` only to the compiled local host,
+  and captured its goroutine dump.
+- Moved ID-token response construction/signing before
+  `storage.MaybeBeginTx` in `device_token_handler.go`.
+- Added `TestSQLiteDeviceTokenRedemptionSignsBeforeSingleConnectionTransaction`,
+  a two-second-deadline regression test using the real one-connection SQLite
+  store and requiring both access and ID tokens.
+- Re-ran the real browser flow after rebuilding the tmux host. The approved
+  device code returned 200 with access token, ID token, `openid profile`, and
+  bearer token type. Replay returned `400 invalid_grant`; `/readyz` returned
+  200 afterward.
+
+### Why
+
+The device-code consumption and Fosite token-session writes must remain one
+transaction. The fix therefore does not split or weaken that transaction. It
+moves only the database-dependent signing-key read ahead of transaction
+acquisition; a later persistence error still causes Fosite to write an error
+response rather than emit the prepared token response.
+
+### What worked
+
+- The goroutine dump identified the exact cycle:
+
+  ```text
+  token transaction owns SQLite's only connection
+  -> IssueExplicitIDToken
+  -> activePrivateKey
+  -> Store.ActiveSigningKey
+  -> database/sql waits for a connection
+  ```
+
+- Focused regression plus existing device tests passed.
+- Full `go test ./internal/fositeadapter -count=1` passed.
+- Real direct-TLS browser approval, token redemption, replay rejection, and
+  readiness verification passed.
+
+### What didn't work
+
+- The first PID selection for `SIGQUIT` matched the searching shell as well as
+  the Go child, producing `zsh:kill:5: illegal pid`. I selected the compiled
+  child by its parent/PID and captured the next dump successfully.
+- A first Playwright fill used stale accessibility references; a new snapshot
+  supplied current references. Neither issue affected provider behavior.
+
+### What I learned
+
+- The earlier failure was not a leaked approval transaction: readiness stayed
+  healthy after approval.
+- It was a self-deadlock inside the token response phase, caused by combining
+  a correct single-connection SQLite policy with a late signing-key lookup.
+- Success-only SQLite device-token testing was missing; failpoint tests proved
+  rollback but did not exercise the signing path after opening a transaction.
+
+### What was tricky to build
+
+The ordering constraint is subtle. Device-grant consumption and Fosite token
+session persistence require a shared transaction for replay safety, while ID
+token signing needs the active signing key from the project store. Generating
+the ID token before the transaction satisfies both: no second database read is
+made while the sole connection is reserved, and no durable device state changes
+until all signing preparation has succeeded.
+
+### What warrants a second pair of eyes
+
+- Review the response-preparation-before-transaction ordering in
+  `PopulateTokenEndpointResponse`; confirm every later failure is surfaced as
+  a Fosite error response and does not serialize prepared tokens.
+- Consider an explicit static/runtime guard for database reads while a Fosite
+  token transaction is active, because future token extensions can recreate
+  this pattern.
+
+### What should be done in the future
+
+- Add the strict direct-TLS browser smoke to automated CI with a locally
+  trusted certificate.
+- Finish UserInfo verification against the real strict-host device token and
+  retain redacted audit evidence in the smoke harness.
+
+### Code review instructions
+
+- Start at `device_token_handler.go:120`; compare the signing block with the
+  transaction boundary.
+- Read `sqlitestore.DefaultConfig`, which deliberately sets one connection.
+- Run `go test ./internal/fositeadapter -count=1`.
+- Run the ticket provisioning scripts and browser flow; confirm token 200,
+  replay 400 `invalid_grant`, and readiness 200.
+
+### Technical details
+
+The captured trace crossed `device_token_handler.go`,
+`openid.IDTokenHandleHelper.IssueExplicitIDToken`,
+`Provider.activePrivateKey`, and `sqlitestore.Store.ActiveSigningKey`, where
+`database/sql.(*DB).conn` waited for the one available connection. The new
+regression test uses an HTTP client timeout so this failure cannot silently
+become an indefinitely running test again.
 
 ## Usage Examples
 

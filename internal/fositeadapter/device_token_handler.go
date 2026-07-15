@@ -128,6 +128,25 @@ func (h *deviceTokenHandler) PopulateTokenEndpointResponse(ctx context.Context, 
 			return fosite.ErrServerError
 		}
 	}
+	// The SQLite production store deliberately permits one open connection. ID
+	// token signing loads the active signing key through the project store, so it
+	// must happen before the Fosite token transaction reserves that connection.
+	// No token response is emitted when a later persistence step fails.
+	responder.SetAccessToken(access)
+	responder.SetTokenType("bearer")
+	responder.SetExpiresIn(requester.GetSession().GetExpiresAt(fosite.AccessToken).Sub(h.provider.now()))
+	responder.SetScopes(requester.GetGrantedScopes())
+	if refresh != "" {
+		responder.SetExtra("refresh_token", refresh)
+	}
+	session, ok := requester.GetSession().(openid.Session)
+	if !ok {
+		return fosite.ErrServerError
+	}
+	session.IDTokenClaims().AccessTokenHash = (&openid.IDTokenHandleHelper{IDTokenStrategy: h.oidc}).GetAccessTokenHash(ctx, requester, responder)
+	if err = (&openid.IDTokenHandleHelper{IDTokenStrategy: h.oidc}).IssueExplicitIDToken(ctx, fosite.GetEffectiveLifespan(requester.GetClient(), idpstore.GrantDeviceCode, fosite.IDToken, h.provider.config.GetIDTokenLifespan(ctx)), requester, responder); err != nil {
+		return fosite.ErrServerError
+	}
 	ctx, err = storage.MaybeBeginTx(ctx, h.storage)
 	if err != nil {
 		return fosite.ErrServerError
@@ -159,21 +178,6 @@ func (h *deviceTokenHandler) PopulateTokenEndpointResponse(ctx context.Context, 
 		if err = h.storage.CreateRefreshTokenSession(ctx, refreshSignature, accessSignature, requester.Sanitize([]string{})); err != nil {
 			return fosite.ErrServerError
 		}
-	}
-	responder.SetAccessToken(access)
-	responder.SetTokenType("bearer")
-	responder.SetExpiresIn(requester.GetSession().GetExpiresAt(fosite.AccessToken).Sub(h.provider.now()))
-	responder.SetScopes(requester.GetGrantedScopes())
-	if refresh != "" {
-		responder.SetExtra("refresh_token", refresh)
-	}
-	session, ok := requester.GetSession().(openid.Session)
-	if !ok {
-		return fosite.ErrServerError
-	}
-	session.IDTokenClaims().AccessTokenHash = (&openid.IDTokenHandleHelper{IDTokenStrategy: h.oidc}).GetAccessTokenHash(ctx, requester, responder)
-	if err = (&openid.IDTokenHandleHelper{IDTokenStrategy: h.oidc}).IssueExplicitIDToken(ctx, fosite.GetEffectiveLifespan(requester.GetClient(), idpstore.GrantDeviceCode, fosite.IDToken, h.provider.config.GetIDTokenLifespan(ctx)), requester, responder); err != nil {
-		return fosite.ErrServerError
 	}
 	if err = storage.MaybeCommitTx(ctx, h.storage); err != nil {
 		return fosite.ErrServerError
