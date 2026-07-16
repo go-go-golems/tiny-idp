@@ -42,7 +42,7 @@ Step 4: added deterministic CLI tests and a live tmux smoke harness (commit b92d
 
 ## 2026-07-16
 
-Step 5: completed browser, lifecycle, two-user, malformed-request, and TLS verification (pending commit)
+Step 5: completed browser, lifecycle, two-user, malformed-request, and TLS verification (commit 748fef8)
 
 ### Related Files
 

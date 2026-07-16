@@ -492,7 +492,8 @@ than merely compiling: it needs evidence for browser behavior, security
 boundaries, user identity propagation, revocation, and production-shaped TLS
 execution.
 
-**Commit (code):** Pending final review and staging.
+**Commit (code):** `748fef8a98c1fd5b75fb1b8c3b2f1c55c83f2b7c` —
+"test(xapp): complete device authorization verification matrix"
 
 ### What I did
 
