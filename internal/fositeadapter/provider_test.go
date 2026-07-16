@@ -314,6 +314,21 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	if refreshed["access_token"] == "" || refreshed["refresh_token"] == "" {
 		t.Fatalf("missing refreshed token fields: %#v", refreshed)
 	}
+	refreshedIntrospection, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(url.Values{"token": {refreshed["access_token"].(string)}}.Encode()))
+	refreshedIntrospection.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	refreshedIntrospection.SetBasicAuth("inbox-api", resourceSecret)
+	refreshedIntrospectionResponse, err := http.DefaultClient.Do(refreshedIntrospection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer refreshedIntrospectionResponse.Body.Close()
+	var refreshedMetadata map[string]any
+	if err := json.NewDecoder(refreshedIntrospectionResponse.Body).Decode(&refreshedMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if refreshedIntrospectionResponse.StatusCode != http.StatusOK || refreshedMetadata["active"] != true || !claimHasAudience(refreshedMetadata["aud"], "https://inbox.example.test/api") {
+		t.Fatalf("refreshed introspection status=%d body=%#v", refreshedIntrospectionResponse.StatusCode, refreshedMetadata)
+	}
 }
 
 func TestProductionProviderRejectsMissingSecretKey(t *testing.T) {
