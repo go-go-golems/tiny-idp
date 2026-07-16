@@ -14,6 +14,8 @@ RelatedFiles:
       Note: Transfers approved device audiences into Fosite token request (d5c7647)
     - Path: repo://internal/fositeadapter/provider.go
       Note: Introspection endpoint, exact audience policy, and device resource indicator handling (f718d36, d5c7647)
+    - Path: repo://internal/fositeadapter/provider_test.go
+      Note: Authorization-code, device, wrong-audience, duplicate-credential, and refresh-audience regression evidence (f718d36, d5c7647, 866e0bb)
     - Path: repo://pkg/idpstore/types.go
       Note: Durable resource-indicator fields and client capability model (f718d36, d5c7647)
     - Path: repo://pkg/sqlitestore/store.go
@@ -27,6 +29,7 @@ LastUpdated: 2026-07-15T22:30:00-04:00
 WhatFor: Preserve implementation decisions, verification evidence, and remaining production work.
 WhenToUse: Read before extending the endpoint, its resource-server contract, or xgoja integration.
 ---
+
 
 
 # Diary
@@ -293,4 +296,91 @@ POST /token grant_type=device_code
     -> Fosite Request.GrantedAudience
 POST /introspect as inbox-api
     -> active=true only when audiences intersect
+```
+
+## Step 3: Prove refresh preserves the original resource decision
+
+The initial implementation relied on Fosite's requester persistence to carry
+the original granted audience into refresh-token exchange. That is an
+appropriate implementation mechanism, but a production invariant needs a
+regression test at the public boundary. This step added that test rather than
+marking the task complete from code inspection alone.
+
+The same authorization-code flow now issues a token for the inbox resource,
+rotates the refresh token, and introspects the new access token as `inbox-api`.
+The test requires an active response containing the exact inbox audience.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Finish the concrete implementation evidence required by the task plan, including alternative token lifecycles.
+
+**Inferred user intent:** Avoid a security design that is correct only for the first access token and silently changes during refresh.
+
+**Commit (code):** `866e0bb` — "test: preserve audience across refresh introspection"
+
+### What I did
+
+- Extended `TestStrictAuthorizationCodeFlow` to introspect the access token
+  returned by refresh-token rotation.
+- Required HTTP 200, `active:true`, and the exact
+  `https://inbox.example.test/api` audience.
+
+### Why
+
+Fosite's refresh handler copies requested and granted audiences from the
+original requester. The provider must preserve that behavior because otherwise
+a resource server could accept a refreshed token without a corresponding
+resource grant, or applications could unexpectedly lose API access after a
+normal refresh.
+
+### What worked
+
+- `go test ./internal/fositeadapter -run TestStrictAuthorizationCodeFlow -count=1` passed.
+- The test starts at browser authorization and ends at the external
+  introspection contract, covering the same boundary an xgoja resource server
+  will use.
+
+### What didn't work
+
+- N/A. The focused test passed on its first run.
+
+### What I learned
+
+- The requester preservation already implemented by Fosite is observable and
+  stable through tiny-idp's constrained response; no separate audience cache
+  or refresh adapter is necessary.
+
+### What was tricky to build
+
+The refresh response does not itself expose audience. Testing only its HTTP 200
+status would miss a persistence regression. The correct observation point is a
+second authenticated introspection request, which also exercises the provider's
+resource-audience intersection check.
+
+### What warrants a second pair of eyes
+
+- Review future changes to Fosite requester sanitization and SQL
+  `persistRequester`/`restoreRequester`; this test detects a behavior change
+  but not every possible data-minimization regression.
+
+### What should be done in the future
+
+- Add the same post-refresh assertion to a restart-backed SQLite fixture.
+- Add revoked and expired access-token assertions before claiming full Phase C
+  lifecycle coverage.
+
+### Code review instructions
+
+- Read the refresh section of `TestStrictAuthorizationCodeFlow` after the
+  first access-token introspection assertion.
+- Validate with `go test ./internal/fositeadapter -run TestStrictAuthorizationCodeFlow -count=1`.
+
+### Technical details
+
+```text
+initial authorized request: granted_aud = [Inbox API]
+refresh-token rotation:     granted_aud copied by Fosite
+new access token:           active for Inbox API only
 ```

@@ -4,7 +4,7 @@
 
 - [x] Add a documented discovery contract for authenticated `POST /introspect` and an explicit bearer-only/DPOP-rejection policy.
 - [ ] Extend client persistence, validation, admin/config/bootstrap input, and safe output with `AllowedAudiences` and `CanIntrospect`.
-- [ ] Wire allowed audiences into Fosite clients and prove authorization-code/device issuance and refresh preserve only granted audiences.
+- [x] Wire allowed audiences into Fosite clients and prove authorization-code/device issuance and refresh preserve only granted audiences.
 
 ## Phase B — Endpoint implementation and provider hardening
 
