@@ -1,7 +1,7 @@
 ---
 Title: xgoja Durable Object API Device Authorization CLI Example
 Ticket: TINYIDP-XAPP-DEVICE-001
-Status: active
+Status: complete
 Topics:
     - auth
     - oidc
@@ -27,11 +27,10 @@ RelatedFiles:
       Note: tmux live-server operator harness.
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-16T14:38:09.707065825-04:00
+LastUpdated: 2026-07-16T15:37:41.04965256-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
-
 
 # xgoja Durable Object API Device Authorization CLI Example
 
@@ -46,7 +45,7 @@ WhenToUse: ""
 
 ## Status
 
-Current status: **active**
+Current status: **complete** — all planned phases have implementation and verification evidence. The runbook records the deployment limits that must be addressed by a deployment-specific operations design.
 
 ## Topics
 

@@ -608,3 +608,124 @@ fresh Alice token  -> password change -> Fosite session removed -> API 401
 browser form -> application session + CSRF -> /api/bbs/posts -> logout
 initialized TLS -> device grant -> token -> RFC 7662 -> /api/device/bbs/posts
 ```
+
+## Step 6: Complete operator handoff and the reusable-primitives decision
+
+The implementation work is complete, so this step turns it into an operable
+and reviewable deliverable. The new runbook separates reproducible development
+operation from initialized TLS operation, names every durable state and secret
+path, defines evidence expected from the audit stream, and gives specific
+responses for token, secret, readiness, audit, and authorization incidents.
+The extraction recommendation compares the actual xapp composition against
+existing go-go-goja host services and avoids presenting application policy as a
+framework primitive.
+
+### Prompt Context
+
+**User prompt (verbatim):** "do 1 2 3"
+
+**Assistant interpretation:** Complete the remaining operator runbook,
+go-go-goja extraction recommendation, and ticket-finalization work.
+
+**Inferred user intent:** Leave the example ready for a new operator and a
+future framework maintainer, with an explicit closure decision rather than an
+implicit collection of tests.
+
+**Commit (code):** Documentation-only step; pending final documentation commit.
+
+### What I did
+
+- Wrote `playbooks/01-operator-runbook.md` with exact development and
+  initialized-mode commands, readiness semantics, permissions, state map,
+  backup/recovery constraints, device CLI operation, audit expectations,
+  incident procedures, and a release checklist.
+- Wrote `design-doc/02-go-go-goja-extraction-recommendation.md`. It identifies
+  the existing reusable host-service composition, rejects a premature complete
+  identity-stack extraction, and proposes a second-consumer gate for the
+  Go-only opaque bearer authenticator.
+- Marked all Phase 6 tasks complete and changed the ticket index to closed
+  subject to final doctor/upload evidence.
+
+### Why
+
+- Tests tell a maintainer that a snapshot works; a runbook tells an operator
+  what state is sensitive, how to observe failure, and which recovery actions
+  preserve the security model.
+- Framework extraction needs a proven boundary. The evidence supports the
+  host-owned RFC 7662 resource-authenticator, but not application-specific
+  bootstrap, BBS, CLI, or durable-object policy.
+
+### What worked
+
+- The resulting runbook uses the exact implemented `init`, `serve`,
+  `serve-initialized`, `device-login`, `bbs-post`, `bbs-get`, `/healthz`,
+  `/readyz`, and discovery contracts.
+- The recommendation found that the xapp already uses the intended xgoja
+  seams: `ConfigureServices`, external HTTP host, host-auth factory, and
+  durable-object gateway/bound dispatcher.
+
+### What didn't work
+
+- The first attempt to apply both long documents in one patch was rejected by
+  `apply_patch` because one line in the second file missed the required patch
+  prefix. No file was written. The documents were then applied as independent
+  patches, which made the reviewable changes explicit.
+
+### What I learned
+
+- The current initialized server's readiness contract is meaningful only when
+  operators treat a failed audit/store/maintenance check as a traffic-removal
+  event. Liveness alone is insufficient.
+- Existing go-go-goja host-service APIs are not the blocking issue. The
+  reusable addition, if a second host confirms it, is a narrow native resource
+  API authorization component rather than a JavaScript identity layer.
+
+### What was tricky to build
+
+- The runbook must distinguish facts implemented in the binary from future
+  deployment requirements. For example, it documents the in-process
+  fixed-window rate limiter and single-node state as limits instead of claiming
+  distributed production properties.
+- The extraction document preserves the bearer/browser separation. Moving
+  bearer credentials into a JavaScript context would reduce the security
+  boundary demonstrated by the tests, so the recommended initial package is
+  intentionally Go-only.
+
+### What warrants a second pair of eyes
+
+- Review the incident policy for resource-client and token-secret exposure.
+  This ticket deliberately does not invent an unsafe in-place rotation flow;
+  a production rotation/migration plan needs its own tested design.
+- Review whether a second concrete xgoja host exists before opening the
+  proposed `pkg/xgoja/oidcresource` extraction. One consumer alone should not
+  set a framework API.
+
+### What should be done in the future
+
+- Create a separately scoped production operations ticket for shared rate
+  limiting, backup/restore automation, external audit shipping, secret
+  rotation, and any reverse-proxy trust model.
+- Create the extraction ticket only when a second host consumes opaque bearer
+  resource authentication.
+
+### Code review instructions
+
+- Start with `playbooks/01-operator-runbook.md`, then cross-check its commands
+  against `init.go`, `serve_initialized.go`, `state.go`, and `device_cli.go`.
+- Review the extraction recommendation's evidence table against
+  `development_app.go`, `device_api.go`, and `internal/resourceauth`.
+- Run `docmgr doctor --ticket TINYIDP-XAPP-DEVICE-001` and inspect the final
+  bundle on reMarkable.
+
+### Technical details
+
+```text
+existing xgoja composition:
+  ConfigureServices -> ExternalHost + hostauth + Durable Objects -> generated JS
+
+native machine boundary:
+  RFC 7662 credential (Go only) -> constrained Principal -> application dispatch
+
+extraction condition:
+  second concrete host -> compare contracts -> extract pure Go core -> publish
+```

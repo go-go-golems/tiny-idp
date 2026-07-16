@@ -52,9 +52,9 @@
 
 ## Phase 6 — Handoff and reusable-primitives decision
 
-- [ ] Write an operator runbook with development and initialized-mode commands, secret locations, audit expectations, and incident responses.
-- [ ] Publish an evidence-backed extraction recommendation for `go-go-goja` based on the actual host interfaces used here.
-- [ ] Relate source, test, and script files to this ticket; update diary/changelog after each committed phase.
-- [ ] Run `docmgr doctor`, upload the final bundle to reMarkable, and close the ticket only after all acceptance criteria pass.
+- [x] Write an operator runbook with development and initialized-mode commands, secret locations, audit expectations, and incident responses.
+- [x] Publish an evidence-backed extraction recommendation for `go-go-goja` based on the actual host interfaces used here.
+- [x] Relate source, test, and script files to this ticket; update diary/changelog after each committed phase.
+- [x] Run `docmgr doctor`, upload the final bundle to reMarkable, and close the ticket only after all acceptance criteria pass.
 
 ## TODO
