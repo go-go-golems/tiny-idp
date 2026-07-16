@@ -26,6 +26,17 @@ type DeviceLoginSettings struct {
 
 var _ cmds.BareCommand = (*DeviceLoginCommand)(nil)
 
+var deviceLoginPollWait = func(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 func NewDeviceLoginCommand() (*DeviceLoginCommand, error) {
 	return &DeviceLoginCommand{cmds.NewCommandDescription("device-login", cmds.WithShort("Authorize this terminal through tiny-idp device login"), cmds.WithFlags(
 		fields.New("issuer", fields.TypeString, fields.WithRequired(true), fields.WithHelp("tiny-idp issuer URL, including /idp")),
@@ -209,10 +220,8 @@ func deviceLogin(ctx context.Context, s DeviceLoginSettings) (string, time.Time,
 		if !time.Now().Before(deadline) {
 			return "", time.Time{}, errors.New("device authorization expired")
 		}
-		select {
-		case <-ctx.Done():
-			return "", time.Time{}, ctx.Err()
-		case <-time.After(interval):
+		if err := deviceLoginPollWait(ctx, interval); err != nil {
+			return "", time.Time{}, err
 		}
 		resp, err := client.PostForm(d.TokenEndpoint, url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "client_id": {s.ClientID}, "device_code": {grant.DeviceCode}})
 		if err != nil {
