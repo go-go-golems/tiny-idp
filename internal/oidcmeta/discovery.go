@@ -3,6 +3,7 @@ package oidcmeta
 type Discovery struct {
 	Issuer                                    string   `json:"issuer"`
 	AuthorizationEndpoint                     string   `json:"authorization_endpoint"`
+	DeviceAuthorizationEndpoint               string   `json:"device_authorization_endpoint"`
 	TokenEndpoint                             string   `json:"token_endpoint"`
 	UserinfoEndpoint                          string   `json:"userinfo_endpoint"`
 	IntrospectionEndpoint                     string   `json:"introspection_endpoint"`
@@ -25,16 +26,17 @@ func ProductionDiscovery(issuer string) (Discovery, error) {
 		return Discovery{}, err
 	}
 	return Discovery{
-		Issuer:                iss.String(),
-		AuthorizationEndpoint: iss.Endpoint("/authorize"),
-		TokenEndpoint:         iss.Endpoint("/token"),
-		UserinfoEndpoint:      iss.Endpoint("/userinfo"),
-		IntrospectionEndpoint: iss.Endpoint("/introspect"),
+		Issuer:                      iss.String(),
+		AuthorizationEndpoint:       iss.Endpoint("/authorize"),
+		DeviceAuthorizationEndpoint: iss.Endpoint("/device_authorization"),
+		TokenEndpoint:               iss.Endpoint("/token"),
+		UserinfoEndpoint:            iss.Endpoint("/userinfo"),
+		IntrospectionEndpoint:       iss.Endpoint("/introspect"),
 		IntrospectionEndpointAuthMethodsSupported: []string{"client_secret_basic"},
 		JWKSURI:                           iss.Endpoint("/jwks"),
 		EndSessionEndpoint:                iss.Endpoint("/end-session"),
 		ResponseTypesSupported:            []string{"code"},
-		GrantTypesSupported:               []string{"authorization_code", "refresh_token"},
+		GrantTypesSupported:               []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"},
 		SubjectTypesSupported:             []string{"public"},
 		IDTokenSigningAlgValuesSupported:  []string{"RS256"},
 		ScopesSupported:                   []string{"openid", "profile", "email", "offline_access"},

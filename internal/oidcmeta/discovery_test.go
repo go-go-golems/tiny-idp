@@ -17,4 +17,16 @@ func TestProductionDiscoveryIncludesEndSessionEndpoint(t *testing.T) {
 	if discovery.IntrospectionEndpoint != "https://issuer.example.test/introspect" || len(discovery.IntrospectionEndpointAuthMethodsSupported) != 1 || discovery.IntrospectionEndpointAuthMethodsSupported[0] != "client_secret_basic" {
 		t.Fatalf("introspection discovery = %#v", discovery)
 	}
+	if discovery.DeviceAuthorizationEndpoint != "https://issuer.example.test/device_authorization" || !contains(discovery.GrantTypesSupported, "urn:ietf:params:oauth:grant-type:device_code") {
+		t.Fatalf("device authorization discovery = %#v", discovery)
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

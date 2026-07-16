@@ -142,15 +142,27 @@ func TestDiscoveryPublishesIntrospectionAtRootAndPathIssuer(t *testing.T) {
 				t.Fatalf("discovery status=%d", response.StatusCode)
 			}
 			var discovery struct {
-				IntrospectionEndpoint string   `json:"introspection_endpoint"`
-				AuthMethods           []string `json:"introspection_endpoint_auth_methods_supported"`
+				IntrospectionEndpoint       string   `json:"introspection_endpoint"`
+				DeviceAuthorizationEndpoint string   `json:"device_authorization_endpoint"`
+				AuthMethods                 []string `json:"introspection_endpoint_auth_methods_supported"`
+				GrantTypes                  []string `json:"grant_types_supported"`
 			}
 			if err := json.NewDecoder(response.Body).Decode(&discovery); err != nil {
 				t.Fatal(err)
 			}
-			if discovery.IntrospectionEndpoint != tc.wantIntrospection || len(discovery.AuthMethods) != 1 || discovery.AuthMethods[0] != "client_secret_basic" {
+			wantDeviceAuthorization := strings.TrimSuffix(tc.wantIntrospection, "/introspect") + "/device_authorization"
+			if discovery.IntrospectionEndpoint != tc.wantIntrospection || discovery.DeviceAuthorizationEndpoint != wantDeviceAuthorization || len(discovery.AuthMethods) != 1 || discovery.AuthMethods[0] != "client_secret_basic" || !containsString(discovery.GrantTypes, "urn:ietf:params:oauth:grant-type:device_code") {
 				t.Fatalf("discovery introspection contract=%#v", discovery)
 			}
 		})
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
