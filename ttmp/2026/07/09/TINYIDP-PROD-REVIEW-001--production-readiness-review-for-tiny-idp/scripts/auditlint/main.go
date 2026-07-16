@@ -38,7 +38,142 @@ func main() {
 		interactionContinuationAnalyzer,
 		protocolLifecycleAnalyzer,
 		ignoredSecurityErrorAnalyzer,
+		deviceAuditSecretAnalyzer,
+		deviceBoundedParseAnalyzer,
+		deviceNamedTransitionAnalyzer,
+		deviceHandlerContractAnalyzer,
 	)
+}
+
+var deviceAuditSecretAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpdeviceauditsecret",
+	Doc:      "reports device/user codes, bearer tokens, and passwords placed in structured audit fields",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		secretKeys := map[string]struct{}{"device_code": {}, "user_code": {}, "access_token": {}, "refresh_token": {}, "password": {}}
+		ins := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		ins.Preorder([]ast.Node{(*ast.CompositeLit)(nil)}, func(node ast.Node) {
+			literal := node.(*ast.CompositeLit)
+			for _, element := range literal.Elts {
+				field, ok := element.(*ast.KeyValueExpr)
+				if !ok || identifierName(field.Key) != "Fields" {
+					continue
+				}
+				mapLiteral, ok := field.Value.(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
+				for _, mapElement := range mapLiteral.Elts {
+					entry, ok := mapElement.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					key, ok := stringLiteral(entry.Key)
+					if ok {
+						if _, secret := secretKeys[key]; secret {
+							pass.Reportf(entry.Key.Pos(), "device audit field %q may contain secret credential material", key)
+						}
+					}
+				}
+			}
+		})
+		return nil, nil
+	},
+}
+
+var deviceBoundedParseAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpdeviceboundedparse",
+	Doc:      "reports device HTTP handlers that parse a form without a MaxBytesReader boundary",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		for _, file := range pass.Files {
+			for _, declaration := range file.Decls {
+				fn, ok := declaration.(*ast.FuncDecl)
+				if !ok || fn.Body == nil || (fn.Name.Name != "deviceAuthorization" && fn.Name.Name != "completeDeviceVerification") {
+					continue
+				}
+				parsed, bounded := false, false
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					call, ok := node.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					if selectorCallName(call) == "ParseForm" {
+						parsed = true
+					}
+					if selectorCallName(call) == "MaxBytesReader" {
+						bounded = true
+					}
+					return true
+				})
+				if parsed && !bounded {
+					pass.Reportf(fn.Name.Pos(), "device handler %s parses attacker input without http.MaxBytesReader", fn.Name.Name)
+				}
+			}
+		}
+		return nil, nil
+	},
+}
+
+var deviceNamedTransitionAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpdevicenamedtransition",
+	Doc:      "reports generic Update calls in device-grant transition functions",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		for _, file := range pass.Files {
+			for _, declaration := range file.Decls {
+				fn, ok := declaration.(*ast.FuncDecl)
+				if !ok || fn.Body == nil || !strings.Contains(strings.ToLower(fn.Name.Name), "device") {
+					continue
+				}
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					call, ok := node.(*ast.CallExpr)
+					if ok && selectorCallName(call) == "Update" {
+						pass.Reportf(call.Pos(), "device-grant transition must use a named DeviceGrant operation, not generic Update")
+					}
+					return true
+				})
+			}
+		}
+		return nil, nil
+	},
+}
+
+var deviceHandlerContractAnalyzer = &analysis.Analyzer{
+	Name:     "tinyidpdevicehandlercontract",
+	Doc:      "reports device route registration missing either authorization or verification handler",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		for _, file := range pass.Files {
+			filename := pass.Fset.Position(file.Pos()).Filename
+			if !strings.HasSuffix(filename, "/provider.go") {
+				continue
+			}
+			authorization, verification := false, false
+			ast.Inspect(file, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				if selectorCallName(call) != "HandleFunc" || len(call.Args) < 2 {
+					return true
+				}
+				path, _ := stringLiteral(call.Args[0])
+				handler := identifierName(call.Args[1])
+				if path == "/device_authorization" && handler == "deviceAuthorization" {
+					authorization = true
+				}
+				if path == "/device" && handler == "deviceVerification" {
+					verification = true
+				}
+				return true
+			})
+			if !authorization || !verification {
+				pass.Reportf(file.Pos(), "strict provider must register both /device_authorization and /device handlers")
+			}
+		}
+		return nil, nil
+	},
 }
 
 var embeddingImportAnalyzer = &analysis.Analyzer{
@@ -822,4 +957,32 @@ func containsSelector(expr ast.Expr, name string) bool {
 		return !found
 	})
 	return found
+}
+
+func identifierName(expr ast.Expr) string {
+	switch value := expr.(type) {
+	case *ast.Ident:
+		return value.Name
+	case *ast.SelectorExpr:
+		return value.Sel.Name
+	default:
+		return ""
+	}
+}
+
+func stringLiteral(expr ast.Expr) (string, bool) {
+	literal, ok := expr.(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		return "", false
+	}
+	value, err := strconv.Unquote(literal.Value)
+	return value, err == nil
+}
+
+func selectorCallName(call *ast.CallExpr) string {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return ""
+	}
+	return selector.Sel.Name
 }

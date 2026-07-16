@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
@@ -52,4 +53,10 @@ func TestProtocolLifecycleAnalyzer(t *testing.T) {
 
 func TestIgnoredSecurityErrorAnalyzer(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), ignoredSecurityErrorAnalyzer, "fixture/checks/securityerrorcheck")
+}
+
+func TestDeviceAnalyzers(t *testing.T) {
+	for _, analyzer := range []*analysis.Analyzer{deviceAuditSecretAnalyzer, deviceBoundedParseAnalyzer, deviceNamedTransitionAnalyzer, deviceHandlerContractAnalyzer} {
+		analysistest.Run(t, analysistest.TestData(), analyzer, "fixture/checks/devicecheck")
+	}
 }
