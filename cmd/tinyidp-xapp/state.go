@@ -144,7 +144,7 @@ func InitializeState(ctx context.Context, cfg InitializeStateConfig) (_ StateMan
 		return StateManifest{}, errors.Wrap(err, "initialize resource-client secret")
 	}
 	defer zeroBytes(resourceSecret)
-	deviceClient := embeddedidp.DeviceClient(desired.DeviceClientID, []string{"bbs.read", "bbs.post.create"})
+	deviceClient := embeddedidp.DeviceClient(desired.DeviceClientID, []string{"openid", "bbs.read", "bbs.post.create"})
 	deviceClient.Client.AllowedAudiences = []string{desired.ResourceAudience}
 	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{
 		Mode: embeddedidp.ProductionMode,

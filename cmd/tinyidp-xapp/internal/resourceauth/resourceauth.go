@@ -106,6 +106,7 @@ type introspectionResponse struct {
 	Scope     string   `json:"scope"`
 	Audience  []string `json:"aud"`
 	Expires   int64    `json:"exp"`
+	IssuedAt  int64    `json:"iat"`
 	TokenType string   `json:"token_type"`
 }
 
@@ -215,7 +216,10 @@ func discoverIntrospectionEndpoint(ctx context.Context, client *http.Client, iss
 		return "", fmt.Errorf("issuer discovery returned status %d", response.StatusCode)
 	}
 	var document discoveryDocument
-	if err := decodeJSON(response.Body, &document); err != nil {
+	// OpenID Connect discovery is explicitly extensible. Decode only the fields
+	// this component owns instead of rejecting unrelated standard metadata such
+	// as authorization_endpoint or jwks_uri.
+	if err := decodeDiscoveryJSON(response.Body, &document); err != nil {
 		return "", errors.Wrap(err, "decode issuer discovery")
 	}
 	if document.Issuer != issuer {
@@ -333,8 +337,20 @@ func decodeJSON(reader io.Reader, value any) error {
 	if err := decoder.Decode(value); err != nil {
 		return err
 	}
-	if decoder.More() {
-		return errors.New("response contains multiple JSON values")
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("response contains multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
+func decodeDiscoveryJSON(reader io.Reader, value any) error {
+	decoder := json.NewDecoder(io.LimitReader(reader, maxResponseBytes))
+	if err := decoder.Decode(value); err != nil {
+		return err
 	}
 	return nil
 }

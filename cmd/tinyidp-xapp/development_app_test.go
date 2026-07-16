@@ -138,6 +138,185 @@ func TestDevelopmentApplicationReconcilesPersistentIdentityState(t *testing.T) {
 	}
 }
 
+func TestDevelopmentApplicationDeviceTokenPostsToBearerBBSAPI(t *testing.T) {
+	server := httptest.NewUnstartedServer(nil)
+	publicBaseURL := "http://" + server.Listener.Addr().String()
+	stateRoot := t.TempDir()
+	app, err := NewDevelopmentApplication(context.Background(), DevelopmentApplicationConfig{
+		PublicBaseURL: publicBaseURL,
+		StateRoot:     stateRoot,
+		Login:         "alice",
+		Password:      "correct horse battery staple",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Config.Handler = app.Handler()
+	server.Start()
+	t.Cleanup(func() {
+		server.Close()
+		if closeErr := app.Close(context.Background()); closeErr != nil {
+			t.Errorf("close application: %v", closeErr)
+		}
+	})
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+
+	started, err := client.PostForm(server.URL+"/idp/device_authorization", url.Values{
+		"client_id": {deviceClientID},
+		"scope":     {"openid bbs.read bbs.post.create"},
+		"audience":  {apiAudience(server.URL)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer started.Body.Close()
+	if started.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(started.Body)
+		t.Fatalf("device authorization status=%d body=%s", started.StatusCode, body)
+	}
+	var device struct {
+		DeviceCode string `json:"device_code"`
+		UserCode   string `json:"user_code"`
+	}
+	if err := json.NewDecoder(started.Body).Decode(&device); err != nil {
+		t.Fatal(err)
+	}
+	if device.DeviceCode == "" || device.UserCode == "" {
+		t.Fatalf("device authorization response=%#v", device)
+	}
+
+	verification, err := client.Get(server.URL + "/idp/device?user_code=" + url.QueryEscape(device.UserCode))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verificationHTML, _ := io.ReadAll(verification.Body)
+	_ = verification.Body.Close()
+	if verification.StatusCode != http.StatusOK {
+		t.Fatalf("device verification status=%d body=%s", verification.StatusCode, verificationHTML)
+	}
+	approval := hiddenFormValues(string(verificationHTML))
+	approval.Set("login", "alice")
+	approval.Set("password", "correct horse battery staple")
+	approval.Set("action", "approve")
+	approved, err := client.PostForm(server.URL+"/idp/device", approval)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvedBody, _ := io.ReadAll(approved.Body)
+	_ = approved.Body.Close()
+	if approved.StatusCode != http.StatusOK || !strings.Contains(string(approvedBody), "approved") {
+		t.Fatalf("device approval status=%d body=%s", approved.StatusCode, approvedBody)
+	}
+
+	tokenResponse, err := client.PostForm(server.URL+"/idp/token", url.Values{
+		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+		"client_id":   {deviceClientID},
+		"device_code": {device.DeviceCode},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tokenResponse.Body.Close()
+	if tokenResponse.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(tokenResponse.Body)
+		t.Fatalf("device token status=%d body=%s", tokenResponse.StatusCode, body)
+	}
+	var token struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(tokenResponse.Body).Decode(&token); err != nil {
+		t.Fatal(err)
+	}
+	if token.AccessToken == "" {
+		t.Fatal("device token response omitted access token")
+	}
+	resourceKey, err := os.ReadFile(filepath.Join(stateRoot, "secrets", "resource-client.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	introspection, err := http.NewRequest(http.MethodPost, server.URL+"/idp/introspect", strings.NewReader(url.Values{"token": {token.AccessToken}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	introspection.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	introspection.SetBasicAuth(resourceClientID, resourceClientSecret(resourceKey))
+	introspectionResponse, err := client.Do(introspection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	introspectionBody, _ := io.ReadAll(introspectionResponse.Body)
+	_ = introspectionResponse.Body.Close()
+	if introspectionResponse.StatusCode != http.StatusOK || !bytes.Contains(introspectionBody, []byte(`"active":true`)) {
+		t.Fatalf("direct introspection status=%d body=%s", introspectionResponse.StatusCode, introspectionBody)
+	}
+	inProcessRequest, err := http.NewRequest(http.MethodPost, publicBaseURL+"/idp/introspect", strings.NewReader(url.Values{"token": {token.AccessToken}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inProcessRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	inProcessRequest.SetBasicAuth(resourceClientID, resourceClientSecret(resourceKey))
+	inProcessResponse, err := (&http.Client{Transport: app.oidc}).Do(inProcessRequest)
+	if err != nil {
+		t.Fatalf("in-process introspection transport: %v", err)
+	}
+	inProcessBody, _ := io.ReadAll(inProcessResponse.Body)
+	_ = inProcessResponse.Body.Close()
+	if inProcessResponse.StatusCode != http.StatusOK || !bytes.Contains(inProcessBody, []byte(`"active":true`)) {
+		t.Fatalf("in-process introspection status=%d body=%s", inProcessResponse.StatusCode, inProcessBody)
+	}
+	nativeDeviceAPI := newDeviceAPIHandler(app.apiAuth, app.objects.Manager, app.apiAudit).(*deviceAPIHandler)
+	if _, err := nativeDeviceAPI.dispatch(context.Background(), http.MethodGet, "/board", map[string]any{"actorId": "dev-alice-subject", "actorName": "dev-alice-subject"}); err != nil {
+		t.Fatalf("native durable-object BBS dispatch: %v", err)
+	}
+	if authenticated := app.apiAuth.Authenticate(context.Background(), []string{"Bearer " + token.AccessToken}, []string{"bbs.post.create"}); authenticated.Outcome != "authenticated" {
+		t.Fatalf("in-process resource authentication outcome=%q principal=%#v", authenticated.Outcome, authenticated.Principal)
+	}
+
+	unauthorized, err := client.Get(server.URL + "/api/device/bbs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = unauthorized.Body.Close()
+	if unauthorized.StatusCode != http.StatusUnauthorized || unauthorized.Header.Get("WWW-Authenticate") == "" {
+		t.Fatalf("missing bearer status=%d WWW-Authenticate=%q", unauthorized.StatusCode, unauthorized.Header.Get("WWW-Authenticate"))
+	}
+	post, err := http.NewRequest(http.MethodPost, server.URL+"/api/device/bbs/posts", strings.NewReader(`{"title":"Terminal post","body":"Created through device authorization.","category":"notes","actorId":"mallory"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	post.Header.Set("Content-Type", "application/json")
+	post.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	posted, err := client.Do(post)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postedBody, _ := io.ReadAll(posted.Body)
+	_ = posted.Body.Close()
+	if posted.StatusCode != http.StatusBadRequest || !bytes.Contains(postedBody, []byte(`"invalid_request"`)) {
+		t.Fatalf("caller-selected actor request status=%d body=%s oidc_failure=%#v", posted.StatusCode, postedBody, app.oidc.LastFailure())
+	}
+
+	post, err = http.NewRequest(http.MethodPost, server.URL+"/api/device/bbs/posts", strings.NewReader(`{"title":"Terminal post","body":"Created through device authorization.","category":"notes"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	post.Header.Set("Content-Type", "application/json")
+	post.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	posted, err = client.Do(post)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postedBody, _ = io.ReadAll(posted.Body)
+	_ = posted.Body.Close()
+	if posted.StatusCode != http.StatusCreated || !bytes.Contains(postedBody, []byte(`"author":"dev-alice-subject"`)) {
+		t.Fatalf("device post status=%d body=%s", posted.StatusCode, postedBody)
+	}
+}
+
 func TestLoadOrCreateKeyIsStableAndOwnerOnly(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "secrets", "binding.key")
 	first, err := loadOrCreateKey(file)

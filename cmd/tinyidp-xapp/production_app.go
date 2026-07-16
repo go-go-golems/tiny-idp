@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-go-golems/go-go-goja/pkg/xgoja/hostauth"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
+	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/resourceauth"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
@@ -34,6 +35,7 @@ func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *Develo
 	}
 	app := &DevelopmentApplication{
 		publicBaseURL: manifest.PublicBaseURL,
+		apiAudit:      audit,
 		extras: []func(context.Context) error{
 			func(context.Context) error { return audit.Close() },
 			func(context.Context) error { return store.Close() },
@@ -93,6 +95,21 @@ func NewInitializedApplication(ctx context.Context, stateRoot string) (_ *Develo
 	}
 	observedTransport := &observedRoundTripper{base: transport}
 	app.oidc = observedTransport
+	resourceSecretKey, err := os.ReadFile(paths.ResourceClientSecret)
+	if err != nil {
+		return nil, errors.Wrap(err, "read resource-client secret")
+	}
+	defer zeroBytes(resourceSecretKey)
+	resourceSecret := []byte(resourceClientSecret(resourceSecretKey))
+	defer zeroBytes(resourceSecret)
+	apiAuth, err := resourceauth.New(ctx, resourceauth.Config{
+		IssuerURL: manifest.Issuer, ClientID: manifest.ResourceClientID, ClientSecret: resourceSecret, Audience: manifest.ResourceAudience,
+		HTTPClient: &http.Client{Transport: observedTransport, Timeout: 10 * time.Second},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "build production API resource authentication")
+	}
+	app.apiAuth = apiAuth
 	if err := os.MkdirAll(filepath.Dir(paths.AppAuthDatabase), 0o700); err != nil {
 		return nil, errors.Wrap(err, "create application auth directory")
 	}

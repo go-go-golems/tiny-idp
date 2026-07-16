@@ -24,6 +24,7 @@ import (
 	"github.com/go-go-golems/go-go-objects/pkg/durableobjects"
 	durableobjectsprovider "github.com/go-go-golems/go-go-objects/pkg/xgoja/providers/durableobjects"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
+	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/resourceauth"
 	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/xgojaruntime"
 	"github.com/manuel/tinyidp/pkg/embeddedidp"
 	"github.com/manuel/tinyidp/pkg/idp"
@@ -58,6 +59,8 @@ type DevelopmentApplication struct {
 	idp           *embeddedidp.Provider
 	objects       *durableobjects.Server
 	auth          *hostauth.Services
+	apiAuth       *resourceauth.Authenticator
+	apiAudit      idp.Sink
 	oidc          *observedRoundTripper
 	loginUI       *loginui.Renderer
 	extras        []func(context.Context) error
@@ -107,7 +110,7 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	}
 	defer zeroBytes(resourceSecretKey)
 	audience := apiAudience(cfg.PublicBaseURL)
-	deviceClient := embeddedidp.DeviceClient(deviceClientID, []string{"bbs.read", "bbs.post.create"})
+	deviceClient := embeddedidp.DeviceClient(deviceClientID, []string{"openid", "bbs.read", "bbs.post.create"})
 	deviceClient.Client.AllowedAudiences = []string{audience}
 	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{
 		Mode: embeddedidp.DevMode,
@@ -147,7 +150,8 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	}
 	app := &DevelopmentApplication{
 		idp: idpProvider, loginUI: interactionUI, publicBaseURL: cfg.PublicBaseURL,
-		extras: []func(context.Context) error{func(context.Context) error { return store.Close() }},
+		apiAudit: idp.NoopSink{},
+		extras:   []func(context.Context) error{func(context.Context) error { return store.Close() }},
 	}
 	storeOwnedByApp = true
 	defer func() {
@@ -162,6 +166,16 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 	}
 	observedTransport := &observedRoundTripper{base: transport}
 	app.oidc = observedTransport
+	resourceSecret := []byte(resourceClientSecret(resourceSecretKey))
+	defer zeroBytes(resourceSecret)
+	apiAuth, err := resourceauth.New(ctx, resourceauth.Config{
+		IssuerURL: issuer, ClientID: resourceClientID, ClientSecret: resourceSecret, Audience: audience,
+		HTTPClient: &http.Client{Transport: observedTransport, Timeout: 10 * time.Second},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "build development API resource authentication")
+	}
+	app.apiAuth = apiAuth
 	authFactory := hostauth.NewServiceFactory(hostauth.BuilderOptions{
 		Config: hostauth.Config{
 			Mode: hostauth.ModeOIDC,
@@ -224,7 +238,7 @@ func seedDevelopmentUser(ctx context.Context, store *sqlitestore.Store, accounts
 }
 
 func composeApplication(ctx context.Context, app *DevelopmentApplication, authFactory hostauth.ServiceFactory, stateRoot string) error {
-	if app == nil || app.idp == nil || app.auth == nil || app.loginUI == nil {
+	if app == nil || app.idp == nil || app.auth == nil || app.apiAuth == nil || app.loginUI == nil {
 		return errors.New("identity and application auth services are required")
 	}
 	httpHost := gojahttp.NewHost(gojahttp.HostOptions{
@@ -292,6 +306,7 @@ func composeApplication(ctx context.Context, app *DevelopmentApplication, authFa
 	mux := http.NewServeMux()
 	mux.Handle("/idp/", app.idp.Handler())
 	mux.Handle("GET /static/tinyidp/", app.loginUI.AssetsHandler())
+	mux.Handle("/api/device/", newDeviceAPIHandler(app.apiAuth, app.objects.Manager, app.apiAudit))
 	for _, native := range app.auth.NativeHandlers {
 		mux.Handle(native.Method+" "+native.Path, native.Handler)
 	}
@@ -430,11 +445,15 @@ func apiAudience(publicBaseURL string) string {
 	return strings.TrimRight(publicBaseURL, "/") + deviceAPIAudiencePath
 }
 
+func resourceClientSecret(secretKey []byte) string {
+	return base64.RawURLEncoding.EncodeToString(secretKey)
+}
+
 func reconcileResourceClient(ctx context.Context, store idpstore.Store, mode idpstore.Mode, secretKey []byte, audience string) error {
 	if ctx == nil || store == nil || len(secretKey) == 0 || audience == "" {
 		return errors.New("resource-client context, store, secret, and audience are required")
 	}
-	secret := base64.RawURLEncoding.EncodeToString(secretKey)
+	secret := resourceClientSecret(secretKey)
 	desired := idpstore.Client{
 		ID: resourceClientID, Public: false, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode},
 		AllowedAudiences: []string{audience}, CanIntrospect: true,

@@ -18,7 +18,7 @@ func TestAuthenticateValidatesAndCachesConstrainedPrincipal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
-			writeJSON(t, w, discoveryDocument{Issuer: serverURL(r), IntrospectionEndpoint: serverURL(r) + "/introspect", IntrospectionAuthMethodsSupported: []string{"client_secret_basic"}})
+			writeJSON(t, w, map[string]any{"issuer": serverURL(r), "introspection_endpoint": serverURL(r) + "/introspect", "introspection_endpoint_auth_methods_supported": []string{"client_secret_basic"}, "authorization_endpoint": serverURL(r) + "/authorize", "jwks_uri": serverURL(r) + "/jwks"})
 		case "/introspect":
 			introspectionCalls.Add(1)
 			clientID, secret, ok := r.BasicAuth()

@@ -36,6 +36,10 @@ func TestInitializeStateIsIdempotentAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	resourceBefore, err := os.ReadFile(paths.ResourceClientSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(paths.IdentityDatabase))
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +62,8 @@ func TestInitializeStateIsIdempotentAndComplete(t *testing.T) {
 	}
 	tokenAfter, _ := os.ReadFile(paths.TokenSecret)
 	bindingAfter, _ := os.ReadFile(paths.ObjectBindingKey)
-	if !bytes.Equal(tokenBefore, tokenAfter) || !bytes.Equal(bindingBefore, bindingAfter) {
+	resourceAfter, _ := os.ReadFile(paths.ResourceClientSecret)
+	if !bytes.Equal(tokenBefore, tokenAfter) || !bytes.Equal(bindingBefore, bindingAfter) || !bytes.Equal(resourceBefore, resourceAfter) {
 		t.Fatal("idempotent initialization rotated a security root")
 	}
 	store, err = sqlitestore.Open(ctx, sqlitestore.DefaultConfig(paths.IdentityDatabase))
@@ -79,6 +84,24 @@ func TestInitializeStateIsIdempotentAndComplete(t *testing.T) {
 	}
 	if !client.Public || !client.RequirePKCE || len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != "https://app.example.test/auth/callback" {
 		t.Fatalf("unexpected relying-party client: %#v", client)
+	}
+	deviceClient, err := store.GetClient(ctx, deviceClientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deviceClient.Public || !deviceClient.AllowsGrantType("urn:ietf:params:oauth:grant-type:device_code") || !deviceClient.AllowsAudience([]string{first.ResourceAudience}) {
+		t.Fatalf("unexpected device client: %#v", deviceClient)
+	}
+	resourceClient, err := store.GetClient(ctx, resourceClientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resourceClient.Public || !resourceClient.CanIntrospect || !resourceClient.AllowsAudience([]string{first.ResourceAudience}) || len(resourceClient.SecretHash) == 0 {
+		t.Fatalf("unexpected resource client: %#v", resourceClient)
+	}
+	resourceInfo, err := os.Stat(paths.ResourceClientSecret)
+	if err != nil || resourceInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("resource-client secret stat=%v mode=%#o", err, resourceInfo.Mode().Perm())
 	}
 	if _, err := store.ActiveSigningKey(ctx); err != nil {
 		t.Fatal(err)
