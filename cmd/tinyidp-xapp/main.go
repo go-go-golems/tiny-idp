@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/go-go-golems/glazed/pkg/cli"
+	"github.com/go-go-golems/glazed/pkg/cmds"
 	"github.com/go-go-golems/glazed/pkg/cmds/logging"
 	"github.com/go-go-golems/glazed/pkg/help"
 	help_cmd "github.com/go-go-golems/glazed/pkg/help/cmd"
@@ -79,9 +80,31 @@ func main() {
 	cobra.CheckErr(err)
 	root.AddCommand(initializedServeCobra)
 
+	for _, command := range []cmds.BareCommand{mustDeviceLoginCommand(), mustBBSGetCommand(), mustBBSPostCommand()} {
+		cobraCommand, buildErr := cli.BuildCobraCommandFromCommand(command, cli.WithParserConfig(cli.CobraParserConfig{AppName: "tinyidp-xapp", ShortHelpSections: []string{"default"}, MiddlewaresFunc: cli.CobraCommandDefaultMiddlewares}))
+		cobra.CheckErr(buildErr)
+		root.AddCommand(cobraCommand)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := root.ExecuteContext(ctx); err != nil {
 		os.Exit(1)
 	}
+}
+
+func mustDeviceLoginCommand() cmds.BareCommand {
+	command, err := NewDeviceLoginCommand()
+	cobra.CheckErr(err)
+	return command
+}
+func mustBBSGetCommand() cmds.BareCommand {
+	command, err := NewBBSGetCommand()
+	cobra.CheckErr(err)
+	return command
+}
+func mustBBSPostCommand() cmds.BareCommand {
+	command, err := NewBBSPostCommand()
+	cobra.CheckErr(err)
+	return command
 }
