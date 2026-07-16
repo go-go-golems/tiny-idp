@@ -21,6 +21,10 @@ RelatedFiles:
       Note: One-origin IdP and relying-party composition
     - Path: examples/embedded/oidc.go
       Note: Back-channel exchange and ID-token verification
+    - Path: repo://internal/fositeadapter/provider_test.go
+      Note: JWT/JWKS verifier used by device signing-key test (commit 704872f)
+    - Path: repo://internal/fositeadapter/sqlstore_test.go
+      Note: Device refresh failpoint retry and signing-key rotation evidence (commit 704872f)
 ExternalSources:
     - sources/rfc-8628-oauth-device-authorization-grant.md
     - sources/rfc-9700-oauth-security-bcp.md
@@ -29,6 +33,7 @@ LastUpdated: 2026-07-14T18:25:00Z
 WhatFor: Preserves commands, findings, mistakes, decisions, and validation so another engineer can continue without reconstructing the investigation.
 WhenToUse: Read at handoff, before implementing a task, or when reviewing why the design chose durable atomic state and Fosite integration.
 ---
+
 
 
 # Investigation and Implementation Diary
@@ -1225,4 +1230,157 @@ for release planning instead of duplicating completed work or hiding gaps.
 completed core: durable grant -> verified browser decision -> Fosite token TX
 remaining gate: refresh/key rotation + observability + adversarial evidence
                 + public docs + independent review/release sign-off
+```
+
+## Step 8: Close device refresh, persistence, and signing-key lifecycle coverage
+
+The reconciliation identified a precise gap: generic authorization-code tests
+already covered refresh rotation and key rotation, but they did not prove the
+same lifecycle after the RFC 8628 device grant created the token family. This
+step adds device-specific evidence rather than inferring it from a different
+grant type.
+
+The implementation does not change token semantics. It strengthens the test
+boundary around the existing all-or-nothing transaction: a failed device
+redemption must leave both the one-time grant and its optional refresh family
+uncommitted, and a later retry must issue the complete OIDC result exactly
+once. It also proves that a device ID token issued before a signing-key
+rotation remains verifiable through the published JWKS while later device
+tokens use the new active key.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, finish the device-prod ticket, implementing all the tasks."
+
+**Assistant interpretation:** Complete every self-contained task in the
+reconciled production device-authorization ticket, recording evidence and
+committing in reviewable increments.
+
+**Inferred user intent:** Turn the already implemented strict device grant
+into a release-ready, traceable subsystem with explicit assurance evidence,
+not merely a working happy path.
+
+**Commit (code):** `704872f` — "test(device): cover refresh atomicity and key rotation"
+
+### What I did
+
+- Extended `TestSQLiteDeviceTokenRedemptionFailpointsRollbackGrantAndTokens`
+  to request and approve `offline_access` for a client explicitly permitted to
+  use both `urn:ietf:params:oauth:grant-type:device_code` and `refresh_token`.
+- Added `before_create_refresh_token` and `after_create_refresh_token` to the
+  device redemption failure matrix. The matrix now covers begin, conditional
+  device consumption, access persistence, refresh persistence, and commit.
+- Disarmed each injected hook and retried the same device code. The test now
+  asserts an access token, ID token, and refresh token, one row in each Fosite
+  token table, and a final durable `consumed` grant.
+- Added a SQLite integration test which issues a device ID token under
+  `device-old`, rotates to `device-new`, verifies the old signature through
+  `/jwks`, then issues and verifies a new device ID token with `kid=device-new`.
+- Generalized the existing JWKS verifier only to make the nonce assertion
+  conditional. Authorization-code callers still require their supplied nonce;
+  device flows correctly have no authorization-request nonce.
+- Ran `go test ./internal/fositeadapter -count=1` successfully.
+
+### Why
+
+- Refresh issuance is conditional on both client grant capability and the
+  approved `offline_access` scope. A happy-path device test without those
+  inputs cannot exercise the `CreateRefreshTokenSession` transaction branch.
+- Device code redemption combines two one-time resources: the durable grant
+  and the newly created token family. Failure must preserve the first while
+  leaving no part of the second visible; retry proves it was not accidentally
+  consumed or partially persisted.
+- Key rotation is safe only if relying parties can validate tokens issued just
+  before rotation until their normal expiry, while newly issued tokens select
+  the new active key. The test makes both claims using real HTTP JWKS output
+  and RSA signature validation.
+
+### What worked
+
+- The full Fosite adapter suite passed after the changes:
+
+  ```sh
+  go test ./internal/fositeadapter -count=1
+  ```
+
+- All eight injected device-token persistence points roll back to an approved
+  grant with zero access and refresh rows, then permit one successful retry.
+- The rotation test observed `device-old` before rotation, verified it after
+  rotation from the still-published retired key, and observed `device-new` for
+  a newly redeemed grant.
+
+### What didn't work
+
+- The first sandboxed focused test could not read the shared Go build cache:
+
+  ```text
+  open /home/manuel/.cache/go-build/...: read-only file system
+  ```
+
+  I reran the same command with approved normal cache access. This was a
+  sandbox filesystem constraint, not a product test failure.
+
+### What I learned
+
+- The existing custom handler already correctly gates refresh creation on
+  `GrantRefreshToken` plus `offline_access`; the missing evidence was the
+  device fixture's policy and failure/retry assertions, not production logic.
+- A robust rotation test must check both signature validity through the live
+  JWKS and key selection (`kid`). Checking only a new JWKS entry would miss a
+  provider that continued signing with the retired key.
+
+### What was tricky to build
+
+- The token persistence hook is shared by all transaction paths. The test must
+  arm it only for the failure request and disarm it before retry; otherwise the
+  retry simply reproduces the synthetic failure and proves nothing about
+  rollback safety.
+- Device requests deliberately lack the browser authorization-code nonce.
+  The shared verifier therefore treats an empty expected nonce as “not present
+  in this flow,” while retaining the strict equality check for browser tests.
+
+### What warrants a second pair of eyes
+
+- Confirm the operational policy for granting `offline_access` to device
+  clients. The test proves explicit configuration works; product owners still
+  decide which real clients receive that long-lived capability.
+- Review signing-key retention against the configured ID-token lifetime before
+  purging retired keys. This test proves publication immediately after
+  rotation, not a calendar-policy configuration.
+
+### What should be done in the future
+
+- Continue with device-specific observability and an operator response
+  runbook, then add adversarial/model/static-analysis evidence from the
+  remaining Phase 6–7 tasks.
+
+### Code review instructions
+
+- Start at `TestSQLiteDeviceTokenRedemptionFailpointsRollbackGrantAndTokens`.
+  Verify that every failure has zero persisted token rows before the exact
+  device-code retry, and that refresh issuance requires explicit policy.
+- Read `TestSQLiteDeviceIDTokensRemainVerifiableAcrossSigningKeyRotation`
+  alongside `pkg/sqlitestore.Store.RotateSigningKey` and `internal/keys.RotateRSA`.
+  Confirm retired keys remain available to `/jwks` and the active key changes.
+- Validate with:
+
+  ```sh
+  go test ./internal/fositeadapter -run 'TestSQLiteDevice(TokenRedemptionFailpointsRollbackGrantAndTokens|IDTokensRemainVerifiableAcrossSigningKeyRotation)' -count=1
+  go test ./internal/fositeadapter -count=1
+  ```
+
+### Technical details
+
+```text
+failed device redemption, including refresh session creation
+  approved DeviceGrant + 0 access rows + 0 refresh rows
+      -- remove injected failure -->
+  same device_code
+      --> consumed DeviceGrant + 1 access row + 1 refresh row + OIDC response
+
+key rotation
+  device-old signs ID token A
+      --> rotate to device-new
+  /jwks publishes device-old + device-new
+      --> A still verifies, later device token B has kid=device-new
 ```

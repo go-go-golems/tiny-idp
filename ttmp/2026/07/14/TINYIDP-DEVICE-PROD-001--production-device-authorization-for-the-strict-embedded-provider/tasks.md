@@ -26,8 +26,8 @@
 - [x] Phase 5: Implement and register the custom Fosite device token endpoint handler <!-- t:szkc -->
 - [x] Phase 5: Map pending, slowdown, denial, expiry, wrong client, and replay to protocol errors <!-- t:akdz -->
 - [x] Phase 5: Atomically consume approved grants and persist access, ID, and optional refresh tokens <!-- t:9tn5 -->
-- [ ] Phase 5 follow-up: add device-grant refresh-token and signing-key-rotation coverage; UserInfo, introspection, audience, and replay are already covered <!-- t:5jr3 -->
-- [ ] Phase 5 follow-up: cover device-flow refresh-token persistence failpoints and successful retry after every injected failure; access-token/consume/commit failpoints are already covered <!-- t:i1k8 -->
+- [x] Phase 5 follow-up: add device-grant refresh-token and signing-key-rotation coverage; UserInfo, introspection, audience, and replay are already covered <!-- t:5jr3 -->
+- [x] Phase 5 follow-up: cover device-flow refresh-token persistence failpoints and successful retry after every injected failure; access-token/consume/commit failpoints are already covered <!-- t:i1k8 -->
 - [x] Phase 6: Add durable and general rate limits for creation, code entry, authentication, and polling <!-- t:tn4d -->
 - [ ] Phase 6 follow-up: add device-specific metrics/dashboard evidence and strict-provider operator runbook; generic readiness, retention, and xapp operator guidance already exist <!-- t:66u4 -->
 - [ ] Phase 7: Add pure reference model and generated SQLite action-sequence comparison harness <!-- t:erz1 -->

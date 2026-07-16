@@ -89,3 +89,13 @@ Reconciled stale Phase 5–8 device ledger with current strict-provider, durable
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_token_handler.go — Core completed device token extension.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-DEVICE-PROD-001--production-device-authorization-for-the-strict-embedded-provider/reference/03-2026-07-16-reconciliation.md — Evidence matrix and remaining plan.
+
+## 2026-07-16
+
+Close device token lifecycle coverage: refresh-token persistence failpoints now roll back and retry, and device ID tokens are verified through signing-key rotation (commit 704872f).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider_test.go — Reusable JWKS verifier supports no-nonce device ID tokens
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — Device refresh failpoint/retry and signing-key-rotation evidence
+
