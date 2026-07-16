@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/fs"
@@ -30,11 +31,15 @@ import (
 	"github.com/manuel/tinyidp/pkg/idpstore"
 	"github.com/manuel/tinyidp/pkg/sqlitestore"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	developmentClientID = "tinyidp-xapp"
-	userStateNamespace  = "USER_STATE"
+	developmentClientID   = "tinyidp-xapp"
+	deviceClientID        = "tinyidp-xapp-cli"
+	resourceClientID      = "tinyidp-xapp-api"
+	userStateNamespace    = "USER_STATE"
+	deviceAPIAudiencePath = "/api"
 )
 
 type DevelopmentApplicationConfig struct {
@@ -96,17 +101,26 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 			return nil, err
 		}
 	}
+	resourceSecretKey, err := loadOrCreateKey(filepath.Join(cfg.StateRoot, "secrets", "resource-client.key"))
+	if err != nil {
+		return nil, errors.Wrap(err, "load development resource-client secret")
+	}
+	defer zeroBytes(resourceSecretKey)
+	audience := apiAudience(cfg.PublicBaseURL)
+	deviceClient := embeddedidp.DeviceClient(deviceClientID, []string{"bbs.read", "bbs.post.create"})
+	deviceClient.Client.AllowedAudiences = []string{audience}
 	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{
 		Mode: embeddedidp.DevMode,
-		Clients: []embeddedidp.ClientSpec{embeddedidp.BrowserClient(
-			developmentClientID,
-			[]string{cfg.PublicBaseURL + "/auth/callback"},
-			[]string{cfg.PublicBaseURL + "/"},
-			[]string{"openid", "profile", "email"},
-		)},
+		Clients: []embeddedidp.ClientSpec{
+			embeddedidp.BrowserClient(developmentClientID, []string{cfg.PublicBaseURL + "/auth/callback"}, []string{cfg.PublicBaseURL + "/"}, []string{"openid", "profile", "email"}),
+			deviceClient,
+		},
 		SigningKeyID: "xapp-dev-signing-key",
 	}); err != nil {
 		return nil, errors.Wrap(err, "bootstrap development identity provider")
+	}
+	if err := reconcileResourceClient(ctx, store, embeddedidp.DevMode, resourceSecretKey, audience); err != nil {
+		return nil, errors.Wrap(err, "bootstrap development resource client")
 	}
 	tokenSecret, err := randomKey(32)
 	if err != nil {
@@ -410,6 +424,63 @@ func randomKey(size int) ([]byte, error) {
 		return nil, errors.Wrap(err, "read cryptographic randomness")
 	}
 	return key, nil
+}
+
+func apiAudience(publicBaseURL string) string {
+	return strings.TrimRight(publicBaseURL, "/") + deviceAPIAudiencePath
+}
+
+func reconcileResourceClient(ctx context.Context, store idpstore.Store, mode idpstore.Mode, secretKey []byte, audience string) error {
+	if ctx == nil || store == nil || len(secretKey) == 0 || audience == "" {
+		return errors.New("resource-client context, store, secret, and audience are required")
+	}
+	secret := base64.RawURLEncoding.EncodeToString(secretKey)
+	desired := idpstore.Client{
+		ID: resourceClientID, Public: false, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode},
+		AllowedAudiences: []string{audience}, CanIntrospect: true,
+		AccessTokenTTL: time.Hour, IDTokenTTL: time.Hour, RefreshTokenTTL: 24 * time.Hour,
+	}
+	existing, err := store.GetClient(ctx, resourceClientID)
+	if errors.Is(err, idpstore.ErrNotFound) {
+		desired.SecretHash, err = bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
+		if err != nil {
+			return errors.Wrap(err, "hash resource-client secret")
+		}
+		now := time.Now().UTC()
+		desired.CreatedAt, desired.UpdatedAt = now, now
+		if err := desired.Validate(mode); err != nil {
+			return errors.Wrap(err, "validate resource client")
+		}
+		return errors.Wrap(store.PutClient(ctx, desired), "create resource client")
+	}
+	if err != nil {
+		return errors.Wrap(err, "load resource client")
+	}
+	if existing.ID != desired.ID || existing.Public || !existing.CanIntrospect || !equalStrings(existing.AllowedAudiences, desired.AllowedAudiences) || !equalStrings(existing.AllowedGrantTypes, desired.AllowedGrantTypes) || existing.Disabled {
+		return errors.New("existing resource client conflicts with xapp API security configuration")
+	}
+	if bcrypt.CompareHashAndPassword(existing.SecretHash, []byte(secret)) != nil {
+		return errors.New("existing resource client secret conflicts with owner-only state")
+	}
+	return nil
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func zeroBytes(value []byte) {
+	for index := range value {
+		value[index] = 0
+	}
 }
 
 func loadOrCreateKey(file string) ([]byte, error) {

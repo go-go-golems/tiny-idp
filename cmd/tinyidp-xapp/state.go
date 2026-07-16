@@ -18,38 +18,43 @@ import (
 	"github.com/pkg/errors"
 )
 
-const stateManifestVersion = 1
+const stateManifestVersion = 2
 
 type StatePaths struct {
-	Root             string
-	Manifest         string
-	IdentityDatabase string
-	AuditLog         string
-	TokenSecret      string
-	ObjectBindingKey string
-	ObjectRoot       string
-	AppAuthDatabase  string
+	Root                 string
+	Manifest             string
+	IdentityDatabase     string
+	AuditLog             string
+	TokenSecret          string
+	ResourceClientSecret string
+	ObjectBindingKey     string
+	ObjectRoot           string
+	AppAuthDatabase      string
 }
 
 func ResolveStatePaths(root string) StatePaths {
 	return StatePaths{
-		Root:             root,
-		Manifest:         filepath.Join(root, "state.json"),
-		IdentityDatabase: filepath.Join(root, "identity", "tinyidp.sqlite"),
-		AuditLog:         filepath.Join(root, "audit", "tinyidp.jsonl"),
-		TokenSecret:      filepath.Join(root, "secrets", "token.key"),
-		ObjectBindingKey: filepath.Join(root, "secrets", "object-binding.key"),
-		ObjectRoot:       filepath.Join(root, "objects"),
-		AppAuthDatabase:  filepath.Join(root, "application", "auth.sqlite"),
+		Root:                 root,
+		Manifest:             filepath.Join(root, "state.json"),
+		IdentityDatabase:     filepath.Join(root, "identity", "tinyidp.sqlite"),
+		AuditLog:             filepath.Join(root, "audit", "tinyidp.jsonl"),
+		TokenSecret:          filepath.Join(root, "secrets", "token.key"),
+		ResourceClientSecret: filepath.Join(root, "secrets", "resource-client.key"),
+		ObjectBindingKey:     filepath.Join(root, "secrets", "object-binding.key"),
+		ObjectRoot:           filepath.Join(root, "objects"),
+		AppAuthDatabase:      filepath.Join(root, "application", "auth.sqlite"),
 	}
 }
 
 type StateManifest struct {
-	Version       int       `json:"version"`
-	PublicBaseURL string    `json:"publicBaseUrl"`
-	Issuer        string    `json:"issuer"`
-	ClientID      string    `json:"clientId"`
-	CreatedAt     time.Time `json:"createdAt"`
+	Version          int       `json:"version"`
+	PublicBaseURL    string    `json:"publicBaseUrl"`
+	Issuer           string    `json:"issuer"`
+	ClientID         string    `json:"clientId"`
+	DeviceClientID   string    `json:"deviceClientId"`
+	ResourceClientID string    `json:"resourceClientId"`
+	ResourceAudience string    `json:"resourceAudience"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 type InitializeStateConfig struct {
@@ -85,13 +90,16 @@ func InitializeState(ctx context.Context, cfg InitializeStateConfig) (_ StateMan
 		return StateManifest{}, err
 	}
 	desired := StateManifest{
-		Version:       stateManifestVersion,
-		PublicBaseURL: cfg.PublicBaseURL,
-		Issuer:        cfg.PublicBaseURL + "/idp",
-		ClientID:      developmentClientID,
+		Version:          stateManifestVersion,
+		PublicBaseURL:    cfg.PublicBaseURL,
+		Issuer:           cfg.PublicBaseURL + "/idp",
+		ClientID:         developmentClientID,
+		DeviceClientID:   deviceClientID,
+		ResourceClientID: resourceClientID,
+		ResourceAudience: apiAudience(cfg.PublicBaseURL),
 	}
 	if existing, err := ReadStateManifest(paths.Manifest); err == nil {
-		if existing.Version != desired.Version || existing.PublicBaseURL != desired.PublicBaseURL || existing.Issuer != desired.Issuer || existing.ClientID != desired.ClientID {
+		if existing.Version != desired.Version || existing.PublicBaseURL != desired.PublicBaseURL || existing.Issuer != desired.Issuer || existing.ClientID != desired.ClientID || existing.DeviceClientID != desired.DeviceClientID || existing.ResourceClientID != desired.ResourceClientID || existing.ResourceAudience != desired.ResourceAudience {
 			return StateManifest{}, errors.New("initialized state manifest conflicts with requested public URL or client identity")
 		}
 		desired.CreatedAt = existing.CreatedAt
@@ -131,18 +139,26 @@ func InitializeState(ctx context.Context, cfg InitializeStateConfig) (_ StateMan
 	if _, err := loadOrCreateKey(paths.ObjectBindingKey); err != nil {
 		return StateManifest{}, errors.Wrap(err, "initialize object binding key")
 	}
+	resourceSecret, err := loadOrCreateKey(paths.ResourceClientSecret)
+	if err != nil {
+		return StateManifest{}, errors.Wrap(err, "initialize resource-client secret")
+	}
+	defer zeroBytes(resourceSecret)
+	deviceClient := embeddedidp.DeviceClient(desired.DeviceClientID, []string{"bbs.read", "bbs.post.create"})
+	deviceClient.Client.AllowedAudiences = []string{desired.ResourceAudience}
 	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{
 		Mode: embeddedidp.ProductionMode,
-		Clients: []embeddedidp.ClientSpec{embeddedidp.BrowserClient(
-			desired.ClientID,
-			[]string{desired.PublicBaseURL + "/auth/callback"},
-			[]string{desired.PublicBaseURL + "/"},
-			[]string{"openid", "profile", "email"},
-		)},
+		Clients: []embeddedidp.ClientSpec{
+			embeddedidp.BrowserClient(desired.ClientID, []string{desired.PublicBaseURL + "/auth/callback"}, []string{desired.PublicBaseURL + "/"}, []string{"openid", "profile", "email"}),
+			deviceClient,
+		},
 		SigningKeyID: "xapp-initial-signing-key",
 		Audit:        audit,
 	}); err != nil {
 		return StateManifest{}, errors.Wrap(err, "bootstrap embedded identity provider")
+	}
+	if err := reconcileResourceClient(ctx, store, embeddedidp.ProductionMode, resourceSecret, desired.ResourceAudience); err != nil {
+		return StateManifest{}, errors.Wrap(err, "bootstrap API resource client")
 	}
 	if err := reconcileFirstUser(ctx, store, accounts, cfg); err != nil {
 		return StateManifest{}, err
@@ -201,7 +217,7 @@ func ReadStateManifest(file string) (StateManifest, error) {
 	if err := json.Unmarshal(contents, &manifest); err != nil {
 		return StateManifest{}, errors.Wrap(err, "decode state manifest")
 	}
-	if manifest.Version != stateManifestVersion || manifest.PublicBaseURL == "" || manifest.Issuer == "" || manifest.ClientID == "" || manifest.CreatedAt.IsZero() {
+	if manifest.Version != stateManifestVersion || manifest.PublicBaseURL == "" || manifest.Issuer == "" || manifest.ClientID == "" || manifest.DeviceClientID == "" || manifest.ResourceClientID == "" || manifest.ResourceAudience == "" || manifest.CreatedAt.IsZero() {
 		return StateManifest{}, errors.New("state manifest is incomplete or unsupported")
 	}
 	return manifest, nil
@@ -214,9 +230,10 @@ func ValidateInitializedState(root string) (StateManifest, error) {
 		return StateManifest{}, errors.Wrap(err, "read initialized state")
 	}
 	for label, file := range map[string]string{
-		"identity database": paths.IdentityDatabase,
-		"token secret":      paths.TokenSecret,
-		"binding key":       paths.ObjectBindingKey,
+		"identity database":      paths.IdentityDatabase,
+		"token secret":           paths.TokenSecret,
+		"resource client secret": paths.ResourceClientSecret,
+		"binding key":            paths.ObjectBindingKey,
 	} {
 		info, err := os.Stat(file)
 		if err != nil {
