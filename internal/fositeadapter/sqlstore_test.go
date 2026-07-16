@@ -519,6 +519,10 @@ func newSQLiteTokenFixture(t *testing.T, hook func(string) error) (*sqlitestore.
 }
 
 func newSQLiteTokenFixtureWithSecurityEvents(t *testing.T, hook func(string) error, securityEvents securitytrace.Sink) (*sqlitestore.Store, *httptest.Server, string) {
+	return newSQLiteTokenFixtureWithOptions(t, hook, securityEvents, nil)
+}
+
+func newSQLiteTokenFixtureWithOptions(t *testing.T, hook func(string) error, securityEvents securitytrace.Sink, configure func(*fositeadapter.Options)) (*sqlitestore.Store, *httptest.Server, string) {
 	t.Helper()
 	ctx := context.Background()
 	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
@@ -546,13 +550,17 @@ func newSQLiteTokenFixtureWithSecurityEvents(t *testing.T, hook func(string) err
 	if err := store.CreateSigningKey(ctx, key); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+	providerOptions := fositeadapter.Options{
 		Issuer:               "http://127.0.0.1:5556",
 		Store:                store,
 		SecretKey:            []byte("sqlite-fosite-secret-key-32-bytes"),
 		TokenPersistenceHook: hook,
 		SecurityEvents:       securityEvents,
-	})
+	}
+	if configure != nil {
+		configure(&providerOptions)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, providerOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -791,6 +799,21 @@ func TestSQLiteIntrospectionLifecyclePreservesAudienceAndHidesInactiveTokens(t *
 	// successful rotated token must become inactive at the public API boundary.
 	refreshTokenMustFail(t, server.URL, originalRefresh)
 	assertInactiveIntrospection(t, server.URL, rotatedAccess)
+}
+
+func TestSQLiteIntrospectionExpiresAccessTokenAtProviderClock(t *testing.T) {
+	clock := &securityClock{now: time.Now().UTC()}
+	_, server, verifier := newSQLiteTokenFixtureWithOptions(t, nil, nil, func(options *fositeadapter.Options) {
+		options.Clock = clock.Now
+		options.AccessTokenTTL = time.Minute
+	})
+	code := authorizeForCodeWithAudience(t, server.URL, verifier, "https://inbox.example.test/api")
+	tokens := exchangeCode(t, server.URL, code, verifier)
+	accessToken := tokens["access_token"].(string)
+
+	assertActiveIntrospection(t, server.URL, accessToken)
+	clock.Advance(time.Minute + time.Second)
+	assertInactiveIntrospection(t, server.URL, accessToken)
 }
 
 func TestTokenSecretRotationInvalidatesPriorOpaqueTokens(t *testing.T) {

@@ -22,9 +22,25 @@ import (
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/manuel/tinyidp/pkg/idp"
 	"github.com/manuel/tinyidp/pkg/idpaccounts"
 	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
 )
+
+// strictRecordingLimiter observes rate-limit namespace use through the public
+// provider options, so this external-package test does not rely on unexported
+// adapter implementation details.
+type strictRecordingLimiter struct {
+	keys   []string
+	reject string
+}
+
+var _ idp.RateLimiter = (*strictRecordingLimiter)(nil)
+
+func (l *strictRecordingLimiter) Allow(_ context.Context, key string) bool {
+	l.keys = append(l.keys, key)
+	return key != l.reject
+}
 
 func TestUnsupportedRequestObjectRedirectsWithStableError(t *testing.T) {
 	ctx := context.Background()
@@ -77,6 +93,12 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	if err := st.PutClient(ctx, idpstore.Client{ID: "inbox-api", SecretHash: resourceHash, AllowedAudiences: []string{"https://inbox.example.test/api"}, CanIntrospect: true, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.PutClient(ctx, idpstore.Client{ID: "disabled-api", SecretHash: resourceHash, Disabled: true, AllowedAudiences: []string{"https://inbox.example.test/api"}, CanIntrospect: true, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutClient(ctx, idpstore.Client{ID: "capabilityless-api", SecretHash: resourceHash, AllowedAudiences: []string{"https://inbox.example.test/api"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
+		t.Fatal(err)
+	}
 	otherHash, err := bcrypt.GenerateFromPassword([]byte("other-secret"), bcrypt.DefaultCost)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +117,9 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey, CookieSameSite: http.SameSiteStrictMode})
+	auditSink := idp.NewMemorySink()
+	limiter := &strictRecordingLimiter{}
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey, CookieSameSite: http.SameSiteStrictMode, Audit: auditSink, RateLimiter: limiter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,6 +245,30 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		responseBody, _ := io.ReadAll(wrongSecretResponse.Body)
 		t.Fatalf("wrong-secret introspection status=%d headers=%q body=%q", wrongSecretResponse.StatusCode, wrongSecretResponse.Header.Get("WWW-Authenticate"), responseBody)
 	}
+	for _, unauthorizedClient := range []struct {
+		name     string
+		clientID string
+		secret   string
+	}{
+		{name: "public client", clientID: "spa", secret: "not-a-client-secret"},
+		{name: "disabled resource client", clientID: "disabled-api", secret: resourceSecret},
+		{name: "client without introspection capability", clientID: "capabilityless-api", secret: resourceSecret},
+	} {
+		t.Run(unauthorizedClient.name, func(t *testing.T) {
+			request, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.SetBasicAuth(unauthorizedClient.clientID, unauthorizedClient.secret)
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusUnauthorized || response.Header.Get("WWW-Authenticate") == "" {
+				responseBody, _ := io.ReadAll(response.Body)
+				t.Fatalf("unauthorized introspection status=%d headers=%q body=%q", response.StatusCode, response.Header.Get("WWW-Authenticate"), responseBody)
+			}
+		})
+	}
 
 	wrongAudienceRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
 	wrongAudienceRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -341,6 +389,49 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	}
 	if refreshedIntrospectionResponse.StatusCode != http.StatusOK || refreshedMetadata["active"] != true || !claimHasAudience(refreshedMetadata["aud"], "https://inbox.example.test/api") {
 		t.Fatalf("refreshed introspection status=%d body=%#v", refreshedIntrospectionResponse.StatusCode, refreshedMetadata)
+	}
+
+	limiter.reject = "introspection:client:inbox-api"
+	limitedRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
+	limitedRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	limitedRequest.SetBasicAuth("inbox-api", resourceSecret)
+	limitedResponse, err := http.DefaultClient.Do(limitedRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer limitedResponse.Body.Close()
+	if limitedResponse.StatusCode != http.StatusTooManyRequests {
+		responseBody, _ := io.ReadAll(limitedResponse.Body)
+		t.Fatalf("rate-limited introspection status=%d body=%q", limitedResponse.StatusCode, responseBody)
+	}
+	seenAddressKey, seenClientKey := false, false
+	for _, key := range limiter.keys {
+		seenAddressKey = seenAddressKey || strings.HasPrefix(key, "introspection:address:")
+		seenClientKey = seenClientKey || key == "introspection:client:inbox-api"
+	}
+	if !seenAddressKey || !seenClientKey {
+		t.Fatalf("introspection did not use both rate-limit dimensions: %#v", limiter.keys)
+	}
+
+	auditBytes, err := json.Marshal(auditSink.Events())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{body["access_token"].(string), body["refresh_token"].(string), refreshed["access_token"].(string), refreshed["refresh_token"].(string), resourceSecret, "wrong-resource-secret", "other-secret"} {
+		if strings.Contains(string(auditBytes), secret) {
+			t.Fatalf("audit log contains credential material %q: %s", secret, auditBytes)
+		}
+	}
+	seen := map[string]bool{}
+	for _, event := range auditSink.Events() {
+		if strings.HasPrefix(event.Name, "introspection.") {
+			seen[event.Name] = true
+		}
+	}
+	for _, name := range []string{"introspection.accepted", "introspection.inactive", "introspection.rejected"} {
+		if !seen[name] {
+			t.Fatalf("missing bounded audit event %q in %#v", name, auditSink.Events())
+		}
 	}
 }
 
