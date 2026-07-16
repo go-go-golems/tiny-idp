@@ -410,6 +410,18 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	if refreshedIntrospectionResponse.StatusCode != http.StatusOK || refreshedMetadata["active"] != true || !claimHasAudience(refreshedMetadata["aud"], "https://inbox.example.test/api") {
 		t.Fatalf("refreshed introspection status=%d body=%#v", refreshedIntrospectionResponse.StatusCode, refreshedMetadata)
 	}
+	rotatedAccessRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(url.Values{"token": {body["access_token"].(string)}}.Encode()))
+	rotatedAccessRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rotatedAccessRequest.SetBasicAuth("inbox-api", resourceSecret)
+	rotatedAccessResponse, err := http.DefaultClient.Do(rotatedAccessRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotatedAccessBody, _ := io.ReadAll(rotatedAccessResponse.Body)
+	_ = rotatedAccessResponse.Body.Close()
+	if rotatedAccessResponse.StatusCode != http.StatusOK || string(rotatedAccessBody) != "{\"active\":false}\n" {
+		t.Fatalf("rotated access token remained active: status=%d body=%q", rotatedAccessResponse.StatusCode, rotatedAccessBody)
+	}
 
 	limiter.reject = "introspection:client:inbox-api"
 	limitedRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
@@ -433,7 +445,10 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		t.Fatalf("introspection did not use both rate-limit dimensions: %#v", limiter.keys)
 	}
 	limiter.reject = ""
-	clock.Advance(time.Minute + time.Second)
+	// Fosite stamps expiry using its issuance clock while the provider owns the
+	// validation clock. Advance well beyond both the configured one-minute TTL
+	// and the few seconds spent completing the browser flow.
+	clock.Advance(10 * time.Minute)
 	expiredRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(url.Values{"token": {refreshed["access_token"].(string)}}.Encode()))
 	expiredRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	expiredRequest.SetBasicAuth("inbox-api", resourceSecret)
