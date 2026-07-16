@@ -57,6 +57,7 @@ type DevelopmentApplication struct {
 	publicBaseURL string
 	runtime       *engine.Runtime
 	idp           *embeddedidp.Provider
+	identityStore *sqlitestore.Store
 	objects       *durableobjects.Server
 	auth          *hostauth.Services
 	apiAuth       *resourceauth.Authenticator
@@ -149,7 +150,7 @@ func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationCo
 		return nil, errors.Wrap(err, "create embedded development IdP")
 	}
 	app := &DevelopmentApplication{
-		idp: idpProvider, loginUI: interactionUI, publicBaseURL: cfg.PublicBaseURL,
+		idp: idpProvider, identityStore: store, loginUI: interactionUI, publicBaseURL: cfg.PublicBaseURL,
 		apiAudit: idp.NoopSink{},
 		extras:   []func(context.Context) error{func(context.Context) error { return store.Close() }},
 	}
