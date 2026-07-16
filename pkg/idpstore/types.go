@@ -28,13 +28,19 @@ type Client struct {
 	PostLogoutRedirectURIs []string
 	AllowedScopes          []string
 	AllowedGrantTypes      []string
-	RequirePKCE            bool
-	AccessTokenTTL         time.Duration
-	IDTokenTTL             time.Duration
-	RefreshTokenTTL        time.Duration
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
-	Disabled               bool
+	// AllowedAudiences is the set of OAuth resource indicators this client may
+	// request. Empty means this client cannot obtain resource-server tokens.
+	AllowedAudiences []string
+	// CanIntrospect permits this confidential client to authenticate as a
+	// resource server at the RFC 7662 introspection endpoint.
+	CanIntrospect   bool
+	RequirePKCE     bool
+	AccessTokenTTL  time.Duration
+	IDTokenTTL      time.Duration
+	RefreshTokenTTL time.Duration
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Disabled        bool
 }
 
 // User is an OIDC subject known to the provider. It intentionally carries

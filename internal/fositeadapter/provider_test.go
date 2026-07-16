@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
@@ -64,7 +66,22 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	ctx := context.Background()
 	secretKey := []byte("test-secret-key-32-bytes-minimum!!")
 	st := memory.New()
-	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}); err != nil {
+	if err := st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}, AllowedAudiences: []string{"https://inbox.example.test/api"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}); err != nil {
+		t.Fatal(err)
+	}
+	resourceSecret := "resource-secret"
+	resourceHash, err := bcrypt.GenerateFromPassword([]byte(resourceSecret), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutClient(ctx, idpstore.Client{ID: "inbox-api", SecretHash: resourceHash, AllowedAudiences: []string{"https://inbox.example.test/api"}, CanIntrospect: true, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
+		t.Fatal(err)
+	}
+	otherHash, err := bcrypt.GenerateFromPassword([]byte("other-secret"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutClient(ctx, idpstore.Client{ID: "other-api", SecretHash: otherHash, AllowedAudiences: []string{"https://other.example.test/api"}, CanIntrospect: true, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Email: "alice@example.test", EmailVerified: true, Name: "Alice"}); err != nil {
@@ -92,6 +109,7 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		"client_id":             {"spa"},
 		"redirect_uri":          {"http://localhost/callback"},
 		"scope":                 {"openid profile email offline_access"},
+		"audience":              {"https://inbox.example.test/api"},
 		"state":                 {"state-1234567890"},
 		"nonce":                 {"nonce-1234567890"},
 		"code_challenge":        {challenge},
@@ -168,6 +186,43 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	}
 	if uiResp.Header.Get("Cache-Control") != "no-store" || uiResp.Header.Get("Pragma") != "no-cache" {
 		t.Fatalf("userinfo cache headers = %q, %q", uiResp.Header.Get("Cache-Control"), uiResp.Header.Get("Pragma"))
+	}
+
+	introspectionForm := url.Values{"token": {body["access_token"].(string)}, "token_type_hint": {"access_token"}}
+	introspectionRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
+	introspectionRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	introspectionRequest.SetBasicAuth("inbox-api", resourceSecret)
+	introspectionResponse, err := http.DefaultClient.Do(introspectionRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer introspectionResponse.Body.Close()
+	if introspectionResponse.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(introspectionResponse.Body)
+		t.Fatalf("introspection status=%d body=%s", introspectionResponse.StatusCode, b)
+	}
+	var introspection map[string]any
+	if err := json.NewDecoder(introspectionResponse.Body).Decode(&introspection); err != nil {
+		t.Fatal(err)
+	}
+	if introspection["active"] != true || introspection["sub"] != "user-alice" || introspection["iss"] != "http://127.0.0.1:5556" || introspection["client_id"] != "spa" || !claimHasAudience(introspection["aud"], "https://inbox.example.test/api") {
+		t.Fatalf("unexpected introspection response: %#v", introspection)
+	}
+
+	wrongAudienceRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
+	wrongAudienceRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wrongAudienceRequest.SetBasicAuth("other-api", "other-secret")
+	wrongAudienceResponse, err := http.DefaultClient.Do(wrongAudienceRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wrongAudienceResponse.Body.Close()
+	var wrongAudience map[string]any
+	if err := json.NewDecoder(wrongAudienceResponse.Body).Decode(&wrongAudience); err != nil {
+		t.Fatal(err)
+	}
+	if wrongAudienceResponse.StatusCode != http.StatusOK || wrongAudience["active"] != false || len(wrongAudience) != 1 {
+		t.Fatalf("wrong-audience introspection = status=%d body=%#v", wrongAudienceResponse.StatusCode, wrongAudience)
 	}
 	postUserInfo, _ := http.NewRequest(http.MethodPost, ts.URL+"/userinfo", nil)
 	postUserInfo.Header.Set("Authorization", "Bearer "+body["access_token"].(string))

@@ -367,6 +367,7 @@ func buildFositeStore(ctx context.Context, st idpstore.Store, cfg *fosite.Config
 			ResponseTypes: []string{"code"},
 			GrantTypes:    append([]string(nil), c.AllowedGrantTypes...),
 			Scopes:        append([]string(nil), c.AllowedScopes...),
+			Audience:      append([]string(nil), c.AllowedAudiences...),
 		}
 		if !c.Public {
 			if secret, ok := plainSecrets[c.ID]; ok {
@@ -421,6 +422,7 @@ func (p *Provider) registerAt(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(prefix+"/device", p.deviceVerification)
 	mux.HandleFunc(prefix+"/token", p.token)
 	mux.HandleFunc(prefix+"/userinfo", p.userinfo)
+	mux.HandleFunc(prefix+"/introspect", p.introspect)
 	mux.HandleFunc(prefix+"/end-session", p.endSession)
 	mux.HandleFunc(prefix+"/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc(prefix+"/readyz", p.readyz)
@@ -1111,6 +1113,123 @@ func (p *Provider) userinfoUnauthorized(w http.ResponseWriter, description strin
 func (p *Provider) userinfoInvalidRequest(w http.ResponseWriter, description string) {
 	w.Header().Set("WWW-Authenticate", `Bearer realm="tiny-idp", error="invalid_request"`)
 	tokenError(w, http.StatusBadRequest, "invalid_request", description)
+}
+
+const introspectionMaxBody = 16 << 10
+
+type introspectionResponse struct {
+	Active    bool     `json:"active"`
+	Issuer    string   `json:"iss,omitempty"`
+	Subject   string   `json:"sub,omitempty"`
+	ClientID  string   `json:"client_id,omitempty"`
+	Scope     string   `json:"scope,omitempty"`
+	Audience  []string `json:"aud,omitempty"`
+	Expires   int64    `json:"exp,omitempty"`
+	IssuedAt  int64    `json:"iat,omitempty"`
+	TokenType string   `json:"token_type,omitempty"`
+}
+
+// introspect implements the provider-facing half of RFC 7662. It is separate
+// from UserInfo: callers are registered confidential resource servers and must
+// be authorized for an audience granted to the token.
+func (p *Provider) introspect(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		p.introspectionError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/x-www-form-urlencoded" {
+		p.introspectionError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, introspectionMaxBody)
+	if err := r.ParseForm(); err != nil || duplicateFormValue(r.PostForm, "token") || strings.TrimSpace(r.PostForm.Get("token")) == "" {
+		p.introspectionError(w, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	clientID, _, basicOK := r.BasicAuth()
+	if !basicOK || strings.TrimSpace(clientID) == "" {
+		p.introspectionUnauthorized(w)
+		return
+	}
+	resourceClient, err := p.store.GetClient(r.Context(), clientID)
+	if err != nil || resourceClient.Disabled || resourceClient.Public || !resourceClient.CanIntrospect {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.rejected", ClientID: clientID, Result: "rejected", Reason: "resource_client_not_authorized"})
+		p.introspectionUnauthorized(w)
+		return
+	}
+	if !p.rateLimiter.Allow(r.Context(), "introspection:client:"+resourceClient.ID) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.rejected", ClientID: resourceClient.ID, Result: "rejected", Reason: "rate_limited"})
+		p.introspectionError(w, http.StatusTooManyRequests, "temporarily_unavailable")
+		return
+	}
+
+	response, err := p.oauth2.NewIntrospectionRequest(r.Context(), r, openid.NewDefaultSession())
+	if err != nil {
+		// Fosite distinguishes invalid resource-client credentials from inactive
+		// subject tokens. Preserve that distinction only at the protocol level;
+		// never return a token-specific reason.
+		if errors.Is(err, fosite.ErrRequestUnauthorized) {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.rejected", ClientID: resourceClient.ID, Result: "rejected", Reason: "client_authentication_failed"})
+			p.introspectionUnauthorized(w)
+			return
+		}
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.inactive", ClientID: resourceClient.ID, Result: "rejected", Reason: "inactive_token"})
+		p.writeInactiveIntrospection(w)
+		return
+	}
+	if !response.IsActive() || response.GetTokenUse() != fosite.AccessToken || !strings.EqualFold(response.GetAccessTokenType(), fosite.BearerAccessToken) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.inactive", ClientID: resourceClient.ID, Result: "rejected", Reason: "unsupported_or_inactive_token"})
+		p.writeInactiveIntrospection(w)
+		return
+	}
+	requester := response.GetAccessRequester()
+	if requester == nil || !hasSharedAudience([]string(requester.GetGrantedAudience()), resourceClient.AllowedAudiences) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.inactive", ClientID: resourceClient.ID, Result: "rejected", Reason: "audience_not_authorized"})
+		p.writeInactiveIntrospection(w)
+		return
+	}
+	session := requester.GetSession()
+	if session == nil {
+		p.writeInactiveIntrospection(w)
+		return
+	}
+	expiresAt := session.GetExpiresAt(fosite.AccessToken)
+	if expiresAt.IsZero() || !p.now().Before(expiresAt) {
+		p.writeInactiveIntrospection(w)
+		return
+	}
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.accepted", ClientID: resourceClient.ID, Subject: session.GetSubject(), Result: "accepted", Fields: map[string]string{"scope_count": fmt.Sprintf("%d", len(requester.GetGrantedScopes())), "audience_count": fmt.Sprintf("%d", len(requester.GetGrantedAudience()))}})
+	writeJSON(w, http.StatusOK, introspectionResponse{Active: true, Issuer: p.issuer.String(), Subject: session.GetSubject(), ClientID: requester.GetClient().GetID(), Scope: strings.Join(requester.GetGrantedScopes(), " "), Audience: append([]string(nil), requester.GetGrantedAudience()...), Expires: expiresAt.Unix(), IssuedAt: requester.GetRequestedAt().Unix(), TokenType: "Bearer"})
+}
+
+func (p *Provider) writeInactiveIntrospection(w http.ResponseWriter) {
+	writeJSON(w, http.StatusOK, introspectionResponse{Active: false})
+}
+
+func (p *Provider) introspectionUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="tiny-idp"`)
+	p.introspectionError(w, http.StatusUnauthorized, "invalid_client")
+}
+
+func (p *Provider) introspectionError(w http.ResponseWriter, status int, code string) {
+	writeJSON(w, status, map[string]string{"error": code})
+}
+
+func hasSharedAudience(granted, allowed []string) bool {
+	set := make(map[string]struct{}, len(allowed))
+	for _, audience := range allowed {
+		set[audience] = struct{}{}
+	}
+	for _, audience := range granted {
+		if _, ok := set[audience]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Provider) grantRequestedScopes(ar fosite.AuthorizeRequester) {

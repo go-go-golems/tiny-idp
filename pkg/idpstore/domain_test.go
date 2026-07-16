@@ -73,6 +73,28 @@ func TestClientGrantCapabilitiesRequireExplicitKnownUniqueValues(t *testing.T) {
 	}
 }
 
+func TestClientAudienceAndIntrospectionCapabilitiesFailClosed(t *testing.T) {
+	client := Client{ID: "resource", SecretHash: []byte("hash"), AllowedGrantTypes: []string{GrantAuthorizationCode}, AllowedAudiences: []string{"https://api.example.test"}, CanIntrospect: true}
+	if err := client.Validate(ProductionMode); err != nil {
+		t.Fatalf("valid resource client rejected: %v", err)
+	}
+	if !client.AllowsAudience([]string{"https://api.example.test"}) || client.AllowsAudience([]string{"https://other.example.test"}) {
+		t.Fatal("audience capability did not fail closed")
+	}
+	public := client
+	public.Public = true
+	public.RequirePKCE = true
+	public.SecretHash = nil
+	if err := public.Validate(ProductionMode); err == nil {
+		t.Fatal("public introspection client was accepted")
+	}
+	noAudience := client
+	noAudience.AllowedAudiences = nil
+	if err := noAudience.Validate(ProductionMode); err == nil {
+		t.Fatal("introspection client without audience was accepted")
+	}
+}
+
 func TestParseScopesAndClaims(t *testing.T) {
 	scopes := ParseScopes("openid email profile email")
 	if len(scopes) != 3 {

@@ -1,6 +1,7 @@
 package idpstore
 
 import (
+	"fmt"
 	"net"
 	"net/url"
 	"strings"
@@ -24,6 +25,17 @@ func (c Client) Validate(mode Mode) error {
 	if len(c.AllowedGrantTypes) == 0 {
 		return ErrClientMissingGrantTypes
 	}
+	if c.CanIntrospect && c.Public {
+		return fmt.Errorf("public client %q cannot introspect tokens", c.ID)
+	}
+	if c.CanIntrospect && len(c.AllowedAudiences) == 0 {
+		return fmt.Errorf("introspection client %q requires at least one allowed audience", c.ID)
+	}
+	for _, audience := range c.AllowedAudiences {
+		if err := validateAudience(audience); err != nil {
+			return err
+		}
+	}
 	seenGrantTypes := make(map[string]struct{}, len(c.AllowedGrantTypes))
 	for _, grantType := range c.AllowedGrantTypes {
 		if !supportedGrantType(grantType) {
@@ -43,6 +55,14 @@ func (c Client) Validate(mode Mode) error {
 		if err := ValidateRedirectURI(ru, mode); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateAudience(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !u.IsAbs() || u.Host == "" || u.Fragment != "" || u.RawQuery != "" {
+		return fmt.Errorf("invalid client audience %q", raw)
 	}
 	return nil
 }
@@ -87,6 +107,21 @@ func (c Client) AllowsScope(requested []string) bool {
 	}
 	for _, s := range requested {
 		if _, ok := allowed[s]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// AllowsAudience reports whether every requested OAuth resource indicator was
+// registered for this client. An empty registration intentionally grants none.
+func (c Client) AllowsAudience(requested []string) bool {
+	allowed := make(map[string]struct{}, len(c.AllowedAudiences))
+	for _, audience := range c.AllowedAudiences {
+		allowed[audience] = struct{}{}
+	}
+	for _, audience := range requested {
+		if _, ok := allowed[audience]; !ok {
 			return false
 		}
 	}

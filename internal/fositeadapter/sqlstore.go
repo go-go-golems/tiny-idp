@@ -260,6 +260,7 @@ func (s *sqlFositeStore) toFositeClient(ctx context.Context, c idpstore.Client) 
 		ResponseTypes: []string{"code"},
 		GrantTypes:    append([]string(nil), c.AllowedGrantTypes...),
 		Scopes:        append([]string(nil), c.AllowedScopes...),
+		Audience:      append([]string(nil), c.AllowedAudiences...),
 	}
 	if !c.Public {
 		if secret, ok := s.secrets[c.ID]; ok {

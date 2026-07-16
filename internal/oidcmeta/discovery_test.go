@@ -14,4 +14,7 @@ func TestProductionDiscoveryIncludesEndSessionEndpoint(t *testing.T) {
 	if discovery.EndSessionEndpoint != "https://issuer.example.test/end-session" {
 		t.Fatalf("end_session_endpoint = %q", discovery.EndSessionEndpoint)
 	}
+	if discovery.IntrospectionEndpoint != "https://issuer.example.test/introspect" || len(discovery.IntrospectionEndpointAuthMethodsSupported) != 1 || discovery.IntrospectionEndpointAuthMethodsSupported[0] != "client_secret_basic" {
+		t.Fatalf("introspection discovery = %#v", discovery)
+	}
 }
