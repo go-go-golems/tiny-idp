@@ -257,7 +257,7 @@ browser client:  tinyidp-xapp
 device client:   tinyidp-xapp-cli
   public:         yes; no secret
   grant:          urn:ietf:params:oauth:grant-type:device_code
-  scopes:         bbs.read bbs.post.create
+  scopes:         openid bbs.read bbs.post.create
   audience:       https://app.example/api
 
 resource client: tinyidp-xapp-api
@@ -473,8 +473,14 @@ use the OAuth authorization-server discovery path form by accident.
 POST /idp/device_authorization
 Content-Type: application/x-www-form-urlencoded
 
-client_id=tinyidp-xapp-cli&scope=bbs.read%20bbs.post.create&resource=https%3A%2F%2Fapp.example%2Fapi
+client_id=tinyidp-xapp-cli&scope=openid%20bbs.read%20bbs.post.create&audience=https%3A%2F%2Fapp.example%2Fapi
 ```
+
+The current tiny-idp device endpoint uses Fosite's `audience` request field
+for this resource indicator. RFC 8707 calls this concept `resource`; a future
+provider interoperability ticket should decide whether to accept the standard
+`resource` parameter in addition to, or instead of, the existing field. This
+example follows the implemented, tested provider contract.
 
 Successful response fields used: `device_code`, `user_code`,
 `verification_uri`, optional `verification_uri_complete`, `expires_in`, and

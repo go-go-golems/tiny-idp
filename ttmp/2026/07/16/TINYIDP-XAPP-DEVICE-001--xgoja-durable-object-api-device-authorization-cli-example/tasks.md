@@ -5,33 +5,33 @@
 - [x] Map current xapp route composition, actor-to-durable-object binding, initialized state, and tiny-idp device/introspection endpoints.
 - [x] Publish the intern-ready architecture, threat model, API contract, and decision records.
 - [x] Record the executable acceptance criteria, risks, and test matrix in the ticket.
-- [ ] Run and record the focused current xapp test baseline before behavior changes.
+- [x] Run and record the focused current xapp test baseline before behavior changes.
 
 ## Phase 1 — Resource authentication core
 
-- [ ] Define Go-only immutable resource-auth configuration, principal, failure categories, and context key.
-- [ ] Implement strict single-Bearer parsing and deterministic `401`/`403`/`503` response helpers without credential disclosure.
-- [ ] Implement discovery validation, timeout-bounded authenticated RFC 7662 client, and constrained response decoder.
-- [ ] Validate active, exact issuer, Bearer type, exact audience membership, subject, expiry, and route scopes.
-- [ ] Add HMAC-keyed positive decision cache bounded by token expiry and maximum TTL; add bounded negative cache policy only for definitive inactive results.
-- [ ] Add table-driven tests for parser, discovery, active/inactive, issuer/audience/type/expiry/scope, provider authentication, unavailable provider, redaction, and cache bounds.
+- [x] Define Go-only immutable resource-auth configuration, principal, failure categories, and context key.
+- [x] Implement strict single-Bearer parsing and deterministic `401`/`403`/`503` response helpers without credential disclosure.
+- [x] Implement discovery validation, timeout-bounded authenticated RFC 7662 client, and constrained response decoder.
+- [x] Validate active, exact issuer, Bearer type, exact audience membership, subject, expiry, and route scopes.
+- [x] Add HMAC-keyed positive decision cache bounded by token expiry and maximum TTL; add bounded negative cache policy only for definitive inactive results.
+- [x] Add table-driven tests for parser, discovery, active/inactive, issuer/audience/type/expiry/scope, provider authentication, unavailable provider, redaction, and cache bounds.
 
 ## Phase 2 — xapp state and IDP registrations
 
-- [ ] Define device client ID, resource client ID, and exact API audience derivation in one package-local configuration location.
-- [ ] Extend development bootstrap with distinct browser, public device, and confidential introspection resource clients.
-- [ ] Extend initialized state manifest/paths with API identity settings and a generated owner-only resource-client secret not serialized into the manifest.
-- [ ] Bump and validate state schema deliberately; document and implement the selected initialized-state migration/reinitialization behavior.
-- [ ] Construct resource authentication in development through the in-process provider transport and in initialized mode through the production transport policy.
-- [ ] Test bootstrap client roles/audiences and state file permissions without leaking generated secrets.
+- [x] Define device client ID, resource client ID, and exact API audience derivation in one package-local configuration location.
+- [x] Extend development bootstrap with distinct browser, public device, and confidential introspection resource clients.
+- [x] Extend initialized state manifest/paths with API identity settings and a generated owner-only resource-client secret not serialized into the manifest.
+- [x] Bump and validate state schema deliberately; document and implement the selected initialized-state migration/reinitialization behavior.
+- [x] Construct resource authentication in development through the in-process provider transport and in initialized mode through the production transport policy.
+- [x] Test bootstrap client roles/audiences and state file permissions without leaking generated secrets.
 
 ## Phase 3 — Bearer API and durable-object bridge
 
-- [ ] Add host-owned read endpoint for the BBS requiring `bbs.read` bearer scope.
-- [ ] Add host-owned post endpoint requiring `bbs.post.create` bearer scope and bounded JSON input validation.
-- [ ] Derive BBS actor ID and author only from verified principal data; forbid caller-selected identity fields.
-- [ ] Preserve browser routes and their CSRF requirement; ensure no cookie-session fallback on bearer endpoints.
-- [ ] Emit redacted API authentication and BBS audit events.
+- [x] Add host-owned read endpoint for the BBS requiring `bbs.read` bearer scope.
+- [x] Add host-owned post endpoint requiring `bbs.post.create` bearer scope and bounded JSON input validation.
+- [x] Derive BBS actor ID and author only from verified principal data; forbid caller-selected identity fields.
+- [x] Preserve browser routes and their CSRF requirement; ensure no cookie-session fallback on bearer endpoints.
+- [x] Emit redacted API authentication and BBS audit events.
 - [ ] Add integration tests proving denied bearer requests do not dispatch to the durable object and accepted posts carry the token subject.
 
 ## Phase 4 — Device CLI and owner-only token cache
