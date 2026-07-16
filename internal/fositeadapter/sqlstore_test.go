@@ -2,6 +2,7 @@ package fositeadapter_test
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/manuel/tinyidp/internal/fositeadapter"
 	"github.com/manuel/tinyidp/internal/keys"
@@ -523,7 +526,14 @@ func newSQLiteTokenFixtureWithSecurityEvents(t *testing.T, hook func(string) err
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}); err != nil {
+	if err := store.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile", "email", "offline_access"}, AllowedAudiences: []string{"https://inbox.example.test/api"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode, idpstore.GrantRefreshToken}}); err != nil {
+		t.Fatal(err)
+	}
+	resourceHash, err := bcrypt.GenerateFromPassword([]byte("inbox-api-secret"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutClient(ctx, idpstore.Client{ID: "inbox-api", SecretHash: resourceHash, AllowedAudiences: []string{"https://inbox.example.test/api"}, CanIntrospect: true, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
@@ -755,6 +765,34 @@ func TestFositeSQLiteStoreSurvivesProviderRestart(t *testing.T) {
 	}
 }
 
+func TestSQLiteIntrospectionLifecyclePreservesAudienceAndHidesInactiveTokens(t *testing.T) {
+	_, server, verifier := newSQLiteTokenFixture(t, nil)
+	code := authorizeForCodeWithAudience(t, server.URL, verifier, "https://inbox.example.test/api")
+	tokens := exchangeCode(t, server.URL, code, verifier)
+	originalAccess := tokens["access_token"].(string)
+	originalRefresh := tokens["refresh_token"].(string)
+
+	assertActiveIntrospection(t, server.URL, originalAccess)
+	unknownStatus, unknownBody := postIntrospection(t, server.URL, "unknown-opaque-token")
+	malformedStatus, malformedBody := postIntrospection(t, server.URL, "not-a-tinyidp-token")
+	if unknownStatus != http.StatusOK || malformedStatus != http.StatusOK || subtle.ConstantTimeCompare(unknownBody, malformedBody) != 1 || string(unknownBody) != "{\"active\":false}\n" {
+		t.Fatalf("inactive responses unknown=(%d,%q) malformed=(%d,%q)", unknownStatus, unknownBody, malformedStatus, malformedBody)
+	}
+
+	rotated := refreshToken(t, server.URL, originalRefresh)
+	rotatedAccess, _ := rotated["access_token"].(string)
+	if rotatedAccess == "" || rotatedAccess == originalAccess {
+		t.Fatalf("refresh rotation did not issue a new access token: %#v", rotated)
+	}
+	assertInactiveIntrospection(t, server.URL, originalAccess)
+	assertActiveIntrospection(t, server.URL, rotatedAccess)
+
+	// Reuse detection revokes the complete Fosite token family. The previously
+	// successful rotated token must become inactive at the public API boundary.
+	refreshTokenMustFail(t, server.URL, originalRefresh)
+	assertInactiveIntrospection(t, server.URL, rotatedAccess)
+}
+
 func TestTokenSecretRotationInvalidatesPriorOpaqueTokens(t *testing.T) {
 	ctx := context.Background()
 	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
@@ -816,6 +854,10 @@ func TestTokenSecretRotationInvalidatesPriorOpaqueTokens(t *testing.T) {
 }
 
 func authorizeForCode(t *testing.T, baseURL, verifier string) string {
+	return authorizeForCodeWithAudience(t, baseURL, verifier, "")
+}
+
+func authorizeForCodeWithAudience(t *testing.T, baseURL, verifier, audience string) string {
 	t.Helper()
 	form := url.Values{
 		"response_type":         {"code"},
@@ -827,6 +869,9 @@ func authorizeForCode(t *testing.T, baseURL, verifier string) string {
 		"code_challenge":        {s256(verifier)},
 		"code_challenge_method": {"S256"},
 		"login":                 {"alice"},
+	}
+	if audience != "" {
+		form.Set("audience", audience)
 	}
 	csrfToken, csrfCookie := fetchCSRF(t, baseURL, form)
 	form.Set("csrf_token", csrfToken)
@@ -934,4 +979,44 @@ func refreshToken(t *testing.T, baseURL, token string) map[string]any {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func postIntrospection(t *testing.T, baseURL, token string) (int, []byte) {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, baseURL+"/introspect", strings.NewReader(url.Values{"token": {token}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.SetBasicAuth("inbox-api", "inbox-api-secret")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, body
+}
+
+func assertActiveIntrospection(t *testing.T, baseURL, token string) {
+	t.Helper()
+	status, body := postIntrospection(t, baseURL, token)
+	var metadata map[string]any
+	if err := json.Unmarshal(body, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusOK || metadata["active"] != true || !claimHasAudience(metadata["aud"], "https://inbox.example.test/api") {
+		t.Fatalf("active introspection status=%d body=%q", status, body)
+	}
+}
+
+func assertInactiveIntrospection(t *testing.T, baseURL, token string) {
+	t.Helper()
+	status, body := postIntrospection(t, baseURL, token)
+	if status != http.StatusOK || string(body) != "{\"active\":false}\n" {
+		t.Fatalf("inactive introspection status=%d body=%q", status, body)
+	}
 }

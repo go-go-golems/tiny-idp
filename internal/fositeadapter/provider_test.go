@@ -209,6 +209,19 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		t.Fatalf("unexpected introspection response: %#v", introspection)
 	}
 
+	wrongSecretRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
+	wrongSecretRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wrongSecretRequest.SetBasicAuth("inbox-api", "wrong-resource-secret")
+	wrongSecretResponse, err := http.DefaultClient.Do(wrongSecretRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wrongSecretResponse.Body.Close()
+	if wrongSecretResponse.StatusCode != http.StatusUnauthorized || wrongSecretResponse.Header.Get("WWW-Authenticate") == "" {
+		responseBody, _ := io.ReadAll(wrongSecretResponse.Body)
+		t.Fatalf("wrong-secret introspection status=%d headers=%q body=%q", wrongSecretResponse.StatusCode, wrongSecretResponse.Header.Get("WWW-Authenticate"), responseBody)
+	}
+
 	wrongAudienceRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
 	wrongAudienceRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	wrongAudienceRequest.SetBasicAuth("other-api", "other-secret")

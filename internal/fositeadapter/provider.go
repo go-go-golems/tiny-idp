@@ -1164,14 +1164,38 @@ func (p *Provider) introspect(w http.ResponseWriter, r *http.Request) {
 		p.introspectionUnauthorized(w)
 		return
 	}
-	clientID, _, basicOK := r.BasicAuth()
+	clientID, clientSecret, basicOK := r.BasicAuth()
 	if !basicOK || strings.TrimSpace(clientID) == "" {
+		p.introspectionUnauthorized(w)
+		return
+	}
+	// Fosite applies application/x-www-form-urlencoded decoding to Basic
+	// credentials. Normalize the copy used for our pre-authentication check the
+	// same way, so a caller cannot pass this check and then be interpreted as a
+	// different client by Fosite.
+	clientID, err = url.QueryUnescape(clientID)
+	if err != nil || strings.TrimSpace(clientID) == "" {
+		p.introspectionUnauthorized(w)
+		return
+	}
+	clientSecret, err = url.QueryUnescape(clientSecret)
+	if err != nil {
 		p.introspectionUnauthorized(w)
 		return
 	}
 	resourceClient, err := p.store.GetClient(r.Context(), clientID)
 	if err != nil || resourceClient.Disabled || resourceClient.Public || !resourceClient.CanIntrospect {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.rejected", ClientID: clientID, Result: "rejected", Reason: "resource_client_not_authorized"})
+		p.introspectionUnauthorized(w)
+		return
+	}
+	// Authenticate before asking Fosite to parse the subject token. Fosite wraps
+	// several opaque-token validation failures in ErrRequestUnauthorized, which
+	// would otherwise turn an RFC 7662 inactive response into a misleading
+	// invalid_client response. Once this credential check succeeds, every Fosite
+	// error below is deliberately represented as an opaque inactive token.
+	if len(resourceClient.SecretHash) == 0 || bcrypt.CompareHashAndPassword(resourceClient.SecretHash, []byte(clientSecret)) != nil {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.rejected", ClientID: resourceClient.ID, Result: "rejected", Reason: "client_authentication_failed"})
 		p.introspectionUnauthorized(w)
 		return
 	}
@@ -1188,14 +1212,6 @@ func (p *Provider) introspect(w http.ResponseWriter, r *http.Request) {
 
 	response, err := p.oauth2.NewIntrospectionRequest(r.Context(), r, openid.NewDefaultSession())
 	if err != nil {
-		// Fosite distinguishes invalid resource-client credentials from inactive
-		// subject tokens. Preserve that distinction only at the protocol level;
-		// never return a token-specific reason.
-		if errors.Is(err, fosite.ErrRequestUnauthorized) {
-			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.rejected", ClientID: resourceClient.ID, Result: "rejected", Reason: "client_authentication_failed"})
-			p.introspectionUnauthorized(w)
-			return
-		}
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.inactive", ClientID: resourceClient.ID, Result: "rejected", Reason: "inactive_token"})
 		p.writeInactiveIntrospection(w)
 		return
