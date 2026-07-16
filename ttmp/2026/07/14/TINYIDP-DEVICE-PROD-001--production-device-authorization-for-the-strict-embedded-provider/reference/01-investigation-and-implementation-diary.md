@@ -1152,7 +1152,7 @@ repository and update its task status and handoff material truthfully.
 **Inferred user intent:** Make the remaining device-production roadmap useful
 for release planning instead of duplicating completed work or hiding gaps.
 
-**Commit (code):** Documentation-only reconciliation; pending documentation commit.
+**Commit (code):** `3255335` — "docs(device): reconcile strict device production work"
 
 ### What I did
 
