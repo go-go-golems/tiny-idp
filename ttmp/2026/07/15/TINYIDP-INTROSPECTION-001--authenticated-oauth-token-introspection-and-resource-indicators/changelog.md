@@ -34,3 +34,13 @@ Added SQLite-backed opaque-token lifecycle proof and corrected post-authenticati
 - internal/fositeadapter/provider_test.go — Invalid resource-client credential coverage
 - internal/fositeadapter/sqlstore_test.go — Refresh-rotation and reuse-revocation introspection matrix
 
+
+## 2026-07-16
+
+Completed memory/SQLite introspection security matrix for caller authorization, token lifecycle, rate limiting, and audit redaction.
+
+### Related Files
+
+- internal/fositeadapter/provider_test.go — Memory verification matrix
+- internal/fositeadapter/sqlstore_test.go — SQLite expiry fixture and regression
+

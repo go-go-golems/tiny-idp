@@ -10,11 +10,11 @@
 
 - [x] Mount `/introspect` for root and path issuers; enforce method/form transport and confidential resource-client Basic authentication.
 - [x] Validate opaque access tokens through Fosite, require resource-audience intersection, and return constrained RFC 7662 metadata or exactly inactive.
-- [ ] Add bounded audit/security events and endpoint-specific rate limiting without recording token values.
+- [x] Add bounded audit/security events and endpoint-specific rate limiting without recording token values.
 
 ## Phase C — Verification and operator usability
 
-- [ ] Add memory and SQL lifecycle tests: active, unknown, malformed, expired, revoked, refresh rotation, wrong audience, and audience persistence.
+- [x] Add memory and SQL lifecycle tests: active, unknown, malformed, expired, revoked, refresh rotation, wrong audience, and audience persistence.
 - [ ] Add negative tests for public/disabled/wrong resource-client authentication, token oracle resistance, root/path discovery, bearer-only policy, and redaction.
 - [ ] Add a strict TLS fixture/smoke and an operator guide for registering a resource server and calling introspection.
 

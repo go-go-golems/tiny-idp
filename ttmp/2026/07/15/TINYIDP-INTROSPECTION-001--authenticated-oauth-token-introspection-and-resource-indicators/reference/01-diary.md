@@ -20,10 +20,12 @@ RelatedFiles:
       Note: |-
         Authorization-code, device, caller-authentication, wrong-audience, duplicate-credential, and refresh-audience regression evidence (f718d36, d5c7647, 866e0bb, d196aeb)
         Incorrect resource-client credential regression (d196aeb)
+        Memory-backed caller, audit, rate-limit, expiry, and rotation matrix (df6b2be, d15f0f3, e4358ed)
     - Path: repo://internal/fositeadapter/sqlstore_test.go
       Note: |-
         Restart-backed SQLite opaque-token lifecycle, audience, rotation, reuse, and inactive-response regression evidence (d196aeb)
         SQLite lifecycle and inactive-response evidence (d196aeb)
+        SQLite expiry and durable token-family lifecycle matrix (df6b2be)
     - Path: repo://pkg/idpstore/types.go
       Note: Durable resource-indicator fields and client capability model (f718d36, d5c7647)
     - Path: repo://pkg/sqlitestore/store.go
@@ -33,10 +35,11 @@ ExternalSources:
     - https://www.rfc-editor.org/rfc/rfc8707.html
     - https://www.rfc-editor.org/rfc/rfc9449.html
 Summary: Chronological evidence for authenticated opaque-token introspection and resource-indicator implementation.
-LastUpdated: 2026-07-16T12:35:48-04:00
+LastUpdated: 2026-07-16T13:05:00-04:00
 WhatFor: Preserve implementation decisions, verification evidence, and remaining production work.
 WhenToUse: Read before extending the endpoint, its resource-server contract, or xgoja integration.
 ---
+
 
 
 
@@ -576,4 +579,188 @@ POST /introspect
               |
               +-- active access token, shared audience
                      -> 200 constrained active metadata
+```
+
+## Step 5: Complete the executable caller, audit, rate-limit, expiry, and refresh matrix
+
+The previous SQLite test established the hardest persistence and refresh-reuse
+transition. This step expanded the matrix so it is not a SQLite-only claim and
+so the resource-client boundary itself has deliberate negative evidence. The
+memory-backed strict authorization-code flow now exercises both caller
+authentication and opaque-token state, while the SQLite fixture retains the
+restart-backed token-family-revocation proof.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, continue"
+
+**Assistant interpretation:** Continue from the SQLite correction into the
+remaining concrete security cases, record the work, and commit at coherent
+verification intervals.
+
+**Inferred user intent:** Treat a production authorization endpoint as a
+matrix of invariants rather than a single happy-path integration test.
+
+**Commits (code):**
+
+- `df6b2be` — "test: extend introspection security matrix"
+- `d15f0f3` — "test: cover memory introspection lifecycle"
+- `e4358ed` — "test: prove memory refresh token rotation"
+
+### What I did
+
+- Added a configurable SQLite fixture constructor, then used a synchronized
+  provider clock and a one-minute access-token lifetime to prove that an
+  otherwise valid token becomes inactive after expiry without wall-clock
+  sleeping.
+- Extended the memory-backed strict authorization-code test with three
+  resource-caller rejections: a public OAuth client, a disabled confidential
+  resource client, and a confidential client that lacks `CanIntrospect`.
+  Each must receive Basic-auth `401`, before subject-token handling.
+- Added the bad-secret case for an otherwise authorized resource client.
+- Added unknown and malformed opaque tokens to the memory flow and required
+  the same exact `{"active":false}` body for both.
+- Verified normal refresh rotation at the public introspection boundary: the
+  refreshed token remains active for its audience, while the pre-rotation
+  access token becomes inactive. The existing SQLite test additionally proves
+  reuse of the old refresh token revokes the token family.
+- Injected a test-only rate limiter through the public provider options,
+  confirmed it observes both `introspection:address:` and
+  `introspection:client:` keys, and forced the resource-client bucket to
+  produce `429 temporarily_unavailable`.
+- Injected `idp.MemorySink`, required `introspection.accepted`,
+  `introspection.inactive`, and `introspection.rejected` events, marshalled
+  the resulting event collection, and asserted that access tokens, refresh
+  tokens, good secrets, and deliberately wrong secrets are absent.
+
+### Why
+
+The endpoint has two independent attacker-controlled inputs: bearer token
+material and resource-client credentials. The matrix ensures each is handled
+at its correct boundary. A public or disabled client must not reach token
+validation; a valid confidential client with a bad or unauthorized token must
+not learn why the token failed; an overloaded authorized client must receive a
+retryable availability response rather than an inactive-token result.
+
+Audit tests are part of the protocol design, not merely observability tests.
+Opaque access and refresh tokens are bearer credentials. Persisting them in an
+audit sink would turn routine diagnostics into a high-value credential store.
+The endpoint records stable client IDs, bounded result/reason vocabularies,
+and counts, which support operations without recording the presented secret.
+
+### What worked
+
+- `go test ./internal/fositeadapter -run 'TestStrictAuthorizationCodeFlow|TestSQLiteIntrospectionExpiresAccessTokenAtProviderClock' -count=1` passed after the capability, audit, rate, and SQLite expiry additions.
+- `go test -race ./internal/fositeadapter -run 'TestStrictAuthorizationCodeFlow|TestSQLiteIntrospection(LifecyclePreservesAudienceAndHidesInactiveTokens|ExpiresAccessTokenAtProviderClock)' -count=1` passed for the focused matrix.
+- `go test ./internal/fositeadapter -run 'TestStrictAuthorizationCodeFlow|TestSQLiteIntrospection(LifecyclePreservesAudienceAndHidesInactiveTokens|ExpiresAccessTokenAtProviderClock)' -count=1` passed after adding memory unknown/malformed/expiry coverage.
+- `go test ./internal/fositeadapter -run TestStrictAuthorizationCodeFlow -count=1` passed after adding the normal memory refresh-rotation assertion.
+
+### What didn't work
+
+- Attempting to reuse the internal-package `recordingLimiter` from the
+  external-package integration test failed at compile time:
+
+  ```text
+  internal/fositeadapter/provider_test.go:106:14: undefined: recordingLimiter
+  ```
+
+  The replacement is a small `strictRecordingLimiter` in the external test
+  package. This keeps the test dependent only on public `Options.RateLimiter`
+  behavior rather than unexported adapter implementation details.
+- A first expiry advance of one minute plus one second was too close to the
+  boundary. Fosite stamps expiry at the point of token issuance, a few seconds
+  after the fixture's provider-clock snapshot. The test observed an active
+  token with `exp` just after the advanced provider time. Advancing ten minutes
+  beyond a one-minute TTL removes that scheduling edge while remaining fully
+  deterministic and does not sleep.
+- A combined full-suite-and-commit shell invocation did not reach staging and
+  produced no diagnostic output. I separated full-suite verification and the
+  commit afterward; the focused matrix commands above provide the explicit
+  recorded evidence for the changed behavior.
+
+### What I learned
+
+- A rate-limit test must prove namespace selection as well as status code.
+  Otherwise an implementation can return `429` while accidentally applying a
+  global, token-derived, or client-only bucket.
+- In a provider that injects a product clock but delegates token issuance to a
+  library clock, expiry tests need a generous logical gap. The production
+  behavior remains correct because the endpoint explicitly compares the
+  session's access-token expiry against `p.now()`.
+- Storage-independent invariant testing is valuable even when Fosite owns much
+  of the token state. The memory test catches adapter wiring changes; the SQL
+  test catches durable requester/transaction/restart changes.
+
+### What was tricky to build
+
+The strict test progresses through browser login, code redemption, UserInfo,
+introspection, refresh rotation, and rate limiting. A test limiter that begins
+rejecting too early would alter unrelated login and token steps. The limiter is
+therefore permissive until the dedicated introspection request, then reset
+before the expiry assertion. This keeps each observed response attributable to
+one policy dimension.
+
+The final memory flow has two relevant access tokens: the original token, made
+inactive by normal rotation, and the refreshed token, made inactive by the
+provider-clock expiry assertion. The SQLite flow adds the third transition:
+refresh reuse revokes an already refreshed token family. Together they prevent
+future refactors from accidentally treating rotation, expiry, and reuse as the
+same state transition.
+
+### What warrants a second pair of eyes
+
+- Decide whether production deployments should expose the rate-limit reason
+  only through the existing bounded audit event or also through a protected
+  metrics counter. The HTTP response intentionally remains generic.
+- Review the desired semantics of resource-client changes after provider
+  startup for the memory store. The endpoint re-reads the product client record
+  for authorization, while Fosite's in-memory client representation was built
+  at startup; production SQLite reads dynamically. Admin mutation/rotation
+  semantics should be specified before advertising hot reconfiguration.
+- Add a dedicated memory-store refresh-reuse assertion if the project wants
+  every store backend to prove every token-family transition separately. The
+  current SQLite test is the durable source of truth for reuse revocation.
+
+### What should be done in the future
+
+- Add root-issuer and path-issuer discovery assertions for
+  `introspection_endpoint`, then complete the remaining negative/discovery
+  task.
+- Run the documented strict-TLS smoke against a configured
+  `serve-production` instance rather than only a local HTTP test server.
+- Write the xgoja `oidcresource` consumer contract and example handoff using
+  the now-tested resource-server behavior.
+
+### Code review instructions
+
+- Read `TestStrictAuthorizationCodeFlow` from provider construction through
+  its final audit check. Its subcases now act as a compact memory-backed
+  security matrix.
+- Read `TestSQLiteIntrospectionLifecyclePreservesAudienceAndHidesInactiveTokens`
+  and `TestSQLiteIntrospectionExpiresAccessTokenAtProviderClock` for durable
+  lifecycle and clock behavior.
+- Review `strictRecordingLimiter` as test infrastructure: it implements the
+  public `idp.RateLimiter` interface and does not require access to provider
+  internals.
+- Start with the focused commands in **What worked**; run
+  `go test ./internal/fositeadapter -count=1` as the package-level gate.
+
+### Technical details
+
+```text
+resource caller state
+  public | disabled | lacks CanIntrospect | bad BCrypt secret
+       -> 401 invalid_client; do not inspect bearer token
+
+authorized resource caller state
+  unknown | malformed | wrong audience | rotated | expired | reused-family
+       -> 200 {"active":false}
+  client/address bucket exhausted
+       -> 429 temporarily_unavailable
+  granted exact audience + current access token
+       -> 200 active metadata
+
+audit event payload
+  contains: event name, resource client ID, result/reason vocabulary, counts
+  excludes: bearer token, refresh token, client secret, Fosite error detail
 ```
