@@ -295,6 +295,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		EnforcePKCEForPublicClients:    true,
 		EnablePKCEPlainChallengeMethod: false,
 		ScopeStrategy:                  fosite.ExactScopeStrategy,
+		AudienceMatchingStrategy:       fosite.ExactAudienceMatchingStrategy,
 		RefreshTokenScopes:             []string{"offline_access"},
 		MinParameterEntropy:            8,
 		RedirectSecureChecker: func(_ context.Context, u *url.URL) bool {
@@ -505,6 +506,12 @@ func (p *Provider) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_scope", "requested scope is not allowed")
 		return
 	}
+	audiences := fosite.GetAudiences(form)
+	if !client.AllowsAudience(audiences) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "invalid_audience"})
+		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_target", "requested audience is not allowed")
+		return
+	}
 	for attempt := 0; attempt < deviceGrantCollisionLimit; attempt++ {
 		deviceCode, userCode, err := p.nextDeviceCodes()
 		if err != nil {
@@ -517,7 +524,7 @@ func (p *Provider) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 			deviceAuthorizationError(w, http.StatusInternalServerError, "server_error", "generate device grant id")
 			return
 		}
-		grant := idpstore.DeviceGrant{ID: grantID, DeviceCodeHash: deviceCodeHash(p.csrfKey, deviceCode), UserCodeHash: userCodeHash(p.csrfKey, userCode), ClientID: client.ID, RequestedScopes: scopes, Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(deviceGrantTTL), PollInterval: devicePollInterval, NextPollAt: now}
+		grant := idpstore.DeviceGrant{ID: grantID, DeviceCodeHash: deviceCodeHash(p.csrfKey, deviceCode), UserCodeHash: userCodeHash(p.csrfKey, userCode), ClientID: client.ID, RequestedScopes: scopes, RequestedAudiences: append([]string(nil), audiences...), Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(deviceGrantTTL), PollInterval: devicePollInterval, NextPollAt: now}
 		if err := p.store.CreateDeviceGrant(r.Context(), grant); err != nil {
 			if errors.Is(err, idpstore.ErrDuplicate) {
 				continue
@@ -534,7 +541,7 @@ func (p *Provider) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 		query := complete.Query()
 		query.Set("user_code", userCode)
 		complete.RawQuery = query.Encode()
-		p.recordAudit(r.Context(), idp.Event{Time: now, Name: "device.authorization.created", ClientID: client.ID, Result: "accepted", Fields: map[string]string{"scope_count": fmt.Sprintf("%d", len(scopes))}})
+		p.recordAudit(r.Context(), idp.Event{Time: now, Name: "device.authorization.created", ClientID: client.ID, Result: "accepted", Fields: map[string]string{"scope_count": fmt.Sprintf("%d", len(scopes)), "audience_count": fmt.Sprintf("%d", len(audiences))}})
 		writeJSON(w, http.StatusOK, deviceAuthorizationResponse{DeviceCode: deviceCode, UserCode: userCode, VerificationURI: verificationURI, VerificationURIComplete: complete.String(), ExpiresIn: int64(deviceGrantTTL / time.Second), Interval: int64(devicePollInterval / time.Second)})
 		return
 	}
@@ -1150,6 +1157,13 @@ func (p *Provider) introspect(w http.ResponseWriter, r *http.Request) {
 		p.introspectionError(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
+	// RFC 7662 is intentionally Basic-auth only in this release. Reject
+	// duplicate credentials instead of depending on net/http's first-value
+	// interpretation, which can differ across proxies.
+	if len(r.Header.Values("Authorization")) != 1 {
+		p.introspectionUnauthorized(w)
+		return
+	}
 	clientID, _, basicOK := r.BasicAuth()
 	if !basicOK || strings.TrimSpace(clientID) == "" {
 		p.introspectionUnauthorized(w)
@@ -1161,7 +1175,12 @@ func (p *Provider) introspect(w http.ResponseWriter, r *http.Request) {
 		p.introspectionUnauthorized(w)
 		return
 	}
-	if !p.rateLimiter.Allow(r.Context(), "introspection:client:"+resourceClient.ID) {
+	clientAddress, err := p.clientAddress.ResolveClientAddress(r)
+	if err != nil {
+		p.introspectionError(w, http.StatusInternalServerError, "server_error")
+		return
+	}
+	if !p.rateLimiter.Allow(r.Context(), "introspection:address:"+clientAddress) || !p.rateLimiter.Allow(r.Context(), "introspection:client:"+resourceClient.ID) {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "introspection.rejected", ClientID: resourceClient.ID, Result: "rejected", Reason: "rate_limited"})
 		p.introspectionError(w, http.StatusTooManyRequests, "temporarily_unavailable")
 		return

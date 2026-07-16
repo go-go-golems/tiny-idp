@@ -1132,6 +1132,7 @@ func (s *Store) DecideDeviceGrant(ctx context.Context, request idpstore.DeviceDe
 		grant.AuthTime = request.AuthTime.UTC()
 		grant.AuthenticationMethods = append([]string(nil), request.AuthenticationMethods...)
 		grant.ApprovedScopes = append([]string(nil), request.ApprovedScopes...)
+		grant.ApprovedAudiences = append([]string(nil), request.ApprovedAudiences...)
 	}
 	grant.Version++
 	data, err := enc(grant)

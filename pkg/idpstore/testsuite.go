@@ -20,7 +20,7 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		}
 		grant := DeviceGrant{
 			ID: "grant-1", DeviceCodeHash: []byte("device-code-hash"), UserCodeHash: []byte("user-code-hash"), ClientID: "device-client",
-			RequestedScopes: []string{"openid", "profile"}, Status: DeviceGrantPending,
+			RequestedScopes: []string{"openid", "profile"}, RequestedAudiences: []string{"https://api.example.test/messages"}, Status: DeviceGrantPending,
 			CreatedAt: now, ExpiresAt: now.Add(time.Minute), PollInterval: 5 * time.Second, NextPollAt: now,
 		}
 		if err := st.CreateDeviceGrant(ctx, grant); err != nil {
@@ -45,8 +45,8 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		if err != nil || slow.Outcome != DevicePollSlowDown || slow.Grant.PollInterval != 10*time.Second || slow.Grant.SlowDownCount != 1 {
 			t.Fatalf("early poll = %#v, %v", slow, err)
 		}
-		approved, err := st.DecideDeviceGrant(ctx, DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: DeviceGrantApprove, UserID: "u1", Subject: "subject-1", AuthTime: now.Add(2 * time.Second), AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, Now: now.Add(2 * time.Second)})
-		if err != nil || approved.Status != DeviceGrantApproved || approved.DecidedAt == nil || approved.UserID != "u1" {
+		approved, err := st.DecideDeviceGrant(ctx, DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: DeviceGrantApprove, UserID: "u1", Subject: "subject-1", AuthTime: now.Add(2 * time.Second), AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, ApprovedAudiences: []string{"https://api.example.test/messages"}, Now: now.Add(2 * time.Second)})
+		if err != nil || approved.Status != DeviceGrantApproved || approved.DecidedAt == nil || approved.UserID != "u1" || len(approved.RequestedAudiences) != 1 || len(approved.ApprovedAudiences) != 1 {
 			t.Fatalf("approve = %#v, %v", approved, err)
 		}
 		earlyApproved, err := st.PollDeviceGrant(ctx, DevicePollRequest{DeviceCodeHash: grant.DeviceCodeHash, ClientID: grant.ClientID, Now: now.Add(3 * time.Second)})

@@ -224,6 +224,20 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	if wrongAudienceResponse.StatusCode != http.StatusOK || wrongAudience["active"] != false || len(wrongAudience) != 1 {
 		t.Fatalf("wrong-audience introspection = status=%d body=%#v", wrongAudienceResponse.StatusCode, wrongAudience)
 	}
+
+	duplicateAuthorization, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
+	duplicateAuthorization.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	duplicateAuthorization.Header.Add("Authorization", "Basic aW5ib3gtYXBpOmlubmJveC1hcGktc2VjcmV0")
+	duplicateAuthorization.Header.Add("Authorization", "Basic b3RoZXItYXBpOm90aGVyLXNlY3JldA==")
+	duplicateAuthorizationResponse, err := http.DefaultClient.Do(duplicateAuthorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer duplicateAuthorizationResponse.Body.Close()
+	if duplicateAuthorizationResponse.StatusCode != http.StatusUnauthorized || duplicateAuthorizationResponse.Header.Get("WWW-Authenticate") == "" {
+		body, _ := io.ReadAll(duplicateAuthorizationResponse.Body)
+		t.Fatalf("duplicate authorization status=%d headers=%q body=%q", duplicateAuthorizationResponse.StatusCode, duplicateAuthorizationResponse.Header.Get("WWW-Authenticate"), body)
+	}
 	postUserInfo, _ := http.NewRequest(http.MethodPost, ts.URL+"/userinfo", nil)
 	postUserInfo.Header.Set("Authorization", "Bearer "+body["access_token"].(string))
 	postUserInfoResponse, err := http.DefaultClient.Do(postUserInfo)

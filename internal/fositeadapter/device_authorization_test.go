@@ -32,7 +32,7 @@ func TestDeviceAuthorizationCreatesHashedGrantAndNoStoreResponse(t *testing.T) {
 	provider, store, sink := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-one", "ABCD-EFGH", nil }, now)
 	server := httptest.NewServer(provider.Handler())
 	defer server.Close()
-	response, err := http.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	response, err := http.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}, "audience": {"https://inbox.example.test/api"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestDeviceAuthorizationCreatesHashedGrantAndNoStoreResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if grant.Status != idpstore.DeviceGrantPending || strings.Contains(grant.ID, body.DeviceCode) || !containsScope(grant.RequestedScopes, "openid") || grant.Version != 1 {
+	if grant.Status != idpstore.DeviceGrantPending || strings.Contains(grant.ID, body.DeviceCode) || !containsScope(grant.RequestedScopes, "openid") || !grantAudienceContains(grant.RequestedAudiences, "https://inbox.example.test/api") || grant.Version != 1 {
 		t.Fatalf("stored grant = %#v", grant)
 	}
 	for _, event := range sink.Events() {
@@ -79,6 +79,7 @@ func TestDeviceAuthorizationRejectsMalformedUnauthorizedAndInvalidScopeRequests(
 		{name: "duplicate client", method: http.MethodPost, contentType: "application/x-www-form-urlencoded", body: "client_id=device-cli&client_id=device-cli&scope=openid", wantCode: "invalid_request"},
 		{name: "not device capable", method: http.MethodPost, contentType: "application/x-www-form-urlencoded", body: "client_id=browser-only&scope=openid", wantCode: "unauthorized_client"},
 		{name: "invalid scope", method: http.MethodPost, contentType: "application/x-www-form-urlencoded", body: "client_id=device-cli&scope=profile", wantCode: "invalid_scope"},
+		{name: "invalid audience", method: http.MethodPost, contentType: "application/x-www-form-urlencoded", body: "client_id=device-cli&scope=openid&audience=https%3A%2F%2Fother.example.test%2Fapi", wantCode: "invalid_target"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,7 +202,7 @@ func TestDeviceVerificationApprovesADeviceGrantWithFreshPasswordAndOneUse(t *tes
 	server := httptest.NewServer(provider.Handler())
 	defer server.Close()
 	client := newDeviceVerificationHTTPClient(t)
-	start, err := client.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	start, err := client.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}, "audience": {"https://inbox.example.test/api"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func TestDeviceVerificationApprovesADeviceGrantWithFreshPasswordAndOneUse(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if grant.Status != idpstore.DeviceGrantApproved || grant.Subject != "user-alice" || grant.AuthTime != now || !containsScope(grant.ApprovedScopes, "profile") {
+	if grant.Status != idpstore.DeviceGrantApproved || grant.Subject != "user-alice" || grant.AuthTime != now || !containsScope(grant.ApprovedScopes, "profile") || !grantAudienceContains(grant.ApprovedAudiences, "https://inbox.example.test/api") {
 		t.Fatalf("approved grant = %#v", grant)
 	}
 	replay, err := client.PostForm(server.URL+"/device", values)
@@ -449,7 +450,7 @@ func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *t
 	readyServer := httptest.NewServer(readyProvider.Handler())
 	defer readyServer.Close()
 	readyClient := newDeviceVerificationHTTPClient(t)
-	secondStart, err := readyClient.PostForm(readyServer.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	secondStart, err := readyClient.PostForm(readyServer.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}, "audience": {"https://inbox.example.test/api"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,6 +481,24 @@ func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *t
 	accessToken, _ := body["access_token"].(string)
 	if accessToken == "" || body["token_type"] != "bearer" || body["id_token"] == "" || body["scope"] != "openid profile" {
 		t.Fatalf("token body = %#v", body)
+	}
+	introspection, err := http.NewRequest(http.MethodPost, readyServer.URL+"/introspect", strings.NewReader(url.Values{"token": {accessToken}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	introspection.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	introspection.SetBasicAuth("inbox-api", "inbox-api-secret")
+	introspectionHTTPResponse, err := readyClient.Do(introspection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var introspectionBody introspectionResponse
+	if err := json.NewDecoder(introspectionHTTPResponse.Body).Decode(&introspectionBody); err != nil {
+		t.Fatal(err)
+	}
+	_ = introspectionHTTPResponse.Body.Close()
+	if introspectionHTTPResponse.StatusCode != http.StatusOK || !introspectionBody.Active || !grantAudienceContains(introspectionBody.Audience, "https://inbox.example.test/api") {
+		t.Fatalf("introspection response=%d %#v", introspectionHTTPResponse.StatusCode, introspectionBody)
 	}
 	userinfo, err := http.NewRequest(http.MethodGet, readyServer.URL+"/userinfo", nil)
 	if err != nil {
@@ -520,7 +539,7 @@ func TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid", "profile"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
+	if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid", "profile"}, AllowedAudiences: []string{"https://inbox.example.test/api"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Name: "Alice"}); err != nil {
@@ -599,10 +618,17 @@ func newDeviceAuthorizationProvider(t *testing.T, generator func() (string, stri
 	t.Helper()
 	ctx := context.Background()
 	store := memory.New()
-	if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid", "profile"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
+	if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid", "profile"}, AllowedAudiences: []string{"https://inbox.example.test/api"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.PutClient(ctx, idpstore.Client{ID: "browser-only", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
+		t.Fatal(err)
+	}
+	resourceSecret, err := bcrypt.GenerateFromPassword([]byte("inbox-api-secret"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutClient(ctx, idpstore.Client{ID: "inbox-api", SecretHash: resourceSecret, AllowedAudiences: []string{"https://inbox.example.test/api"}, CanIntrospect: true, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Name: "Alice"}); err != nil {
@@ -616,7 +642,7 @@ func newDeviceAuthorizationProvider(t *testing.T, generator func() (string, stri
 		t.Fatal(err)
 	}
 	sink := idp.NewMemorySink()
-	provider, err := NewProvider(ctx, Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: []byte("device-auth-test-secret-key-32-bytes"), Clock: func() time.Time { return now }, Audit: sink, Authenticator: deviceTestAuthenticator{}, deviceCodeGenerator: generator})
+	provider, err := NewProvider(ctx, Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: []byte("device-auth-test-secret-key-32-bytes"), Clock: func() time.Time { return now }, Audit: sink, Authenticator: deviceTestAuthenticator{}, ClientSecrets: map[string]string{"inbox-api": "inbox-api-secret"}, deviceCodeGenerator: generator})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -709,4 +735,13 @@ func tokenErrorCode(t *testing.T, response *http.Response) string {
 	_ = response.Body.Close()
 	code, _ := body["error"].(string)
 	return code
+}
+
+func grantAudienceContains(audiences []string, want string) bool {
+	for _, audience := range audiences {
+		if audience == want {
+			return true
+		}
+	}
+	return false
 }

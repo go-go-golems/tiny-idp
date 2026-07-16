@@ -818,6 +818,7 @@ func (s *Store) DecideDeviceGrant(ctx context.Context, request idpstore.DeviceDe
 		grant.AuthTime = request.AuthTime.UTC()
 		grant.AuthenticationMethods = append([]string(nil), request.AuthenticationMethods...)
 		grant.ApprovedScopes = append([]string(nil), request.ApprovedScopes...)
+		grant.ApprovedAudiences = append([]string(nil), request.ApprovedAudiences...)
 	}
 	grant.Version++
 	s.deviceGrants[hashKey(grant.DeviceCodeHash)] = cloneDeviceGrant(grant)
@@ -867,6 +868,8 @@ func cloneDeviceGrant(grant idpstore.DeviceGrant) idpstore.DeviceGrant {
 	grant.UserCodeHash = append([]byte(nil), grant.UserCodeHash...)
 	grant.RequestedScopes = append([]string(nil), grant.RequestedScopes...)
 	grant.ApprovedScopes = append([]string(nil), grant.ApprovedScopes...)
+	grant.RequestedAudiences = append([]string(nil), grant.RequestedAudiences...)
+	grant.ApprovedAudiences = append([]string(nil), grant.ApprovedAudiences...)
 	grant.AuthenticationMethods = append([]string(nil), grant.AuthenticationMethods...)
 	if grant.DecidedAt != nil {
 		decidedAt := *grant.DecidedAt

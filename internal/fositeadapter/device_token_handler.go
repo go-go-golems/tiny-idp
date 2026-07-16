@@ -95,6 +95,10 @@ func (h *deviceTokenHandler) HandleTokenEndpointRequest(ctx context.Context, req
 	for _, scope := range grant.ApprovedScopes {
 		request.GrantScope(scope)
 	}
+	request.SetRequestedAudience(fosite.Arguments(append([]string(nil), grant.ApprovedAudiences...)))
+	for _, audience := range grant.ApprovedAudiences {
+		request.GrantAudience(audience)
+	}
 	request.SetID("device:" + grant.ID)
 	request.SetSession(h.provider.newOIDCSession(ctx, user, request, grant.AuthTime))
 	now := h.provider.now()

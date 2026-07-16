@@ -168,6 +168,7 @@ func (p *Provider) completeDeviceVerification(w http.ResponseWriter, r *http.Req
 			request.AuthTime = now
 			request.AuthenticationMethods = append([]string(nil), result.AMR...)
 			request.ApprovedScopes = append([]string(nil), current.RequestedScopes...)
+			request.ApprovedAudiences = append([]string(nil), current.RequestedAudiences...)
 		}
 		_, err = tx.DecideDeviceGrant(r.Context(), request)
 		return err

@@ -299,12 +299,17 @@ func (s DeviceGrantStatus) Valid() bool {
 // UserCodeHash are domain-separated keyed hashes; raw device and user codes
 // must never enter this type, persistence, audit, or metrics.
 type DeviceGrant struct {
-	ID                    string
-	DeviceCodeHash        []byte
-	UserCodeHash          []byte
-	ClientID              string
-	RequestedScopes       []string
-	ApprovedScopes        []string
+	ID              string
+	DeviceCodeHash  []byte
+	UserCodeHash    []byte
+	ClientID        string
+	RequestedScopes []string
+	ApprovedScopes  []string
+	// RequestedAudiences and ApprovedAudiences are the resource indicators
+	// accepted at device authorization and later approved with the device
+	// grant. Keeping both makes the durable consent decision explicit.
+	RequestedAudiences    []string
+	ApprovedAudiences     []string
 	Status                DeviceGrantStatus
 	UserID                string
 	Subject               string
@@ -376,6 +381,7 @@ type DeviceDecisionRequest struct {
 	AuthTime              time.Time
 	AuthenticationMethods []string
 	ApprovedScopes        []string
+	ApprovedAudiences     []string
 	Now                   time.Time
 }
 
