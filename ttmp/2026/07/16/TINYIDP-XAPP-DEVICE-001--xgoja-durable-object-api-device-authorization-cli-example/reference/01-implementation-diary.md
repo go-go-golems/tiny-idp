@@ -492,7 +492,7 @@ than merely compiling: it needs evidence for browser behavior, security
 boundaries, user identity propagation, revocation, and production-shaped TLS
 execution.
 
-**Commit (code):** `748fef8a98c1fd5b75fb1b8c3b2f1c55c83f2b7c` —
+**Commit (code):** `748fef864efd032d277682291eb48f600f6cc074` —
 "test(xapp): complete device authorization verification matrix"
 
 ### What I did
