@@ -1133,3 +1133,96 @@ POST /token (grant_type=device_code)
        COMMIT
   -> one token response; no raw device code in persisted requester data
 ```
+
+## Step 7: Reconcile the stale Phase 5–8 ledger with implemented evidence
+
+The device-production ticket had become misleading: its design and diary
+recorded the completed Fosite device-token work, but Phase 5 remained entirely
+unchecked. This step reconciles the task ledger against committed source,
+tests, and the later xapp device-client validation without overstating release
+readiness.
+
+### Prompt Context
+
+**User prompt (verbatim):** "reconcile TINYIDP-DEVICE-PROD-001"
+
+**Assistant interpretation:** Compare this ticket's plan to the current
+repository and update its task status and handoff material truthfully.
+
+**Inferred user intent:** Make the remaining device-production roadmap useful
+for release planning instead of duplicating completed work or hiding gaps.
+
+**Commit (code):** Documentation-only reconciliation; pending documentation commit.
+
+### What I did
+
+- Reviewed the device-token handler, durable store, provider discovery,
+  failpoint/restart tests, embedded bootstrap, xapp client/integration tests,
+  current public documentation, and the original device plan.
+- Ran the focused strict-provider/store/embedded/xapp suites successfully.
+- Marked custom Fosite redemption, outcome mapping, atomic issuance,
+  durable/general rate limiting, and discovery advertisement complete.
+- Narrowed broad pending tasks to explicit missing refresh/key-rotation,
+  refresh-failpoint/retry, device observability, fuzz/race/black-box client,
+  AST-analysis, public-documentation, and independent-review work.
+- Added `reference/03-2026-07-16-reconciliation.md` as the evidence matrix
+  and continuation plan.
+
+### Why
+
+- A task ledger is a planning interface. Leaving implemented security work
+  unchecked causes duplicate engineering; marking a broad task complete when
+  only part is covered hides the release evidence still required.
+
+### What worked
+
+- The provider has a coherent committed progression from client grant policy to
+  durable state, endpoint, browser decision, transactional token exchange,
+  restart safety, audiences, and introspection.
+- The xapp device client gives a separate, application-level proof that the
+  strict provider's device flow is consumable by a resource server.
+
+### What didn't work
+
+- The historical README still states that strict device authorization is
+  in-progress/mock-only. This is not a code failure, but it is an unresolved
+  public-documentation inconsistency and remains an explicit Phase 8 task.
+
+### What I learned
+
+- The missing work is no longer a device grant implementation problem. It is
+  evidence completion: refresh/key rotation, failpoint completeness,
+  observability, adversarial testing, docs, and independent release review.
+
+### What was tricky to build
+
+- Several original tasks bundle multiple evidence classes. Rather than check a
+  partly satisfied task, the ledger now retains only its unmet clauses. This
+  preserves traceability to the original plan while making the next action
+  unambiguous.
+
+### What warrants a second pair of eyes
+
+- Confirm the decision to advertise the device endpoint while release gates
+  remain open. The endpoint is fully implemented and tested, but documentation
+  must make the difference between implementation availability and production
+  approval explicit.
+
+### What should be done in the future
+
+- Start with device refresh/key-rotation and refresh failpoint coverage, then
+  use the narrowed Phase 6–8 tasks as the production-release sequence.
+
+### Code review instructions
+
+- Read `reference/03-2026-07-16-reconciliation.md` first, then verify each
+  completed row in the named source/test files.
+- Run the focused reconciliation command recorded in that document.
+
+### Technical details
+
+```text
+completed core: durable grant -> verified browser decision -> Fosite token TX
+remaining gate: refresh/key rotation + observability + adversarial evidence
+                + public docs + independent review/release sign-off
+```

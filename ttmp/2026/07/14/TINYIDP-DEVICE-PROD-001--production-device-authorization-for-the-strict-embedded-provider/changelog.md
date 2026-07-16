@@ -81,3 +81,11 @@ Preserved primary specifications, mapped RFC 8628 onto strict Fosite and durable
 ## 2026-07-14 - Validated and published
 
 Recorded the passing repository suite, scoped commits, clean docmgr audit, and successful bundled reMarkable publication.
+
+## 2026-07-16
+
+Reconciled stale Phase 5–8 device ledger with current strict-provider, durable-store, and xapp evidence; marked core implementation complete and narrowed remaining release gaps.
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/device_token_handler.go — Core completed device token extension.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-DEVICE-PROD-001--production-device-authorization-for-the-strict-embedded-provider/reference/03-2026-07-16-reconciliation.md — Evidence matrix and remaining plan.

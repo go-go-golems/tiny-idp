@@ -23,16 +23,16 @@
 - [x] Phase 4: Implement code entry, normalization, generic errors, and verification interaction binding <!-- t:r34p -->
 - [x] Phase 4: Integrate browser authentication, CSRF, client/scope display, and explicit decisions <!-- t:ubvd -->
 - [x] Phase 4: Add approve-deny races, replay, stale-session, renderer failure, and accessibility tests <!-- t:nrx9 -->
-- [ ] Phase 5: Implement and register the custom Fosite device token endpoint handler <!-- t:szkc -->
-- [ ] Phase 5: Map pending, slowdown, denial, expiry, wrong client, and replay to protocol errors <!-- t:akdz -->
-- [ ] Phase 5: Atomically consume approved grants and persist access, ID, and optional refresh tokens <!-- t:9tn5 -->
-- [ ] Phase 5: Verify device tokens through UserInfo, introspection, refresh, key rotation, and replay tests <!-- t:5jr3 -->
-- [ ] Phase 5: Add transaction failpoints for every consumption and token persistence boundary <!-- t:i1k8 -->
-- [ ] Phase 6: Add durable and general rate limits for creation, code entry, authentication, and polling <!-- t:tn4d -->
-- [ ] Phase 6: Add readiness checks, retention reporting, metrics, dashboards, and operator runbook <!-- t:66u4 -->
+- [x] Phase 5: Implement and register the custom Fosite device token endpoint handler <!-- t:szkc -->
+- [x] Phase 5: Map pending, slowdown, denial, expiry, wrong client, and replay to protocol errors <!-- t:akdz -->
+- [x] Phase 5: Atomically consume approved grants and persist access, ID, and optional refresh tokens <!-- t:9tn5 -->
+- [ ] Phase 5 follow-up: add device-grant refresh-token and signing-key-rotation coverage; UserInfo, introspection, audience, and replay are already covered <!-- t:5jr3 -->
+- [ ] Phase 5 follow-up: cover device-flow refresh-token persistence failpoints and successful retry after every injected failure; access-token/consume/commit failpoints are already covered <!-- t:i1k8 -->
+- [x] Phase 6: Add durable and general rate limits for creation, code entry, authentication, and polling <!-- t:tn4d -->
+- [ ] Phase 6 follow-up: add device-specific metrics/dashboard evidence and strict-provider operator runbook; generic readiness, retention, and xapp operator guidance already exist <!-- t:66u4 -->
 - [ ] Phase 7: Add pure reference model and generated SQLite action-sequence comparison harness <!-- t:erz1 -->
-- [ ] Phase 7: Add fuzzers, race suite, restart suite, backup-restore suite, and external CLI smoke client <!-- t:7lef -->
+- [ ] Phase 7 follow-up: add device-specific fuzz/race suites and an independent external CLI smoke client; restart and backup/restore coverage already exist <!-- t:7lef -->
 - [ ] Phase 7: Extend Go AST analyzers for secret fields, bounded parsing, named transitions, and handler assertions <!-- t:w7u4 -->
-- [ ] Phase 8: Advertise device_authorization_endpoint only after the complete implementation passes gates <!-- t:g4gk -->
-- [ ] Phase 8: Update embedding, admin, security profile, discovery, example, and release documentation <!-- t:ukf8 -->
+- [x] Phase 8: Advertise device_authorization_endpoint only after the complete implementation passes gates <!-- t:g4gk -->
+- [ ] Phase 8: reconcile public embedding/admin/security-profile/example/release documentation with the implemented strict device grant; correct stale mock-only and release-gap claims <!-- t:ukf8 -->
 - [ ] Phase 8: Obtain independent security review and complete production release checklist <!-- t:ue9c -->
