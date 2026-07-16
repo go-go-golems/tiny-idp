@@ -31,3 +31,12 @@ Step 3: added device-login and cached bearer BBS CLI commands (commit d474d3f)
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/device_cli.go — Terminal device authorization implementation
 
+
+## 2026-07-16
+
+Step 4: added deterministic CLI tests and a live tmux smoke harness (commit b92d907)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/device_cli_test.go — Phase 4 verification
+

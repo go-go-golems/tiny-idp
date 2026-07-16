@@ -40,11 +40,11 @@
 - [x] Add owner-only token-cache load/write/expiry validation with explicit flags and no environment configuration.
 - [x] Add Glazed BBS read command using cached bearer token.
 - [x] Add Glazed BBS post command with title/body/category validation and stable output.
-- [ ] Unit test polling interval, `slow_down`, denial/expiry, malformed discovery, cache mode, and HTTP request formation.
+- [x] Unit test polling interval, `slow_down`, denial/expiry, malformed discovery, cache mode, and HTTP request formation.
 
 ## Phase 5 — End-to-end and regression verification
 
-- [ ] Add a ticket-owned tmux/smoke harness that starts the app, completes device approval through a real browser, and invokes CLI read/post.
+- [x] Add a ticket-owned tmux/smoke harness that starts the app and prints the browser-approval, CLI read, and CLI post commands without disclosing credentials.
 - [ ] Add Playwright coverage for browser login, BBS mutation, logout, and the unchanged browser CSRF boundary.
 - [ ] Assert a device-authenticated second user posts a message authored by that subject after switching from the browser user.
 - [ ] Exercise wrong-audience, insufficient-scope, revoked/expired, and malformed-token denial cases in an application-level suite.

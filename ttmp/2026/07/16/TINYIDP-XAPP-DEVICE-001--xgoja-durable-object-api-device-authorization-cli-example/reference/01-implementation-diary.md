@@ -23,14 +23,19 @@ RelatedFiles:
       Note: Host-owned bearer BBS API committed in 4699d40
     - Path: repo://cmd/tinyidp-xapp/device_cli.go
       Note: Glazed device login and cached bearer BBS commands committed in d474d3f
+    - Path: repo://cmd/tinyidp-xapp/device_cli_test.go
+      Note: Deterministic polling, cache, and bearer request tests
     - Path: repo://cmd/tinyidp-xapp/internal/resourceauth/resourceauth.go
       Note: Go-only opaque bearer validation committed in 5e6d279 and 4699d40
+    - Path: repo://ttmp/2026/07/16/TINYIDP-XAPP-DEVICE-001--xgoja-durable-object-api-device-authorization-cli-example/scripts/run-xapp-device-smoke.sh
+      Note: Live tmux smoke harness
 ExternalSources: []
 Summary: Chronological implementation and validation diary for the xgoja device authorization API example.
 LastUpdated: 2026-07-16T15:20:00-04:00
 WhatFor: Preserve the reasoning, commands, outcomes, and review guidance needed to continue this security-sensitive implementation.
 WhenToUse: Before changing the resource server, device client, xapp state, CLI, or end-to-end harness.
 ---
+
 
 
 
@@ -368,4 +373,95 @@ to be used when expired.
 ```text
 device-login -> cache(access token, expiry, issuer, audience; mode 0600)
 bbs-get/post -> cache expiry check -> Authorization: Bearer -> /api/device/*
+```
+
+## Step 4: Execute deterministic CLI tests and a live tmux smoke startup
+
+Phase 4 now has a deterministic fake-provider suite. It proves request
+formation, pending polling, `slow_down` interval handling, final token parsing,
+owner-only cache mode, and BBS bearer-header construction without sleeping or
+requiring a live browser. The implementation uses an injectable poll wait only
+for test timing; normal command operation still waits on a context-aware timer.
+
+For Phase 5, the ticket now contains a tmux smoke harness. It starts a real
+development xapp with two seeded accounts, prints the exact manual device-login
+and BBS commands, retains the shell if startup fails, and uses OIDC discovery
+as the correct readiness probe for `serve` mode. The live instance is currently
+running in tmux session `tinyidp-xapp-device-smoke` on port 18878.
+
+### Prompt Context
+
+**User prompt (verbatim):** "phase 4 + phase 5"
+
+**Assistant interpretation:** Complete the CLI verification phase and perform the planned end-to-end/regression verification work.
+
+**Inferred user intent:** Move from an implemented demo to evidence that its device flow, CLI, and live process behavior are reliable.
+
+**Commit (code):** `b92d907c511e84d8bd38432f5c54da11c6da633e` — "test(xapp): cover device CLI polling and cache"
+
+### What I did
+
+- Added `device_cli_test.go` for fake discovery/device/token polling and cache/API behavior.
+- Added `scripts/run-xapp-device-smoke.sh` under this ticket.
+- Started the script in tmux and verified discovery exposes the expected
+  issuer, device authorization endpoint, and introspection endpoint.
+
+### Why
+
+- Device authorization has timing states that should not require a 5-second
+  test sleep or real human approval to unit-test.
+- A real server process remains necessary to catch lifecycle/startup mistakes
+  that handler-level tests cannot observe.
+
+### What worked
+
+- `go test ./cmd/tinyidp-xapp -run 'Test(DeviceLoginPollsSlowDownThenCachesOnlySuccess|DeviceTokenCacheAndBBSRequest)$' -count=1` passed.
+- The tmux server emitted `tinyidp-xapp development server started` and
+  `curl -fsS http://127.0.0.1:18878/idp/.well-known/openid-configuration`
+  returned the configured issuer/device/introspection URLs.
+
+### What didn't work
+
+- The first harness used port 8787, which was not a reliable dedicated test
+  port. It was moved to 18878.
+- The first rerun reused state bound to the old public URL; xapp correctly
+  refused the conflicting persistent identity configuration. The state root is
+  now port-specific.
+- `/healthz` returned 404 because it is only mounted by `serve-initialized`;
+  discovery is the correct `serve` readiness probe.
+
+### What I learned
+
+- The test suite can validate the browser-side provider form flow through Go
+  HTTP integration, but no Playwright project or MCP runner is configured in
+  this workspace. Browser automation and initialized TLS protocol smoke remain
+  explicitly open Phase 5 tasks.
+
+### What was tricky to build
+
+- The smoke script must preserve diagnostic output after `go run` exits. It
+  now executes `exec zsh` after the server command rather than silently closing
+  the tmux pane.
+
+### What warrants a second pair of eyes
+
+- The remaining Playwright and production TLS tasks need a chosen browser
+  runner/certificate fixture rather than an improvised headless workflow.
+
+### What should be done in the future
+
+- Complete the three unchecked Phase 5 tasks: Playwright UI regression,
+  two-user browser/device switching assertion, and initialized TLS smoke.
+
+### Code review instructions
+
+- Run the focused CLI test command above.
+- Run `scripts/run-xapp-device-smoke.sh`, inspect the tmux pane, and follow its
+  printed device login/post/read commands with a real browser.
+
+### Technical details
+
+```text
+fake provider: pending -> slow_down -> success
+live tmux:     discovery ready -> human browser approval -> CLI cache -> BBS API
 ```
