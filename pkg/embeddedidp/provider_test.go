@@ -2,15 +2,19 @@ package embeddedidp_test
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/manuel/tinyidp/internal/keys"
 	"github.com/manuel/tinyidp/internal/store/memory"
@@ -224,6 +228,81 @@ func TestProductionReadinessTransitionsOnAuditFailure(t *testing.T) {
 	}
 	if report := provider.Liveness(ctx); !report.Ready {
 		t.Fatalf("liveness should ignore dependency outage: %#v", report)
+	}
+}
+
+func TestProductionTLSDiscoveryAndAuthenticatedIntrospectionSmoke(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(dir, "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	secret := "tls-smoke-resource-secret"
+	secretHash, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutClient(ctx, idpstore.Client{ID: "smoke-api", SecretHash: secretHash, CanIntrospect: true, AllowedAudiences: []string{"https://api.example.test/smoke"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
+		t.Fatal(err)
+	}
+	key, err := keys.GenerateRSA("kid-tls-smoke", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	audit, err := idp.NewFileAuditSink(filepath.Join(dir, "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = audit.Close() })
+	provider, err := embeddedidp.New(ctx, embeddedidp.Options{Issuer: "https://issuer.example.test/idp", Mode: embeddedidp.ProductionMode, Store: store, Cookie: embeddedidp.CookieConfig{Secure: true}, Token: embeddedidp.TokenConfig{SecretKey: []byte("production-token-secret-for-tls-smoke-32")}, Audit: audit, RateLimiter: idp.NewFixedWindowRateLimiter(100, time.Minute), ClientAddress: idp.DirectClientAddressResolver{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(provider.Handler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/idp/.well-known/openid-configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.TLS == nil || response.TLS.Version < 0x0303 || response.StatusCode != http.StatusOK {
+		t.Fatalf("TLS discovery status=%d tls=%#v", response.StatusCode, response.TLS)
+	}
+	var discovery struct {
+		IntrospectionEndpoint       string   `json:"introspection_endpoint"`
+		DeviceAuthorizationEndpoint string   `json:"device_authorization_endpoint"`
+		Methods                     []string `json:"introspection_endpoint_auth_methods_supported"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&discovery); err != nil {
+		t.Fatal(err)
+	}
+	if discovery.IntrospectionEndpoint != "https://issuer.example.test/idp/introspect" || discovery.DeviceAuthorizationEndpoint != "https://issuer.example.test/idp/device_authorization" || len(discovery.Methods) != 1 || discovery.Methods[0] != "client_secret_basic" {
+		t.Fatalf("unexpected TLS discovery contract: %#v", discovery)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/idp/introspect", strings.NewReader("token=unknown-opaque-token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.SetBasicAuth("smoke-api", secret)
+	introspection, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer introspection.Body.Close()
+	body, err := io.ReadAll(introspection.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if introspection.TLS == nil || introspection.StatusCode != http.StatusOK || subtle.ConstantTimeCompare(body, []byte("{\"active\":false}\n")) != 1 {
+		t.Fatalf("TLS introspection status=%d body=%q tls=%#v", introspection.StatusCode, body, introspection.TLS)
 	}
 }
 
