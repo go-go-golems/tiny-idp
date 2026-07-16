@@ -33,6 +33,8 @@ topics:
       description: Containerized deployment topology and Docker Compose operations.
     - slug: operations
       description: Operational deployment, supervision, and recovery work
+    - slug: durable-objects
+      description: Durable object state, dispatch, and object-ownership design
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
