@@ -959,3 +959,49 @@ device metadata omission was a genuine interoperation defect.
 - Review `internal/oidcmeta/discovery.go` for the advertised contract.
 - Review `TestDiscoveryPublishesIntrospectionAtRootAndPathIssuer` for live
   route and metadata evidence.
+
+## Step 8: Finish the production TLS fixture and xgoja resource-server handoff
+
+The final implementation tasks required proof at the production constructor
+boundary and a stable consumer design. A unit test that instantiates only the
+strict adapter does not validate production requirements such as persistent
+storage, durable audit, secure cookies, readiness dependencies, or TLS.
+
+### Prompt Context
+
+**User prompt (verbatim):** "yes, finish both"
+
+**Commit (code):** `e23e8b3` — "test: add production TLS introspection smoke"
+
+### What I did
+
+- Added a TLS smoke using `embeddedidp.New` in production mode with a temporary
+  SQLite store, RSA signing key, durable file audit sink, secure cookie config,
+  production-ready fixed-window limiter, direct address resolver, and a
+  BCrypt-protected resource client.
+- Used `httptest.NewTLSServer` and its trusted client to prove TLS discovery,
+  TLS 1.2-or-newer negotiation, path-issuer endpoint metadata, and
+  Basic-authenticated opaque-token introspection returning the canonical
+  inactive response.
+- Wrote the xgoja `oidcresource` consumer contract. It defines discovery,
+  Basic-secret ownership, active-response validation, cache limits, failure
+  mapping, principal construction, local authorization, module surface, and a
+  concrete go-go-goja implementation checklist.
+
+### What worked
+
+- `go test ./pkg/embeddedidp -run TestProductionTLSDiscoveryAndAuthenticatedIntrospectionSmoke -count=1` passed.
+
+### What I learned
+
+The xgoja layer should receive a principal rather than an introspection secret
+or raw provider response. Keeping discovery, TLS, Basic authentication,
+timeouts, caching, and redaction in Go prevents application scripts from
+becoming an accidental identity-provider integration surface.
+
+### Code review instructions
+
+- Read `TestProductionTLSDiscoveryAndAuthenticatedIntrospectionSmoke` for the
+  production assembly and transport gate.
+- Read `reference/03-xgoja-oidcresource-consumer-contract.md` before
+  implementing an xgoja module or durable-object API consumer.

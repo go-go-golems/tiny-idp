@@ -63,3 +63,13 @@ Added RFC 8628 discovery metadata and documented the standards-correct OIDC path
 
 - internal/oidcmeta/discovery.go — Advertise device authorization capability
 
+
+## 2026-07-16
+
+Completed production TLS smoke and published xgoja oidcresource consumer handoff contract.
+
+### Related Files
+
+- pkg/embeddedidp/provider_test.go — Production TLS introspection smoke
+- reference/03-xgoja-oidcresource-consumer-contract.md — Consumer contract and implementation checklist
+

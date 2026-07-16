@@ -16,11 +16,11 @@
 
 - [x] Add memory and SQL lifecycle tests: active, unknown, malformed, expired, revoked, refresh rotation, wrong audience, and audience persistence.
 - [x] Add negative tests for public/disabled/wrong resource-client authentication, token oracle resistance, root/path discovery, bearer-only policy, and redaction.
-- [ ] Add a strict TLS fixture/smoke and an operator guide for registering a resource server and calling introspection.
+- [x] Add a strict TLS fixture/smoke and an operator guide for registering a resource server and calling introspection.
 
 ## Phase D — xgoja consumer handoff
 
-- [ ] Publish the stable response/configuration contract and handoff checklist for xgoja `oidcresource`.
+- [x] Publish the stable response/configuration contract and handoff checklist for xgoja `oidcresource`.
 - [ ] Keep application-owned `programauth` device tokens documented as an independent optional credential system.
 
 ## TODO
