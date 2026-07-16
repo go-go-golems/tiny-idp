@@ -82,3 +82,8 @@ Documented programauth as an independent optional application credential system.
 
 - reference/03-xgoja-oidcresource-consumer-contract.md — Explicit OAuth device-token versus programauth boundary
 
+
+## 2026-07-16
+
+All implementation, verification, TLS smoke, operator guidance, and xgoja resource-server handoff tasks completed.
+

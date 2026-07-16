@@ -1,7 +1,7 @@
 ---
 Title: Authenticated OAuth token introspection and resource indicators
 Ticket: TINYIDP-INTROSPECTION-001
-Status: active
+Status: complete
 Topics:
     - auth
     - oidc
@@ -13,10 +13,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-15T21:53:44.759413131-04:00
+LastUpdated: 2026-07-16T14:34:22.591716369-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Authenticated OAuth token introspection and resource indicators
 
