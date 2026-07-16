@@ -117,9 +117,10 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clock := &securityClock{now: time.Now().UTC()}
 	auditSink := idp.NewMemorySink()
 	limiter := &strictRecordingLimiter{}
-	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey, CookieSameSite: http.SameSiteStrictMode, Audit: auditSink, RateLimiter: limiter})
+	p, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: secretKey, CookieSameSite: http.SameSiteStrictMode, Audit: auditSink, RateLimiter: limiter, Clock: clock.Now, AccessTokenTTL: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,6 +232,25 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	}
 	if introspection["active"] != true || introspection["sub"] != "user-alice" || introspection["iss"] != "http://127.0.0.1:5556" || introspection["client_id"] != "spa" || !claimHasAudience(introspection["aud"], "https://inbox.example.test/api") {
 		t.Fatalf("unexpected introspection response: %#v", introspection)
+	}
+	var inactiveBodies [][]byte
+	for _, token := range []string{"unknown-opaque-token", "not-a-tinyidp-token"} {
+		request, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(url.Values{"token": {token}}.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.SetBasicAuth("inbox-api", resourceSecret)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		responseBody, _ := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK || string(responseBody) != "{\"active\":false}\n" {
+			t.Fatalf("inactive token status=%d body=%q", response.StatusCode, responseBody)
+		}
+		inactiveBodies = append(inactiveBodies, responseBody)
+	}
+	if string(inactiveBodies[0]) != string(inactiveBodies[1]) {
+		t.Fatalf("unknown and malformed token responses differ: %q vs %q", inactiveBodies[0], inactiveBodies[1])
 	}
 
 	wrongSecretRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(introspectionForm.Encode()))
@@ -411,6 +431,20 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	}
 	if !seenAddressKey || !seenClientKey {
 		t.Fatalf("introspection did not use both rate-limit dimensions: %#v", limiter.keys)
+	}
+	limiter.reject = ""
+	clock.Advance(time.Minute + time.Second)
+	expiredRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/introspect", strings.NewReader(url.Values{"token": {refreshed["access_token"].(string)}}.Encode()))
+	expiredRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	expiredRequest.SetBasicAuth("inbox-api", resourceSecret)
+	expiredResponse, err := http.DefaultClient.Do(expiredRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredBody, _ := io.ReadAll(expiredResponse.Body)
+	_ = expiredResponse.Body.Close()
+	if expiredResponse.StatusCode != http.StatusOK || string(expiredBody) != "{\"active\":false}\n" {
+		t.Fatalf("expired introspection status=%d body=%q", expiredResponse.StatusCode, expiredBody)
 	}
 
 	auditBytes, err := json.Marshal(auditSink.Events())
