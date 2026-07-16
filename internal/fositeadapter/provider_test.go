@@ -167,6 +167,24 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 	if code == "" || cb.Query().Get("state") != "state-1234567890" {
 		t.Fatalf("bad callback location: %s", loc)
 	}
+	dpopTokenRequest, _ := http.NewRequest(http.MethodPost, ts.URL+"/token", strings.NewReader(url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {"spa"},
+		"code":          {code},
+		"redirect_uri":  {"http://localhost/callback"},
+		"code_verifier": {verifier},
+	}.Encode()))
+	dpopTokenRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	dpopTokenRequest.Header.Set("DPoP", "synthetic-proof-that-must-not-be-ignored")
+	dpopTokenResponse, err := http.DefaultClient.Do(dpopTokenRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dpopTokenBody, _ := io.ReadAll(dpopTokenResponse.Body)
+	_ = dpopTokenResponse.Body.Close()
+	if dpopTokenResponse.StatusCode != http.StatusBadRequest || !strings.Contains(string(dpopTokenBody), `"error":"invalid_request"`) {
+		t.Fatalf("DPoP token request status=%d body=%q", dpopTokenResponse.StatusCode, dpopTokenBody)
+	}
 
 	tokResp, err := http.PostForm(ts.URL+"/token", url.Values{
 		"grant_type":    {"authorization_code"},
@@ -472,15 +490,22 @@ func TestStrictAuthorizationCodeFlow(t *testing.T) {
 		}
 	}
 	seen := map[string]bool{}
+	dpopRejected := false
 	for _, event := range auditSink.Events() {
 		if strings.HasPrefix(event.Name, "introspection.") {
 			seen[event.Name] = true
+		}
+		if event.Name == "token.request.rejected" && event.Reason == "dpop_not_supported" {
+			dpopRejected = true
 		}
 	}
 	for _, name := range []string{"introspection.accepted", "introspection.inactive", "introspection.rejected"} {
 		if !seen[name] {
 			t.Fatalf("missing bounded audit event %q in %#v", name, auditSink.Events())
 		}
+	}
+	if !dpopRejected {
+		t.Fatalf("missing bounded DPoP rejection audit event: %#v", auditSink.Events())
 	}
 }
 

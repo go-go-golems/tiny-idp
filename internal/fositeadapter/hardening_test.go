@@ -2,6 +2,7 @@ package fositeadapter_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -104,5 +105,52 @@ func TestSecurityHeadersOnDiscovery(t *testing.T) {
 	}
 	if resp.Header.Get("Content-Security-Policy") == "" {
 		t.Fatalf("missing CSP")
+	}
+}
+
+func TestDiscoveryPublishesIntrospectionAtRootAndPathIssuer(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		issuer            string
+		discoveryPath     string
+		wantIntrospection string
+	}{
+		{name: "root issuer", issuer: "https://issuer.example.test", discoveryPath: "/.well-known/openid-configuration", wantIntrospection: "https://issuer.example.test/introspect"},
+		{name: "path issuer", issuer: "https://issuer.example.test/idp", discoveryPath: "/idp/.well-known/openid-configuration", wantIntrospection: "https://issuer.example.test/idp/introspect"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := memory.New()
+			key, err := keys.GenerateRSA("kid-discovery", time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.CreateSigningKey(context.Background(), key); err != nil {
+				t.Fatal(err)
+			}
+			provider, err := fositeadapter.NewProvider(context.Background(), fositeadapter.Options{Issuer: tc.issuer, Store: st, SecretKey: []byte("discovery-introspection-key-32-bytes")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(provider.Handler())
+			defer server.Close()
+			response, err := http.Get(server.URL + tc.discoveryPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("discovery status=%d", response.StatusCode)
+			}
+			var discovery struct {
+				IntrospectionEndpoint string   `json:"introspection_endpoint"`
+				AuthMethods           []string `json:"introspection_endpoint_auth_methods_supported"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&discovery); err != nil {
+				t.Fatal(err)
+			}
+			if discovery.IntrospectionEndpoint != tc.wantIntrospection || len(discovery.AuthMethods) != 1 || discovery.AuthMethods[0] != "client_secret_basic" {
+				t.Fatalf("discovery introspection contract=%#v", discovery)
+			}
+		})
 	}
 }

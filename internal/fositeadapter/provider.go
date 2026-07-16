@@ -1022,6 +1022,14 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 		tokenError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
 		return
 	}
+	// This release issues bearer access tokens only. Silently accepting a DPoP
+	// proof would invite a caller to assume sender-constrained semantics that
+	// neither the token nor an independent resource server can enforce.
+	if len(r.Header.Values("DPoP")) != 0 {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "token.request.rejected", Result: "rejected", Reason: "dpop_not_supported"})
+		tokenError(w, http.StatusBadRequest, "invalid_request", "DPoP is not supported")
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "token.request.rejected", Result: "rejected", Reason: "invalid_form"})
 		tokenError(w, http.StatusBadRequest, "invalid_request", "invalid form")
