@@ -73,3 +73,12 @@ Completed production TLS smoke and published xgoja oidcresource consumer handoff
 - pkg/embeddedidp/provider_test.go — Production TLS introspection smoke
 - reference/03-xgoja-oidcresource-consumer-contract.md — Consumer contract and implementation checklist
 
+
+## 2026-07-16
+
+Documented programauth as an independent optional application credential system.
+
+### Related Files
+
+- reference/03-xgoja-oidcresource-consumer-contract.md — Explicit OAuth device-token versus programauth boundary
+

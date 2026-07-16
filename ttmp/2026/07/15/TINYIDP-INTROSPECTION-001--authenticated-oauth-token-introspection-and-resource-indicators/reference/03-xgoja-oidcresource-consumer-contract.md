@@ -197,6 +197,30 @@ JavaScript supplies route scopes and application policy only. This boundary
 keeps secrets out of scripts and makes the secure default reusable across
 xapps.
 
+## Relationship to application-owned `programauth`
+
+`programauth` remains a separate, optional application credential system. It
+is appropriate when an application intentionally owns the complete lifecycle
+of a narrowly scoped automation credential: creation, display-once delivery,
+hashing, rotation, revocation, auditing, and route authorization. It is not an
+implementation detail of tiny-idp's OAuth device authorization grant and must
+not be represented to a caller as an IDP-issued access token.
+
+Choose one mechanism per caller and make the choice visible in API policy:
+
+| Caller need | Preferred mechanism | Authority |
+| --- | --- | --- |
+| Human browser sign-in | OIDC authorization code | tiny-idp user session and client grant |
+| Human completes CLI login | OAuth device authorization + `oidcresource` | tiny-idp subject, scope, audience, expiry |
+| App-specific automation secret | `programauth` | Application-owned principal and route policy |
+
+An xapp may support both systems, but they arrive through distinct middleware
+and yield distinct principal kinds. Never pass a `programauth` secret to
+`/introspect`; never attempt to validate a tiny-idp opaque access token against
+the application's `programauth` database. If a route accepts both, its policy
+must explicitly state which scopes or application permissions each principal
+kind receives and audit the credential kind without recording the credential.
+
 ## Implementation tasks for go-go-goja
 
 1. Define an immutable Go configuration type and startup validation.

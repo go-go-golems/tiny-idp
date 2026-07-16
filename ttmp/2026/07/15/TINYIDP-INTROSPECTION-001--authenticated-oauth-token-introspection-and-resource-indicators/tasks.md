@@ -21,6 +21,6 @@
 ## Phase D — xgoja consumer handoff
 
 - [x] Publish the stable response/configuration contract and handoff checklist for xgoja `oidcresource`.
-- [ ] Keep application-owned `programauth` device tokens documented as an independent optional credential system.
+- [x] Keep application-owned `programauth` device tokens documented as an independent optional credential system.
 
 ## TODO
