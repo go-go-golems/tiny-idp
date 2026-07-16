@@ -36,10 +36,10 @@
 
 ## Phase 4 — Device CLI and owner-only token cache
 
-- [ ] Add Glazed `device-login` command with discovery, RFC 8628 start/poll semantics, browser instructions, and terminal error handling.
-- [ ] Add owner-only token-cache load/write/expiry validation with explicit flags and no environment configuration.
-- [ ] Add Glazed BBS read command using cached bearer token.
-- [ ] Add Glazed BBS post command with title/body/category validation and stable output.
+- [x] Add Glazed `device-login` command with discovery, RFC 8628 start/poll semantics, browser instructions, and terminal error handling.
+- [x] Add owner-only token-cache load/write/expiry validation with explicit flags and no environment configuration.
+- [x] Add Glazed BBS read command using cached bearer token.
+- [x] Add Glazed BBS post command with title/body/category validation and stable output.
 - [ ] Unit test polling interval, `slow_down`, denial/expiry, malformed discovery, cache mode, and HTTP request formation.
 
 ## Phase 5 — End-to-end and regression verification

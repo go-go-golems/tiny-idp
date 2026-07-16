@@ -22,3 +22,12 @@ Step 2: implemented resource authentication, client bootstrap, and device-author
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/device_api.go — Host bearer API security boundary
 
+
+## 2026-07-16
+
+Step 3: added device-login and cached bearer BBS CLI commands (commit d474d3f)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/device_cli.go — Terminal device authorization implementation
+

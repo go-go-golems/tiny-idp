@@ -21,6 +21,8 @@ RelatedFiles:
       Note: End-to-end device approval and BBS author proof
     - Path: repo://cmd/tinyidp-xapp/device_api.go
       Note: Host-owned bearer BBS API committed in 4699d40
+    - Path: repo://cmd/tinyidp-xapp/device_cli.go
+      Note: Glazed device login and cached bearer BBS commands committed in d474d3f
     - Path: repo://cmd/tinyidp-xapp/internal/resourceauth/resourceauth.go
       Note: Go-only opaque bearer validation committed in 5e6d279 and 4699d40
 ExternalSources: []
@@ -29,6 +31,7 @@ LastUpdated: 2026-07-16T15:20:00-04:00
 WhatFor: Preserve the reasoning, commands, outcomes, and review guidance needed to continue this security-sensitive implementation.
 WhenToUse: Before changing the resource server, device client, xapp state, CLI, or end-to-end harness.
 ---
+
 
 
 
@@ -280,4 +283,89 @@ device CLI -> /idp/device_authorization (openid + bbs scopes + audience)
           -> /idp/token opaque bearer
           -> /api/device/bbs/posts
           -> Go RFC 7662 -> principal{sub} -> BBS/community
+```
+
+## Step 3: Add the terminal-facing device and BBS commands
+
+The xapp binary now includes the user-facing half of the vertical slice:
+`device-login` starts and polls the device flow; `bbs-get` and `bbs-post` use
+the resulting bearer token against the host-owned API. All connection values
+are explicit Glazed flags. The token cache is a regular 0600 file and refuses
+to be used when expired.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Continue the planned implementation through the CLI phase with commit and diary discipline.
+
+**Inferred user intent:** A person should be able to operate the demonstrated device-authenticated durable-object API without writing ad hoc HTTP requests.
+
+**Commit (code):** `d474d3f9d400dd2017d3c59e8daec8eb71aa961f` — "feat(xapp): add device authorization BBS CLI"
+
+### What I did
+
+- Added `cmd/tinyidp-xapp/device_cli.go` and registered three Glazed commands
+  from `main.go`.
+- `device-login` discovers the issuer, prints the verification URL/code, polls
+  on the provider interval, handles `authorization_pending`/`slow_down`, and
+  writes an owner-only cache only after a complete success response.
+- `bbs-get` and `bbs-post` load the same cache, refuse expired credentials, and
+  call the bearer API with the token in `Authorization`.
+- Ran `go test ./cmd/tinyidp-xapp/... -count=1`; all packages passed.
+
+### Why
+
+- Keeping these commands in the xapp binary makes the example self-contained
+  and shows the precise device-client configuration rather than requiring a
+  private curl recipe.
+
+### What worked
+
+- The complete xapp test suite compiled and passed after command registration.
+- The cache has no environment-variable dependency and uses owner-only file
+  permissions on creation and validation.
+
+### What didn't work
+
+- The initial compact implementation used an incorrect Glazed helper type,
+  producing `undefined: fields.Field`. Local API documentation confirmed
+  `fields.New` returns `*fields.Definition`; the command helpers were corrected.
+
+### What I learned
+
+- The command surface is sufficient for manual device authorization, but it
+  still needs a fake-provider unit suite and a real browser/CLI harness before
+  Phase 4 can be called fully verified.
+
+### What was tricky to build
+
+- Polling must preserve the provider's interval and react to `slow_down` while
+  never persisting a token on a pending, denied, malformed, or expired result.
+  The implementation keeps device code only in process memory and writes only
+  the final access token/expiry cache.
+
+### What warrants a second pair of eyes
+
+- Review CLI output conventions and cache placement defaults for the intended
+  distribution platform. The default is intentionally local and explicit;
+  system-wide credential-store integration is out of scope.
+
+### What should be done in the future
+
+- Add deterministic fake-provider tests and a tmux/browser smoke harness that
+  runs `device-login` and `bbs-post` against a live xapp.
+
+### Code review instructions
+
+- Read `deviceLogin`, `writeDeviceTokenCache`, and `callBBSAPI` in
+  `cmd/tinyidp-xapp/device_cli.go`.
+- Run `go test ./cmd/tinyidp-xapp/... -count=1` and inspect
+  `go run ./cmd/tinyidp-xapp --help`.
+
+### Technical details
+
+```text
+device-login -> cache(access token, expiry, issuer, audience; mode 0600)
+bbs-get/post -> cache expiry check -> Authorization: Bearer -> /api/device/*
 ```
