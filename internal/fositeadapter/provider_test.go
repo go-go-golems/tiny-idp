@@ -583,7 +583,7 @@ func cloneValues(v url.Values) url.Values {
 	return out
 }
 
-func verifyIDTokenAgainstJWKS(t *testing.T, baseURL, token, issuer, audience, nonce string) {
+func verifyIDTokenAgainstJWKS(t *testing.T, baseURL, token, issuer, audience, nonce string) string {
 	t.Helper()
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
@@ -648,12 +648,13 @@ func verifyIDTokenAgainstJWKS(t *testing.T, baseURL, token, issuer, audience, no
 	} else if err := json.Unmarshal(b, &claims); err != nil {
 		t.Fatal(err)
 	}
-	if claims["iss"] != issuer || claims["nonce"] != nonce || !claimHasAudience(claims["aud"], audience) {
+	if claims["iss"] != issuer || !claimHasAudience(claims["aud"], audience) || (nonce != "" && claims["nonce"] != nonce) {
 		t.Fatalf("bad id_token claims: %#v", claims)
 	}
 	if _, ok := claims["exp"].(float64); !ok {
 		t.Fatalf("missing numeric exp: %#v", claims)
 	}
+	return kid
 }
 
 func claimHasAudience(v any, audience string) bool {

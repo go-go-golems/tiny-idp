@@ -244,6 +244,8 @@ func TestSQLiteDeviceTokenRedemptionFailpointsRollbackGrantAndTokens(t *testing.
 		"after_consume_device_grant",
 		"before_create_access_token",
 		"after_create_access_token",
+		"before_create_refresh_token",
+		"after_create_refresh_token",
 		"before_commit_token",
 	}
 	for _, point := range points {
@@ -256,7 +258,7 @@ func TestSQLiteDeviceTokenRedemptionFailpointsRollbackGrantAndTokens(t *testing.
 				t.Fatal(err)
 			}
 			defer store.Close()
-			if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
+			if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid", "offline_access"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode, idpstore.GrantRefreshToken}}); err != nil {
 				t.Fatal(err)
 			}
 			if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
@@ -270,15 +272,16 @@ func TestSQLiteDeviceTokenRedemptionFailpointsRollbackGrantAndTokens(t *testing.
 				t.Fatal(err)
 			}
 			deviceCode := "sqlite-device-code"
-			grant := idpstore.DeviceGrant{ID: "device-grant", DeviceCodeHash: idpstore.HashSecret(secret, "tinyidp/device-code/v1\x00"+deviceCode), UserCodeHash: idpstore.HashSecret(secret, "tinyidp/user-code/v1\x00ABCD-EFGH"), ClientID: "device-cli", RequestedScopes: []string{"openid"}, Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(time.Hour), PollInterval: time.Second, NextPollAt: now}
+			grant := idpstore.DeviceGrant{ID: "device-grant", DeviceCodeHash: idpstore.HashSecret(secret, "tinyidp/device-code/v1\x00"+deviceCode), UserCodeHash: idpstore.HashSecret(secret, "tinyidp/user-code/v1\x00ABCD-EFGH"), ClientID: "device-cli", RequestedScopes: []string{"openid", "offline_access"}, Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(time.Hour), PollInterval: time.Second, NextPollAt: now}
 			if err := store.CreateDeviceGrant(ctx, grant); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := store.DecideDeviceGrant(ctx, idpstore.DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: idpstore.DeviceGrantApprove, UserID: "u1", Subject: "user-alice", AuthTime: now, AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, Now: now}); err != nil {
+			if _, err := store.DecideDeviceGrant(ctx, idpstore.DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: idpstore.DeviceGrantApprove, UserID: "u1", Subject: "user-alice", AuthTime: now, AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid", "offline_access"}, Now: now}); err != nil {
 				t.Fatal(err)
 			}
+			armed := true
 			provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, Clock: func() time.Time { return now }, TokenPersistenceHook: func(candidate string) error {
-				if candidate == point {
+				if armed && candidate == point {
 					return errors.New("injected device token persistence failure")
 				}
 				return nil
@@ -298,6 +301,28 @@ func TestSQLiteDeviceTokenRedemptionFailpointsRollbackGrantAndTokens(t *testing.
 			}
 			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_access_tokens`, 0)
 			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens`, 0)
+
+			// A transaction rollback must leave the approved grant usable. Retrying
+			// its same device code after every persistence failpoint also proves that
+			// refresh-token creation is inside the all-or-nothing boundary.
+			armed = false
+			status, body := postTokenForm(t, server.URL, url.Values{"grant_type": {idpstore.GrantDeviceCode}, "client_id": {"device-cli"}, "device_code": {deviceCode}})
+			if status != http.StatusOK {
+				t.Fatalf("retry after failpoint %s status=%d body=%q", point, status, body)
+			}
+			var tokens map[string]any
+			if err := json.Unmarshal(body, &tokens); err != nil {
+				t.Fatal(err)
+			}
+			if tokens["access_token"] == "" || tokens["refresh_token"] == "" || tokens["id_token"] == "" {
+				t.Fatalf("retry after failpoint %s did not issue complete device tokens: %#v", point, tokens)
+			}
+			loaded, err = store.InspectDeviceGrantByDeviceCodeHash(ctx, grant.DeviceCodeHash, "device-cli")
+			if err != nil || loaded.Status != idpstore.DeviceGrantConsumed {
+				t.Fatalf("retry after failpoint %s did not consume grant %#v %v", point, loaded, err)
+			}
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_access_tokens`, 1)
+			assertSQLCount(t, store, `SELECT COUNT(*) FROM fosite_refresh_tokens`, 1)
 		})
 	}
 }
@@ -358,6 +383,81 @@ func TestSQLiteDeviceTokenRedemptionSignsBeforeSingleConnectionTransaction(t *te
 	}
 	if body["access_token"] == "" || body["id_token"] == "" {
 		t.Fatalf("device token response = %#v", body)
+	}
+}
+
+func TestSQLiteDeviceIDTokensRemainVerifiableAcrossSigningKeyRotation(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	secret := []byte("sqlite-device-key-rotation-secret")
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.PutClient(ctx, idpstore.Client{ID: "device-cli", Public: true, RequirePKCE: true, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantDeviceCode}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}); err != nil {
+		t.Fatal(err)
+	}
+	oldKey, err := keys.GenerateRSA("device-old", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, oldKey); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, Clock: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+
+	issueApprovedDeviceGrant := func(id, code string) map[string]any {
+		t.Helper()
+		grant := idpstore.DeviceGrant{ID: id, DeviceCodeHash: idpstore.HashSecret(secret, "tinyidp/device-code/v1\x00"+code), UserCodeHash: idpstore.HashSecret(secret, "tinyidp/user-code/v1\x00"+id), ClientID: "device-cli", RequestedScopes: []string{"openid"}, Status: idpstore.DeviceGrantPending, CreatedAt: now, ExpiresAt: now.Add(time.Hour), PollInterval: time.Second, NextPollAt: now}
+		if err := store.CreateDeviceGrant(ctx, grant); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.DecideDeviceGrant(ctx, idpstore.DeviceDecisionRequest{UserCodeHash: grant.UserCodeHash, Decision: idpstore.DeviceGrantApprove, UserID: "u1", Subject: "user-alice", AuthTime: now, AuthenticationMethods: []string{"pwd"}, ApprovedScopes: []string{"openid"}, Now: now}); err != nil {
+			t.Fatal(err)
+		}
+		status, body := postTokenForm(t, server.URL, url.Values{"grant_type": {idpstore.GrantDeviceCode}, "client_id": {"device-cli"}, "device_code": {code}})
+		if status != http.StatusOK {
+			t.Fatalf("device token status=%d body=%q", status, body)
+		}
+		var tokens map[string]any
+		if err := json.Unmarshal(body, &tokens); err != nil {
+			t.Fatal(err)
+		}
+		return tokens
+	}
+
+	beforeRotation := issueApprovedDeviceGrant("device-grant-before-rotation", "device-code-before-rotation")
+	oldToken, _ := beforeRotation["id_token"].(string)
+	if kid := verifyIDTokenAgainstJWKS(t, server.URL, oldToken, "http://127.0.0.1:5556", "device-cli", ""); kid != "device-old" {
+		t.Fatalf("device token before rotation signed with kid=%q, want device-old", kid)
+	}
+
+	newKey, err := keys.GenerateRSA("device-new", now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RotateSigningKey(ctx, newKey, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	// The retired key must remain published while an already-issued device ID
+	// token can still be valid; this verifies the old signature after rotation.
+	if kid := verifyIDTokenAgainstJWKS(t, server.URL, oldToken, "http://127.0.0.1:5556", "device-cli", ""); kid != "device-old" {
+		t.Fatalf("retired device token signed with kid=%q, want device-old", kid)
+	}
+
+	afterRotation := issueApprovedDeviceGrant("device-grant-after-rotation", "device-code-after-rotation")
+	newToken, _ := afterRotation["id_token"].(string)
+	if kid := verifyIDTokenAgainstJWKS(t, server.URL, newToken, "http://127.0.0.1:5556", "device-cli", ""); kid != "device-new" {
+		t.Fatalf("device token after rotation signed with kid=%q, want device-new", kid)
 	}
 }
 
