@@ -15,7 +15,7 @@
 ## Phase C — Verification and operator usability
 
 - [x] Add memory and SQL lifecycle tests: active, unknown, malformed, expired, revoked, refresh rotation, wrong audience, and audience persistence.
-- [ ] Add negative tests for public/disabled/wrong resource-client authentication, token oracle resistance, root/path discovery, bearer-only policy, and redaction.
+- [x] Add negative tests for public/disabled/wrong resource-client authentication, token oracle resistance, root/path discovery, bearer-only policy, and redaction.
 - [ ] Add a strict TLS fixture/smoke and an operator guide for registering a resource server and calling introspection.
 
 ## Phase D — xgoja consumer handoff

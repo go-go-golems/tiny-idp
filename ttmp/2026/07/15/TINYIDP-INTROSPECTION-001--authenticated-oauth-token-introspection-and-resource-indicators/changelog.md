@@ -44,3 +44,13 @@ Completed memory/SQLite introspection security matrix for caller authorization, 
 - internal/fositeadapter/provider_test.go — Memory verification matrix
 - internal/fositeadapter/sqlstore_test.go — SQLite expiry fixture and regression
 
+
+## 2026-07-16
+
+Made bearer-only DPoP rejection and root/path introspection discovery executable.
+
+### Related Files
+
+- internal/fositeadapter/hardening_test.go — Verify root and path issuer discovery endpoints
+- internal/fositeadapter/provider.go — Reject unsupported DPoP before code consumption
+

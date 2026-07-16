@@ -12,15 +12,19 @@ Owners: []
 RelatedFiles:
     - Path: repo://internal/fositeadapter/device_token_handler.go
       Note: Transfers approved device audiences into Fosite token request (d5c7647)
+    - Path: repo://internal/fositeadapter/hardening_test.go
+      Note: Root/path issuer discovery mount regression (aa4add8)
     - Path: repo://internal/fositeadapter/provider.go
       Note: |-
         Introspection endpoint, exact audience policy, and device resource indicator handling (f718d36, d5c7647)
         Preauthenticated caller classification before opaque-token validation (d196aeb)
+        Explicit pre-consumption DPoP rejection for bearer-only issuance (aa4add8)
     - Path: repo://internal/fositeadapter/provider_test.go
       Note: |-
         Authorization-code, device, caller-authentication, wrong-audience, duplicate-credential, and refresh-audience regression evidence (f718d36, d5c7647, 866e0bb, d196aeb)
         Incorrect resource-client credential regression (d196aeb)
         Memory-backed caller, audit, rate-limit, expiry, and rotation matrix (df6b2be, d15f0f3, e4358ed)
+        DPoP rejection ordering and bounded-audit regression (aa4add8)
     - Path: repo://internal/fositeadapter/sqlstore_test.go
       Note: |-
         Restart-backed SQLite opaque-token lifecycle, audience, rotation, reuse, and inactive-response regression evidence (d196aeb)
@@ -35,10 +39,11 @@ ExternalSources:
     - https://www.rfc-editor.org/rfc/rfc8707.html
     - https://www.rfc-editor.org/rfc/rfc9449.html
 Summary: Chronological evidence for authenticated opaque-token introspection and resource-indicator implementation.
-LastUpdated: 2026-07-16T13:05:00-04:00
+LastUpdated: 2026-07-16T13:19:00-04:00
 WhatFor: Preserve implementation decisions, verification evidence, and remaining production work.
 WhenToUse: Read before extending the endpoint, its resource-server contract, or xgoja integration.
 ---
+
 
 
 
@@ -763,4 +768,137 @@ authorized resource caller state
 audit event payload
   contains: event name, resource client ID, result/reason vocabulary, counts
   excludes: bearer token, refresh token, client secret, Fosite error detail
+```
+
+## Step 6: Make bearer-only and issuer-prefix policy executable
+
+The matrix originally documented DPoP as unsupported for independently hosted
+resource servers, but the token endpoint would accept a `DPoP` header and
+continue to issue an ordinary bearer token. Ignoring the proof is unsafe from a
+product-contract perspective: a client might interpret a successful response
+as sender-constrained even though no `cnf` binding or resource-server replay
+validation exists. This step makes the non-support explicit at the earliest
+safe point, before Fosite processes or consumes an authorization code.
+
+It also verifies the route/discovery relationship for both supported issuer
+forms. A root issuer and a path issuer are different HTTP mount points; a
+correct discovery document must advertise an endpoint that is actually mounted
+under the issuer prefix.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, continue"
+
+**Assistant interpretation:** Continue the remaining explicit policy work in
+the negative test task after completing the storage/lifecycle matrix.
+
+**Inferred user intent:** Ensure that advertised protocol limitations are
+enforced at runtime, and that applications can rely on discovery for either
+standalone or path-mounted tiny-idp deployments.
+
+**Commit (code):** `aa4add8` — "auth: reject unsupported DPoP token requests"
+
+### What I did
+
+- Added an early `DPoP` header check to `Provider.token`. A nonempty DPoP
+  header produces `400 invalid_request`, a bounded
+  `token.request.rejected` audit event with reason `dpop_not_supported`, and
+  no Fosite access-request handling.
+- Extended the strict authorization-code test to submit a synthetic DPoP proof
+  with a real, unredeemed code, require the rejection, and then redeem that
+  same code normally. The second exchange proves the rejected attempt did not
+  consume or mutate the authorization code.
+- Required the test audit sink to observe `dpop_not_supported`, in addition to
+  the bounded introspection audit event names from Step 5.
+- Added a root/path discovery table test. It creates an actual handler for
+  `https://issuer.example.test` and
+  `https://issuer.example.test/idp`, requests the corresponding mounted
+  discovery path, and verifies the advertised
+  `introspection_endpoint` and sole `client_secret_basic` method.
+
+### Why
+
+DPoP is not a decorative request header. It requires a token binding, an
+`ath`/request-proof policy at the protected resource, and durable replay
+prevention. Tiny-idp’s RFC 7662 endpoint currently validates bearer access
+tokens only. Rejecting DPoP at issuance is safer and clearer than returning a
+bearer token under an ambiguous request.
+
+Issuer paths are equally protocol-significant. A caller that discovers
+`https://issuer.example.test/idp` must call
+`https://issuer.example.test/idp/introspect`, not a host-root endpoint. The
+route and metadata test protects this relationship from future mux or issuer
+normalization changes.
+
+### What worked
+
+- `go test ./internal/fositeadapter -run 'TestStrictAuthorizationCodeFlow|TestDiscoveryPublishesIntrospectionAtRootAndPathIssuer' -count=1` passed.
+- `go test ./internal/fositeadapter -count=1` passed in 21.520 seconds before
+  the code commit.
+- The normal authorization-code exchange succeeding after the rejected DPoP
+  attempt establishes that policy rejection occurs before authorization-code
+  mutation, not merely before response rendering.
+
+### What didn't work
+
+- N/A. The focused policy and discovery tests passed on their first run.
+
+### What I learned
+
+- Unsupported security extensions need a negative protocol response, not just
+  absence from documentation. Otherwise an integration can accidentally rely
+  on a security property that is not present.
+- Testing discovery metadata without testing the handler mount is incomplete
+  for path issuers. Pure metadata construction can be correct while a router
+  accidentally exposes only the root path.
+
+### What was tricky to build
+
+The DPoP check must precede `ParseForm`/`NewAccessRequest` rather than only
+precede response construction. Authorization-code grants are one-use state.
+The regression intentionally uses the same code in the rejected DPoP request
+and in the succeeding bearer request to prove the ordering property rather
+than trusting source inspection.
+
+### What warrants a second pair of eyes
+
+- Review whether the project wants a dedicated OAuth error code or a more
+  specific error description when it eventually publishes a formal DPoP
+  capability. `invalid_request` is appropriate while DPoP is unsupported.
+- Any later DPoP implementation must remove this guard only together with
+  token confirmation (`cnf`) issuance and resource-server proof/replay
+  validation. Supporting a header at one endpoint alone is insufficient.
+
+### What should be done in the future
+
+- Use the TLS script and operator guide against a real `serve-production`
+  fixture with a resource-client secret supplied through the supported
+  bootstrap path.
+- Publish the xgoja `oidcresource` response/configuration contract, including
+  the explicit `token_type == Bearer` precondition.
+
+### Code review instructions
+
+- Review the beginning of `Provider.token` in
+  `internal/fositeadapter/provider.go`; the DPoP guard must remain before
+  Fosite access-request processing.
+- Review the two new tests in `provider_test.go` and `hardening_test.go` as
+  the executable ordering and path-mount contracts.
+- Run `go test ./internal/fositeadapter -count=1`.
+
+### Technical details
+
+```text
+valid authorization code + DPoP header
+    -> 400 invalid_request
+    -> audit reason dpop_not_supported
+    -> code remains unused
+
+valid authorization code + no DPoP header
+    -> ordinary bearer access token
+
+issuer: https://issuer.example.test/idp
+discovery route: /idp/.well-known/openid-configuration
+published endpoint: https://issuer.example.test/idp/introspect
+handler route: /idp/introspect
 ```
