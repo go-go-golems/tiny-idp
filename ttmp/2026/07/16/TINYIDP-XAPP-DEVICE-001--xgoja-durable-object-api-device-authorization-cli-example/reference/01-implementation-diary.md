@@ -465,3 +465,145 @@ running in tmux session `tinyidp-xapp-device-smoke` on port 18878.
 fake provider: pending -> slow_down -> success
 live tmux:     discovery ready -> human browser approval -> CLI cache -> BBS API
 ```
+
+## Step 5: Complete the end-to-end security and browser regression matrix
+
+Phase 5 now has direct evidence across both interfaces. The ticket-owned
+Playwright script drives the live browser login form, creates a BBS post
+through the unchanged CSRF-protected browser route, and logs out. Go
+integration tests create device grants for Alice and Bob, verify that their
+posts retain distinct verified subjects, prove that an insufficient-scope
+request cannot mutate the durable object, reject malformed and wrong-audience
+requests, and validate that changing Alice's password invalidates an unobserved
+device token at the actual bearer API. A separate TLS test executes discovery,
+device approval, token polling, introspection, and a BBS post in initialized
+mode.
+
+### Prompt Context
+
+**User prompt (verbatim):** "DO it all"
+
+**Assistant interpretation:** Finish the outstanding Phase 4 and Phase 5
+implementation and verification tasks, keep the ticket evidence reproducible,
+and use Playwright where available.
+
+**Inferred user intent:** The example should be demonstrably usable rather
+than merely compiling: it needs evidence for browser behavior, security
+boundaries, user identity propagation, revocation, and production-shaped TLS
+execution.
+
+**Commit (code):** Pending final review and staging.
+
+### What I did
+
+- Extended deterministic CLI coverage to reject issuer-mismatched discovery,
+  immediately expired device grants, and terminal `access_denied` responses.
+- Added `phase5_test.go`. It creates real device grants for Alice and Bob,
+  writes their posts, checks the two server-derived subject values, and proves
+  a read-only token cannot add the attempted `denied` post.
+- Used the real password-change lifecycle (`idpaccounts.SetPassword`) to
+  revoke an unobserved Alice token, then observed `401` from `/api/device/bbs`.
+  This exercises the actual storage path which removes Fosite access-token
+  sessions during password security-artifact revocation.
+- Added a TLS initialized-state test and a ticket-owned Python Playwright
+  script. The script uses the local Playwright 1.45 package and system
+  Chromium; it does not depend on a missing MCP server.
+- Started the app in tmux and ran the browser script against
+  `http://127.0.0.1:18878`. Ran `go test ./...` after the changes.
+
+### Why
+
+- A resource server must not infer identity from request fields or retain a
+  token after a credential-security transition. The test makes both statements
+  observable from the application boundary.
+- Device authorization spans different clients and different human/machine
+  interactions. Browser automation and protocol integration tests cover
+  complementary failures; neither replaces the other.
+
+### What worked
+
+- The initial Playwright run completed login and post creation. After choosing
+  an exact accessible name for the app-only logout button, the complete browser
+  smoke passed.
+- `go test ./cmd/tinyidp-xapp -run 'Test(DeviceLogin|DeviceAPI|InitializedTLS)' -count=1`
+  passed.
+- `go test ./...` passed, including the xapp package in 10.779 seconds.
+- The existing browser-route Go integration test continues to prove that a
+  mutation without `X-CSRF-Token` returns `403`; the browser smoke proves the
+  normal UI still performs the protected mutation successfully.
+
+### What didn't work
+
+- The first local Playwright launch failed inside the sandbox because the
+  system Chromium is Snap-packaged and Snap requires a host capability that
+  the sandbox intentionally withholds. The same local test was rerun with the
+  narrowly scoped host permission and launched successfully.
+- The first browser run used a partial accessible name for logout. Two buttons
+  matched (`Log out of Local Loop` and `Log out of Local Loop + tiny-idp`), so
+  Playwright correctly raised a strict-selector error. The script now uses
+  `exact=True`, making the intended app logout explicit and stable.
+
+### What I learned
+
+- There is no Playwright MCP exposed to this agent session. A project-local
+  script using the installed Playwright library remains a reviewable,
+  repeatable substitute, and it belongs in the ticket's `scripts/` folder.
+- Password replacement is a security lifecycle boundary, not just a credential
+  update: the SQLite store invalidates Fosite access-token sessions for the
+  subject. Testing it through the BBS API catches a class of failures that an
+  isolated RFC 7662 decoder test cannot.
+
+### What was tricky to build
+
+- The device resource-authenticator caches positive decisions. To test
+  revocation without a cache-timing ambiguity, the test issues a fresh token,
+  changes the password before the token's first API request, and then observes
+  the `401` outcome. This tests the provider lookup rather than cache expiry.
+- TLS initialized mode is configured with the deployed public origin while
+  `httptest.NewTLSServer` supplies the transport endpoint. The test correctly
+  retains the public audience (`https://app.example.test/api`) and uses the
+  test server's trusted TLS client only for transport.
+
+### What warrants a second pair of eyes
+
+- The development application now retains its private SQLite store pointer so
+  package-local integration tests can exercise an authentic password-security
+  transition. Confirm that keeping this internal test seam is preferable to a
+  broader public revocation API; no new runtime endpoint was added.
+- The current ticket validates password-change revocation. A future product
+  feature exposing operator-initiated OAuth token revocation should add a
+  corresponding public API contract and end-to-end test.
+
+### What should be done in the future
+
+- Execute the printed `device-login`, `bbs-post`, and `bbs-get` commands in a
+  separate real terminal while the tmux server is running; the protocol pieces
+  are covered automatically, but this remains a useful operator walkthrough.
+- Complete Phase 6: operator runbook, extraction recommendation, final ticket
+  relations/upload, and closure decision.
+
+### Code review instructions
+
+- Read `phase5_test.go` in this order: two-user/scopes, malformed request,
+  wrong audience, password-change revocation, TLS initialized flow.
+- Run the browser smoke against the tmux process:
+
+  ```sh
+  /home/manuel/.pyenv/versions/3.11.3/bin/python \
+    ttmp/2026/07/16/TINYIDP-XAPP-DEVICE-001--xgoja-durable-object-api-device-authorization-cli-example/scripts/playwright_browser_smoke.py \
+    --base-url http://127.0.0.1:18878
+  ```
+
+- Run `go test ./...` from the repository root.
+
+### Technical details
+
+```text
+Alice device token -> post(author=dev-alice-subject)
+Bob device token   -> post(author=dev-bob-subject)
+Bob read-only      -> POST denied -> board unchanged
+fresh Alice token  -> password change -> Fosite session removed -> API 401
+
+browser form -> application session + CSRF -> /api/bbs/posts -> logout
+initialized TLS -> device grant -> token -> RFC 7662 -> /api/device/bbs/posts
+```

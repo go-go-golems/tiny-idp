@@ -40,3 +40,11 @@ Step 4: added deterministic CLI tests and a live tmux smoke harness (commit b92d
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/device_cli_test.go — Phase 4 verification
 
+## 2026-07-16
+
+Step 5: completed browser, lifecycle, two-user, malformed-request, and TLS verification (pending commit)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/cmd/tinyidp-xapp/phase5_test.go — Application-level bearer security matrix
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/16/TINYIDP-XAPP-DEVICE-001--xgoja-durable-object-api-device-authorization-cli-example/scripts/playwright_browser_smoke.py — Reproducible browser smoke test

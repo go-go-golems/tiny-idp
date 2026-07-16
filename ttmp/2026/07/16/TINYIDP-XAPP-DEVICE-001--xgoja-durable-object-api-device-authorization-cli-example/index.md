@@ -12,13 +12,26 @@ Topics:
 DocType: index
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://cmd/tinyidp-xapp/development_app.go
+      Note: Development-only identity-store seam used to test real password-security token invalidation.
+    - Path: repo://cmd/tinyidp-xapp/device_cli.go
+      Note: Device authorization CLI, polling state machine, and owner-only token cache.
+    - Path: repo://cmd/tinyidp-xapp/device_cli_test.go
+      Note: Deterministic protocol error, cache, and request-formation verification.
+    - Path: repo://cmd/tinyidp-xapp/phase5_test.go
+      Note: Two-subject, denied-dispatch, password-revocation, malformed-request, and TLS application matrix.
+    - Path: repo://ttmp/2026/07/16/TINYIDP-XAPP-DEVICE-001--xgoja-durable-object-api-device-authorization-cli-example/scripts/playwright_browser_smoke.py
+      Note: Local Playwright browser login/post/logout regression harness.
+    - Path: repo://ttmp/2026/07/16/TINYIDP-XAPP-DEVICE-001--xgoja-durable-object-api-device-authorization-cli-example/scripts/run-xapp-device-smoke.sh
+      Note: tmux live-server operator harness.
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-16T14:38:09.707065825-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # xgoja Durable Object API Device Authorization CLI Example
 

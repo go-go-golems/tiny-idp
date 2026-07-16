@@ -32,7 +32,7 @@
 - [x] Derive BBS actor ID and author only from verified principal data; forbid caller-selected identity fields.
 - [x] Preserve browser routes and their CSRF requirement; ensure no cookie-session fallback on bearer endpoints.
 - [x] Emit redacted API authentication and BBS audit events.
-- [ ] Add integration tests proving denied bearer requests do not dispatch to the durable object and accepted posts carry the token subject.
+- [x] Add integration tests proving denied bearer requests do not dispatch to the durable object and accepted posts carry the token subject.
 
 ## Phase 4 — Device CLI and owner-only token cache
 
@@ -45,10 +45,10 @@
 ## Phase 5 — End-to-end and regression verification
 
 - [x] Add a ticket-owned tmux/smoke harness that starts the app and prints the browser-approval, CLI read, and CLI post commands without disclosing credentials.
-- [ ] Add Playwright coverage for browser login, BBS mutation, logout, and the unchanged browser CSRF boundary.
-- [ ] Assert a device-authenticated second user posts a message authored by that subject after switching from the browser user.
-- [ ] Exercise wrong-audience, insufficient-scope, revoked/expired, and malformed-token denial cases in an application-level suite.
-- [ ] Exercise initialized TLS production mode with device discovery, approval, token polling, introspection, and API post.
+- [x] Add Playwright coverage for browser login, BBS mutation, logout, and the unchanged browser CSRF boundary.
+- [x] Assert a device-authenticated second user posts a message authored by that subject after switching from the browser user.
+- [x] Exercise wrong-audience, insufficient-scope, revoked/expired, and malformed-token denial cases in an application-level suite.
+- [x] Exercise initialized TLS production mode with device discovery, approval, token polling, introspection, and API post.
 
 ## Phase 6 — Handoff and reusable-primitives decision
 
