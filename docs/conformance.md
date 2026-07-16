@@ -18,7 +18,7 @@ Out of scope until explicitly implemented:
 
 - Implicit/hybrid response types.
 - Dynamic client registration.
-- Device Authorization Grant in the production engine.
+- Device Authorization Grant beyond tiny-idp's local strict-provider evidence; it has not received an OIDF device-profile certification claim.
 - DPoP in the production engine.
 
 ## Local regression command

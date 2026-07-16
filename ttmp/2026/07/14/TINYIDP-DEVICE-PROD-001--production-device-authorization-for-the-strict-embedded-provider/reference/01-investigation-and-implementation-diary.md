@@ -21,10 +21,20 @@ RelatedFiles:
       Note: One-origin IdP and relying-party composition
     - Path: examples/embedded/oidc.go
       Note: Back-channel exchange and ID-token verification
+    - Path: repo://internal/fositeadapter/device_fuzz_test.go
+      Note: Device fuzz targets (commit 09de11b)
     - Path: repo://internal/fositeadapter/provider_test.go
       Note: JWT/JWKS verifier used by device signing-key test (commit 704872f)
     - Path: repo://internal/fositeadapter/sqlstore_test.go
       Note: Device refresh failpoint retry and signing-key rotation evidence (commit 704872f)
+    - Path: repo://pkg/sqlitestore/device_model_test.go
+      Note: Generated public-API reference model evidence (commit 8c45cb2)
+    - Path: repo://ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint/main.go
+      Note: Device-specific AST analyzers (commit 136f1c9)
+    - Path: repo://ttmp/2026/07/14/TINYIDP-DEVICE-PROD-001--production-device-authorization-for-the-strict-embedded-provider/scripts/01-device-audit-metrics.go
+      Note: Bounded low-cardinality operations exporter (commit 2a857c7)
+    - Path: repo://ttmp/2026/07/14/TINYIDP-DEVICE-PROD-001--production-device-authorization-for-the-strict-embedded-provider/scripts/02-device-cli-smoke/main.go
+      Note: Independent external device smoke client (commit 09de11b)
 ExternalSources:
     - sources/rfc-8628-oauth-device-authorization-grant.md
     - sources/rfc-9700-oauth-security-bcp.md
@@ -33,6 +43,7 @@ LastUpdated: 2026-07-14T18:25:00Z
 WhatFor: Preserves commands, findings, mistakes, decisions, and validation so another engineer can continue without reconstructing the investigation.
 WhenToUse: Read at handoff, before implementing a task, or when reviewing why the design chose durable atomic state and Fosite integration.
 ---
+
 
 
 
@@ -1383,4 +1394,211 @@ key rotation
       --> rotate to device-new
   /jwks publishes device-old + device-new
       --> A still verifies, later device token B has kid=device-new
+```
+
+## Step 9: Add device operations evidence, generated state comparison, and adversarial tools
+
+This step closed the assurance work that remained after the core protocol and
+token lifecycle were reconciled. The work is intentionally layered: durable
+audit records give operators a production signal, a pure model checks state
+semantics against SQLite, fuzz/race targets explore parser and concurrency
+edges, and a standalone client proves the provider contract without importing
+the xapp application.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 8)
+
+**Assistant interpretation:** Finish the remaining self-contained production
+assurance tasks rather than stopping at happy-path endpoint tests.
+
+**Inferred user intent:** Ensure long-term operators and future engineers can
+reproduce security evidence and investigate device-flow failures safely.
+
+**Commit (code):** `2a857c7`, `8c45cb2`, `09de11b`.
+
+### What I did
+
+- Added `scripts/01-device-audit-metrics.go`, a bounded JSONL-to-Prometheus
+  exporter with allow-listed low-cardinality labels. Its tests reject oversized
+  input and demonstrate that client/subject strings are never labels.
+- Added `playbook/01-device-authorization-operator-runbook.md` with readiness,
+  dashboard, alert, replay, abuse, and audit-failure procedures.
+- Added `pkg/sqlitestore/device_model_test.go`. It runs 64 deterministic
+  generated action sequences through the public SQLite store and a separately
+  written pure reference model.
+- Added normalization/domain-separation fuzz targets and ran the SQLite
+  device-state suite under `-race`.
+- Added `scripts/02-device-cli-smoke`, a standard-library-only external smoke
+  client. It validates discovery/origin/grant metadata, enforces bounded JSON,
+  obeys pending/slow-down polling, prints only user-facing verification data,
+  and redacts bearer credentials.
+
+### Why
+
+- Audit events already had a stable device taxonomy. Reusing that durable
+  source avoids a second inconsistent telemetry path while keeping dashboard
+  labels free of identities and secrets.
+- Example-based tests can miss transition combinations. A reference model makes
+  poll backoff, expiry, terminal status, client binding, and consumption
+  semantics executable over many generated sequences.
+- The xapp CLI is a valuable application client but cannot be the only proof
+  of the general provider contract. The smoke client lives in the ticket,
+  imports no tiny-idp package, and does not persist a bearer credential.
+
+### What worked
+
+- `go test` passed for the metrics exporter, model harness, smoke client, and
+  complete Fosite adapter package.
+- The model harness passed 64 seeds × 48 actions, and the relevant SQLite
+  tests passed under the race detector.
+- The smoke-client integration test demonstrated `authorization_pending` then
+  success and verified its output contains neither the device code nor access
+  token.
+
+### What didn't work
+
+- The first metrics exporter compilation had a routine `undefined: fprintf`
+  typo; it was corrected to `fmt.Fprintf` before validation.
+- The first smoke-client compilation had the same routine formatting-call typo;
+  it was corrected and then covered by direct unit tests. Neither failure was
+  a provider behavior failure.
+
+### What I learned
+
+- The generic token audit event carries the grant type, so device token outcome
+  metrics can be derived safely without adding duplicate protocol events.
+- Device polling's five-second minimum is observable in the external client;
+  the smoke test deliberately pays two intervals to prove normal client
+  behavior rather than injecting a test-only clock into the tool.
+
+### What was tricky to build
+
+- The model must remain independent of SQLite implementation helpers. It uses
+  the public request/result types and separately mirrors only documented rules;
+  comparing implementation helper calls would not provide assurance.
+- The external client must show the user code but not log the device code. Its
+  output assertion protects this distinction from later accidental regression.
+
+### What warrants a second pair of eyes
+
+- Baseline production alert thresholds before paging on device-flow volume;
+  this ticket defines dimensions and procedures, not a one-size-fits-all rate.
+- Run the smoke client against the actual TLS/proxy deployment. `httptest` and
+  unit discovery prove protocol behavior but cannot validate external routing
+  or certificate operations.
+
+### What should be done in the future
+
+- Obtain the independent release review documented in the new evidence packet.
+
+### Code review instructions
+
+- Review the metrics script's `boundedReason` allow-list and ensure no future
+  event adds a client/subject/code/token label.
+- Review `deviceGrantModel` alongside `Store.PollDeviceGrant`,
+  `DecideDeviceGrant`, and `ConsumeDeviceGrant`; focus on independent state
+  semantics, not line-for-line similarity.
+- Run the commands listed in `reference/04-release-evidence-and-independent-review-packet.md`.
+
+### Technical details
+
+```text
+audit JSONL -> bounded exporter -> stage/outcome/reason counters
+public Store actions -> pure model versus SQLite after each generated action
+fuzz normalization + race transition tests + external smoke discovery/polling
+```
+
+## Step 10: Extend static checks and reconcile public device documentation
+
+The earlier generic `auditlint` suite was useful but did not encode device
+grant-specific regression rules. This step adds four Go AST analyzers with
+fixtures, runs them against the real strict provider, and corrects user-facing
+documentation that incorrectly described the strict grant as mock-only or
+unimplemented.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 8)
+
+**Assistant interpretation:** Prevent future refactors from quietly removing
+security boundaries and make public documentation match implemented behavior.
+
+**Inferred user intent:** A production claim should be traceable to both code
+and reliable, non-marketing documentation.
+
+**Commit (code):** `136f1c9` — "analysis(device): enforce device grant invariants"
+
+### What I did
+
+- Added AST analyzers for secret-like structured audit fields, missing bounded
+  form parsing in device handlers, generic `Update` in device transition
+  functions, and missing paired `/device_authorization`/`/device` registration.
+- Added `analysistest` fixtures that prove each intended diagnostic while
+  preserving accepted patterns.
+- Ran the analyzer suite and then the multichecker against
+  `./internal/fositeadapter ./pkg/sqlitestore`; it reported no violations.
+- Updated README, security profile, conformance caveat, and embedding guide to
+  state that strict RFC 8628 is implemented while retaining the independent
+  release-review boundary.
+- Added `reference/04-release-evidence-and-independent-review-packet.md` with
+  exact commands, reviewer questions, and an intentionally blank external
+  approval record.
+
+### Why
+
+- Security-sensitive design rules decay when expressed only in prose. The AST
+  checks detect narrowly defined structural regressions before review.
+- Saying “not implemented” after code and tests exist is as harmful as saying
+  “production approved” before external review. Documentation must separate
+  feature availability from release disposition.
+
+### What worked
+
+- All new analyzer fixtures passed and the real-code analyzer invocation was
+  silent, which is the expected result for a policy checker.
+- The public pages now consistently point engineers to strict device behavior,
+  operations evidence, and the still-open independent-review gate.
+
+### What didn't work
+
+- N/A after the focused analyzer fixture correction; no product behavior
+  changed in this step.
+
+### What I learned
+
+- Route parity can be checked reliably here because strict-provider registration
+  is centralized in `registerAt`. The analyzer is deliberately scoped to that
+  filename rather than pretending to solve arbitrary router analysis.
+
+### What was tricky to build
+
+- Static analysis must be specific enough to avoid training engineers to ignore
+  noise. The checks use stable names and AST structures and have fixtures for
+  every reported category; they do not attempt semantic taint analysis.
+
+### What warrants a second pair of eyes
+
+- Review any future router refactor with the handler-contract analyzer in mind;
+  update the analyzer and fixtures in the same change rather than weakening it.
+
+### What should be done in the future
+
+- Independent reviewer completes the approval record; no self-review may mark
+  that task done.
+
+### Code review instructions
+
+- Read analyzer docs and fixtures before `main.go`; then run:
+
+  ```sh
+  go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint -count=1
+  go run ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint ./internal/fositeadapter ./pkg/sqlitestore
+  ```
+
+### Technical details
+
+```text
+source structure -> auditlint -> diagnostic fixture + real provider invocation
+release language -> implemented strict grant + explicit external approval gate
 ```

@@ -99,3 +99,14 @@ Close device token lifecycle coverage: refresh-token persistence failpoints now 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider_test.go — Reusable JWKS verifier supports no-nonce device ID tokens
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — Device refresh failpoint/retry and signing-key-rotation evidence
 
+
+## 2026-07-16
+
+Complete self-contained device production assurance: operations exporter/runbook, model harness, fuzz/race/external smoke client, AST analyzers, public documentation, and independent-review packet (commits 2a857c7, 8c45cb2, 09de11b, 136f1c9).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/README.md — Strict device grant public documentation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/device_model_test.go — State-machine evidence
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/14/TINYIDP-DEVICE-PROD-001--production-device-authorization-for-the-strict-embedded-provider/reference/04-release-evidence-and-independent-review-packet.md — External sign-off boundary and command matrix
+

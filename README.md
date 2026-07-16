@@ -11,7 +11,7 @@ There are two engines, and picking the right one matters:
 
 > **Maturity, read this.** The `mock` engine and **`tinyidp serve-dev` are for local/testing use** — bind to loopback (`127.0.0.1`) and never expose them to the internet. `tinyidp serve-production` is the durable strict host: it requires an HTTPS issuer, SQLite database, owner-only token-secret file, audit sink, TLS certificate/key, and pre-provisioned active signing key. A custom production deployment may instead embed the strict engine through `pkg/embeddedidp` with those same requirements; `embeddedidp.Options.Validate(ctx)` enforces them. `serve-dev --engine fosite` remains an in-memory development preview, not a production server. See [`docs/security-profile.md`](docs/security-profile.md) and [`examples/production-host/README.md`](examples/production-host/README.md).
 >
-> **Honest caveats.** The strict engine has passed a **hosted OpenID Foundation Basic OP conformance run with zero hard failures** (suite 5.2.0; discovery + static clients) — this is *not* a claim of formal certification. Strict device authorization has implementation work in progress and is not release-ready until its durable browser-to-token smoke gate passes. Still missing/in progress: a config-backed runtime loader, token `/revoke` or `/introspect` HTTP routes, DPoP, and a first-class reverse-proxy TLS-termination mode. `serve-production` supports direct TLS; a proxy deployment must retain end-to-end TLS or use a future, explicitly trusted proxy mode.
+> **Honest caveats.** The strict engine has passed a **hosted OpenID Foundation Basic OP conformance run with zero hard failures** (suite 5.2.0; discovery + static clients) — this is *not* a claim of formal certification. Strict RFC 8628 device authorization is implemented with durable grants, browser verification, transactional token issuance, and discovery metadata. It remains subject to the release evidence and independent-review gate in `TINYIDP-DEVICE-PROD-001`; implementation availability is not a blanket production approval. Still missing/in progress: a config-backed runtime loader, token `/revoke`, DPoP, and a first-class reverse-proxy TLS-termination mode. `serve-production` supports direct TLS; a proxy deployment must retain end-to-end TLS or use a future, explicitly trusted proxy mode.
 
 ---
 
@@ -103,7 +103,7 @@ Checked-in portable examples live under `examples/configs/`:
 ### Engines: mock vs strict (fosite)
 
 - **mock** (default) is the local-testing engine. It backs everything in-memory, ships a **scenario registry** (synthetic users, malformed-token and JWKS failure modes), exposes loopback-only **`/debug/*`** routes, and implements the device grant and DPoP for integration tests. Choose it for reproducing OIDC edge cases cheaply.
-- **fosite** (strict) runs the production-shaped code path: [ory/fosite](https://github.com/ory/fosite) for OAuth/OIDC validation and response writing, **Authorization Code + PKCE (`S256`) only**, exact redirect-URI allow-listing, server-side browser sessions with hashed opaque cookies, CSRF on login/consent POSTs, security headers, `Cache-Control: no-store`, persistent consent, and **Argon2id password login** via a `PasswordAuthenticator`. Select it with `--engine fosite`. Features explicitly **not** available in strict mode today: debug routes, scenario failure injection, implicit/hybrid flows, production device grant, production DPoP, and dynamic client registration ([`docs/security-profile.md`](docs/security-profile.md)).
+- **fosite** (strict) runs the production-shaped code path: [ory/fosite](https://github.com/ory/fosite) for OAuth/OIDC validation and response writing, **Authorization Code + PKCE (`S256`) and RFC 8628 device authorization**, exact redirect-URI allow-listing, server-side browser sessions with hashed opaque cookies, CSRF on login/consent POSTs, security headers, `Cache-Control: no-store`, persistent consent, and **Argon2id password login** via a `PasswordAuthenticator`. Select it with `--engine fosite`. Features explicitly **not** available in strict mode today: debug routes, scenario failure injection, implicit/hybrid flows, production DPoP, and dynamic client registration ([`docs/security-profile.md`](docs/security-profile.md)).
 
 ### Seeded users (mock engine)
 
@@ -260,7 +260,7 @@ The strict engine signs ID tokens with the active key in the store's `KeyStore` 
 
 Run the strict IdP inside your own binary. `embeddedidp.New(ctx, Options)` returns a `*Provider` whose `Handler()` you mount on any `*http.ServeMux`:
 
-The supported composition also includes `pkg/idpaccounts` for account/password lifecycle, `embeddedidp.Bootstrap` for browser or device-shaped clients and the initial signing key, and `embeddedidp.NewInProcessIssuerTransport` for bounded same-process discovery and token exchange. See [`docs/embedding-foundations.md`](docs/embedding-foundations.md) for the complete construction order, failure semantics, executable examples, and the current strict-mode device authorization gap.
+The supported composition also includes `pkg/idpaccounts` for account/password lifecycle, `embeddedidp.Bootstrap` for browser or device-shaped clients and the initial signing key, and `embeddedidp.NewInProcessIssuerTransport` for bounded same-process discovery and token exchange. See [`docs/embedding-foundations.md`](docs/embedding-foundations.md) for the complete construction order, failure semantics, executable examples, and the strict-mode device authorization contract.
 
 ```go
 import (
@@ -308,9 +308,9 @@ The mock engine supports DPoP-bound access tokens for local and integration test
 
 Bearer behavior remains unchanged when no `DPoP` header is present. Refresh tokens issued from a DPoP-bound flow are bound to the same key and require matching DPoP proofs during rotation. See `tinyidp help tutorial-dpop`. (DPoP is not part of the strict production profile.)
 
-## Device authorization grant (mock engine)
+## Device authorization grant
 
-The mock engine implements the OAuth 2.0 Device Authorization Grant for local and integration-test clients. A device starts with `POST /device_authorization`, shows the returned `user_code` and `verification_uri` to the user, and polls `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` until the browser approval form at `/device` approves or denies the request.
+Both engines implement the OAuth 2.0 Device Authorization Grant. The mock engine remains useful for local failure simulation; the strict provider persists keyed hashes of device/user codes, binds the browser verification interaction with CSRF and fresh password authentication, and consumes an approved grant in the same SQLite transaction that persists normal Fosite tokens. A device starts with `POST /device_authorization`, shows the returned `user_code` and `verification_uri` to the user, and polls `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` until the browser approval form at `/device` approves or denies the request.
 
 Quick start:
 
@@ -328,7 +328,7 @@ curl -sS -X POST http://localhost:5556/token \
   -d device_code="$(echo "$DEVICE_JSON" | jq -r .device_code)" | jq .
 ```
 
-Polling before approval returns `authorization_pending`; polling too quickly returns `slow_down`; denied, expired, mismatched, unknown, or already-used device codes return the corresponding OAuth error. See `tinyidp help tutorial-device-authorization`. (The device grant is not part of the strict production profile.)
+Polling before approval returns `authorization_pending`; polling too quickly returns `slow_down`; denied, expired, mismatched, unknown, or already-used device codes return the corresponding OAuth error. Strict discovery advertises `device_authorization_endpoint` and the device grant type only because this full path is implemented. See `tinyidp help tutorial-device-authorization` and the device ticket's operator runbook before enabling a client in production.
 
 ## Clients (mock engine builtins)
 
@@ -380,7 +380,7 @@ Strict (fosite) engine only:
 |----------|---------|
 | `GET /readyz` | Readiness (store/migrations/active-key checks). |
 
-The strict engine deliberately does **not** serve `/device*` or `/debug/*` today, and there is **no** token `/revoke` or `/introspect` HTTP route yet (see [`docs/security-profile.md`](docs/security-profile.md)). Strict `/end-session` revokes the session represented by the current browser cookie; it does not yet accept `id_token_hint` for subject-wide revocation or perform front-channel/back-channel logout at other relying parties.
+The strict engine deliberately does **not** serve `/debug/*`; it does serve `/device_authorization` and `/device` as the RFC 8628 flow. Strict `/introspect` is available to configured confidential resource servers. There is no token `/revoke` HTTP route yet (see [`docs/security-profile.md`](docs/security-profile.md)). Strict `/end-session` revokes the session represented by the current browser cookie; it does not yet accept `id_token_hint` for subject-wide revocation or perform front-channel/back-channel logout at other relying parties.
 
 When `--issuer` contains a path, tinyidp also serves the same routes under that path. For example, `--issuer http://localhost:5556/realms/personal-inbox` serves discovery at `/realms/personal-inbox/.well-known/openid-configuration` and advertises `/realms/personal-inbox/authorize`, `/token`, `/userinfo`, and `/jwks` endpoint URLs. Root routes remain available for simple local testing. Path-based issuers are URL-shape compatibility only; seeded-user claims stay provider-neutral.
 
@@ -404,7 +404,7 @@ TINYIDP_USERS_FILE=/path/to/2026-06-22--mock-oidc-idp/examples/users/personal-in
 make tinyidp-smoke
 ```
 
-Step 07 can reuse the same users file to exercise Alice/Bob inbox isolation. Step 08's device authorization flow remains implemented by the generated xgoja host; tinyidp supplies browser-login OIDC behavior, not an external device authorization endpoint.
+Step 07 can reuse the same users file to exercise Alice/Bob inbox isolation. Step 08's device authorization flow uses tiny-idp's external strict device endpoint; the generated xgoja host supplies the protected resource API and browser application behavior.
 
 Common symptoms:
 

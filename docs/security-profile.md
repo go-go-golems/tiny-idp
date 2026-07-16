@@ -18,8 +18,10 @@ This document summarizes the production strict-engine baseline.
 - Rate-limiting hook with a fixed-window implementation available to embedders.
 - Structured audit sink with stable reason codes for Fosite/OAuth errors.
 - Persistent signing keys and rotation helper that keeps retired keys verifiable.
-- Strict device authorization endpoint and browser verification flow, pending
-  completion of its release smoke and concurrency gates.
+- Strict RFC 8628 device authorization endpoint, browser verification flow,
+  durable poll/decision/consume state, and transactional Fosite token issuance.
+  Release approval still requires the evidence and independent-review gate in
+  `TINYIDP-DEVICE-PROD-001`.
 
 ## Explicitly unsupported in strict mode today
 

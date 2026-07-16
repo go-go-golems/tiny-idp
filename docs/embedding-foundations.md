@@ -1,6 +1,6 @@
 # Embedding tiny-idp in a Go application
 
-This guide describes the supported public composition boundary for a Go application that embeds tiny-idp. It covers browser applications today and the client/bootstrap preparation for a later device-authorization application. It does not claim that the strict embedded provider currently implements the device authorization grant.
+This guide describes the supported public composition boundary for a Go application that embeds tiny-idp. It covers browser applications and the strict provider's RFC 8628 device-authorization application. Device authorization is implemented; enabling it in a deployment still requires explicit client capability, audited operations, and the release gates documented in `TINYIDP-DEVICE-PROD-001`.
 
 The runnable development host is [`../examples/embedded/main.go`](../examples/embedded/main.go). Executable external-package examples are in [`../pkg/embeddedidp/example_test.go`](../pkg/embeddedidp/example_test.go). The production xapp composition is a larger reference in [`../cmd/tinyidp-xapp/state.go`](../cmd/tinyidp-xapp/state.go), [`../cmd/tinyidp-xapp/production_app.go`](../cmd/tinyidp-xapp/production_app.go), and [`../cmd/tinyidp-xapp/development_app.go`](../cmd/tinyidp-xapp/development_app.go).
 
@@ -304,9 +304,9 @@ PostLogoutRedirectURIs = empty
 
 `RequirePKCE` preserves the current invariant that every stored public client sets the flag. It is dormant for a pure device grant, which has no authorization-code redirect.
 
-Important limitation: the strict Fosite-backed embedded provider does not yet expose native `/device_authorization`, browser verification, approval, or device-code polling endpoints. Device grant code currently exists in the mock engine for local testing. Bootstrap support means a later implementation can declare the correct client shape without changing this API. It does not make the strict device flow usable by itself.
+The strict Fosite-backed embedded provider exposes native `/device_authorization`, browser verification at `/device`, and device-code polling at `/token`. Bootstrap declares a device-shaped client with no redirect URI and explicit `GrantDeviceCode` capability; add `GrantRefreshToken` and `offline_access` only when the client has a reviewed long-lived-token policy.
 
-Before shipping the third example, implement and test:
+Before shipping a device-enabled example, verify:
 
 - explicit per-client allowed grant capabilities;
 - durable hashed device and user codes;
@@ -442,7 +442,7 @@ Before releasing an embedding application, verify:
 - [ ] application packages import only supported public identity packages;
 - [ ] bootstrap runs before provider construction;
 - [ ] every browser redirect is exact and intentional;
-- [ ] the device profile is not presented as strict device-grant support;
+- [ ] the device profile declares only reviewed grant types/scopes and is not presented as independently release-approved before the device ticket gates close;
 - [ ] account creation handles post-commit audit errors;
 - [ ] bootstrap handles partial reports and post-commit audit errors;
 - [ ] production controls use durable implementations;
