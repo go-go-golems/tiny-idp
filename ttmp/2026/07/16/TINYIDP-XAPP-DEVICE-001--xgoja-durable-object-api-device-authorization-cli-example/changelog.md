@@ -51,7 +51,7 @@ Step 5: completed browser, lifecycle, two-user, malformed-request, and TLS verif
 
 ## 2026-07-16
 
-Step 6: published operator handoff and conservative go-go-goja extraction recommendation; ticket ready to close (pending documentation commit)
+Step 6: published operator handoff and conservative go-go-goja extraction recommendation; ticket complete (commit 6f9ed36)
 
 ### Related Files
 

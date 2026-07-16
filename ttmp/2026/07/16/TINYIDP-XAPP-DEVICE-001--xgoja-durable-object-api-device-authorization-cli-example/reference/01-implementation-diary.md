@@ -631,7 +631,7 @@ go-go-goja extraction recommendation, and ticket-finalization work.
 future framework maintainer, with an explicit closure decision rather than an
 implicit collection of tests.
 
-**Commit (code):** Documentation-only step; pending final documentation commit.
+**Commit (code):** `6f9ed36` — "docs(ticket): complete xapp device operations handoff"
 
 ### What I did
 
