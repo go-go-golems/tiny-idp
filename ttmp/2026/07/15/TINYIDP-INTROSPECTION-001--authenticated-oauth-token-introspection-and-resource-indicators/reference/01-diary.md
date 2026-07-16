@@ -13,9 +13,17 @@ RelatedFiles:
     - Path: repo://internal/fositeadapter/device_token_handler.go
       Note: Transfers approved device audiences into Fosite token request (d5c7647)
     - Path: repo://internal/fositeadapter/provider.go
-      Note: Introspection endpoint, exact audience policy, and device resource indicator handling (f718d36, d5c7647)
+      Note: |-
+        Introspection endpoint, exact audience policy, and device resource indicator handling (f718d36, d5c7647)
+        Preauthenticated caller classification before opaque-token validation (d196aeb)
     - Path: repo://internal/fositeadapter/provider_test.go
-      Note: Authorization-code, device, wrong-audience, duplicate-credential, and refresh-audience regression evidence (f718d36, d5c7647, 866e0bb)
+      Note: |-
+        Authorization-code, device, caller-authentication, wrong-audience, duplicate-credential, and refresh-audience regression evidence (f718d36, d5c7647, 866e0bb, d196aeb)
+        Incorrect resource-client credential regression (d196aeb)
+    - Path: repo://internal/fositeadapter/sqlstore_test.go
+      Note: |-
+        Restart-backed SQLite opaque-token lifecycle, audience, rotation, reuse, and inactive-response regression evidence (d196aeb)
+        SQLite lifecycle and inactive-response evidence (d196aeb)
     - Path: repo://pkg/idpstore/types.go
       Note: Durable resource-indicator fields and client capability model (f718d36, d5c7647)
     - Path: repo://pkg/sqlitestore/store.go
@@ -25,10 +33,11 @@ ExternalSources:
     - https://www.rfc-editor.org/rfc/rfc8707.html
     - https://www.rfc-editor.org/rfc/rfc9449.html
 Summary: Chronological evidence for authenticated opaque-token introspection and resource-indicator implementation.
-LastUpdated: 2026-07-15T22:30:00-04:00
+LastUpdated: 2026-07-16T12:35:48-04:00
 WhatFor: Preserve implementation decisions, verification evidence, and remaining production work.
 WhenToUse: Read before extending the endpoint, its resource-server contract, or xgoja integration.
 ---
+
 
 
 
@@ -383,4 +392,188 @@ resource-audience intersection check.
 initial authorized request: granted_aud = [Inbox API]
 refresh-token rotation:     granted_aud copied by Fosite
 new access token:           active for Inbox API only
+```
+
+## Step 4: Make inactive opaque-token results unambiguous and prove SQLite token-family transitions
+
+This step turned the remaining lifecycle claim into an end-to-end SQLite
+regression. It starts from a resource-indicated authorization-code grant,
+performs caller-authenticated introspection, rotates the refresh token, and
+then deliberately reuses the old refresh token. The observable contract is
+strict: an unknown token, an unparseable token, an old access token after a
+normal rotation, and a rotated access token after refresh-token reuse are all
+the same HTTP success response containing exactly `{"active":false}`.
+
+The first version of this test uncovered a real endpoint classification defect.
+Fosite can include `ErrRequestUnauthorized` in the error chain for malformed or
+unknown opaque subject tokens. Tiny-idp had treated any error matching that
+sentinel as a failed resource-client credential, returning `401 invalid_client`
+despite the caller having already authenticated successfully. That makes the
+protocol semantically wrong and creates a needless distinction between token
+classes. The fix authenticates the registered resource client explicitly,
+using its persisted BCrypt hash, before Fosite is asked to validate the subject
+token. After that check succeeds, every Fosite token-validation error is an
+inactive token at the external boundary.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, continue"
+
+**Assistant interpretation:** Continue the planned lifecycle/confidentiality
+matrix rather than declaring the initial endpoint implementation complete.
+
+**Inferred user intent:** Turn the designed RFC 7662 safety properties into
+durable regression evidence, especially across real SQLite persistence and
+refresh-family revocation.
+
+**Commit (code):** `d196aeb` — "auth: harden opaque token introspection lifecycle"
+
+### What I did
+
+- Extended the SQLite token fixture with a public SPA that may request the
+  inbox audience and a confidential `inbox-api` resource server that has a
+  BCrypt secret hash, `CanIntrospect`, and that same allowed audience.
+- Added a complete SQLite lifecycle test covering active introspection,
+  unknown token, malformed token, refresh rotation, old access-token
+  invalidation, refreshed access-token activation, refresh-token reuse, and
+  token-family revocation after reuse.
+- Compared the unknown and malformed responses byte-for-byte with
+  `crypto/subtle.ConstantTimeCompare` and required the exact canonical body
+  `{"active":false}\n`.
+- Added a wrong-resource-secret assertion to the strict endpoint integration
+  test: it must receive `401` and a `WWW-Authenticate` Basic challenge,
+  distinguishing caller authentication from subject-token state.
+- Made `/introspect` normalize Basic credentials with the same form-decoding
+  convention Fosite uses, look up the resource client, and validate the
+  supplied secret with `bcrypt.CompareHashAndPassword` before invoking
+  `NewIntrospectionRequest`.
+- Changed post-authentication Fosite failures to record an `inactive_token`
+  audit event and return the canonical inactive response. No token value,
+  digest, or Fosite error is included in the audit event or HTTP response.
+
+### Why
+
+RFC 7662 specifies that an authorization server returns `active:false` when a
+token is invalid, expired, revoked, malformed, or otherwise unusable. The
+resource server needs a clear distinction between *its own credential is
+unacceptable* and *the presented bearer token is not usable*. It does not need,
+and should not receive, a taxonomy of why the bearer token failed. Explicit
+caller authentication establishes that distinction before token processing;
+the constrained inactive response preserves it afterward.
+
+Refresh reuse is especially important because it is a security transition, not
+merely an exchange failure. The existing Fosite configuration revokes the
+token family on detected reuse. The test proves that a previously valid
+refreshed access token becomes unusable through the API a relying application
+will actually call.
+
+### What worked
+
+- `go test ./internal/fositeadapter -run TestSQLiteIntrospectionLifecyclePreservesAudienceAndHidesInactiveTokens -count=1` passed after the correction.
+- `go test ./internal/fositeadapter -run 'TestProviderStrictEndpoints|TestSQLiteIntrospectionLifecyclePreservesAudienceAndHidesInactiveTokens' -count=1` passed, proving valid caller authentication, invalid caller authentication, and opaque-token confidentiality together.
+- `go test ./internal/fositeadapter -count=1` passed in 17.538 seconds before the code commit.
+- The active half of the SQLite test proves that persisted BCrypt client hashes
+  are accepted by the complete Fosite path, not only by a direct store lookup.
+
+### What didn't work
+
+- The initial lifecycle assertion failed with:
+
+  ```text
+  inactive responses unknown=(401,"{\"error\":\"invalid_client\"}\n") malformed=(401,"{\"error\":\"invalid_client\"}\n")
+  ```
+
+  A valid token had already introspected successfully with the same Basic
+  credentials, which isolated the problem to error classification after caller
+  authentication rather than fixture configuration or BCrypt persistence.
+- The first test invocation inside the workspace sandbox could not compile
+  because its existing Go build-cache path was mounted read-only:
+
+  ```text
+  open /home/manuel/.cache/go-build/...: read-only file system
+  ```
+
+  Re-running the exact focused test with ordinary host-cache access succeeded.
+  This was an execution-environment limitation, not a product failure.
+
+### What I learned
+
+- A wrapped library sentinel is not necessarily a safe public error-classifier.
+  Fosite's authorization error family is reused below the layer where
+  tiny-idp's RFC 7662 response policy needs to make its decision.
+- Authentication and token validity are two separate state machines. The
+  endpoint must finish the resource-client state machine before interpreting
+  errors from the bearer-token state machine.
+- The right regression observation is not merely a failed old refresh request:
+  it is the post-failure introspection state of a previously valid access
+  token, because that verifies family revocation reaches a resource server.
+
+### What was tricky to build
+
+The endpoint still calls Fosite after tiny-idp authenticates the resource
+client. That is intentional duplication of the credential verification at two
+different abstraction levels. Tiny-idp owns the externally visible response
+classification; Fosite owns token persistence and protocol request validation.
+The initial pre-check makes the former deterministic, while Fosite's existing
+check remains an internal defence in depth layer. The credential copy is
+normalized with `url.QueryUnescape` to preserve Fosite's handling of
+application/x-www-form-urlencoded Basic values rather than inventing a subtly
+different authentication grammar.
+
+### What warrants a second pair of eyes
+
+- Review the claim that a post-preauthentication Fosite error should always be
+  represented as inactive. This is correct for token confidentiality, but an
+  operator may want a separately redacted health metric for infrastructure
+  errors so availability problems do not hide in inactive-token counts.
+- Review the client-secret normalization rule against the final supported
+  administrative secret syntax. Generated secrets are base64url-safe; user
+  supplied secrets containing `+` or percent escapes should be covered by a
+  dedicated compatibility test before documenting that syntax.
+- Confirm the intended refresh-reuse policy remains token-family revocation
+  when Fosite is upgraded; the test protects the observed behavior.
+
+### What should be done in the future
+
+- Add deterministic expiry coverage using the provider clock, rather than
+  waiting on wall-clock expiry in a test.
+- Add the same inactive-response and wrong-client matrix to the memory store
+  so the development path cannot accidentally drift from SQLite behavior.
+- Test public, disabled, and capability-less resource clients, address/client
+  rate-limit handling, root/path issuer discovery, and audit redaction before
+  closing the negative-test task.
+
+### Code review instructions
+
+- Read `Provider.introspect` in `internal/fositeadapter/provider.go` from the
+  Basic-header validation through the `NewIntrospectionRequest` error branch.
+  Confirm the order is: transport validation, resource caller authorization,
+  BCrypt credential verification, rate limiting, Fosite token validation,
+  audience validation, response rendering.
+- Read `TestSQLiteIntrospectionLifecyclePreservesAudienceAndHidesInactiveTokens`
+  in `internal/fositeadapter/sqlstore_test.go` as the executable lifecycle
+  table, then `TestProviderStrictEndpoints` for the incorrect-secret case.
+- Run `go test ./internal/fositeadapter -count=1`; for a fast targeted review,
+  run the two commands listed in **What worked**.
+
+### Technical details
+
+```text
+POST /introspect
+  Basic inbox-api:secret + token
+       |
+       +-- malformed / unknown Basic --------------------> 401 invalid_client
+       |
+       +-- disabled/public/non-introspecting client ------> 401 invalid_client
+       |
+       +-- valid resource-client credential
+              |
+              +-- unknown, malformed, expired, revoked access token
+              |      -> 200 {"active":false}
+              |
+              +-- active access token, no shared audience
+              |      -> 200 {"active":false}
+              |
+              +-- active access token, shared audience
+                     -> 200 constrained active metadata
 ```

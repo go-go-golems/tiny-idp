@@ -23,3 +23,14 @@ Proved refresh-token rotation preserves the original granted resource audience t
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider_test.go — Refresh introspection regression
 
+
+## 2026-07-16
+
+Added SQLite-backed opaque-token lifecycle proof and corrected post-authentication inactive-token classification.
+
+### Related Files
+
+- internal/fositeadapter/provider.go — Authenticated resource callers before opaque-token classification
+- internal/fositeadapter/provider_test.go — Invalid resource-client credential coverage
+- internal/fositeadapter/sqlstore_test.go — Refresh-rotation and reuse-revocation introspection matrix
+
