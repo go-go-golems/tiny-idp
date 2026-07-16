@@ -13,7 +13,9 @@ RelatedFiles:
     - Path: repo://internal/fositeadapter/device_token_handler.go
       Note: Transfers approved device audiences into Fosite token request (d5c7647)
     - Path: repo://internal/fositeadapter/hardening_test.go
-      Note: Root/path issuer discovery mount regression (aa4add8)
+      Note: |-
+        Root/path issuer discovery mount regression (aa4add8)
+        Live root/path discovery metadata regression (c65d0d0)
     - Path: repo://internal/fositeadapter/provider.go
       Note: |-
         Introspection endpoint, exact audience policy, and device resource indicator handling (f718d36, d5c7647)
@@ -30,6 +32,8 @@ RelatedFiles:
         Restart-backed SQLite opaque-token lifecycle, audience, rotation, reuse, and inactive-response regression evidence (d196aeb)
         SQLite lifecycle and inactive-response evidence (d196aeb)
         SQLite expiry and durable token-family lifecycle matrix (df6b2be)
+    - Path: repo://internal/oidcmeta/discovery.go
+      Note: Device authorization endpoint and grant metadata (c65d0d0)
     - Path: repo://pkg/idpstore/types.go
       Note: Durable resource-indicator fields and client capability model (f718d36, d5c7647)
     - Path: repo://pkg/sqlitestore/store.go
@@ -39,10 +43,11 @@ ExternalSources:
     - https://www.rfc-editor.org/rfc/rfc8707.html
     - https://www.rfc-editor.org/rfc/rfc9449.html
 Summary: Chronological evidence for authenticated opaque-token introspection and resource-indicator implementation.
-LastUpdated: 2026-07-16T13:19:00-04:00
+LastUpdated: 2026-07-16T13:36:00-04:00
 WhatFor: Preserve implementation decisions, verification evidence, and remaining production work.
 WhenToUse: Read before extending the endpoint, its resource-server contract, or xgoja integration.
 ---
+
 
 
 
@@ -902,3 +907,55 @@ discovery route: /idp/.well-known/openid-configuration
 published endpoint: https://issuer.example.test/idp/introspect
 handler route: /idp/introspect
 ```
+
+## Step 7: Reconcile PR discovery feedback with the governing specifications
+
+While reviewing PR #3, two current discovery comments required different
+outcomes. The device-authorization metadata finding was valid: tiny-idp
+implemented the endpoint and device grant but did not advertise either. The
+path-issuer routing finding looked plausible but used the RFC 8414 OAuth
+Authorization Server Metadata path for an OpenID Connect Discovery endpoint.
+The ticket's saved OpenID Connect Discovery source specifies that an issuer
+with a path is discovered at `<issuer-path>/.well-known/openid-configuration`,
+which is the existing tiny-idp route. Changing it to the proposed host-root
+path would have broken compliant OIDC RPs.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, do it, then continue with the normal work"
+
+**Assistant interpretation:** Address valid PR feedback, verify whether each
+requested change is standards-correct, then continue the production ticket
+without applying an incompatible workaround.
+
+**Commit (code):** `c65d0d0` — "oidc: advertise device authorization metadata"
+
+### What I did
+
+- Added `device_authorization_endpoint` to the discovery model, derived from
+  the canonical issuer exactly like all other endpoint URLs.
+- Added the RFC 8628 device grant identifier
+  `urn:ietf:params:oauth:grant-type:device_code` to
+  `grant_types_supported`.
+- Extended pure discovery and live-handler root/path tests to require both
+  metadata fields alongside the introspection contract.
+- Verified the OIDC path-issuer route against the saved primary-source excerpt
+  before deciding not to change it.
+
+### What worked
+
+- `go test ./internal/oidcmeta ./internal/fositeadapter -run 'TestProductionDiscoveryIncludesEndSessionEndpoint|TestDiscoveryPublishesIntrospectionAtRootAndPathIssuer' -count=1` passed.
+
+### What I learned
+
+OpenID Connect Discovery and OAuth Authorization Server Metadata use subtly
+different path rules for issuers containing a path component. Review comments
+that name a familiar endpoint are not sufficient evidence of the applicable
+specification. The current tiny-idp route is correct for OIDC Discovery; the
+device metadata omission was a genuine interoperation defect.
+
+### Code review instructions
+
+- Review `internal/oidcmeta/discovery.go` for the advertised contract.
+- Review `TestDiscoveryPublishesIntrospectionAtRootAndPathIssuer` for live
+  route and metadata evidence.

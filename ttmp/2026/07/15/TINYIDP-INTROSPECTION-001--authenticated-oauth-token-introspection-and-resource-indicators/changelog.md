@@ -54,3 +54,12 @@ Made bearer-only DPoP rejection and root/path introspection discovery executable
 - internal/fositeadapter/hardening_test.go — Verify root and path issuer discovery endpoints
 - internal/fositeadapter/provider.go — Reject unsupported DPoP before code consumption
 
+
+## 2026-07-16
+
+Added RFC 8628 discovery metadata and documented the standards-correct OIDC path-issuer route.
+
+### Related Files
+
+- internal/oidcmeta/discovery.go — Advertise device authorization capability
+
