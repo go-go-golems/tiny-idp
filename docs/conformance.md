@@ -43,6 +43,11 @@ scripts/oidf_hosted_runner.py \
 
 The Python runner creates test instances through the suite API, polls `/api/info`, saves `/api/info` and `/api/log` JSON artifacts, and follows exported authorization URLs with an HTTP browser session. It submits the tiny-idp login/consent form as `alice` and reproduces the suite's implicit callback POST so code-flow responses continue without manual JavaScript. It stops on failures, timeouts, or manual review states unless `--keep-going` is supplied.
 
+Hosted-suite JSON is intentionally ignored by Git. It can include captured HTTP
+traffic, temporary public endpoints, test-owner identifiers, and development
+credentials. Retain it in the ticket source bundle or other secured evidence
+storage; commit a sanitized report of outcomes and conclusions instead.
+
 For hosted Basic OP refresh-token tests, configure distinct static clients in the suite and start the strict CLI with an extra client that shares the suite callback redirect URI:
 
 ```bash
