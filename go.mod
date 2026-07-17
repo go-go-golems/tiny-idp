@@ -10,8 +10,8 @@ require (
 	github.com/dop251/goja v0.0.0-20251103141225-af2ceb9156d7
 	github.com/dop251/goja_nodejs v0.0.0-20250409162600-f7acab6894b0
 	github.com/go-go-golems/glazed v1.3.8
-	github.com/go-go-golems/go-go-goja v0.10.4
-	github.com/go-go-golems/go-go-objects v0.0.2
+	github.com/go-go-golems/go-go-goja v0.10.5-0.20260717152521-c6e464c5bbc6
+	github.com/go-go-golems/go-go-objects v0.0.3-0.20260712001519-46ba1952c9e4
 	github.com/go-go-golems/logcopter v0.1.1
 	github.com/mattn/go-sqlite3 v1.14.42
 	github.com/ory/fosite v0.49.0

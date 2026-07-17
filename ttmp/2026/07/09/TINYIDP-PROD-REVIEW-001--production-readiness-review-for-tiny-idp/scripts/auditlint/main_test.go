@@ -56,7 +56,19 @@ func TestIgnoredSecurityErrorAnalyzer(t *testing.T) {
 }
 
 func TestDeviceAnalyzers(t *testing.T) {
-	for _, analyzer := range []*analysis.Analyzer{deviceAuditSecretAnalyzer, deviceBoundedParseAnalyzer, deviceNamedTransitionAnalyzer, deviceHandlerContractAnalyzer} {
-		analysistest.Run(t, analysistest.TestData(), analyzer, "fixture/checks/devicecheck")
+	cases := []struct {
+		name     string
+		analyzer *analysis.Analyzer
+		fixture  string
+	}{
+		{name: "audit secrets", analyzer: deviceAuditSecretAnalyzer, fixture: "fixture/checks/deviceaudit"},
+		{name: "bounded parse", analyzer: deviceBoundedParseAnalyzer, fixture: "fixture/checks/devicebounded"},
+		{name: "named transition", analyzer: deviceNamedTransitionAnalyzer, fixture: "fixture/checks/devicetransition"},
+		{name: "handler contract", analyzer: deviceHandlerContractAnalyzer, fixture: "fixture/checks/devicehandlers"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			analysistest.Run(t, analysistest.TestData(), tc.analyzer, tc.fixture)
+		})
 	}
 }

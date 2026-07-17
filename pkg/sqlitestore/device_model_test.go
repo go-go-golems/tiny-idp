@@ -29,9 +29,15 @@ func TestDeviceGrantGeneratedActionSequencesAgreeWithReferenceModel(t *testing.T
 				t.Fatal(err)
 			}
 			defer store.Close()
+			if err := store.PutClient(ctx, idpstore.Client{ID: grant.ClientID}); err != nil {
+				t.Fatal(err)
+			}
 			if err := store.CreateDeviceGrant(ctx, grant); err != nil {
 				t.Fatal(err)
 			}
+			// CreateDeviceGrant assigns the initial persisted version. The pure
+			// model starts from the same post-create public state.
+			grant.Version = 1
 			model := newDeviceGrantModel(grant)
 			rng := rand.New(rand.NewSource(seed))
 			now := base
