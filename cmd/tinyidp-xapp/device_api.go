@@ -107,10 +107,13 @@ func (h *deviceAPIHandler) authenticate(w http.ResponseWriter, r *http.Request, 
 	case resourceauth.OutcomeUnavailable:
 		h.record(r.Context(), "xapp.api.auth.unavailable", resourceauth.Principal{}, "provider_unavailable")
 		writeDeviceAPIError(w, http.StatusServiceUnavailable, "service_unavailable")
-	default:
+	case resourceauth.OutcomeUnauthorized:
 		h.record(r.Context(), "xapp.api.auth.rejected", resourceauth.Principal{}, "unauthorized")
 		w.Header().Set("WWW-Authenticate", `Bearer realm="tinyidp-xapp"`)
 		writeDeviceAPIError(w, http.StatusUnauthorized, "unauthorized")
+	default:
+		h.record(r.Context(), "xapp.api.auth.unavailable", resourceauth.Principal{}, "unknown_authentication_outcome")
+		writeDeviceAPIError(w, http.StatusServiceUnavailable, "service_unavailable")
 	}
 	return resourceauth.Principal{}, false
 }
