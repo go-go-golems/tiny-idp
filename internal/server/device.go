@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	deviceGrantType       = "urn:ietf:params:oauth:grant-type:device_code"
-	defaultDeviceInterval = 5 * time.Second
-	defaultDeviceTTL      = 10 * time.Minute
-	userCodeAlphabet      = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	deviceGrantType            = "urn:ietf:params:oauth:grant-type:device_code"
+	defaultDeviceInterval      = 5 * time.Second
+	defaultDeviceTTL           = 10 * time.Minute
+	deviceAuthorizationMaxBody = 16 << 10
+	userCodeAlphabet           = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 )
 
 type deviceGrantStatus string
@@ -56,6 +57,7 @@ func (s *Server) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 		tokenError(w, http.StatusMethodNotAllowed, "invalid_request", "method not allowed")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, deviceAuthorizationMaxBody)
 	if err := r.ParseForm(); err != nil {
 		tokenError(w, http.StatusBadRequest, "invalid_request", "invalid form")
 		return

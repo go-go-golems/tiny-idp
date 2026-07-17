@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -24,11 +25,11 @@ type deviceAPIHandler struct {
 	audit   idp.Sink
 }
 
-func newDeviceAPIHandler(auth *resourceauth.Authenticator, objects durableobjects.Dispatcher, audit idp.Sink) http.Handler {
+func newDeviceAPIHandler(auth *resourceauth.Authenticator, objects durableobjects.Dispatcher, audit idp.Sink) (*deviceAPIHandler, error) {
 	if audit == nil {
-		audit = idp.NoopSink{}
+		return nil, errors.New("device API audit sink is required")
 	}
-	return &deviceAPIHandler{auth: auth, objects: objects, audit: audit}
+	return &deviceAPIHandler{auth: auth, objects: objects, audit: audit}, nil
 }
 
 func (h *deviceAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +150,12 @@ func (h *deviceAPIHandler) record(ctx context.Context, name string, principal re
 	if reason != "accepted" {
 		result = "rejected"
 	}
-	_ = h.audit.Emit(ctx, idp.Event{Time: time.Now().UTC(), Name: name, ClientID: principal.ClientID, Subject: principal.Subject, Result: result, Reason: reason, Fields: map[string]string{"credential_kind": "oidc_bearer"}})
+	if err := h.audit.Emit(ctx, idp.Event{Time: time.Now().UTC(), Name: name, ClientID: principal.ClientID, Subject: principal.Subject, Result: result, Reason: reason, Fields: map[string]string{"credential_kind": "oidc_bearer"}}); err != nil {
+		// The protected operation has already reached its durable object. Do not
+		// retry it or return a contradictory failure response; surface the audit
+		// delivery failure to the process logger for operational remediation.
+		slog.Error("record device API audit event", "event", name, "client_id", principal.ClientID, "subject", principal.Subject, "error", err)
+	}
 }
 
 func writeDeviceResponse(w http.ResponseWriter, response *durableobjects.FetchResponse) {

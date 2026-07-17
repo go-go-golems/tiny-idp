@@ -268,7 +268,10 @@ func TestDevelopmentApplicationDeviceTokenPostsToBearerBBSAPI(t *testing.T) {
 	if inProcessResponse.StatusCode != http.StatusOK || !bytes.Contains(inProcessBody, []byte(`"active":true`)) {
 		t.Fatalf("in-process introspection status=%d body=%s", inProcessResponse.StatusCode, inProcessBody)
 	}
-	nativeDeviceAPI := newDeviceAPIHandler(app.apiAuth, app.objects.Manager, app.apiAudit).(*deviceAPIHandler)
+	nativeDeviceAPI, err := newDeviceAPIHandler(app.apiAuth, app.objects.Manager, app.apiAudit)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := nativeDeviceAPI.dispatch(context.Background(), http.MethodGet, "/board", map[string]any{"actorId": "dev-alice-subject", "actorName": "dev-alice-subject"}); err != nil {
 		t.Fatalf("native durable-object BBS dispatch: %v", err)
 	}

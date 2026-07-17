@@ -64,7 +64,7 @@ func TestDeviceAnalyzers(t *testing.T) {
 		{name: "audit secrets", analyzer: deviceAuditSecretAnalyzer, fixture: "fixture/checks/deviceaudit"},
 		{name: "bounded parse", analyzer: deviceBoundedParseAnalyzer, fixture: "fixture/checks/devicebounded"},
 		{name: "named transition", analyzer: deviceNamedTransitionAnalyzer, fixture: "fixture/checks/devicetransition"},
-		{name: "handler contract", analyzer: deviceHandlerContractAnalyzer, fixture: "fixture/checks/devicehandlers"},
+		{name: "handler contract", analyzer: deviceHandlerContractAnalyzer, fixture: "fixture/internal/fositeadapter"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

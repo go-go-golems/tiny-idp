@@ -128,7 +128,7 @@ var deviceNamedTransitionAnalyzer = &analysis.Analyzer{
 				}
 				ast.Inspect(fn.Body, func(node ast.Node) bool {
 					call, ok := node.(*ast.CallExpr)
-					if ok && selectorCallName(call) == "Update" {
+					if ok && selectorCallName(call) == "Update" && !updateWrapsNamedDeviceGrantOperation(call) {
 						pass.Reportf(call.Pos(), "device-grant transition must use a named DeviceGrant operation, not generic Update")
 					}
 					return true
@@ -146,7 +146,7 @@ var deviceHandlerContractAnalyzer = &analysis.Analyzer{
 	Run: func(pass *analysis.Pass) (any, error) {
 		for _, file := range pass.Files {
 			filename := pass.Fset.Position(file.Pos()).Filename
-			if !strings.HasSuffix(filename, "/provider.go") {
+			if !strings.HasSuffix(filename, "/provider.go") || !strings.HasSuffix(pass.Pkg.Path(), "/internal/fositeadapter") {
 				continue
 			}
 			authorization, verification := false, false
@@ -158,7 +158,7 @@ var deviceHandlerContractAnalyzer = &analysis.Analyzer{
 				if selectorCallName(call) != "HandleFunc" || len(call.Args) < 2 {
 					return true
 				}
-				path, _ := stringLiteral(call.Args[0])
+				path, _ := terminalStringLiteral(call.Args[0])
 				handler := identifierName(call.Args[1])
 				if path == "/device_authorization" && handler == "deviceAuthorization" {
 					authorization = true
@@ -985,4 +985,37 @@ func selectorCallName(call *ast.CallExpr) string {
 		return ""
 	}
 	return selector.Sel.Name
+}
+
+// updateWrapsNamedDeviceGrantOperation accepts the transactional Store.Update
+// adapter used by the concrete SQLite store only when its callback delegates to
+// one of the narrow DeviceGrant operations. A naked generic Update remains a
+// finding because it bypasses the explicit device-grant transition vocabulary.
+func updateWrapsNamedDeviceGrantOperation(call *ast.CallExpr) bool {
+	found := false
+	ast.Inspect(call, func(node ast.Node) bool {
+		inner, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if strings.Contains(selectorCallName(inner), "DeviceGrant") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// terminalStringLiteral recognizes the trailing literal in route expressions
+// such as prefix + "/device" without attempting to evaluate arbitrary input.
+func terminalStringLiteral(expr ast.Expr) (string, bool) {
+	if value, ok := stringLiteral(expr); ok {
+		return value, true
+	}
+	binary, ok := expr.(*ast.BinaryExpr)
+	if !ok || binary.Op != token.ADD {
+		return "", false
+	}
+	return stringLiteral(binary.Y)
 }

@@ -67,6 +67,9 @@ type DevelopmentApplication struct {
 	extras        []func(context.Context) error
 }
 
+// NewDevelopmentApplication creates a deliberately non-production xapp.
+// tinyidp:development-default -- its API audit sink is intentionally a no-op.
+//
 //nolint:nonamedreturns // retErr lets deferred construction cleanup observe any initialization failure.
 func NewDevelopmentApplication(ctx context.Context, cfg DevelopmentApplicationConfig) (_ *DevelopmentApplication, retErr error) {
 	if ctx == nil {
@@ -307,7 +310,11 @@ func composeApplication(ctx context.Context, app *DevelopmentApplication, authFa
 	mux := http.NewServeMux()
 	mux.Handle("/idp/", app.idp.Handler())
 	mux.Handle("GET /static/tinyidp/", app.loginUI.AssetsHandler())
-	mux.Handle("/api/device/", newDeviceAPIHandler(app.apiAuth, app.objects.Manager, app.apiAudit))
+	deviceAPI, err := newDeviceAPIHandler(app.apiAuth, app.objects.Manager, app.apiAudit)
+	if err != nil {
+		return errors.Wrap(err, "construct device API handler")
+	}
+	mux.Handle("/api/device/", deviceAPI)
 	for _, native := range app.auth.NativeHandlers {
 		mux.Handle(native.Method+" "+native.Path, native.Handler)
 	}
