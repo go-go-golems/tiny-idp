@@ -32,6 +32,10 @@ type ClientStore interface {
 type UserStore interface {
 	GetUser(ctx context.Context, id string) (User, error)
 	GetUserByLogin(ctx context.Context, login string) (User, error)
+	// GetUserBySubject returns the account that owns an OIDC subject. An OIDC
+	// provider's (issuer, subject) pair is a relying party's stable principal,
+	// so subjects are unique within one Store.
+	GetUserBySubject(ctx context.Context, subject string) (User, error)
 	PutUser(ctx context.Context, login string, u User) error
 }
 
@@ -152,6 +156,7 @@ type ReadStore interface {
 	ListClients(ctx context.Context) ([]Client, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	GetUserByLogin(ctx context.Context, login string) (User, error)
+	GetUserBySubject(ctx context.Context, subject string) (User, error)
 	GetPasswordCredentialByLogin(ctx context.Context, login string) (PasswordCredential, error)
 	GetPasswordCredentialByUserID(ctx context.Context, userID string) (PasswordCredential, error)
 	GetAccountSecurityState(ctx context.Context, userID string) (AccountSecurityState, error)
@@ -195,6 +200,9 @@ type AtomicStore interface {
 	Update(ctx context.Context, fn func(TxStore) error) error
 	CreateUserWithCredential(ctx context.Context, login string, user User, credential PasswordCredential) error
 	ReplacePasswordAndSecurityState(ctx context.Context, credential PasswordCredential, state AccountSecurityState) error
+	// SetUserDisabled atomically changes account status and, when disabling,
+	// revokes the user's browser, domain-token, and Fosite protocol artifacts.
+	SetUserDisabled(ctx context.Context, login string, disabled bool, at time.Time) (User, error)
 	RecordFailedLogin(ctx context.Context, userID string, now time.Time, policy LockoutPolicy) (AccountSecurityState, error)
 	RecordSuccessfulLogin(ctx context.Context, userID string, now time.Time, session *Session) error
 	RevokeUserSecurityArtifacts(ctx context.Context, userID string, at time.Time) error

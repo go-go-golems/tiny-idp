@@ -264,6 +264,20 @@ func RunStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 			t.Fatalf("authorization code after password revocation = %v", err)
 		}
 	})
+	t.Run("OIDC subjects are unique at the store boundary", func(t *testing.T) {
+		ctx := context.Background()
+		st := newStore(t)
+		if err := st.PutUser(ctx, "alice", User{ID: "u1", Sub: "subject-1"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.PutUser(ctx, "bob", User{ID: "u2", Sub: "subject-1"}); !errors.Is(err, ErrDuplicate) {
+			t.Fatalf("duplicate subject error = %v, want %v", err, ErrDuplicate)
+		}
+		user, err := st.GetUserBySubject(ctx, "subject-1")
+		if err != nil || user.ID != "u1" {
+			t.Fatalf("GetUserBySubject = %#v, %v", user, err)
+		}
+	})
 	t.Run("authorization code can be consumed once", func(t *testing.T) {
 		ctx := context.Background()
 		st := newStore(t)

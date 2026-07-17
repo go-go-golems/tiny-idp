@@ -322,8 +322,8 @@ func (s *Store) ListClients(ctx context.Context) ([]idpstore.Client, error) {
 
 func (s *Store) PutUser(ctx context.Context, login string, u idpstore.User) error {
 	b, _ := enc(u)
-	_, err := s.conn().ExecContext(ctx, `INSERT OR REPLACE INTO users(id,login,data) VALUES(?,?,?)`, u.ID, login, b)
-	return err
+	_, err := s.conn().ExecContext(ctx, `INSERT INTO users(id,login,subject,data) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET login=excluded.login,subject=excluded.subject,data=excluded.data`, u.ID, login, u.Sub, b)
+	return mapDup(err)
 }
 func (s *Store) GetUser(ctx context.Context, id string) (idpstore.User, error) {
 	var b []byte
@@ -339,6 +339,18 @@ func (s *Store) GetUser(ctx context.Context, id string) (idpstore.User, error) {
 func (s *Store) GetUserByLogin(ctx context.Context, login string) (idpstore.User, error) {
 	var b []byte
 	err := s.conn().QueryRowContext(ctx, `SELECT data FROM users WHERE login=?`, login).Scan(&b)
+	if err == sql.ErrNoRows {
+		return idpstore.User{}, idpstore.ErrNotFound
+	}
+	if err != nil {
+		return idpstore.User{}, err
+	}
+	return dec[idpstore.User](b)
+}
+
+func (s *Store) GetUserBySubject(ctx context.Context, subject string) (idpstore.User, error) {
+	var b []byte
+	err := s.conn().QueryRowContext(ctx, `SELECT data FROM users WHERE subject=?`, subject).Scan(&b)
 	if err == sql.ErrNoRows {
 		return idpstore.User{}, idpstore.ErrNotFound
 	}
@@ -1424,6 +1436,33 @@ func (s *Store) ReplacePasswordAndSecurityState(ctx context.Context, credential 
 		}
 		return scoped.revokeUserSecurityArtifacts(ctx, credential.UserID, credential.PasswordChangedAt)
 	})
+}
+
+func (s *Store) SetUserDisabled(ctx context.Context, login string, disabled bool, at time.Time) (idpstore.User, error) {
+	var user idpstore.User
+	err := s.Update(ctx, func(tx idpstore.TxStore) error {
+		loaded, err := tx.GetUserByLogin(ctx, login)
+		if err != nil {
+			return err
+		}
+		loaded.Disabled = disabled
+		loaded.UpdatedAt = at.UTC()
+		if err := tx.PutUser(ctx, login, loaded); err != nil {
+			return err
+		}
+		scoped, ok := tx.(*Store)
+		if !ok {
+			return fmt.Errorf("unexpected SQLite transaction implementation")
+		}
+		if disabled {
+			if err := scoped.revokeUserSecurityArtifacts(ctx, loaded.ID, loaded.UpdatedAt); err != nil {
+				return err
+			}
+		}
+		user = loaded
+		return nil
+	})
+	return user, err
 }
 
 func (s *Store) RevokeUserSecurityArtifacts(ctx context.Context, userID string, at time.Time) error {

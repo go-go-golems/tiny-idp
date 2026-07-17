@@ -22,6 +22,7 @@ type Store struct {
 	clients            map[string]idpstore.Client
 	usersByID          map[string]idpstore.User
 	usersByLogin       map[string]string
+	usersBySubject     map[string]string
 	credentialsByUser  map[string]idpstore.PasswordCredential
 	credentialsByLogin map[string]string
 	accountSecurity    map[string]idpstore.AccountSecurityState
@@ -47,6 +48,7 @@ func New() *Store {
 		clients:            map[string]idpstore.Client{},
 		usersByID:          map[string]idpstore.User{},
 		usersByLogin:       map[string]string{},
+		usersBySubject:     map[string]string{},
 		credentialsByUser:  map[string]idpstore.PasswordCredential{},
 		credentialsByLogin: map[string]string{},
 		accountSecurity:    map[string]idpstore.AccountSecurityState{},
@@ -97,7 +99,19 @@ func (s *Store) ListClients(_ context.Context) ([]idpstore.Client, error) {
 func (s *Store) PutUser(_ context.Context, login string, u idpstore.User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if existingID, ok := s.usersBySubject[u.Sub]; ok && existingID != u.ID {
+		return idpstore.ErrDuplicate
+	}
+	if login != "" {
+		if existingID, ok := s.usersByLogin[login]; ok && existingID != u.ID {
+			return idpstore.ErrDuplicate
+		}
+	}
+	if previous, ok := s.usersByID[u.ID]; ok && previous.Sub != u.Sub {
+		delete(s.usersBySubject, previous.Sub)
+	}
 	s.usersByID[u.ID] = u
+	s.usersBySubject[u.Sub] = u.ID
 	if login != "" {
 		s.usersByLogin[login] = u.ID
 	}
@@ -118,6 +132,20 @@ func (s *Store) GetUserByLogin(_ context.Context, login string) (idpstore.User, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id, ok := s.usersByLogin[login]
+	if !ok {
+		return idpstore.User{}, idpstore.ErrNotFound
+	}
+	u, ok := s.usersByID[id]
+	if !ok {
+		return idpstore.User{}, idpstore.ErrNotFound
+	}
+	return u, nil
+}
+
+func (s *Store) GetUserBySubject(_ context.Context, subject string) (idpstore.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.usersBySubject[subject]
 	if !ok {
 		return idpstore.User{}, idpstore.ErrNotFound
 	}
@@ -1022,6 +1050,31 @@ func (s *Store) ReplacePasswordAndSecurityState(ctx context.Context, credential 
 	})
 }
 
+func (s *Store) SetUserDisabled(ctx context.Context, login string, disabled bool, at time.Time) (idpstore.User, error) {
+	var user idpstore.User
+	err := s.Update(ctx, func(tx idpstore.TxStore) error {
+		loaded, err := tx.GetUserByLogin(ctx, login)
+		if err != nil {
+			return err
+		}
+		loaded.Disabled = disabled
+		loaded.UpdatedAt = at.UTC()
+		if err := tx.PutUser(ctx, login, loaded); err != nil {
+			return err
+		}
+		if disabled {
+			scoped, ok := tx.(*Store)
+			if !ok {
+				return errors.New("unexpected memory transaction implementation")
+			}
+			scoped.revokeUserSecurityArtifacts(loaded.ID, &loaded.UpdatedAt)
+		}
+		user = loaded
+		return nil
+	})
+	return user, err
+}
+
 func (s *Store) RevokeUserSecurityArtifacts(ctx context.Context, userID string, at time.Time) error {
 	return s.Update(ctx, func(tx idpstore.TxStore) error {
 		scoped, ok := tx.(*Store)
@@ -1145,6 +1198,7 @@ func (s *Store) cloneLocked() *Store {
 		clients:            cloneMap(s.clients),
 		usersByID:          cloneMap(s.usersByID),
 		usersByLogin:       cloneMap(s.usersByLogin),
+		usersBySubject:     cloneMap(s.usersBySubject),
 		credentialsByUser:  cloneMap(s.credentialsByUser),
 		credentialsByLogin: cloneMap(s.credentialsByLogin),
 		accountSecurity:    cloneMap(s.accountSecurity),
@@ -1167,6 +1221,7 @@ func (s *Store) replaceLocked(next *Store) {
 	s.clients = next.clients
 	s.usersByID = next.usersByID
 	s.usersByLogin = next.usersByLogin
+	s.usersBySubject = next.usersBySubject
 	s.credentialsByUser = next.credentialsByUser
 	s.credentialsByLogin = next.credentialsByLogin
 	s.accountSecurity = next.accountSecurity

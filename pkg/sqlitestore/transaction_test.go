@@ -204,6 +204,39 @@ func TestPasswordReplacementRevokesDomainAndProtocolArtifacts(t *testing.T) {
 	}
 }
 
+func TestSetUserDisabledRevokesDomainAndProtocolArtifacts(t *testing.T) {
+	ctx := context.Background()
+	st := openTestStore(t)
+	now := time.Now().UTC()
+	if err := st.CreateUserWithCredential(ctx, "alice", idpstore.User{ID: "u1", Sub: "subject-1"}, idpstore.PasswordCredential{UserID: "u1", Login: "alice"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAccessToken(ctx, idpstore.AccessToken{TokenHash: []byte("access"), UserID: "u1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SQLDB().ExecContext(ctx, `INSERT INTO fosite_access_tokens(signature,request_id,subject,request_json) VALUES('access','request','subject-1','{}')`); err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := st.SetUserDisabled(ctx, "alice", true, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !disabled.Disabled || !disabled.UpdatedAt.Equal(now) {
+		t.Fatalf("disabled user = %#v", disabled)
+	}
+	access, err := st.GetAccessToken(ctx, []byte("access"))
+	if err != nil || access.RevokedAt == nil || !access.RevokedAt.Equal(now) {
+		t.Fatalf("domain access after disable = %#v, %v", access, err)
+	}
+	var count int
+	if err := st.SQLDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM fosite_access_tokens WHERE signature='access'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("fosite access token still active after disable: rows=%d", count)
+	}
+}
+
 func openTestStore(t *testing.T) *sqlitestore.Store {
 	t.Helper()
 	st, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))

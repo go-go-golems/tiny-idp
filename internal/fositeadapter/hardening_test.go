@@ -112,11 +112,11 @@ func TestDiscoveryPublishesIntrospectionAtRootAndPathIssuer(t *testing.T) {
 	for _, tc := range []struct {
 		name              string
 		issuer            string
-		discoveryPath     string
+		discoveryPaths    []string
 		wantIntrospection string
 	}{
-		{name: "root issuer", issuer: "https://issuer.example.test", discoveryPath: "/.well-known/openid-configuration", wantIntrospection: "https://issuer.example.test/introspect"},
-		{name: "path issuer", issuer: "https://issuer.example.test/idp", discoveryPath: "/idp/.well-known/openid-configuration", wantIntrospection: "https://issuer.example.test/idp/introspect"},
+		{name: "root issuer", issuer: "https://issuer.example.test", discoveryPaths: []string{"/.well-known/openid-configuration"}, wantIntrospection: "https://issuer.example.test/introspect"},
+		{name: "path issuer", issuer: "https://issuer.example.test/idp", discoveryPaths: []string{"/.well-known/openid-configuration/idp", "/idp/.well-known/openid-configuration"}, wantIntrospection: "https://issuer.example.test/idp/introspect"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := memory.New()
@@ -133,26 +133,30 @@ func TestDiscoveryPublishesIntrospectionAtRootAndPathIssuer(t *testing.T) {
 			}
 			server := httptest.NewServer(provider.Handler())
 			defer server.Close()
-			response, err := http.Get(server.URL + tc.discoveryPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer response.Body.Close()
-			if response.StatusCode != http.StatusOK {
-				t.Fatalf("discovery status=%d", response.StatusCode)
-			}
-			var discovery struct {
-				IntrospectionEndpoint       string   `json:"introspection_endpoint"`
-				DeviceAuthorizationEndpoint string   `json:"device_authorization_endpoint"`
-				AuthMethods                 []string `json:"introspection_endpoint_auth_methods_supported"`
-				GrantTypes                  []string `json:"grant_types_supported"`
-			}
-			if err := json.NewDecoder(response.Body).Decode(&discovery); err != nil {
-				t.Fatal(err)
-			}
-			wantDeviceAuthorization := strings.TrimSuffix(tc.wantIntrospection, "/introspect") + "/device_authorization"
-			if discovery.IntrospectionEndpoint != tc.wantIntrospection || discovery.DeviceAuthorizationEndpoint != wantDeviceAuthorization || len(discovery.AuthMethods) != 1 || discovery.AuthMethods[0] != "client_secret_basic" || !containsString(discovery.GrantTypes, "urn:ietf:params:oauth:grant-type:device_code") {
-				t.Fatalf("discovery introspection contract=%#v", discovery)
+			for _, path := range tc.discoveryPaths {
+				response, err := http.Get(server.URL + path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.StatusCode != http.StatusOK {
+					_ = response.Body.Close()
+					t.Fatalf("discovery path %q status=%d", path, response.StatusCode)
+				}
+				var discovery struct {
+					IntrospectionEndpoint       string   `json:"introspection_endpoint"`
+					DeviceAuthorizationEndpoint string   `json:"device_authorization_endpoint"`
+					AuthMethods                 []string `json:"introspection_endpoint_auth_methods_supported"`
+					GrantTypes                  []string `json:"grant_types_supported"`
+				}
+				if err := json.NewDecoder(response.Body).Decode(&discovery); err != nil {
+					_ = response.Body.Close()
+					t.Fatal(err)
+				}
+				_ = response.Body.Close()
+				wantDeviceAuthorization := strings.TrimSuffix(tc.wantIntrospection, "/introspect") + "/device_authorization"
+				if discovery.IntrospectionEndpoint != tc.wantIntrospection || discovery.DeviceAuthorizationEndpoint != wantDeviceAuthorization || len(discovery.AuthMethods) != 1 || discovery.AuthMethods[0] != "client_secret_basic" || !containsString(discovery.GrantTypes, "urn:ietf:params:oauth:grant-type:device_code") {
+					t.Fatalf("discovery path %q contract=%#v", path, discovery)
+				}
 			}
 		})
 	}

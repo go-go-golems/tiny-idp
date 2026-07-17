@@ -69,6 +69,11 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (idpstore.User,
 	if subject == "" {
 		subject = id
 	}
+	if _, err := s.store.GetUserBySubject(ctx, subject); err == nil {
+		return idpstore.User{}, idpstore.ErrDuplicate
+	} else if !errors.Is(err, idpstore.ErrNotFound) {
+		return idpstore.User{}, err
+	}
 	u := idpstore.User{
 		ID: id, Sub: subject, Email: strings.TrimSpace(req.Email), EmailVerified: req.EmailVerified,
 		Name: strings.TrimSpace(req.Name), PreferredUsername: firstNonEmpty(strings.TrimSpace(req.PreferredUsername), login),

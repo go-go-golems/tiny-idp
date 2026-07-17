@@ -402,6 +402,12 @@ func (p *Provider) Handler() http.Handler {
 	mux := http.NewServeMux()
 	prefix := strings.TrimRight(p.issuer.URL.EscapedPath(), "/")
 	p.registerAt(mux, prefix)
+	if prefix != "" {
+		// OpenID Connect Discovery 1.0 places a path issuer's well-known
+		// resource before the issuer path, for example
+		// /.well-known/openid-configuration/idp for https://host/idp.
+		mux.HandleFunc("/.well-known/openid-configuration"+prefix, p.discovery)
+	}
 	return p.securityHeaders(mux)
 }
 

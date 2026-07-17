@@ -86,6 +86,39 @@ func TestCreateRejectsDuplicateExplicitIDAtomically(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsDuplicateOIDCSubjectAtomically(t *testing.T) {
+	stores := map[string]func(*testing.T) idpstore.Store{
+		"memory": func(*testing.T) idpstore.Store { return memory.New() },
+		"sqlite": func(t *testing.T) idpstore.Store {
+			store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			return store
+		},
+	}
+	for name, newStore := range stores {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := newStore(t)
+			service, err := newService(store, Options{}, passwordhash.New(passwordhash.TestParams()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Create(ctx, CreateRequest{Login: "alice", ID: "alice-id", Subject: "shared-subject", Password: []byte("alice-password-long")}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Create(ctx, CreateRequest{Login: "bob", ID: "bob-id", Subject: "shared-subject", Password: []byte("bob-password-long")}); !errors.Is(err, idpstore.ErrDuplicate) {
+				t.Fatalf("duplicate subject error = %v", err)
+			}
+			if _, err := store.GetUserByLogin(ctx, "bob"); !errors.Is(err, idpstore.ErrNotFound) {
+				t.Fatalf("duplicate left partial account: %v", err)
+			}
+		})
+	}
+}
+
 type failingAuditSink struct{}
 
 func (failingAuditSink) Emit(context.Context, idp.Event) error { return errors.New("disk full") }

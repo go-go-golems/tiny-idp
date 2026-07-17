@@ -14,13 +14,8 @@ func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bo
 	if login == "" {
 		return idpstore.User{}, fmt.Errorf("login is required")
 	}
-	u, err := s.Store.GetUserByLogin(ctx, login)
+	u, err := s.Store.SetUserDisabled(ctx, login, disabled, s.Clock().UTC())
 	if err != nil {
-		return idpstore.User{}, err
-	}
-	u.Disabled = disabled
-	u.UpdatedAt = s.Clock().UTC()
-	if err := s.Store.PutUser(ctx, login, u); err != nil {
 		return idpstore.User{}, err
 	}
 	name := "admin.user.enabled"
