@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/pkg/idp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	"github.com/go-go-golems/tiny-idp/internal/admin"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 func NewAdminCommand() *cobra.Command {

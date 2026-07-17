@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manuel/tinyidp/internal/passwordhash"
+	"github.com/go-go-golems/tiny-idp/internal/passwordhash"
 )
 
 func TestArgon2idHashVerifyAndParse(t *testing.T) {

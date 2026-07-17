@@ -4,7 +4,7 @@ app:
   name: tinyidp-xapp
   envPrefix: TINYIDP_XAPP
 go:
-  module: github.com/manuel/tinyidp
+  module: github.com/go-go-golems/tiny-idp
   version: "1.26"
 workspace:
   mode: auto

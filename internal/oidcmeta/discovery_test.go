@@ -3,7 +3,7 @@ package oidcmeta_test
 import (
 	"testing"
 
-	"github.com/manuel/tinyidp/internal/oidcmeta"
+	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
 )
 
 func TestProductionDiscoveryIncludesEndSessionEndpoint(t *testing.T) {

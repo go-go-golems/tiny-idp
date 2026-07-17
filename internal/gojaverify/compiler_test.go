@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/verifyplan"
+	"github.com/go-go-golems/tiny-idp/pkg/verifyplan"
 )
 
 type recordingDriver struct{}

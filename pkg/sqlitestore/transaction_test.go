@@ -11,8 +11,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 func TestUpdateRollsBackAllWrites(t *testing.T) {

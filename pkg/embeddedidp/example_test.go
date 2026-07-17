@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/manuel/tinyidp/pkg/embeddedidp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 func Example_browserComposition() {

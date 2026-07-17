@@ -11,8 +11,8 @@ import (
 
 	"github.com/ory/fosite"
 
-	"github.com/manuel/tinyidp/internal/securitytrace"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 const interactionFieldName = "interaction"

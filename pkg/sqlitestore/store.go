@@ -19,7 +19,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 //go:embed migrations/*.sql

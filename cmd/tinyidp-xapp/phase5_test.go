@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 )
 
 func TestDeviceAPITwoUsersScopesAndMalformedCredentials(t *testing.T) {

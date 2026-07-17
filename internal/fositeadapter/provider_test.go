@@ -19,12 +19,12 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/manuel/tinyidp/internal/fositeadapter"
-	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/store/memory"
-	"github.com/manuel/tinyidp/pkg/idp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/internal/fositeadapter"
+	"github.com/go-go-golems/tiny-idp/internal/keys"
+	"github.com/go-go-golems/tiny-idp/internal/store/memory"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 // strictRecordingLimiter observes rate-limit namespace use through the public

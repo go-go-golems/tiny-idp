@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/manuel/tinyidp/internal/securitytrace"
-	"github.com/manuel/tinyidp/pkg/idp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
 
 const deviceVerificationMaxBody = 16 << 10

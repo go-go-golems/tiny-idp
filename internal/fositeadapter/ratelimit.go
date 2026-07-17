@@ -3,7 +3,7 @@ package fositeadapter
 import (
 	"context"
 
-	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 )
 
 type AllowAllRateLimiter struct{}

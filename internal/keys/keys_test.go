@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 func TestPublicJWKSContainsPublicFields(t *testing.T) {

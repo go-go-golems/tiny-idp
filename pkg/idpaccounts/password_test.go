@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/passwordhash"
-	"github.com/manuel/tinyidp/internal/store/memory"
-	"github.com/manuel/tinyidp/pkg/idp"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/internal/passwordhash"
+	"github.com/go-go-golems/tiny-idp/internal/store/memory"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 func testService(t *testing.T, store idpstore.Store, opts Options) *Service {

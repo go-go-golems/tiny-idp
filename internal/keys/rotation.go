@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 // RotateRSA creates a new RSA signing key, activates it, and retires the

@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 	"golang.org/x/net/html"
 )
 

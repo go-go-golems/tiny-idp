@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
 
 const DefaultStylesheetURL = "/static/tinyidp/login.css"

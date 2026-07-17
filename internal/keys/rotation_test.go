@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/store/memory"
+	"github.com/go-go-golems/tiny-idp/internal/keys"
+	"github.com/go-go-golems/tiny-idp/internal/store/memory"
 )
 
 func TestRotateRSAActivatesNewKeyAndKeepsOldVerifiable(t *testing.T) {

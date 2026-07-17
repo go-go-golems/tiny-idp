@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 type BackupResult = sqlitestore.BackupResult

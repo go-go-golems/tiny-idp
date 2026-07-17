@@ -14,11 +14,11 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	external "github.com/manuel/tinyidp/examples/tinyidp-external-message-desk"
-	"github.com/manuel/tinyidp/examples/tinyidp-message-app/loginui"
-	"github.com/manuel/tinyidp/pkg/embeddedidp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	external "github.com/go-go-golems/tiny-idp/examples/tinyidp-external-message-desk"
+	"github.com/go-go-golems/tiny-idp/examples/tinyidp-message-app/loginui"
+	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 func main() {

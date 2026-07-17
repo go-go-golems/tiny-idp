@@ -31,13 +31,13 @@ import (
 	fositememory "github.com/ory/fosite/storage"
 	fositejwt "github.com/ory/fosite/token/jwt"
 
-	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/oidcmeta"
-	"github.com/manuel/tinyidp/internal/securitytrace"
-	"github.com/manuel/tinyidp/pkg/idp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/internal/keys"
+	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
+	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
 
 var ProductionHandlerFactories = []string{

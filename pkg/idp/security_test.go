@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 )
 
 func TestDefaultPasswordAcceptancePolicy(t *testing.T) {

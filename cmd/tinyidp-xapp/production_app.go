@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/go-go-golems/go-go-goja/pkg/xgoja/hostauth"
-	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/loginui"
-	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/resourceauth"
-	"github.com/manuel/tinyidp/pkg/embeddedidp"
-	"github.com/manuel/tinyidp/pkg/idp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	"github.com/go-go-golems/tiny-idp/cmd/tinyidp-xapp/internal/loginui"
+	"github.com/go-go-golems/tiny-idp/cmd/tinyidp-xapp/internal/resourceauth"
+	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 	"github.com/pkg/errors"
 )
 

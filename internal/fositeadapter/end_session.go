@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/idp"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 var signedOutTemplate = template.Must(template.New("signed-out").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Signed out</title></head><body><main><h1>Signed out</h1><p>Your tiny-idp browser session has ended.</p></main></body></html>`))

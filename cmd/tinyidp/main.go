@@ -20,8 +20,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/manuel/tinyidp/cmd/tinyidp/doc"
-	"github.com/manuel/tinyidp/internal/cmds"
+	"github.com/go-go-golems/tiny-idp/cmd/tinyidp/doc"
+	"github.com/go-go-golems/tiny-idp/internal/cmds"
 )
 
 // version is overridden at link time (-ldflags "-X main.version=...").

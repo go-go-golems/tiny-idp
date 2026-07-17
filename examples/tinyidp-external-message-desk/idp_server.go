@@ -9,11 +9,11 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/manuel/tinyidp/pkg/embeddedidp"
-	"github.com/manuel/tinyidp/pkg/idp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
 
 // StandaloneIDPConfig names only the capabilities a standalone IdP process

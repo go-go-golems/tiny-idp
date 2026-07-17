@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/internal/admin"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 )
 
 func newAdminBackupCommand(dbPath *string) *cobra.Command {

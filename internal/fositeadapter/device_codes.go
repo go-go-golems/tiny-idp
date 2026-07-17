@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 const userCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

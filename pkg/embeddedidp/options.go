@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/oidcmeta"
-	"github.com/manuel/tinyidp/pkg/idp"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/internal/keys"
+	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
 
 type Mode = idpstore.Mode

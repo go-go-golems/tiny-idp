@@ -15,7 +15,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 )
 
 type event struct {

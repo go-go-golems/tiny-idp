@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/net/html"
 
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
 
 func TestDefaultRendererRendersDeviceEntryConfirmationAndNotice(t *testing.T) {

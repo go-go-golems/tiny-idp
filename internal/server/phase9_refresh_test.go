@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/manuel/tinyidp/internal/client"
+	"github.com/go-go-golems/tiny-idp/internal/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

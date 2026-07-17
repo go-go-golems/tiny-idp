@@ -3,7 +3,7 @@ package idpuitest_test
 import (
 	"testing"
 
-	"github.com/manuel/tinyidp/pkg/idpui/idpuitest"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui/idpuitest"
 )
 
 func FuzzConformanceParserNeverPanics(f *testing.F) {

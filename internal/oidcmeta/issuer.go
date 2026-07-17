@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 type Issuer struct{ URL *url.URL }

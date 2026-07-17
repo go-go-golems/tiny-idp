@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/keys"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	"github.com/go-go-golems/tiny-idp/internal/keys"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 func TestMaintenanceHonorsRetentionAndVerificationOverlap(t *testing.T) {

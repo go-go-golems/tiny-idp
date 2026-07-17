@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"net/http"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 const defaultCSRFCookieName = "tinyidp_csrf"

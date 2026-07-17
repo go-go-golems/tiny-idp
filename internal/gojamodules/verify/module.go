@@ -8,7 +8,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/go-go-goja/modules"
 
-	"github.com/manuel/tinyidp/pkg/verifyplan"
+	"github.com/go-go-golems/tiny-idp/pkg/verifyplan"
 )
 
 const Name = "tinyidp/verify"

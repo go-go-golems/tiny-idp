@@ -267,8 +267,8 @@ import (
     "context"
     "net/http"
 
-    "github.com/manuel/tinyidp/pkg/embeddedidp"
-    "github.com/manuel/tinyidp/pkg/sqlitestore"
+    "github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
+    "github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 ctx := context.Background()
@@ -422,6 +422,39 @@ Deep-dive docs for the productized strict engine live under `docs/`:
 - [`docs/key-rotation.md`](docs/key-rotation.md) — safe signing-key rotation.
 - [`docs/admin-cli.md`](docs/admin-cli.md) — the `tinyidp admin` command surface.
 - [`docs/conformance.md`](docs/conformance.md) — conformance runner and coverage.
+
+## Project and release workflow
+
+tinyidp follows the Go-Go-Golems release contract. Development commands execute
+with `GOWORK=off` so that the same versioned module graph used by CI and release
+artifacts is tested locally. The checked-in xapp generator likewise resolves
+`xgoja` from `go.mod`; it does not depend on a sibling checkout or a `replace`
+directive in `xgoja.yaml`.
+
+```bash
+make build             # compile every repository package
+make test              # run unit, integration, and example tests
+make lint              # pinned golangci-lint + Glazed + repository analyzers
+make verify            # build + test + lint + auditlint + gosec + govulncheck
+make docs-export       # write .docsctl/tinyidp-help.sqlite
+make goreleaser        # local, unsigned, single-target snapshot
+```
+
+The tracked `lefthook.yml` runs tests and lint before commits, and adds a local
+GoReleaser snapshot before pushes. A `v*` tag starts the release workflow:
+Linux (including arm64 CGO) and Darwin artifacts are built separately, merged
+and signed in the protected `release` environment, then published to GitHub and
+the Go-Go-Golems Homebrew tap. The same successful tag exports the canonical
+Glazed help corpus as SQLite and calls the shared `publish-docsctl` workflow.
+That workflow authenticates to Vault with GitHub OIDC and mints a short-lived,
+package-scoped `docsctl-tinyidp-publisher` credential; no registry token is
+stored in this repository.
+
+Before the first tag, repository administrators must provision the `release`
+environment, signing/Homebrew release secrets, and the Vault role named
+`docsctl-tinyidp-publisher`. The project deliberately has no committed
+distribution license yet, so package formats that require a license declaration
+remain outside the GoReleaser configuration until that product decision is made.
 
 ## Status
 

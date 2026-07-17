@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/manuel/tinyidp/internal/user"
-	"github.com/manuel/tinyidp/pkg/idp"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/internal/user"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 func (s *Service) SetUserDisabled(ctx context.Context, login string, disabled bool) (idpstore.User, error) {

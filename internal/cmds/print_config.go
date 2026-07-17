@@ -12,7 +12,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/settings"
 	"github.com/go-go-golems/glazed/pkg/types"
 
-	"github.com/manuel/tinyidp/internal/sections/oidc"
+	"github.com/go-go-golems/tiny-idp/internal/sections/oidc"
 )
 
 // PrintConfigCommand implements `tinyidp print-config`. It composes the same

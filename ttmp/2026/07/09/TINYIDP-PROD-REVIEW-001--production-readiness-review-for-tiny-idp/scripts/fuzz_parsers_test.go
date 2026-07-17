@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/manuel/tinyidp/internal/oidcmeta"
-	"github.com/manuel/tinyidp/internal/passwordhash"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
+	"github.com/go-go-golems/tiny-idp/internal/passwordhash"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 func FuzzIssuerParsing(f *testing.F) {

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 )
 
 func TestFileAuditSinkDurabilityAndFailureHealth(t *testing.T) {

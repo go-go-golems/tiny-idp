@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 const defaultBrowserContextCookieName = "tinyidp_browser_context"

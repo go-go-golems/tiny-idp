@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/admin"
-	"github.com/manuel/tinyidp/internal/store/memory"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	"github.com/go-go-golems/tiny-idp/internal/admin"
+	"github.com/go-go-golems/tiny-idp/internal/store/memory"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 func TestServiceClientLifecycle(t *testing.T) {

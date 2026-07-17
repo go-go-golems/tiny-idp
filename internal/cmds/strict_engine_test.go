@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/manuel/tinyidp/internal/sections/oidc"
+	"github.com/go-go-golems/tiny-idp/internal/sections/oidc"
 )
 
 func TestBuildStrictProviderSmoke(t *testing.T) {

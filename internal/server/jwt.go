@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/scenario"
+	"github.com/go-go-golems/tiny-idp/internal/scenario"
 )
 
 // jwksSlowDelay is how long the "slow" JWKS mode sleeps before responding.

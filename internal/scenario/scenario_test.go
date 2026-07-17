@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/user"
+	"github.com/go-go-golems/tiny-idp/internal/user"
 )
 
 func TestNewPreloadsBuiltinScenarios(t *testing.T) {

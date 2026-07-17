@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/scenario"
-	"github.com/manuel/tinyidp/internal/user"
+	"github.com/go-go-golems/tiny-idp/internal/scenario"
+	"github.com/go-go-golems/tiny-idp/internal/user"
 )
 
 // authorizeRequest carries the OAuth/OIDC authorize params across the GET

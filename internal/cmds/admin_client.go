@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/manuel/tinyidp/internal/admin"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/internal/admin"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 func newAdminClientCommand(dbPath *string) *cobra.Command {

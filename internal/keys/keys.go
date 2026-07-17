@@ -13,7 +13,7 @@ import (
 	"math/big"
 	"time"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 func GenerateRSA(kid string, now time.Time) (idpstore.SigningKey, error) {

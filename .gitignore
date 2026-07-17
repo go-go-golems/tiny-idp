@@ -11,9 +11,9 @@
 .idea/
 .vscode/
 
-# Local Lefthook initializer template. A shared hook policy must be added
-# intentionally rather than inheriting this all-commented generated file.
-lefthook.yml
+# Local release and documentation-export artifacts.
+dist/
+.docsctl/
 
 # Hosted OIDF suite traces include captured HTTP traffic, temporary public
 # endpoints, test-owner identifiers, and development credentials. Keep them in

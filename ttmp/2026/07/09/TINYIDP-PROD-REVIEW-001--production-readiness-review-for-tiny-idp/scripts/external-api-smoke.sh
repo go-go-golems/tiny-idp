@@ -6,7 +6,7 @@ probe_dir="$(mktemp -d)"
 trap 'rm -rf "$probe_dir"' EXIT
 
 mkdir -p "$probe_dir/consumer"
-printf 'module example.test/tinyidp-consumer\n\ngo 1.26.1\n\nrequire github.com/manuel/tinyidp v0.0.0\n\nreplace github.com/manuel/tinyidp => %s\n' "$repo_root" > "$probe_dir/go.mod"
+printf 'module example.test/tinyidp-consumer\n\ngo 1.26.1\n\nrequire github.com/go-go-golems/tiny-idp v0.0.0\n\nreplace github.com/go-go-golems/tiny-idp => %s\n' "$repo_root" > "$probe_dir/go.mod"
 cp "$repo_root/go.sum" "$probe_dir/go.sum"
 printf '%s\n' \
   'package consumer' \
@@ -14,10 +14,10 @@ printf '%s\n' \
   'import (' \
   '  "context"' \
   '' \
-  '  "github.com/manuel/tinyidp/pkg/idp"' \
-  '  "github.com/manuel/tinyidp/pkg/idpstore"' \
-  '  "github.com/manuel/tinyidp/pkg/embeddedidp"' \
-  '  "github.com/manuel/tinyidp/pkg/sqlitestore"' \
+  '  "github.com/go-go-golems/tiny-idp/pkg/idp"' \
+  '  "github.com/go-go-golems/tiny-idp/pkg/idpstore"' \
+  '  "github.com/go-go-golems/tiny-idp/pkg/embeddedidp"' \
+  '  "github.com/go-go-golems/tiny-idp/pkg/sqlitestore"' \
   ')' \
   '' \
   'type limiter struct{}' \

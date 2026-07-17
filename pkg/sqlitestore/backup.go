@@ -401,6 +401,7 @@ func ensureOwnerOnlyDirectory(path string) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return fmt.Errorf("create owner-only directory: %w", err)
 	}
+	// #nosec G302 -- directories need owner search permission; 0700 is owner-only.
 	if err := os.Chmod(path, 0o700); err != nil {
 		return fmt.Errorf("set owner-only directory permissions: %w", err)
 	}

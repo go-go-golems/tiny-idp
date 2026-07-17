@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 // Store is a concurrency-safe in-memory implementation of idpstore.Store. It is

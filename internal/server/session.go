@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/scenario"
-	"github.com/manuel/tinyidp/internal/user"
+	"github.com/go-go-golems/tiny-idp/internal/scenario"
+	"github.com/go-go-golems/tiny-idp/internal/user"
 )
 
 // sessionCookieName is the cookie used to track IdP sessions across

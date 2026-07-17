@@ -3,7 +3,7 @@ package cmds
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/manuel/tinyidp/internal/admin"
+	"github.com/go-go-golems/tiny-idp/internal/admin"
 )
 
 func newAdminExportCommand(dbPath *string) *cobra.Command {

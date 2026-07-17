@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 // TestDeviceGrantGeneratedActionSequencesAgreeWithReferenceModel is a small

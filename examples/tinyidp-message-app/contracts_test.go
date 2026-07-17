@@ -17,7 +17,7 @@ func TestExternalImportBoundary(t *testing.T) {
 	}
 	for _, pkg := range loaded {
 		for path := range pkg.Imports {
-			if strings.HasPrefix(path, "github.com/manuel/tinyidp/internal/") {
+			if strings.HasPrefix(path, "github.com/go-go-golems/tiny-idp/internal/") {
 				t.Errorf("%s imports forbidden internal package %q", pkg.PkgPath, path)
 			}
 		}

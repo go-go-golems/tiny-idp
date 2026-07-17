@@ -17,16 +17,16 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/manuel/tinyidp/internal/client"
-	"github.com/manuel/tinyidp/internal/fositeadapter"
-	"github.com/manuel/tinyidp/internal/keys"
-	"github.com/manuel/tinyidp/internal/scenario"
-	"github.com/manuel/tinyidp/internal/sections/oidc"
-	"github.com/manuel/tinyidp/internal/server"
-	"github.com/manuel/tinyidp/internal/store/memory"
-	"github.com/manuel/tinyidp/pkg/idp"
-	"github.com/manuel/tinyidp/pkg/idpaccounts"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/internal/client"
+	"github.com/go-go-golems/tiny-idp/internal/fositeadapter"
+	"github.com/go-go-golems/tiny-idp/internal/keys"
+	"github.com/go-go-golems/tiny-idp/internal/scenario"
+	"github.com/go-go-golems/tiny-idp/internal/sections/oidc"
+	"github.com/go-go-golems/tiny-idp/internal/server"
+	"github.com/go-go-golems/tiny-idp/internal/store/memory"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 // ServeDevCommand runs the local-only OIDC development server. It implements

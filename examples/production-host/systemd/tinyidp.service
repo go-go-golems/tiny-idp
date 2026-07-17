@@ -1,6 +1,6 @@
 [Unit]
 Description=tinyidp strict production host
-Documentation=https://github.com/manuel/tinyidp
+Documentation=https://github.com/go-go-golems/tiny-idp
 After=network-online.target
 Wants=network-online.target
 

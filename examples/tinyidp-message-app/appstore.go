@@ -89,6 +89,7 @@ func openAppStore(ctx context.Context, file string) (*appStore, error) {
 	if err := os.MkdirAll(filepath.Dir(absolute), 0o700); err != nil {
 		return nil, errors.Wrap(err, "create application database directory")
 	}
+	// #nosec G302 -- directories need owner search permission; 0700 is owner-only.
 	if err := os.Chmod(filepath.Dir(absolute), 0o700); err != nil {
 		return nil, errors.Wrap(err, "protect application database directory")
 	}

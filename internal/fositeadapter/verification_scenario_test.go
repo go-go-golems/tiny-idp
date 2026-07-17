@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/gojaverify"
-	"github.com/manuel/tinyidp/pkg/verifyplan"
+	"github.com/go-go-golems/tiny-idp/internal/gojaverify"
+	"github.com/go-go-golems/tiny-idp/pkg/verifyplan"
 )
 
 type securityClock struct {

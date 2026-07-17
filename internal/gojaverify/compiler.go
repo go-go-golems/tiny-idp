@@ -13,8 +13,8 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/go-go-golems/go-go-goja/modules"
 
-	_ "github.com/manuel/tinyidp/internal/gojamodules/verify"
-	"github.com/manuel/tinyidp/pkg/verifyplan"
+	_ "github.com/go-go-golems/tiny-idp/internal/gojamodules/verify"
+	"github.com/go-go-golems/tiny-idp/pkg/verifyplan"
 )
 
 type Options struct {

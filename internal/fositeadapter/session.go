@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/idp"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 const defaultSessionCookieName = "tinyidp_session"

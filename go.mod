@@ -1,4 +1,4 @@
-module github.com/manuel/tinyidp
+module github.com/go-go-golems/tiny-idp
 
 go 1.26.4
 

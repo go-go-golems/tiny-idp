@@ -68,6 +68,7 @@ func initializeStateRoot(ctx context.Context, root, rawPublicBaseURL string, now
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return stateManifest{}, errors.Wrapf(err, "create state directory %s", directory)
 		}
+		// #nosec G302 -- directories need owner search permission; 0700 is owner-only.
 		if err := os.Chmod(directory, 0o700); err != nil {
 			return stateManifest{}, errors.Wrapf(err, "protect state directory %s", directory)
 		}

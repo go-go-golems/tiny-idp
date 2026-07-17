@@ -13,7 +13,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
 
 const StylesheetURL = "/static/tinyidp/login.css"

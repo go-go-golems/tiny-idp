@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/manuel/tinyidp/internal/scenario"
+	"github.com/go-go-golems/tiny-idp/internal/scenario"
 )
 
 // debugRoutes registers the /debug/* introspection endpoints. These are

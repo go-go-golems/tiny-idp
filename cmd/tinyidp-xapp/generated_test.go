@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/xgojaruntime"
+	"github.com/go-go-golems/tiny-idp/cmd/tinyidp-xapp/internal/xgojaruntime"
 )
 
 func TestGeneratedBundleContainsActorBoundProductSurface(t *testing.T) {

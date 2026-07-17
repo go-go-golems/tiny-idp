@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/manuel/tinyidp/pkg/sqlitestore"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
 func TestInitializeStateIsIdempotentAndComplete(t *testing.T) {

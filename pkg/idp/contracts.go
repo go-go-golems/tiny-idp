@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 // ConsentPolicy decides whether a user must approve requested scopes and

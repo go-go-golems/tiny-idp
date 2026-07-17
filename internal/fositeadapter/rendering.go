@@ -3,14 +3,15 @@ package fositeadapter
 import (
 	"bytes"
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
 	"sync/atomic"
 	"time"
 
-	"github.com/manuel/tinyidp/pkg/idp"
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
-	"github.com/manuel/tinyidp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
 
 const maxInteractionDocumentBytes = 256 << 10
@@ -249,19 +250,31 @@ type interactionRenderMetrics struct {
 	oversizedDocuments    atomic.Uint64
 	emptyDocuments        atomic.Uint64
 	responseWriteFailures atomic.Uint64
-	totalLatencyNanos     atomic.Uint64
-	maxLatencyNanos       atomic.Uint64
+	totalLatencyNanos     atomic.Int64
+	maxLatencyNanos       atomic.Int64
 }
 
 func (m *interactionRenderMetrics) observe(elapsed time.Duration, succeeded bool) {
-	nanos := uint64(max(elapsed.Nanoseconds(), 0))
-	m.totalLatencyNanos.Add(nanos)
+	nanos := max(elapsed.Nanoseconds(), int64(0))
+	saturatingAddInt64(&m.totalLatencyNanos, nanos)
 	for current := m.maxLatencyNanos.Load(); nanos > current && !m.maxLatencyNanos.CompareAndSwap(current, nanos); current = m.maxLatencyNanos.Load() {
 	}
 	if succeeded {
 		m.successes.Add(1)
 	} else {
 		m.failures.Add(1)
+	}
+}
+
+func saturatingAddInt64(target *atomic.Int64, increment int64) {
+	for current := target.Load(); ; current = target.Load() {
+		next := current + increment
+		if increment > 0 && current > math.MaxInt64-increment {
+			next = math.MaxInt64
+		}
+		if target.CompareAndSwap(current, next) {
+			return
+		}
 	}
 }
 

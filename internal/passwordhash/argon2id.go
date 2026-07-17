@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 
@@ -121,12 +122,24 @@ func Parse(encoded []byte) (ParsedHash, error) {
 	if err != nil {
 		return ParsedHash{}, ErrInvalidHash
 	}
-	if len(salt) == 0 || len(key) == 0 {
+	saltLength, ok := checkedLength(uint64(len(salt)))
+	if !ok {
 		return ParsedHash{}, ErrInvalidHash
 	}
-	params.SaltLength = uint32(len(salt))
-	params.KeyLength = uint32(len(key))
+	keyLength, ok := checkedLength(uint64(len(key)))
+	if !ok {
+		return ParsedHash{}, ErrInvalidHash
+	}
+	params.SaltLength = saltLength
+	params.KeyLength = keyLength
 	return ParsedHash{Params: params, Salt: salt, Key: key}, nil
+}
+
+func checkedLength(length uint64) (uint32, bool) {
+	if length == 0 || length > math.MaxUint32 {
+		return 0, false
+	}
+	return uint32(length), true
 }
 
 func parseParams(raw string) (Params, error) {

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/go-go-golems/go-go-objects/pkg/durableobjects"
-	"github.com/manuel/tinyidp/cmd/tinyidp-xapp/internal/resourceauth"
-	"github.com/manuel/tinyidp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/cmd/tinyidp-xapp/internal/resourceauth"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/pkg/errors"
 )
 

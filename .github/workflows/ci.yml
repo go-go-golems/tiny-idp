@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
@@ -36,6 +38,9 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Check formatting
+        run: make fmt-check
+
       - name: Unit and integration tests
         run: go test ./... -count=1
 
@@ -49,6 +54,9 @@ jobs:
 
       - name: Repository-specific Go AST analyzers
         run: make auditlint
+
+      - name: Check generated logcopter package loggers
+        run: make logcopter-check
 
       - name: Parser fuzz seed corpus
         run: go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts -count=1

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manuel/tinyidp/pkg/idpui"
-	"github.com/manuel/tinyidp/pkg/idpui/idpuitest"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/idpui/idpuitest"
 )
 
 func TestRendererConformsToInteractionContract(t *testing.T) {

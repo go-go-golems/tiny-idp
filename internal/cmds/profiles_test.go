@@ -10,7 +10,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
 	cmd_sources "github.com/go-go-golems/glazed/pkg/cmds/sources"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
-	"github.com/manuel/tinyidp/internal/sections/oidc"
+	"github.com/go-go-golems/tiny-idp/internal/sections/oidc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

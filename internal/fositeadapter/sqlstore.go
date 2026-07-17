@@ -15,7 +15,7 @@ import (
 	"github.com/ory/fosite/storage"
 	fositejwt "github.com/ory/fosite/token/jwt"
 
-	idpstore "github.com/manuel/tinyidp/pkg/idpstore"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
 type sqlFositeStore struct {
