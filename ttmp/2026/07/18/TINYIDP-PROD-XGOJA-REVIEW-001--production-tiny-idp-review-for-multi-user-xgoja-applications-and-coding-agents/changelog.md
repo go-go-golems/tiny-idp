@@ -72,3 +72,13 @@ Published the PR 98 production hardening implementation guide as a standalone re
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md — Published source document
 
+
+## 2026-07-18
+
+Expanded the PR 98 implementation guide with a foundational explanation of the product goal, tiny-idp, Message Desk, go-go-goja and xgoja, optional hostauth, the reference inbox, and the Hetzner k3s GitOps and Traefik deployment platform.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md — Context-complete intern guide
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/reference/01-investigation-diary.md — Step 9 context revision record
+

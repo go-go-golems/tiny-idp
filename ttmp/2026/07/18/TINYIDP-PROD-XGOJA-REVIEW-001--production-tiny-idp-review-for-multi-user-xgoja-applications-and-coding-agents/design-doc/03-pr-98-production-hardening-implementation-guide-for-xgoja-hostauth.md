@@ -96,6 +96,433 @@ public request
 Each arrow is a security boundary. None can be replaced by documentation about
 another arrow.
 
+## The project around PR 98
+
+PR 98 lives in a general-purpose runtime repository, but it was created to
+support a concrete product direction. The implementer needs both views. The
+runtime view explains where reusable code belongs. The product view explains
+why the optional authentication subsystem has these requirements.
+
+The product direction is to let people use small multi-user web applications
+and later authorize local coding agents or command-line tools to call those
+applications' APIs. A person should be able to create an account, sign in with
+a browser, use an application, approve a device shown by a CLI, and later
+disconnect that device. The first deployment is intentionally smaller; the
+device and multi-application pieces come after browser signup and login are
+running reliably.
+
+This section introduces every system named in the rest of the guide. Read it
+before opening `device_handlers.go`.
+
+### The systems in one table
+
+| System | What it is | What it owns | What it does not own |
+|---|---|---|---|
+| tiny-idp | A small Go OIDC/OAuth identity provider. | Accounts, passwords, signup, browser authentication, OIDC authorization, signing keys, provider sessions, native device grants, and opaque OAuth tokens. | Application messages, application sessions, xgoja route policy, or `ggat_` credentials. |
+| Message Desk | The initial standalone multi-user messaging example in the tiny-idp repository. | Messages, application users, local browser sessions, and its OIDC relying-party behavior. | Passwords in the external-IdP design and general xgoja runtime behavior. |
+| go-go-goja | A general-purpose collection of Goja modules, runtime infrastructure, generated-host tooling, and examples. | Reusable JavaScript-to-Go modules, xgoja runtime composition, planned HTTP route enforcement, and optional host capabilities such as `hostauth`. | The identity of every application using it, the cluster, or the tiny-idp provider database. |
+| xgoja | The generated-runtime layer built from go-go-goja providers and specifications. | Selection and composition of modules into concrete binaries and commands. | A universal product policy; each generated application selects its own modules and routes. |
+| hostauth | An optional go-go-goja/xgoja subsystem used by generated HTTP hosts. | Local application sessions, OIDC relying-party state, local users, agents, application API tokens, device approvals, and auth enforcement inputs. | tiny-idp accounts and tiny-idp-issued OAuth token state. |
+| Personal Knowledge Inbox | A progressive xgoja reference application used to exercise the runtime. | Example inbox records, example browser routes, and an example programmatic capture API. | Cluster-wide identity policy or production infrastructure. |
+| Hetzner k3s cluster | The deployment platform. | Scheduling pods, networking Services, Traefik ingress, certificates, persistent volumes, secret delivery, and GitOps reconciliation. | OAuth semantics and application authorization decisions. |
+
+The table is not merely vocabulary. It tells you where a proposed change
+belongs. A trusted-proxy resolver belongs in reusable host HTTP infrastructure.
+An inbox action such as `user.self.read` belongs to an application policy. A
+password-reset flow belongs to tiny-idp. A Traefik NetworkPolicy belongs in the
+cluster GitOps repository.
+
+## What tiny-idp is
+
+Tiny-idp is an identity provider implemented in Go. In OIDC terminology it is
+the OpenID Provider. An application that sends a browser to tiny-idp for login
+is a Relying Party. In OAuth terminology tiny-idp can also act as the
+authorization server that issues tokens to public or confidential clients.
+
+For the project, tiny-idp has three distinct jobs.
+
+### Tiny-idp owns human accounts
+
+Tiny-idp stores a user's stable subject identifier, login name, password hash,
+profile attributes, account state, and provider-side sessions. Public signup
+belongs here because the password should enter the identity provider, not each
+application that happens to use the identity.
+
+~~~text
+signup form
+  -> tiny-idp validates CSRF and request budget
+  -> tiny-idp validates username and password policy
+  -> tiny-idp hashes the password
+  -> tiny-idp stores the account
+  -> tiny-idp continues the pending OIDC interaction
+~~~
+
+The stable OIDC `sub` claim is the important application identifier. An email
+address or display name can change. A local application user should be linked
+to the verified issuer and subject, not recreated whenever profile text
+changes.
+
+### Tiny-idp authenticates browser users for applications
+
+An application does not receive the user's password. It redirects the browser
+to tiny-idp with an authorization request. Tiny-idp authenticates the user and
+returns an authorization code to the application's exact registered callback.
+The application exchanges that code using PKCE and verifies the returned ID
+token.
+
+~~~text
+Browser             Application                 tiny-idp
+   | GET /auth/login     |                          |
+   |-------------------->|                          |
+   |                     | state + nonce + PKCE     |
+   |                     |------------------------->|
+   |<-------------------- browser login ------------|
+   |--------------------- credentials ------------->|
+   |<---------------- callback with code -----------|
+   |                     | exchange code + verifier |
+   |                     |------------------------->|
+   |                     |<------ verified tokens --|
+   |<---- local application session cookie ---------|
+~~~
+
+The last cookie is owned by the application. Logging out of one application
+session and ending the provider session are related but separate operations.
+
+### Tiny-idp also has its own device and introspection protocols
+
+Current tiny-idp can issue opaque OAuth access tokens through its native device
+authorization flow. It advertises an authenticated RFC 7662 introspection
+endpoint so a registered resource server can ask whether such a token is
+active and receive its issuer, subject, client, scopes, audience, and expiry.
+
+This capability matters for the future multi-application design. One
+tiny-idp-issued credential could be intended for a declared API audience and
+validated by a separate application. PR 98 does not implement that integration
+inside go-go-goja. Its application-owned `programauth` path is a different
+credential system.
+
+## What the initial Message Desk project is
+
+The first production project is not the complete xgoja device platform. It is
+a deliberately small deployment containing:
+
+1. One standalone tiny-idp process with public signup.
+2. One standalone Message Desk process using tiny-idp for browser OIDC login.
+
+Message Desk is the BBS-like messaging application under
+`examples/tinyidp-message-app` in the tiny-idp repository. It owns messages and
+application sessions. In external OIDC mode it trusts tiny-idp for identity.
+The first release proves that a new user can sign up, sign in, and use a real
+multi-user application through the public cluster.
+
+~~~text
+Internet
+   |
+   +-- https://idp.example.test ------> tiny-idp
+   |                                      |
+   |                                      +--> identity SQLite/PVC
+   |
+   +-- https://messages.example.test -> Message Desk
+                                          |
+                                          +--> message/session SQLite/PVC
+~~~
+
+Device authorization, coding-agent access, multiple relying parties, and xgoja
+applications are deferred from this first release. That scope decision is
+important for the PR 98 implementer: PR 98 is preparing a later reusable xgoja
+host capability. It must not block the initial Message Desk deployment, and the
+initial deployment must not be used as proof that PR 98's device endpoints are
+production-safe.
+
+## What go-go-goja and xgoja are
+
+Goja is a JavaScript implementation written in Go. Go-go-goja builds a larger
+runtime system around it. The repository supplies native modules such as HTTP,
+fetch, filesystem, database, and Express-like server APIs; runtime ownership
+and provider infrastructure; command integration; generated-host support; and
+examples showing how those pieces compose.
+
+Go-go-goja is therefore not one server. It is reusable source code from which
+many different binaries and applications can be built.
+
+~~~text
+go-go-goja repository
+  |
+  +-- runtime and event-loop infrastructure
+  +-- native modules exposed through require(...)
+  +-- provider registry and xgoja generation
+  +-- HTTP route planning and Go-owned enforcement
+  +-- optional hostauth provider
+  +-- examples and tutorials
+~~~
+
+Xgoja specifications select providers and modules and generate a Go binary.
+One specification might build a CLI with database and fetch modules. Another
+might build a web application with Express routes, embedded assets, and
+hostauth. Adding code to `hostauth` must not make every go-go-goja consumer an
+OIDC application.
+
+### Planned Express routes
+
+The Express-like JavaScript syntax is a declaration layer. JavaScript declares
+that a route accepts a browser session, an agent, or an explicit alternative,
+and names the required local action. The Go host authenticates the request and
+enforces that plan before invoking JavaScript.
+
+~~~javascript
+app.post("/api/programmatic/capture")
+  .auth(express.agent())
+  .allow("user.self.read")
+  .audit("inbox.programmatic.capture")
+  .handle((ctx, res) => {
+    // Authentication and the action check already happened in Go.
+    // ctx.auth is redacted; ctx.actor identifies the local agent.
+  })
+~~~
+
+This division is intentional. Application authors can describe route policy in
+the same file as the handler without receiving raw credential stores or
+reimplementing Bearer parsing in JavaScript.
+
+### Hostauth is optional infrastructure inside go-go-goja
+
+`pkg/xgoja/hostauth` builds concrete auth services for a generated host. It can
+create:
+
+- local browser session services;
+- OIDC login and callback handlers;
+- local application user normalization;
+- audit storage;
+- capability-token storage;
+- local programmatic agents and API tokens;
+- application-owned device authorization; and
+- the authenticator and authorizer inputs used by planned routes.
+
+The provider is selected by an xgoja specification. A consumer that does not
+select it should not pay its operational or policy cost.
+
+This gives the implementer a placement rule:
+
+- Generic request identity, auth-store health, and native handler composition
+  belong in reusable Go host infrastructure.
+- The list of actions that one application permits belongs in that
+  application's hostauth configuration.
+- UI wording and domain behavior belong in the application example or product.
+- Tiny-idp provider changes belong in the tiny-idp repository.
+- Traefik, PVC, Secret, and Deployment changes belong in the k3s GitOps
+  repository.
+
+## Why the Personal Knowledge Inbox exists
+
+`examples/xgoja/23-personal-knowledge-inbox` is a progressive reference
+application. Its steps begin with a small JavaScript verb and add HTTP serving,
+SQLite, an API client, embedded UI assets, browser OIDC login, per-user data
+isolation, and finally application-owned device authorization.
+
+Step 08 demonstrates the product interaction PR 95 and PR 98 are intended to
+support:
+
+~~~text
+1. Alice signs in through tiny-idp.
+2. A CLI asks the xgoja application for a device code.
+3. Alice enters the user code in the application's browser UI.
+4. The local application session proves which user is approving.
+5. The xgoja host creates an application agent owned by Alice.
+6. The CLI receives ggat_ and ggrt_ credentials.
+7. The CLI calls an express.agent() route.
+8. The application stores the captured item under Alice's owner ID.
+~~~
+
+The example proves composition and account isolation. It is not itself the
+production policy. Hard-coded actions, tutorial ports, memory defaults, and
+test users must not silently become production configuration.
+
+## What the cluster is
+
+The deployment target is an existing single-node Hetzner k3s cluster. K3s is a
+lightweight Kubernetes distribution. Kubernetes schedules containerized
+processes, connects them through Services, restarts failed pods, mounts durable
+storage, and evaluates health probes. It does not understand OIDC, refresh
+tokens, or application ownership; those remain application responsibilities.
+
+The platform uses a GitOps flow:
+
+~~~text
+source repository commit
+  -> CI builds immutable container image
+  -> image is published to GHCR
+  -> GitOps repository updates the image reference
+  -> Argo CD observes the Git change
+  -> Argo CD reconciles k3s resources
+  -> Traefik routes public HTTPS to the Service
+~~~
+
+The important cluster components are:
+
+| Component | Responsibility |
+|---|---|
+| Traefik | Public HTTP ingress and TLS termination. |
+| cert-manager | Obtaining and renewing public certificates used by ingress. |
+| Argo CD | Reconciling the declared Git manifests into the live cluster. |
+| Kustomize | Organizing and composing Kubernetes manifests. |
+| Vault and Vault Secrets Operator | Delivering secrets without committing them to Git. |
+| local-path storage | Providing node-local persistent volumes for single-node SQLite workloads. |
+| Kubernetes Deployment | Running and restarting a declared number of application pods. |
+| Kubernetes Service | Giving pods a stable private network endpoint. |
+| NetworkPolicy | Restricting which cluster sources may connect to a pod. |
+
+### Why TLS terminates at Traefik
+
+The browser connects to an HTTPS public origin. Inside the cluster, Traefik can
+forward private HTTP to the pod. This is the cluster's normal topology:
+
+~~~text
+browser -- HTTPS --> Traefik -- private HTTP --> application pod
+~~~
+
+The application must still know that its public origin is HTTPS so it creates
+exact callback URLs and Secure cookies. It must also know whether Traefik is a
+trusted source of the original client address. Those are two different
+configuration facts:
+
+~~~text
+public-base-url: https://app.example.test
+trusted proxy:   Traefik source CIDR(s)
+listener:        private pod HTTP address
+~~~
+
+PR 98 adds the first fact. This guide asks the implementer to add the second.
+The listener remains private HTTP; no development-mode exception is needed.
+
+### Why the first supported topology has one replica
+
+SQLite files are mounted from node-local persistent volumes, and PR 98's only
+rate limiter is process-local memory. The supported first topology is therefore
+one serving process. Kubernetes should use one replica and a Recreate rollout
+when a SQLite PVC cannot be mounted safely by overlapping old and new pods.
+
+~~~yaml
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+~~~
+
+Moving auth records to PostgreSQL does not automatically make the service
+multi-replica. Shared limiting, concurrency, migrations, and rolling upgrades
+must also be designed and tested.
+
+## How all the pieces cooperate in the later xgoja deployment
+
+The future standalone xgoja application topology has two public origins and at
+least two durable state owners:
+
+~~~text
+                            Hetzner k3s cluster
+
+Internet browser
+      |
+      +-- HTTPS --> Traefik --> tiny-idp Service --> tiny-idp pod
+      |                                             | accounts
+      |                                             | passwords
+      |                                             | provider sessions
+      |                                             +--> IdP database
+      |
+      +-- HTTPS --> Traefik --> xgoja Service ----> xgoja pod
+                                                    | local users
+Coding agent                                       | app sessions
+      |                                             | app agents/tokens
+      +-- HTTPS --> Traefik ------------------------+--> app database
+                                                    |
+                                                    +--> JavaScript routes
+~~~
+
+A browser login crosses both services. An app-owned agent API request reaches
+only the xgoja service after the credentials have been issued. A tiny-idp
+account administration action reaches the provider, but its effect on existing
+application-owned agents must be defined explicitly.
+
+## Why PR 98 exists
+
+PR 95 introduced the broad programmatic-auth capability: agent principals,
+API and access tokens, device authorization, Express principal requirements,
+guarded fetch, SQL stores, and the progressive inbox example. That established
+the application programming model.
+
+PR 98 addresses what happens when that model is run as a long-lived service:
+
+- OIDC state must survive restarts between redirect and callback.
+- Refresh-token rotation must be atomic.
+- Users need a revocation path.
+- Production configuration must reject memory-only auth state.
+- Schema changes must be applied deliberately.
+- Operators need readiness, audit, and security outcomes.
+
+The changes in PR 98 are optional runtime infrastructure. They should be
+implemented generically enough for different xgoja applications, while leaving
+each application's action vocabulary and domain authorization local.
+
+## What the PR 98 implementer is responsible for
+
+The implementer should finish the reusable host boundary and the reference
+application proof.
+
+They are responsible for:
+
+- a safe configuration model for hostauth;
+- canonical interpretation of requests arriving through a trusted proxy;
+- rate limits and policy checks on Go-owned auth endpoints;
+- durable and atomic auth state transitions;
+- truthful health and readiness behavior;
+- owner-scoped application agent lifecycle services;
+- redacted audit and metric integration points;
+- tests that exercise restart, concurrency, failure, and abuse cases; and
+- documentation that matches the actual tiny-idp and cluster contracts.
+
+They are not responsible in this PR for:
+
+- implementing the first Message Desk signup deployment;
+- turning all go-go-goja applications into authenticated servers;
+- adding a second general-purpose identity provider;
+- implementing multi-replica hostauth;
+- silently accepting tiny-idp-issued tokens as `programauth` tokens; or
+- deciding every future application's permission vocabulary.
+
+This boundary keeps the work reviewable. The remaining sections now explain
+the concrete additions to PR 98 and why each is required.
+
+### Working-directory map
+
+The development machine contains several neighboring checkouts. Confirm the
+current directory before running a command or committing a change.
+
+| Path | Use |
+|---|---|
+| `/home/manuel/workspaces/2026-06-12/goja-express-auth/go-go-goja` | PR 98 implementation checkout. Hostauth code changes and tests belong here. |
+| `/home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp` | Tiny-idp checkout and this review ticket. Use it to verify provider behavior, not to implement go-go-goja hostauth. |
+| `/home/manuel/code/wesen/2026-03-27--hetzner-k3s` | GitOps and live-cluster design repository. Kubernetes, Traefik, PVC, Argo, and NetworkPolicy work belongs here. |
+| `/home/manuel/code/wesen/go-go-golems/go-go-parc/Research/KB/Projects/infrastructure-and-release.md` | Infrastructure and release-system orientation. |
+
+Start PR 98 code review with these go-go-goja paths:
+
+~~~text
+pkg/xgoja/hostauth/
+pkg/gojahttp/auth/programauth/
+pkg/gojahttp/auth/keycloakauth/
+pkg/gojahttp/ratelimit.go
+pkg/gojahttp/auth/audit/
+examples/xgoja/23-personal-knowledge-inbox/08-device-authorization/
+~~~
+
+Start product-context review with these tiny-idp paths:
+
+~~~text
+examples/tinyidp-message-app/
+internal/oidcmeta/discovery.go
+internal/fositeadapter/provider.go
+cmd/tinyidp-xapp/internal/resourceauth/
+~~~
+
 ## 1. Begin with the ownership model
 
 The easiest mistake in this subsystem is to use the phrase “device token”

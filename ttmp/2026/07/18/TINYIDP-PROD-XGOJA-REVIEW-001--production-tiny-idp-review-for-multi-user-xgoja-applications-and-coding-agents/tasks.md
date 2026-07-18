@@ -16,3 +16,5 @@
 - [x] Write an intern-facing PR 98 production hardening implementation guide <!-- t:ofi2 -->
 - [x] Relate and validate the PR 98 implementation guide <!-- t:qn06 -->
 - [x] Upload the PR 98 implementation guide to reMarkable <!-- t:py0p -->
+- [x] Expand the PR 98 guide with full project, tiny-idp, go-go-goja, and cluster orientation <!-- t:4aj2 -->
+- [ ] Validate, commit, and republish the context-complete PR 98 guide <!-- t:9c7e -->

@@ -985,3 +985,127 @@ name:   PR 98 Production Hardening Implementation Guide
 target: /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
 mode:   bundle, ToC depth 2, non-interactive, no force
 ~~~
+
+## Step 9: Add the complete project and deployment context
+
+The first edition assumed the reader already understood why hostauth existed.
+That was the wrong starting point for the intended implementer. This revision
+adds the project context before the security work so an intern can place every
+change in the correct repository and ownership boundary.
+
+The guide now explains tiny-idp, Message Desk, go-go-goja, xgoja, hostauth, the
+Personal Knowledge Inbox reference application, the Hetzner k3s cluster, and
+the staged product plan. It explicitly states that go-go-goja is a
+general-purpose runtime and module repository rather than the product or IdP.
+
+### Prompt Context
+
+**User prompt (verbatim):** "explain what tiny-idp / the cluster / all that is. go-go-goja is a general purpose set of goja modules + runtime stuff. The implementor doesn't know anything about what we are trying to do."
+
+**Assistant interpretation:** Rewrite the beginning of the PR 98 guide for a
+reader with no project history, while preserving the detailed implementation
+plan after the new foundation.
+
+**Inferred user intent:** Prevent an intern from treating tutorial composition,
+product policy, identity-provider behavior, reusable runtime code, and cluster
+manifests as one undifferentiated system.
+
+### What I did
+
+- Added a system-responsibility table distinguishing tiny-idp, Message Desk,
+  go-go-goja, xgoja, hostauth, the reference inbox, and the k3s cluster.
+- Explained tiny-idp account ownership, browser OIDC flow, native device flow,
+  and authenticated introspection.
+- Explained the narrower first production phase and why device auth is not on
+  its critical path.
+- Explained go-go-goja as reusable Goja modules and runtime infrastructure,
+  xgoja generated composition, planned Express routes, and optional hostauth.
+- Explained why the Personal Knowledge Inbox is a progressive reference rather
+  than a production policy definition.
+- Added the source-image-GitOps-Argo-Traefik deployment path and the
+  responsibilities of cert-manager, Vault/VSO, local-path storage, Services,
+  Deployments, and NetworkPolicy.
+- Added the full later xgoja topology and a working-directory/repository map.
+- Revalidated frontmatter, docmgr health, and whitespace.
+
+### Why
+
+- File placement decisions depend on understanding ownership. A proxy resolver
+  belongs in reusable host infrastructure; an inbox action allowlist belongs
+  to the application; passwords belong to tiny-idp; NetworkPolicy belongs to
+  GitOps.
+- The intern must know that PR 98 prepares an optional later capability and
+  does not define all of go-go-goja or block the first Message Desk release.
+- Explaining the cluster makes the trusted-Traefik and single-replica
+  requirements concrete rather than abstract web-server recommendations.
+
+### What worked
+
+- The existing phase-one design and PR 98 code review supplied a consistent
+  system map without requiring new experiments.
+- The document grew from 1,100 to 1,527 lines while preserving the detailed
+  hardening sections unchanged.
+- Frontmatter validation and docmgr doctor both passed after the expansion.
+
+### What didn't work
+
+No patch, validation, or documentation command failed during this revision.
+
+### What I learned
+
+- The implementer's most important first distinction is not session versus
+  bearer token; it is reusable runtime infrastructure versus product-specific
+  policy.
+- The first Message Desk deployment and the later xgoja agent platform share
+  tiny-idp and cluster concepts but have different release criteria.
+- `public-base-url`, trusted proxy identity, and private listener address become
+  easier to understand once the actual Traefik topology is drawn.
+
+### What was tricky to build
+
+- The orientation needed enough detail to be self-contained without turning
+  the PR guide into a second copy of the full architecture review. The revision
+  focuses on responsibilities, flows, and repository placement, then points
+  into the existing hardening sequence.
+- Tiny-idp has its own device flow while PR 98 has an application-owned device
+  flow. Both had to be introduced early without implying that their tokens are
+  interchangeable.
+
+### What warrants a second pair of eyes
+
+- Confirm that the distinction between the first Message Desk phase and the
+  later xgoja phase matches the current implementation schedule.
+- Confirm that the listed working directories remain the canonical checkouts
+  for the intern.
+- Review whether the cluster overview should name concrete public domains once
+  they are selected.
+
+### What should be done in the future
+
+- Keep the orientation current when the first Message Desk deployment lands or
+  a production xgoja application replaces the Personal Knowledge Inbox as the
+  reference target.
+
+### Code review instructions
+
+- Read the guide from the beginning through “What the PR 98 implementer is
+  responsible for” before reviewing Section 1.
+- Verify the responsibility table against the three repositories rather than
+  moving application or cluster policy into hostauth.
+- Run docmgr frontmatter validation, doctor, and `git diff --check`.
+
+### Technical details
+
+The revised teaching sequence is:
+
+~~~text
+product goal
+  -> systems and ownership
+  -> tiny-idp browser and device roles
+  -> first Message Desk phase
+  -> general go-go-goja/xgoja runtime
+  -> reference inbox
+  -> k3s/GitOps/Traefik deployment
+  -> PR 98 scope
+  -> detailed hardening plan
+~~~
