@@ -229,7 +229,7 @@ proposed work.
 
 Observed credential ownership:
 
-```text
+~~~text
 IdP browser cookie       -> tiny-idp Fosite adapter
 xapp session cookie      -> go-go-goja hostauth/sessionauth
 authorization code       -> browser RP callback, one-use exchange
@@ -237,4 +237,164 @@ device code              -> coding-agent client, one-use polling credential
 access token             -> coding agent and Go resource server only
 introspection secret     -> Go resource server only
 ctx.actor                -> minimal post-enforcement projection exposed to JS
-```
+~~~
+
+## Step 3: Verify protocol details and establish the test baseline
+
+This step tested the current repository and checked the coding-agent protocol
+against the primary standards. The complete Go test suite, build, and focused
+race tests pass. The device implementation is therefore a well-tested current
+mechanism, while signup, generic multi-app provisioning, and Express bearer
+authentication remain absent product capabilities rather than unexplained test
+failures.
+
+The protocol comparison found one interoperability issue: the current device
+authorization endpoint and CLI use the form parameter audience. RFC 8707
+defines resource as the request parameter for targeting an access token. The
+implementation propagates the requested value correctly into token audience
+and introspection, but a generic standards-aware device client will not know
+the private request vocabulary.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Validate current code in proportion to the
+security risk and turn any product or standards gap into a concrete review item.
+
+**Inferred user intent:** Give the next engineer trustworthy evidence and
+acceptance criteria, not an architecture proposal detached from executable
+behavior.
+
+### What I did
+
+- Read device authorization parsing, device token redemption, discovery
+  metadata, introspection response construction, xapp state provisioning, and
+  the device CLI token cache.
+- Compared those paths with RFC 8628, RFC 7662, RFC 8707, RFC 7636, RFC 9700,
+  OpenID Connect Core, and RFC 7009.
+- Ran the complete repository test suite.
+- Built every package.
+- Ran the Fosite adapter and production xapp under the Go race detector without
+  using cached results.
+- Converted the findings into a readiness matrix, P0/P1/P2 gap list, source
+  map, API reference, threat model, and phased implementation plan.
+
+### Why
+
+- Passing focused tests alone would miss repository-wide build or integration
+  regressions.
+- Standards comparison is necessary because an internally consistent client
+  and server can share a private extension while remaining incompatible with
+  other clients.
+- Race validation is proportionate for one-use grant consumption, token
+  persistence, session state, and the integrated multi-user xapp.
+
+### What worked
+
+- go test ./... completed successfully across every repository package and the
+  ticket script packages.
+- go build ./... completed successfully.
+- go test -race ./internal/fositeadapter ./cmd/tinyidp-xapp -count=1 completed
+  successfully. The Fosite adapter took 91.935 seconds and tinyidp-xapp took
+  37.591 seconds.
+- Device grant creation enforces method, media type, body size, client
+  capability, client authentication, openid scope, exact allowed audiences,
+  rate limits, expiry, and polling interval.
+- Device redemption can issue a refresh token only when the client has the
+  refresh grant and the approved scopes contain offline_access. The current
+  xapp intentionally provisions neither.
+- Introspection authenticates a confidential resource client before parsing the
+  token, returns inactive without a token oracle, and requires a shared allowed
+  audience.
+
+### What didn't work
+
+- The first combined symbol search was broader than needed and its 13,103-token
+  output was truncated. Exact line reads were used for the device, discovery,
+  token, and introspection handlers.
+
+No build, test, or race command failed in this step.
+
+### What I learned
+
+- The current discovery document advertises the device grant and introspection
+  endpoint, but it does not describe the private audience request convention.
+- The current xapp CLI stores one opaque access token and expiry. It has no
+  refresh-token cache or disconnect operation, so humans must authorize again
+  after expiry.
+- tiny-idp has no RFC 7009 endpoint. Password changes revoke server-side
+  artifacts, while the resource server may retain a positive introspection
+  result for up to its configured cache bound.
+- A central issuer is a better match than one embedded issuer per application:
+  it preserves shared identities and SSO while each app keeps its own local
+  user, memberships, session store, resource, and confidential credential.
+- go-go-goja's default OIDC transaction store remains in memory even when its
+  other auth stores are durable. Application login callbacks therefore impose
+  a one-replica or shared-transaction-state constraint.
+
+### What was tricky to build
+
+- “Device auth works” and “agent lifecycle is production complete” are
+  different claims. The protocol exchange is implemented, but token refresh,
+  user-visible disconnection, resource-parameter interoperability, and
+  revocation latency are policy and product work.
+- Extending planned auth must not make a bearer credential look like a browser
+  session. The guide therefore proposes a new explicit OAuth mode and separate
+  browser and agent namespaces instead of an adapter.
+
+### What warrants a second pair of eyes
+
+- Confirm whether standards migration must retain the existing audience form
+  field. That would be backwards-compatibility work and needs an explicit user
+  decision.
+- Decide whether access-token-only agents meet the product's operating model or
+  whether reviewed refresh rotation and disconnect are release blockers.
+- Verify the proposed actor includes enough client and scope context for policy
+  without leaking bearer material.
+- Review whether the positive introspection cache bound is acceptable for
+  account disable, password change, and future per-agent revoke.
+
+### What should be done in the future
+
+- Create separate implementation tickets for registration, multi-app client
+  provisioning, RFC 8707 resource indicators, planned bearer auth, and agent
+  credential lifecycle after product decisions are approved.
+- Add an independent threat-model review before a production label.
+
+### Code review instructions
+
+- Re-run the three validation commands from the tiny-idp repository root.
+- Review internal/fositeadapter/provider.go:438-556 beside RFC 8628 and RFC
+  8707, paying special attention to form field names and duplicate handling.
+- Review internal/fositeadapter/provider.go:1139-1282 beside RFC 7662.
+- Review cmd/tinyidp-xapp/state.go:147-160 to see the access-token-only device
+  client and separate confidential resource client.
+- Review cmd/tinyidp-xapp/device_cli.go:156-253 to see the cache and polling
+  policy actually shipped to agents.
+
+### Technical details
+
+Validation transcript:
+
+~~~text
+$ go test ./...
+PASS (all packages)
+
+$ go build ./...
+PASS
+
+$ go test -race ./internal/fositeadapter ./cmd/tinyidp-xapp -count=1
+ok github.com/go-go-golems/tiny-idp/internal/fositeadapter 91.935s
+ok github.com/go-go-golems/tiny-idp/cmd/tinyidp-xapp 37.591s
+~~~
+
+Standards conclusion:
+
+~~~text
+Observed request:  audience=https://app.example.test/api
+RFC 8707 request: resource=https://app.example.test/api
+Observed token:    aud includes the requested API
+Observed check:    introspection client must share that allowed audience
+Required action:   adopt resource as the canonical request contract
+~~~
