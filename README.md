@@ -450,6 +450,20 @@ That workflow authenticates to Vault with GitHub OIDC and mints a short-lived,
 package-scoped `docsctl-tinyidp-publisher` credential; no registry token is
 stored in this repository.
 
+The Go module itself is published by the public Go module proxy from semantic
+version tags; it does not require a separate registry credential or publish
+job. After a release tag has been pushed, verify that the proxy can resolve the
+module with:
+
+```bash
+GOWORK=off GOPROXY=https://proxy.golang.org \
+  go list -m github.com/go-go-golems/tiny-idp@v0.0.2
+```
+
+The `release` Make target performs the tag push and this proxy lookup together.
+Use a new tag for each release; an existing tag such as `v0.0.1` must not be
+reused after a failed binary publication.
+
 Before the first tag, repository administrators must provision the `release`
 environment, signing/Homebrew release secrets, and the Vault role named
 `docsctl-tinyidp-publisher`. The project deliberately has no committed
