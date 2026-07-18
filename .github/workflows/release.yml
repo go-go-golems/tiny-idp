@@ -32,6 +32,9 @@ jobs:
           node-version: "22"
       - name: Enable pinned pnpm for generated xapp assets
         run: corepack enable && corepack prepare pnpm@10.15.0 --activate
+      - name: Install xapp frontend dependencies
+        working-directory: cmd/tinyidp-xapp/app/frontend
+        run: pnpm install --frozen-lockfile
       - name: Run source release gates
         run: make verify
       - name: Install arm64 cross-compiler
@@ -69,6 +72,9 @@ jobs:
           node-version: "22"
       - name: Enable pinned pnpm for generated xapp assets
         run: corepack enable && corepack prepare pnpm@10.15.0 --activate
+      - name: Install xapp frontend dependencies
+        working-directory: cmd/tinyidp-xapp/app/frontend
+        run: pnpm install --frozen-lockfile
       - name: Run source release gates
         run: make verify
       - uses: goreleaser/goreleaser-action@v7
