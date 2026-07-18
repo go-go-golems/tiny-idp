@@ -9,4 +9,4 @@
 - [x] Assess production gaps, threat boundaries, operations, and deployment topology <!-- t:y2z2 -->
 - [x] Write intern-facing architecture, design, and code review guide <!-- t:0rum -->
 - [x] Validate ticket metadata, references, and implementation guidance <!-- t:zntc -->
-- [ ] Publish final document bundle to reMarkable <!-- t:lk75 -->
+- [x] Publish final document bundle to reMarkable <!-- t:lk75 -->

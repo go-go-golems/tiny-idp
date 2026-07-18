@@ -398,3 +398,108 @@ Observed token:    aud includes the requested API
 Observed check:    introspection client must share that allowed audience
 Required action:   adopt resource as the canonical request contract
 ~~~
+
+## Step 4: Validate, publish, and close the review
+
+This step validated the finished ticket, committed the long-form review, and
+published the design plus diary as one reMarkable PDF bundle. The upload used
+the required non-interactive dry run before the real operation. The uploader's
+success receipt is the delivery verification.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Finish the documentation artifact, preserve a
+reviewable Git history, and deliver it to the requested device.
+
+**Inferred user intent:** Leave both a durable repository record and a readable
+offline copy, with enough audit detail to reproduce the publication.
+
+### What I did
+
+- Ran docmgr doctor with error failure enabled and git diff --check.
+- Marked the seven research, design, and validation tasks complete.
+- Committed the finished guide and test diary as commit 2a3005e.
+- Dry-ran a two-document reMarkable bundle with a depth-two table of contents.
+- Uploaded the actual bundle non-interactively.
+- Marked the publication task complete and closed the documentation ticket.
+
+### Why
+
+- The dry run verifies document selection, name, destination, and rendering
+  plan without changing the device.
+- Bundling the design and diary keeps conclusions beside their provenance.
+- Closing tasks and ticket metadata makes the deliverable discoverable as
+  completed work rather than an abandoned investigation.
+
+### What worked
+
+- docmgr doctor reported all checks passed.
+- git diff --check reported no whitespace errors.
+- The dry run selected the intended design and diary and targeted the dated
+  ticket directory.
+- The actual uploader returned:
+
+~~~text
+OK: uploaded TINYIDP Production XGOJA Review.pdf -> /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+~~~
+
+### What didn't work
+
+No validation, render, authentication, or upload step failed. The uploader
+printed a remote-tree refresh warning before its success receipt; no retry was
+needed.
+
+### What I learned
+
+- The final guide contains 1,240 lines and the diary contained 400 lines before
+  this delivery entry.
+- The deliverable is intentionally a completed review while its P0 findings are
+  future implementation work. Closing this ticket does not imply that the
+  production gaps are implemented.
+
+### What was tricky to build
+
+- Ticket completion had to mean “review delivered,” not “production product
+  shipped.” The index, readiness matrix, and priority list preserve that
+  distinction.
+
+### What warrants a second pair of eyes
+
+- Review the P0 ordering and the explicit open decisions before creating
+  implementation tickets.
+- Confirm whether the existing audience request field must be supported during
+  migration; the review deliberately does not assume backwards compatibility.
+
+### What should be done in the future
+
+- Create focused implementation tickets only after the open product decisions
+  have owners and acceptance criteria.
+- Re-run the validation and production exercise phases after those changes,
+  then issue a new readiness decision.
+
+### Code review instructions
+
+- Review commits e31bceb, 9d227de, 2a3005e, and the final delivery commit.
+- Open the ticket index, then the design guide, then this diary.
+- Confirm tasks.md has no unchecked delivery tasks and docmgr doctor still
+  passes.
+- Treat the reMarkable success receipt above as the upload verification; do not
+  delete or overwrite the remote document because annotations may later exist.
+
+### Technical details
+
+Publication commands:
+
+~~~text
+remarquee upload bundle <design> <diary>
+  --name "TINYIDP Production XGOJA Review"
+  --remote-dir "/ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001"
+  --toc-depth 2 --dry-run --non-interactive
+
+remarquee upload bundle <design> <diary>
+  --name "TINYIDP Production XGOJA Review"
+  --remote-dir "/ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001"
+  --toc-depth 2 --non-interactive
+~~~
