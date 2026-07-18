@@ -503,3 +503,168 @@ remarquee upload bundle <design> <diary>
   --remote-dir "/ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001"
   --toc-depth 2 --non-interactive
 ~~~
+
+## Step 5: Narrow the initial release to tiny-idp and Message Desk on k3s
+
+This step reopened the completed review ticket for a focused initial-release
+design. The broad architecture remains useful background, but the first
+implementation now contains one standalone identity provider and one standalone
+Message Desk relying party on the existing Hetzner k3s cluster. Device
+authorization, agent APIs, xgoja, and multiple applications are explicitly
+deferred.
+
+The application target was corrected during the investigation from the xgoja
+BBS prototype to examples/tinyidp-message-app. That correction reduces the
+required source work because Message Desk already has an external OIDC mode,
+durable PKCE transactions, application sessions, messages, logout, probes, and
+a hardened local signup implementation.
+
+### Prompt Context
+
+**User prompt (verbatim):** "I want to refine the scope for the initial project to be the following:
+
+- deploy to k3s (see ~/code/wesen/2026-03-27--hetzner-k3s and /home/manuel/code/wesen/go-go-golems/go-go-parc/Research/KB/Projects/infrastructure-and-release.md) a tiny-idp instance and an instance of the BBS messaging app that has user signup.
+- wedefer the device auth and all that for a second step, multi-app support as well. For now, we want a standalone app using a standalone idp and allow user signup.
+
+Create a separate design doc for that (that can reference things in the first one, it doesn't need to be all that detailed), and upload to remarkable."
+
+**User correction (verbatim):** "or like i think i meant examples/tinyidp-message-app as the app to deploy"
+
+**User follow-up (verbatim):** "Explain that part to me? nd an explicit trusted-Traefik listener mode for both processes so the k3s deployment
+  follows the cluster’s normal TLS topology without pretending an HTTPS public origin is a plain local-development
+  server."
+
+**Assistant interpretation:** Add a shorter companion design for deploying one
+strict tiny-idp and the existing Message Desk as independent processes on k3s,
+with provider-owned public signup, while moving the broader device and
+multi-application work to later phases.
+
+**Inferred user intent:** Establish a small first release that can reach real
+users quickly without importing future agent or platform complexity into the
+deployment.
+
+### What I did
+
+- Reopened TINYIDP-PROD-XGOJA-REVIEW-001 and added three focused tasks.
+- Read the cluster architecture, application pipeline, Argo CD setup,
+  Vault/VSO provisioning playbook, deployment examples, and infrastructure
+  knowledge map supplied by the user.
+- Inspected the live goja-kanban one-replica/PVC pattern and the
+  goja-auth-host-demo OIDC/Vault pattern.
+- Traced Message Desk external mode, OIDC client, application store, health,
+  signup endpoints, React presentation, and TLS listener checks.
+- Confirmed that external_runtime.go deliberately disables registration because
+  the relying party has no identity store or account service.
+- Wrote a separate 786-line initial deployment design with scope, topology,
+  signup sequence, GitOps layout, phases, acceptance tests, decisions, risks,
+  and file references.
+- Explained the proposed trusted-Traefik listener boundary: public HTTPS and
+  Secure cookies remain mandatory while explicitly trusted Traefik terminates
+  TLS and forwards only on the private cluster network.
+
+### Why
+
+- Provider-owned signup keeps passwords and identity mutation inside tiny-idp.
+- Reusing Message Desk avoids building a new application and preserves its
+  existing browser/session/message tests.
+- The cluster already has a repeatable image-to-GitOps-to-Argo delivery path;
+  the design should use it rather than invent another deployment mechanism.
+- A separate narrow document prevents the initial release from inheriting the
+  first guide's device, resource-server, and multi-app requirements.
+
+### What worked
+
+- Existing cluster documentation defines the required source/GHCR/GitOps/Argo
+  ownership and the one-time Application bootstrap step.
+- goja-kanban provides the exact replicas: 1, Recreate, local-path PVC pattern
+  needed by SQLite workloads.
+- Message Desk already validates that its public origin and external issuer are
+  distinct and canonical.
+- Its login attempt persists state, nonce, PKCE verifier, return path, and
+  expiry before redirect.
+- The current embedded signup handler supplies a concrete set of controls to
+  move to the provider-owned interaction.
+- docmgr created the companion design cleanly and doctor accepted its anchored
+  local and cross-repository references.
+
+### What didn't work
+
+- A read attempted examples/tinyidp-message-app/README.md, which does not exist,
+  and returned exactly:
+
+~~~text
+sed: can't read examples/tinyidp-message-app/README.md: No such file or directory
+~~~
+
+  The relevant deployment documentation is
+  examples/tinyidp-external-message-desk/README.md.
+- An official Traefik documentation search returned no result content. The
+  design therefore does not depend on an unverified ingress annotation; it
+  specifies the application trust contract and leaves live proxy CIDR/hop
+  validation as an acceptance item.
+
+### What I learned
+
+- The corrected Message Desk target already proves the standalone IdP/RP
+  boundary in its external Docker development profile.
+- External signup cannot be enabled by flipping registrationEnabled: the
+  handler would have no accounts service and would correctly return unavailable.
+- The safe continuation is an OIDC-bound provider signup flow, not an
+  application credential for an account-creation API.
+- Both production commands currently equate an HTTPS public origin with direct
+  TLS in the pod. The cluster normally terminates public TLS at Traefik, so that
+  trust mode must be explicit rather than inferred or weakened.
+- The two SQLite stores require separate PVCs, one replica, and Recreate.
+
+### What was tricky to build
+
+- “Standalone” has two meanings that had to be preserved together: separate
+  processes and stores, but one browser flow. Binding registration to the
+  existing OIDC interaction lets the provider own the password while Message
+  Desk still owns state, nonce, PKCE, and its application session.
+- Kubernetes Secret volume modes do not satisfy tiny-idp's owner-only token
+  file check for a non-root process by default. The design uses an init copy
+  into an emptyDir with process ownership and mode 0600 instead of weakening
+  the check.
+- The local-path PVC must be applied with its first consumer to avoid the
+  WaitForFirstConsumer Argo deadlock recorded in the infrastructure docs.
+
+### What warrants a second pair of eyes
+
+- Review the exact provider registration interaction state and restart
+  behavior before implementation.
+- Review the trusted Traefik CIDRs, forwarded-address hop limit, and
+  NetworkPolicy against the live cluster.
+- Confirm the proposed public hostnames and whether the images are public.
+- Confirm that deferring email verification and recovery is acceptable for the
+  first public signup release.
+- Review the online backup mechanism for the Message Desk SQLite database.
+
+### What should be done in the future
+
+- Implement the focused phases before returning to device or multi-app work.
+- Create the device/agent phase as a separate ticket after browser signup,
+  login, messaging, backup, and restore are proven live.
+
+### Code review instructions
+
+- Begin with design-doc/02-initial-k3s-deployment-design-for-standalone-tiny-idp-and-message-desk.md.
+- Compare its current-state claims with external_runtime.go, oidc_client.go,
+  app_http.go, and commands.go.
+- Compare its manifests with goja-kanban and goja-auth-host-demo in the k3s
+  repository.
+- Run docmgr doctor for the ticket and git diff --check before publication.
+
+### Technical details
+
+Focused dependency chain:
+
+~~~text
+provider signup
+  -> external OIDC Message Desk
+  -> two production listener modes
+  -> two immutable images
+  -> Vault token secret + two PVCs
+  -> Kustomize + Argo Application
+  -> browser smoke + backup/restore
+~~~

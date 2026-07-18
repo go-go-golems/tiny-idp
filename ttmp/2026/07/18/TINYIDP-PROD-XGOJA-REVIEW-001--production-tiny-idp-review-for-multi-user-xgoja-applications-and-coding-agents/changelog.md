@@ -39,3 +39,12 @@ Completed the evidence-backed intern guide, including current-state traces, cent
 
 Review, validation diary, and reMarkable bundle completed; production implementation gaps remain tracked as recommendations in the design guide.
 
+
+## 2026-07-18
+
+Added a focused initial-release design for standalone tiny-idp and external-OIDC Message Desk on k3s, with provider-owned signup; device, xgoja, and multi-app work are deferred.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/02-initial-k3s-deployment-design-for-standalone-tiny-idp-and-message-desk.md — Focused k3s deployment design
+

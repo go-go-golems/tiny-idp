@@ -1,7 +1,7 @@
 ---
 Title: Production tiny-idp review for multi-user xgoja applications and coding agents
 Ticket: TINYIDP-PROD-XGOJA-REVIEW-001
-Status: complete
+Status: active
 Topics:
     - architecture
     - auth
@@ -19,10 +19,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: Evidence-backed production-readiness review of tiny-idp as the identity plane for multi-user xgoja web applications and OAuth device-authorized coding agents.
-LastUpdated: 2026-07-18T14:21:08.70670255-04:00
+LastUpdated: 2026-07-18T15:20:30.857468996-04:00
 WhatFor: Orient implementers and reviewers, identify production gaps, and define an actionable target architecture.
 WhenToUse: When evaluating, implementing, deploying, or reviewing tiny-idp-backed xgoja applications and coding-agent API access.
 ---
+
 
 
 # Production tiny-idp review for multi-user xgoja applications and coding agents
@@ -35,11 +36,14 @@ connects interactive browser signup and login, OIDC authorization, application
 sessions, API access-token validation, and OAuth device authorization for coding
 agents. The primary deliverable is an intern-facing architecture and code review
 guide that separates observed implementation behavior from proposed production
-design.
+design. A second design narrows the initial implementation to one standalone
+tiny-idp and one signup-enabled Message Desk deployment on the existing k3s
+platform; device authorization, xgoja, and multiple applications are deferred.
 
 ## Key Links
 
 - [Production IdP architecture and code review guide](design-doc/01-production-idp-architecture-and-code-review-guide-for-xgoja-applications-and-coding-agents.md)
+- [Initial k3s design for standalone tiny-idp and Message Desk](design-doc/02-initial-k3s-deployment-design-for-standalone-tiny-idp-and-message-desk.md)
 - [Investigation diary](reference/01-investigation-diary.md)
 - **Related Files**: See the frontmatter `RelatedFiles` field.
 - **External Sources**: See the frontmatter `ExternalSources` field.
