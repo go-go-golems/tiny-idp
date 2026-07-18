@@ -1224,7 +1224,7 @@ sessions.
   wiring.
 - Inspected tiny-idp's existing strict RFC 7662 resource authenticator and
   Go-owned device API as the protocol reference.
-- Added a 1,412-line design and implementation guide with diagrams, tables,
+- Added a 1,428-line design and implementation guide with diagrams, tables,
   pseudocode, API declarations, file maps, phases, negative tests, trace, code
   review order, and definition of done.
 - Related the focused go-go-goja and tiny-idp source files to the new doc.
@@ -1313,9 +1313,94 @@ sessions.
 
 ~~~text
 document: design-doc/04-express-oauth-route-syntax-api-design-and-implementation-guide.md
-lines:    1,412
-words:    7,509
+lines:    1,428
+words:    7,592
 syntax:   express.oauth().issuer().resource().scopes()
 baseline: merged PR 95 plus open PR 98
 scope:    documentation and design only; no go-go-goja code changed
+~~~
+
+## Step 12: Publish the Express OAuth API guide
+
+This step published the completed companion chapter to the same reMarkable
+ticket folder as the architecture and PR 98 guides. It used a distinct name so
+none of the previously uploaded PDFs or their annotations were replaced.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 11)
+
+**Assistant interpretation:** Deliver the new Express OAuth API design to the
+implementer in the same durable ticket and reMarkable workflow as the prior
+guide.
+
+**Inferred user intent:** Make the route-syntax implementation contract easy
+to hand to an intern and review away from the development workstation.
+
+**Commit (documentation):** 446dae6456212395e245b7f8fb07c36c3f6d9ff5 —
+"Docs: design Express OAuth route API"
+
+### What I did
+
+- Committed the guide, diary, changelog, and first two companion-document
+  tasks as one focused documentation commit.
+- Rendered the 1,428-line guide as a PDF with a depth-two table of contents.
+- Uploaded the PDF to the ticket's existing reMarkable directory without
+  `--force`.
+
+### Why
+
+- The distinct document name preserves the previous architecture, deployment,
+  and PR 98 guide artifacts.
+- The PDF gives the implementer a readable version of the long-form API and
+  code-review sequence while the Markdown remains the source of truth.
+
+### What worked
+
+The uploader returned:
+
+~~~text
+OK: uploaded Express OAuth Route API Implementation Guide.pdf -> /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+~~~
+
+### What didn't work
+
+No render, authentication, or upload step failed.
+
+### What I learned
+
+- The complete guide, including the long TypeScript and Go declarations,
+  diagrams, tables, and test matrices, renders successfully as one PDF.
+
+### What was tricky to build
+
+- The new guide belongs beside the PR 98 hostauth guide but describes a
+  separate follow-up API. A distinct title avoids implying it is already part
+  of PR 98.
+
+### What warrants a second pair of eyes
+
+- Review the on-device wrapping of the widest TypeScript declarations and test
+  tables. The Markdown file remains authoritative if PDF layout is narrow.
+- Confirm the implementer reads this guide after the PR 98 context guide so
+  the optional hostauth and cluster boundaries are already familiar.
+
+### What should be done in the future
+
+- Record implementer feedback as a new diary step and revise the API decisions
+  before code begins if the principal model or `anyOf` boundary changes.
+
+### Code review instructions
+
+- Review commit 446dae6 for the design source and the following bookkeeping
+  commit for this publication receipt.
+- Confirm docmgr reports no open tasks and doctor reports all checks passed.
+
+### Technical details
+
+~~~text
+source: design-doc/04-express-oauth-route-syntax-api-design-and-implementation-guide.md
+name:   Express OAuth Route API Implementation Guide
+target: /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+mode:   bundle, ToC depth 2, non-interactive, no force
 ~~~

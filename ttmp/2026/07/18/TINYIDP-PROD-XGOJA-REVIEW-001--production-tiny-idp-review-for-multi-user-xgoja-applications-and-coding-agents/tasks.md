@@ -20,4 +20,4 @@
 - [x] Validate, commit, and republish the context-complete PR 98 guide <!-- t:9c7e -->
 - [x] Design the Express OAuth route syntax on top of merged PR 95 and PR 98 <!-- t:5pdr -->
 - [x] Write and validate the intern-facing Express OAuth API implementation guide <!-- t:gyr6 -->
-- [ ] Commit and publish the Express OAuth API guide to reMarkable <!-- t:zxt0 -->
+- [x] Commit and publish the Express OAuth API guide to reMarkable <!-- t:zxt0 -->

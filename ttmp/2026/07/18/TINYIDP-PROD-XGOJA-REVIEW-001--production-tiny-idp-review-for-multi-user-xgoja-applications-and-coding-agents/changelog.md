@@ -100,3 +100,12 @@ Designed and documented the new issuer-issued OAuth planned-route contract, incl
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/04-express-oauth-route-syntax-api-design-and-implementation-guide.md — Intern-facing companion API and implementation guide
 
+
+## 2026-07-18
+
+Published the Express OAuth route API design and implementation guide to reMarkable under a distinct companion-document name.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/04-express-oauth-route-syntax-api-design-and-implementation-guide.md — Published companion guide source
+
