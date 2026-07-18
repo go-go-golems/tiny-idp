@@ -51,7 +51,7 @@ jobs:
           bash ttmp/2026/07/09/TINYIDP-PROD-IMPL-001--production-embedding-api-and-release-hardening/scripts/03-collect-licenses.sh dist/licenses
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Keyless-sign candidate and checksum manifest
         run: |
