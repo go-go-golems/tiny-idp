@@ -668,3 +668,82 @@ provider signup
   -> Kustomize + Argo Application
   -> browser smoke + backup/restore
 ~~~
+
+## Step 6: Publish the focused initial-release design
+
+This step published the Message Desk design as a separate PDF. It did not
+replace the earlier broad production review, so existing reMarkable annotations
+remain safe and the initial scope can be read independently.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 5)
+
+**Assistant interpretation:** Deliver the narrower design as its own
+reMarkable artifact and close the refinement tasks.
+
+**Inferred user intent:** Make the first implementation plan easy to review
+without requiring readers to navigate the larger future-platform analysis.
+
+### What I did
+
+- Committed the focused design and diary checkpoint as e66ce9a.
+- Ran a non-interactive dry run for a single-document Markdown upload.
+- Uploaded the rendered PDF into the existing dated ticket directory.
+- Completed the publication task, reran docmgr doctor, and closed the ticket
+  again after the refinement.
+
+### Why
+
+- A separate PDF matches the user's request for a separate design.
+- Reusing the ticket directory preserves the relationship to the first review.
+- Avoiding force protects the earlier document and any annotations.
+
+### What worked
+
+The uploader returned the explicit success receipt:
+
+~~~text
+OK: uploaded TINYIDP_Message_Desk_K3S_Initial_Design.pdf -> /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+~~~
+
+### What didn't work
+
+No dry-run, render, authentication, or upload step failed.
+
+### What I learned
+
+- The dedicated initial-scope document renders successfully as a standalone
+  reMarkable artifact.
+
+### What was tricky to build
+
+- The new PDF needed a distinct name so publication would not overwrite the
+  earlier broad bundle. The upload intentionally omitted force.
+
+### What warrants a second pair of eyes
+
+- Review the trusted-proxy proposal and the decision to defer email
+  verification/recovery before implementation begins.
+
+### What should be done in the future
+
+- Use the focused design as the source for implementation tickets and leave the
+  first review as the roadmap for later device and multi-app phases.
+
+### Code review instructions
+
+- Review e66ce9a, then the final publication bookkeeping commit.
+- Run docmgr doctor --ticket TINYIDP-PROD-XGOJA-REVIEW-001.
+- Confirm tasks.md reports zero open tasks.
+
+### Technical details
+
+Publication shape:
+
+~~~text
+source: design-doc/02-initial-k3s-deployment-design-for-standalone-tiny-idp-and-message-desk.md
+name:   TINYIDP Message Desk K3S Initial Design
+target: /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+mode:   dry-run, then non-interactive upload
+~~~

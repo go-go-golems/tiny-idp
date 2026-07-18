@@ -48,3 +48,8 @@ Added a focused initial-release design for standalone tiny-idp and external-OIDC
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/02-initial-k3s-deployment-design-for-standalone-tiny-idp-and-message-desk.md — Focused k3s deployment design
 
+
+## 2026-07-18
+
+Focused standalone tiny-idp plus Message Desk k3s design validated and uploaded as a separate reMarkable PDF.
+

@@ -12,4 +12,4 @@
 - [x] Publish final document bundle to reMarkable <!-- t:lk75 -->
 - [x] Refine initial scope to standalone tiny-idp and signup-enabled Message Desk on k3s <!-- t:soes -->
 - [x] Write and validate the focused k3s deployment design <!-- t:wl1m -->
-- [ ] Upload the focused initial-scope design to reMarkable <!-- t:rmbl -->
+- [x] Upload the focused initial-scope design to reMarkable <!-- t:rmbl -->
