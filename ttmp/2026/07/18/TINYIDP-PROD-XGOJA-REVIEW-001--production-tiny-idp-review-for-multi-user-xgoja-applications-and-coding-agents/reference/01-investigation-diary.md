@@ -747,3 +747,160 @@ name:   TINYIDP Message Desk K3S Initial Design
 target: /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
 mode:   dry-run, then non-interactive upload
 ~~~
+
+## Step 7: Review PR 98 and write the remaining-hardening implementation chapter
+
+This step revisited the device-auth assessment after PR 95 merged and PR 98
+opened. PR 98 materially improves durability and application credential
+lifecycle, but it does not by itself establish trustworthy ingress identity,
+budgets for native device endpoints, live dependency readiness, or an
+owner-facing agent lifecycle.
+
+The resulting chapter teaches those boundaries before prescribing code. It
+keeps the application-owned programauth flow separate from the future
+tiny-idp-issued resource-server flow, and it corrects the assumption that
+current tiny-idp lacks authenticated introspection.
+
+### Prompt Context
+
+**User prompt (verbatim):** "make a document for the implementer of #98 about what they should add and why. Upload to remarkable. Explain why in detail in a textbook authoring style, they are an intern."
+
+**Assistant interpretation:** Write a detailed, technically precise teaching
+chapter for the PR 98 implementer, integrate it into the existing ticket, and
+publish it as a standalone reMarkable document.
+
+**Inferred user intent:** Give a less-experienced implementer enough conceptual
+foundation, code landmarks, pseudocode, sequencing, and validation criteria to
+finish the production boundary without cargo-culting a checklist.
+
+### What I did
+
+- Re-read the merged PR 95 baseline and inspected all 52 files changed by PR
+  98 in the referenced go-go-goja checkout.
+- Traced hostauth configuration, single-node preflight, store construction,
+  static readiness, device handlers, token-pair transactions, security events,
+  rate-limit IP selection, audit forwarded-IP selection, and the strict
+  tiny-idp documentation.
+- Verified against tiny-idp `origin/main` that production discovery advertises
+  device authorization and authenticated RFC 7662 introspection.
+- Added a 1,080-line textbook-style guide with conceptual foundations,
+  sequence diagrams, comparison tables, Go and JavaScript sketches,
+  pseudocode, implementation phases, tests, a review map, and a completion
+  checklist.
+- Related the seven primary implementation files through docmgr.
+- Validated frontmatter, ran docmgr doctor, and ran `git diff --check`.
+
+### Why
+
+- PR 98 solves durable state and refresh lifecycle, but those properties do
+  not determine whether forwarding headers are trustworthy or native public
+  endpoints are bounded.
+- An intern needs to understand the difference between public origin, private
+  listener, proxy peer, and original client before implementing rate limits or
+  audit attribution.
+- The device flow needs application policy around requested actions; protocol
+  mechanics alone cannot decide which application permissions may be issued.
+- Kubernetes requires dependency-aware readiness, not an unconditional
+  topology declaration.
+- Credential management must be derived from the authenticated owner rather
+  than from user-supplied owner IDs.
+
+### What worked
+
+- The PR 98 checkout contained the complete pushed head and its ticket
+  documentation, allowing every recommendation to be tied to a current symbol
+  and behavior.
+- The existing production review ticket was a natural home for the follow-up
+  chapter and already contained the broader and phase-one contexts.
+- Docmgr accepted all local and cross-workspace file relationships and reported
+  all checks passed.
+- The textbook structure made it possible to explain why each security
+  boundary exists before presenting APIs and tests.
+
+### What didn't work
+
+No document creation, relationship, frontmatter, or doctor command failed.
+The PR status inspection initially requested an unsupported `gh pr view` JSON
+field in the prior analysis step and returned:
+
+~~~text
+Unknown JSON field: "baseRefOid"
+~~~
+
+The query was rerun with supported fields and returned the complete PR state.
+
+### What I learned
+
+- `auth.oidc.public-base-url` correctly separates the browser-visible HTTPS
+  origin from the private HTTP listener, but PR 98 has no trusted-proxy CIDR or
+  canonical client-address resolver.
+- Audit trusts the first `X-Forwarded-For` value while the rate limiter uses
+  `RemoteAddr`; the two systems disagree behind Traefik.
+- Native `/auth/device/*` handlers do not traverse planned Express route rate
+  limits.
+- `/auth/readyz` reports resolved topology and deliberately does not ping SQL.
+- PR 98 supplies a metrics observer interface, but its default implementation
+  is an in-memory test counter rather than a production exporter.
+- Tiny-idp `main` already advertises and implements the introspection contract
+  that PR 98's resource-server reference describes as missing.
+
+### What was tricky to build
+
+- The guide had to distinguish a real production blocker from a deliberate
+  bounded semantic. For example, refresh-family revocation intentionally
+  leaves existing access tokens valid until their short expiry; the missing
+  part is honest disconnect UX and an immediate agent-disable operation, not a
+  claim that every revocation must be instantaneous.
+- Trusted proxy processing cannot be reduced to reading the leftmost forwarded
+  address. The document specifies peer validation and right-to-left trusted-hop
+  processing so the implementer understands the attack surface.
+- Readiness needed three separate concepts: process liveness, required
+  dependency health, and non-secret topology reporting.
+- The native device approval UI needs a server-owned inspection API. The guide
+  uses a POST body rather than a query parameter so short user codes do not
+  enter URL logs and browser history.
+
+### What warrants a second pair of eyes
+
+- Review the exact Traefik source CIDRs and forwarded-header behavior against
+  the live k3s cluster before finalizing `ProxyConfig`.
+- Review whether unknown requested actions should be rejected or whether any
+  application requires a documented narrowing behavior.
+- Review whether local user disablement should automatically disable all owned
+  agents and how tiny-idp account state reaches the application.
+- Review whether SQL alone is a hard readiness dependency or whether issuer
+  availability should also gate traffic.
+- Review the proposed retention periods before implementing cleanup SQL.
+
+### What should be done in the future
+
+- Implement the chapter's phases in order: request identity, native endpoint
+  policy, readiness, owner lifecycle, then operations and deployment proof.
+- Keep `production-ha` and the reusable tiny-idp introspection authenticator as
+  separate, explicitly scoped follow-up work.
+
+### Code review instructions
+
+- Begin with
+  `design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md`.
+- Follow its Section 12 review map from hostauth config through native handlers,
+  token services, SQL transitions, limiter, audit, and readiness.
+- Run `docmgr doctor --ticket TINYIDP-PROD-XGOJA-REVIEW-001 --stale-after 30`
+  and `git diff --check` for this documentation change.
+- For implementation, run the focused Go package tests, race tests, full build,
+  full test suite, lint, and the Traefik-shaped strict smoke listed in Section
+  11.
+
+### Technical details
+
+Recommended dependency order:
+
+~~~text
+canonical request identity
+  -> native endpoint budgets
+  -> allowed action policy
+  -> durable device transition
+  -> dependency-aware readiness
+  -> owner-scoped disconnect
+  -> metrics, retention, migration, deployment proof
+~~~

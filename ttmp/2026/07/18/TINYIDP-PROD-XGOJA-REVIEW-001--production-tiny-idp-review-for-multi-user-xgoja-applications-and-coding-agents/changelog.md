@@ -53,3 +53,13 @@ Added a focused initial-release design for standalone tiny-idp and external-OIDC
 
 Focused standalone tiny-idp plus Message Desk k3s design validated and uploaded as a separate reMarkable PDF.
 
+
+## 2026-07-18
+
+Added and validated a textbook-style PR 98 implementation guide covering trusted Traefik request identity, native device endpoint policy and budgets, dependency-aware readiness, owner-scoped agent lifecycle, operations, and the corrected tiny-idp introspection baseline.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md — Primary intern-facing PR 98 implementation guide
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/reference/01-investigation-diary.md — Step 7 evidence and review record
+

@@ -13,3 +13,6 @@
 - [x] Refine initial scope to standalone tiny-idp and signup-enabled Message Desk on k3s <!-- t:soes -->
 - [x] Write and validate the focused k3s deployment design <!-- t:wl1m -->
 - [x] Upload the focused initial-scope design to reMarkable <!-- t:rmbl -->
+- [x] Write an intern-facing PR 98 production hardening implementation guide <!-- t:ofi2 -->
+- [x] Relate and validate the PR 98 implementation guide <!-- t:qn06 -->
+- [ ] Upload the PR 98 implementation guide to reMarkable <!-- t:py0p -->

@@ -45,6 +45,7 @@ platform; device authorization, xgoja, and multiple applications are deferred.
 
 - [Production IdP architecture and code review guide](design-doc/01-production-idp-architecture-and-code-review-guide-for-xgoja-applications-and-coding-agents.md)
 - [Initial k3s design for standalone tiny-idp and Message Desk](design-doc/02-initial-k3s-deployment-design-for-standalone-tiny-idp-and-message-desk.md)
+- [PR 98 production hardening implementation guide](design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md)
 - [Investigation diary](reference/01-investigation-diary.md)
 - **Related Files**: See the frontmatter `RelatedFiles` field.
 - **External Sources**: See the frontmatter `ExternalSources` field.
