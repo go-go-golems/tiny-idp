@@ -12,7 +12,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/settings"
 	"github.com/go-go-golems/glazed/pkg/types"
 
-	"github.com/manuel/tinyidp/internal/sections/oidc"
+	"github.com/go-go-golems/tiny-idp/internal/sections/oidc"
 )
 
 // PrintConfigCommand implements `tinyidp print-config`. It composes the same
@@ -99,6 +99,7 @@ func (c *PrintConfigCommand) RunIntoGlazeProcessor(
 		types.MRP("client_secret", cfg.ClientSecret),
 		types.MRP("redirect_uris", cfg.RedirectURIs),
 		types.MRP("users_file", cfg.UsersFile),
+		types.MRP("engine", cfg.Engine),
 	)
 	return gp.AddRow(ctx, row)
 }

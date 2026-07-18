@@ -1,0 +1,50 @@
+# Tasks
+
+## TODO
+
+- [x] Map current embedded provider, SQLite, account, UI, and xapp integration APIs <!-- t:v0mf -->
+- [x] Collect authoritative OIDC, OAuth2, SQLite, authentication, and CSRF references <!-- t:znhe -->
+- [x] Define scope, user stories, security properties, and non-goals <!-- t:teao -->
+- [x] Design public account provisioning, bootstrap, and in-process OIDC helper APIs <!-- t:cfei -->
+- [x] Design application SQLite schema, repository transactions, and migrations <!-- t:8i9d -->
+- [x] Design OIDC relying-party flow, sessions, PKCE, nonce, state, and logout <!-- t:p73x -->
+- [x] Design self-service registration, message API, React UI, and route composition <!-- t:s3bj -->
+- [x] Write phased implementation, testing, security, and operational plans <!-- t:1dbd -->
+- [x] Validate ticket relationships, frontmatter, tasks, and diary with docmgr doctor <!-- t:ko9r -->
+- [x] Upload design and diary bundle to reMarkable <!-- t:toe2 -->
+- [x] Phase 0: Freeze example path, binary name, route table, state layout, and public PKCE profile <!-- t:u08a -->
+- [x] Phase 0: Record accepted decisions for sessions, registration errors, append-only messages, and transport isolation <!-- t:11gn -->
+- [x] Phase 0: Add external-import guard and named security invariant test inventory <!-- t:b5kk -->
+- [x] Phase 1 inherited: Verify public idpaccounts creation, authentication, password replacement, audit, rollback, and work bounds <!-- t:xfg9 -->
+- [x] Phase 2 inherited: Verify conservative Bootstrap and exact in-process issuer transport against MSGAPP requirements <!-- t:5yit -->
+- [x] Phase 3: Create message-app state paths, manifest validation, owner-only secrets, and atomic writes <!-- t:sgv1 -->
+- [x] Phase 3: Implement application SQLite opening, WAL pragmas, schema ledger, checksum, and migrations <!-- t:mhk9 -->
+- [x] Phase 3: Implement durable one-time OIDC login attempts with atomic consume <!-- t:x6kf -->
+- [x] Phase 3: Implement hashed application sessions with CSRF material, revocation, and expiry <!-- t:8yok -->
+- [x] Phase 3: Implement durable registration attempts with atomic consume <!-- t:j891 -->
+- [x] Phase 3: Implement message insert, stable cursor pagination, and append-only ownership model <!-- t:flqi -->
+- [x] Phase 3: Add migration, permission, restart, concurrency, cleanup, and repository tests <!-- t:vuy8 -->
+- [x] Phase 4: Build OIDC discovery and verifier over NewInProcessIssuerTransport <!-- t:npwn -->
+- [x] Phase 4: Implement begin-login with local return path, state, nonce, and PKCE S256 <!-- t:tjzi -->
+- [x] Phase 4: Implement one-time callback, code exchange, ID-token verification, and nonce validation <!-- t:nd5u -->
+- [x] Phase 4: Implement app-session middleware, session API, local logout, and coordinated IdP logout <!-- t:d2ns -->
+- [ ] Phase 4: Add callback replay, mismatch, expiry, subject, and open-redirect tests <!-- t:xkz3 -->
+- [x] Phase 5: Implement registration pre-session and anonymous CSRF endpoint <!-- t:7606 -->
+- [x] Phase 5: Implement strict bounded account creation JSON and password-buffer clearing <!-- t:jhes -->
+- [x] Phase 5: Add Origin, Fetch Metadata, address, login-key, and password-work abuse controls <!-- t:3we3 -->
+- [x] Phase 5: Add generic registration errors, fixed audit reasons, and successful-login tests <!-- t:z9he -->
+- [x] Phase 6: Implement public cursor-paginated message reads <!-- t:oq2h -->
+- [x] Phase 6: Implement authenticated CSRF-protected message creation with subject derived from session <!-- t:h3gp -->
+- [x] Phase 6: Add normalization, bounds, spoofing, authorization, and concurrent insertion tests <!-- t:drrc -->
+- [x] Phase 7: Scaffold pnpm React TypeScript Redux Toolkit RTK Query and Bootstrap frontend <!-- t:g584 -->
+- [x] Phase 7: Implement session, registration, feed, composer, logout, loading, empty, and error states <!-- t:43iv -->
+- [x] Phase 7: Build deterministic assets and embed only below /static/app/ <!-- t:lytc -->
+- [x] Phase 7: Implement compatible styled tiny-idp interaction renderer under /static/tinyidp/ <!-- t:zsw6 -->
+- [ ] Phase 7: Add component, static route, CSP, literal-message, keyboard, reflow, and accessibility tests <!-- t:4ydv -->
+- [x] Phase 8: Implement Glazed init command without requiring an initial user <!-- t:jb5w -->
+- [x] Phase 8: Implement Glazed serve command with zerolog and --log-level <!-- t:t32b -->
+- [x] Phase 8: Implement Glazed doctor command with structured non-secret checks <!-- t:h7zu -->
+- [x] Phase 8: Add errgroup lifecycle, startup maintenance, health, readiness, and graceful shutdown <!-- t:zj98 -->
+- [x] Phase 8: Add backup, restore, upgrade, rollback, and operator documentation <!-- t:ohd8 -->
+- [ ] Phase 8: Run full, race, lint, analyzer, fuzz-smoke, tmux, and browser canary gates <!-- t:tsjj -->
+- [x] Phase 8: Complete implementation diary, docmgr audit, and final delivery report <!-- t:h3f8 -->

@@ -1,0 +1,58 @@
+{{- define "interaction" -}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Page.DocumentTitle}} · {{.ProductName}}</title>
+  <link rel="stylesheet" href="{{.StylesheetURL}}">
+</head>
+<body>
+  <main class="page-shell">
+    <section class="identity-card" aria-labelledby="interaction-heading">
+      <header class="identity-header">
+        <p class="eyebrow">{{.ProductName}} identity service</p>
+        <h1 id="interaction-heading">{{.Page.DocumentTitle}}</h1>
+        {{with .Page.Login}}<p class="lede">{{.Reason.Explanation}}</p>{{end}}
+      </header>
+
+      {{with .Page.Error}}<div id="interaction-error" class="error-message" role="alert">{{.Summary}}</div>{{end}}
+
+      {{with .Page.Consent}}
+      <section class="access-request" aria-labelledby="requested-access-heading">
+        <h2 id="requested-access-heading">Requested access</h2>
+        <p><span class="label">Application</span> <strong>{{.ClientID}}</strong></p>
+        <ul class="scope-list">
+          {{range .Scopes}}<li><code>{{.Name}}</code>{{with .Description}}<span> — {{.}}</span>{{end}}</li>{{end}}
+        </ul>
+      </section>
+      {{end}}
+
+      <form method="post" action="{{.Page.Form.ActionURL}}" class="interaction-form">
+        {{with .Page.Login}}
+        <div class="field-group">
+          <label for="tinyidp-login">Username</label>
+          <input id="tinyidp-login" name="{{.LoginField}}" value="{{.LoginValue}}" autocomplete="username" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}{{if .Autofocus}} autofocus{{end}}>
+        </div>
+        <div class="field-group">
+          <label for="tinyidp-password">Password</label>
+          <input id="tinyidp-password" name="{{.PasswordField}}" type="password" autocomplete="current-password" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}>
+        </div>
+        {{end}}
+
+        <input type="hidden" name="{{.Page.Form.InteractionField}}" value="{{.Page.Form.Interaction}}">
+        <input type="hidden" name="{{.Page.Form.CSRFField}}" value="{{.Page.Form.CSRFToken}}">
+
+        <div class="actions"{{if .ConsentBad}} aria-describedby="interaction-error"{{end}}>
+          {{range .Page.Form.Actions}}<button class="action action-{{.}}" type="submit" name="{{$.Page.Form.ActionField}}" value="{{.}}"{{if .SkipsConstraintValidation}} formnovalidate{{end}}>{{.Label}}</button>{{end}}
+        </div>
+      </form>
+
+      <footer>
+        <p>Authorization is processed locally by {{.ProductName}}.</p>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>
+{{- end -}}

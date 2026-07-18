@@ -15,7 +15,7 @@ package scenario
 import (
 	"time"
 
-	"github.com/manuel/tinyidp/internal/user"
+	"github.com/go-go-golems/tiny-idp/internal/user"
 )
 
 // Scenario describes what should happen (or fail) for a given login.

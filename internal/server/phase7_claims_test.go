@@ -15,8 +15,10 @@ import (
 // runClaimFlow drives authorize (GET form -> POST login) -> token for the
 // given login, returning the verified ID token claims and the userinfo
 // response body. Used by Phase 7 claim-variant tests.
-func runClaimFlow(t *testing.T, ts *httptest.Server, login string) (idClaims map[string]any, userinfo map[string]any) {
+func runClaimFlow(t *testing.T, ts *httptest.Server, login string) (map[string]any, map[string]any) {
 	t.Helper()
+	var idClaims map[string]any
+	var userinfo map[string]any
 
 	auth := url.Values{}
 	auth.Set("response_type", "code")

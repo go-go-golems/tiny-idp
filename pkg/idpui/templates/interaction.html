@@ -1,0 +1,55 @@
+{{- define "interaction" -}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Page.DocumentTitle}}</title>
+</head>
+<body>
+  <main>
+    <h1>{{.Page.DocumentTitle}}</h1>
+    {{with .Page.Login}}<p>{{.Reason.Explanation}}</p>{{end}}
+    {{with .Page.Error}}<div id="interaction-error" role="alert">{{.Summary}}</div>{{end}}
+    {{with .Page.Consent}}
+    <section aria-labelledby="requested-access-heading">
+      <h2 id="requested-access-heading">Requested access</h2>
+      <p>Client: <strong>{{.ClientID}}</strong></p>
+      <ul>
+        {{range .Scopes}}<li><code>{{.Name}}</code>{{with .Description}} — {{.}}{{end}}</li>{{end}}
+      </ul>
+    </section>
+    {{end}}
+    <form method="post" action="{{.Page.Form.ActionURL}}">
+      {{with .Page.AccountChooser}}
+      {{$chooser := .}}
+      <fieldset>
+        <legend>Choose an account</legend>
+        {{range .Entries}}
+        <p>
+          <input id="tinyidp-account-{{.Value}}" type="radio" name="{{$chooser.AccountField}}" value="{{.Value}}" required>
+          <label for="tinyidp-account-{{.Value}}">{{.Label}}</label>
+        </p>
+        {{end}}
+      </fieldset>
+      {{end}}
+      {{with .Page.Login}}
+      <p>
+        <label for="tinyidp-login">Username</label>
+        <input id="tinyidp-login" name="{{.LoginField}}" value="{{.LoginValue}}" autocomplete="username" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}{{if .Autofocus}} autofocus{{end}}>
+      </p>
+      <p>
+        <label for="tinyidp-password">Password</label>
+        <input id="tinyidp-password" name="{{.PasswordField}}" type="password" autocomplete="current-password" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}>
+      </p>
+      {{end}}
+      <input type="hidden" name="{{.Page.Form.InteractionField}}" value="{{.Page.Form.Interaction}}">
+      <input type="hidden" name="{{.Page.Form.CSRFField}}" value="{{.Page.Form.CSRFToken}}">
+      <p{{if .ConsentBad}} aria-describedby="interaction-error"{{end}}>
+        {{range .Page.Form.Actions}}<button type="submit" name="{{$.Page.Form.ActionField}}" value="{{.}}"{{if .SkipsConstraintValidation}} formnovalidate{{end}}>{{.Label}}</button>{{end}}
+      </p>
+    </form>
+  </main>
+</body>
+</html>
+{{- end -}}

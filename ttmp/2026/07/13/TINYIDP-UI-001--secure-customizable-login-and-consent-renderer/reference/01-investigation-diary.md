@@ -1,0 +1,1383 @@
+---
+Title: Investigation Diary
+Ticket: TINYIDP-UI-001
+Status: active
+Topics:
+    - oidc
+    - identity
+    - security
+    - go
+    - architecture
+    - auth
+DocType: reference
+Intent: long-term
+Owners: []
+RelatedFiles:
+    - Path: repo://internal/fositeadapter/interaction_hardening_test.go
+      Note: Existing regression evidence for forced login consent replay expiry and opaque form state
+    - Path: repo://internal/fositeadapter/provider.go
+      Note: Primary source traced during current-state investigation
+    - Path: repo://internal/server/static/login.html
+      Note: Synthetic server template inspected to rule out the wrong customization path
+    - Path: repo://pkg/idpui/default_renderer.go
+      Note: Contextually escaped embedded default renderer implemented in commit e77158f
+    - Path: repo://pkg/idpui/default_renderer_test.go
+      Note: Structural hostile-input contract and golden tests for Phase 1
+    - Path: repo://pkg/idpui/renderer.go
+      Note: Public writer-based renderer interface implemented in commit e77158f
+    - Path: repo://pkg/idpui/types.go
+      Note: Validated page contract actions reasons errors and defensive clone implemented in commit e77158f
+ExternalSources:
+    - https://pkg.go.dev/html/template
+    - https://www.w3.org/TR/CSP/
+    - https://openid.net/specs/openid-connect-core-1_0-18.html
+    - https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+    - https://www.rfc-editor.org/rfc/rfc9700.html
+    - https://www.w3.org/WAI/WCAG22/Understanding/error-identification.html
+    - https://www.w3.org/WAI/WCAG22/Understanding/accessible-authentication-minimum.html
+Summary: Chronological evidence and decision log for designing a host-supplied, security-preserving tiny-idp login and consent renderer.
+LastUpdated: 2026-07-13T17:38:39.058258495-04:00
+WhatFor: Records what was inspected, researched, decided, authored, validated, and delivered for TINYIDP-UI-001.
+WhenToUse: Read before resuming implementation or reviewing why the renderer API, trust boundary, CSP, asset policy, and assurance phases were chosen.
+---
+
+
+
+# Investigation Diary
+
+## Goal
+
+This diary records the creation and design investigation for a customizable
+tiny-idp interaction renderer. It is intended to let a new engineer reproduce
+the evidence, understand failed or misleading paths, and continue with Phase 1
+without reconstructing the reasoning from conversation history.
+
+## Step 1: Create the ticket and map the current rendering path
+
+The first step established a clean docmgr workspace and identified the exact
+runtime page that must change. The central question was whether the existing
+embedded `static/login.html` controlled the xapp login page. Source tracing
+showed that it does not: xapp constructs `pkg/embeddedidp`, which constructs the
+strict Fosite adapter, whose `renderInteraction` function writes a hard-coded
+HTML string.
+
+This distinction prevented the design from targeting the synthetic development
+server while leaving the production-oriented path unchanged.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, create a new ticket for the preferred method, and Create  a detailed analysis / design / implementation guide that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and the nupload to remarkable."
+
+**Assistant interpretation:** Create a new ticket for the recommended
+host-supplied renderer architecture, investigate the real code path, write an
+intern-ready design and implementation guide, and deliver the ticket as a
+reMarkable bundle.
+
+**Inferred user intent:** Make login UI customization an intentional product API
+rather than a source fork, without weakening the security properties already
+built into strict authorization interactions.
+
+### What I did
+
+- Ran `docmgr status --summary-only` and inspected the existing ticket list and
+  vocabulary.
+- Checked `git status --short` before writing and found two unrelated untracked
+  OIDC source directories under `TINYIDP-PROD-001`; I left them untouched.
+- Created `TINYIDP-UI-001` with topics `oidc,identity,security,go,architecture,auth`.
+- Added the primary design document and this diary through `docmgr doc add`.
+- Located the strict renderer with:
+
+  ```bash
+  rg -n "func \(p \*Provider\) renderInteraction|renderInteraction\(" internal/fositeadapter -g '*.go'
+  ```
+
+- Read line-numbered sections of `internal/fositeadapter/provider.go`,
+  `interaction.go`, `csrf.go`, `pkg/idpstore/types.go`, the embedded provider,
+  xapp composition, the synthetic server template, and interaction hardening
+  tests.
+- Confirmed the xapp outer mux mounts `/idp/` separately and gives the Goja HTTP
+  host the remaining paths, including existing `/static/assets/...` resources.
+
+### Why
+
+- A public API cannot be designed safely without knowing which layer owns
+  protocol state, response headers, cookies, and application routing.
+- The mock and strict implementations use materially different continuation
+  models, so conflating their templates would produce the wrong feature.
+
+### What worked
+
+- `rg` immediately located the single strict render function and its call site.
+- Line-numbered inspection made the evidence directly usable in the design doc.
+- Existing hardening tests exposed the important invariant that OAuth protocol
+  continuation fields never return to the browser form.
+- The xapp mux confirmed that a host-owned stylesheet can use the existing
+  `/static/` boundary.
+
+### What didn't work
+
+- One parallel evidence command produced 1,130 output lines and was truncated by
+  the tool. I reran narrower `nl -ba ... | sed -n ...` ranges for the authorize
+  resume path, interaction test helpers, embedded construction, and xapp mounts.
+  No evidence was inferred from the truncated portion.
+
+### What I learned
+
+- The strict page is generated at `internal/fositeadapter/provider.go:941-959`.
+- The synthetic `internal/server/static/login.html` is unrelated to xapp's
+  embedded strict provider.
+- The provider already has a strong server-owned continuation: the browser sees
+  only an opaque interaction handle and interaction-bound CSRF value.
+- `pkg/embeddedidp.Options` is the correct public injection point, but a renderer
+  contract cannot live there if the internal adapter must import it; that would
+  create a cycle.
+- The global CSP currently blocks every stylesheet because `default-src 'none'`
+  has no `style-src` exception.
+
+### What was tricky to build
+
+The renderer looks like a frontend feature, but the current function sits inside
+an OAuth state machine. The tricky part was separating presentation authority
+from authorization authority. The page must carry a handle, CSRF token,
+credentials, and an approve/deny action, yet none of those rendered controls can
+become authoritative. The existing resume path already enforces that separation,
+so the new API must expose less than an HTTP handler, not more.
+
+### What warrants a second pair of eyes
+
+- Confirm that the proposed `pkg/idpui` package is the right stable public
+  boundary and does not duplicate a suitable existing package.
+- Review the current combined login/consent behavior, especially when consent
+  policy depends on the user who has not authenticated yet.
+- Confirm that every success redirect after a credential POST has safe method
+  rewriting semantics.
+
+### What should be done in the future
+
+- Obtain explicit design approval before adding the public package.
+- Keep interaction and CSRF invariants covered as structural renderer tests are
+  introduced.
+
+### Code review instructions
+
+- Start at `internal/fositeadapter/provider.go:407` and trace GET then POST
+  authorization handling.
+- Read `internal/fositeadapter/interaction.go` before reviewing any page model.
+- Run:
+
+  ```bash
+  go test ./internal/fositeadapter -run 'TestInteractionFormContainsNoProtocolContinuation|TestForcedPromptLoginCannotReuseExistingSession' -count=1
+  ```
+
+### Technical details
+
+The core construction path observed was:
+
+```text
+cmd/tinyidp-xapp -> pkg/embeddedidp -> internal/fositeadapter -> net/http
+```
+
+The relevant current response policy is:
+
+```text
+default-src 'none'; frame-ancestors 'none';
+form-action 'self' https:; base-uri 'none'
+```
+
+## Step 2: Preserve research and derive the security policy
+
+This step tied the proposed API to primary language, web-security, OAuth/OIDC,
+and accessibility material. The research was not used as a general bibliography;
+each source answered a specific design question about escaping, CSS loading,
+CSRF token placement, forced login, authorization UI, redirects, or form errors.
+
+The Defuddle captures were stored locally so later implementation and review can
+retrace the decision even if a web page moves.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Research enough authoritative material to justify
+the preferred method and preserve that evidence with the ticket.
+
+**Inferred user intent:** Make the design professionally reviewable and teach an
+intern both the implementation and the security theory behind it.
+
+### What I did
+
+- Searched authoritative Go, W3C, OpenID Foundation, RFC Editor, OWASP, and WCAG
+  sources.
+- Saved seven full Markdown captures with commands of this form:
+
+  ```bash
+  defuddle parse https://pkg.go.dev/html/template --md \
+    -o ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/sources/go-html-template-security-model.md
+  ```
+
+- Preserved Go `html/template`, CSP Level 3, OpenID Connect Core, OWASP CSRF,
+  RFC 9700, WCAG error identification, and WCAG accessible authentication.
+- Checked capture sizes with:
+
+  ```bash
+  wc -lc ttmp/2026/07/13/TINYIDP-UI-001--secure-customizable-login-and-consent-renderer/sources/*.md
+  ```
+
+- Mapped each source to a concrete design consequence in the main document.
+
+### Why
+
+- Go's escaping model determines the template/data trust boundary.
+- CSP determines whether custom CSS will load and which new resource channels
+  become available.
+- OIDC `prompt` and `max_age` semantics constrain the view model.
+- OAuth security guidance makes anti-framing and credential-POST redirect
+  behavior release concerns.
+- WCAG requirements turn error rerendering and field labels into correctness
+  work, not optional styling.
+
+### What worked
+
+- All seven Defuddle extractions completed successfully.
+- The captures totaled 10,372 lines and approximately 739 KiB, so they contain
+  substantial local context rather than link stubs.
+- The Go documentation directly supported a trusted-template/untrusted-data
+  contract.
+- RFC 9700 exposed a redirect-status question that was not obvious from the
+  initial CSS customization request.
+
+### What didn't work
+
+- N/A. Every selected capture completed successfully and had plausible content
+  size and line count.
+
+### What I learned
+
+- `html/template` assumes template authors are trusted and execution data is
+  untrusted; that matches a host-compiled renderer exactly.
+- Trusted-content wrapper types such as `template.HTML` can bypass contextual
+  escaping and should be excluded from the public page model.
+- Same-origin external CSS requires `style-src 'self'`; the current CSP will
+  block it.
+- CSRF values belong in POST form fields and must not appear in URLs or logs.
+- `prompt=login` and `max_age` require the UI model to preserve why fresh login
+  was requested.
+- RFC 9700 recommends 303 after credential POSTs to prevent POST-body forwarding
+  risks associated with 307.
+
+### What was tricky to build
+
+CSS policy is not isolated from host architecture. `style-src 'self'` trusts all
+CSS on the identity origin, not one file. The design therefore pairs CSP with
+embedded immutable assets and a reviewed `/static/` route. A raw configurable
+CSP string would make the public API easier to use but would destroy the central
+security invariant.
+
+### What warrants a second pair of eyes
+
+- Review whether v1 should permit `img-src 'self' data:` and `font-src 'self'` or
+  retain `'none'` until an approved theme needs them.
+- Review same-origin CSS assumptions for hosts that allow user uploads.
+- Decide whether the redirect-status improvement belongs in this ticket or a
+  focused protocol-hardening ticket.
+
+### What should be done in the future
+
+- Keep the source packet linked from any implementation report.
+- Update captures only when a material standard revision changes a decision.
+
+### Code review instructions
+
+- Begin with the source-to-decision mapping in Section 4 of the design guide.
+- Compare the proposed CSP with `Provider.securityHeaders` and the xapp static
+  asset routes.
+
+### Technical details
+
+Captured sources are in `sources/` and are linked individually from Section 20
+of the design guide.
+
+## Step 3: Author the design and durable implementation plan
+
+This step converted source evidence into a public API proposal and a work plan.
+The main document is intentionally textbook-like: it defines terms, traces the
+current state machine, shows authority and dependency diagrams, sketches the Go
+API, records decisions and alternatives, and then decomposes implementation and
+assurance work into phases.
+
+No runtime code was changed. The ticket remains a proposed design awaiting
+review before Phase 1 begins.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Produce a comprehensive design that a new intern
+can use to understand and implement the feature task by task.
+
+**Inferred user intent:** Preserve enough context and precise tasks that work can
+continue over multiple sessions without architectural drift.
+
+### What I did
+
+- Wrote a design guide of approximately 1,560 lines with 21 major sections.
+- Proposed `pkg/idpui` to avoid an import cycle.
+- Proposed a writer-based renderer rather than an HTTP handler.
+- Defined typed page, form, login, consent, action, scope, and public-error
+  models.
+- Designed bounded rendering before response commit.
+- Designed host-owned `/static/` CSS with provider-owned CSP.
+- Added seven explicit decision records.
+- Added Phase 0 through Phase 6 with task-level implementation guidance and exit
+  criteria.
+- Added 47 docmgr tasks and checked the four completed evidence/design tasks.
+
+### Why
+
+- A stable public API requires decisions about dependency direction, trust,
+  failure behavior, and testability before implementation.
+- Detailed tasks make the ticket usable for long-running work and intern
+  handoff.
+
+### What worked
+
+- The writer-based boundary removed HTTP header, cookie, status, redirect, and
+  streaming authority while preserving normal Go template execution.
+- A standalone `pkg/idpui` resolved the otherwise unavoidable import cycle.
+- Existing interaction tests provided a strong base for recording-renderer and
+  state-matrix tests.
+- The ticket task list now separates public API, provider integration, state
+  semantics, xapp styling, assurance tooling, and release work.
+
+### What didn't work
+
+- The generated design document initially retained its empty scaffold sections
+  after the completed report. I detected them with `tail`, removed them with a
+  focused patch, and rechecked the beginning and end of the document.
+
+### What I learned
+
+- A renderer API should not live in `pkg/embeddedidp` because the adapter it
+  constructs also needs the interface.
+- Recoverable invalid-credential responses are part of the renderer design; a
+  branded initial form followed by plain `http.Error` is not a complete UI.
+- Client presentation metadata is absent from `idpstore.Client`. Adding names or
+  logos would be a persistence/admin feature and is deliberately not hidden in
+  this ticket.
+- Splitting combined login and consent requires a real interaction transition,
+  not merely a second template.
+
+### What was tricky to build
+
+The view model has to be useful without making rendered data authoritative. The
+design resolves this by providing exact action and field constants for form
+construction while requiring the server to validate every submitted value
+against stored required actions. The browser can always forge form data, so the
+HTML contract is a usability and conformance contract, never an authorization
+predicate.
+
+### What warrants a second pair of eyes
+
+- Public type names and future extensibility of exported page structs.
+- Defensive copying and renderer concurrency requirements.
+- The fixed output-size limit and render-failure audit taxonomy.
+- Retry status codes and whether the same CSRF token should be reused after a
+  validated recoverable failure.
+- Combined login/consent semantics.
+
+### What should be done in the future
+
+- Do not begin Phase 1 until Task 0.6 design approval is recorded.
+- If review changes the public contract, update decision records and tasks before
+  code.
+
+### Code review instructions
+
+- Read the executive summary, current-state Sections 3–6, API Sections 7–13,
+  decision records, then the implementation phases.
+- Validate ticket structure with:
+
+  ```bash
+  docmgr doctor --ticket TINYIDP-UI-001 --stale-after 30
+  ```
+
+### Technical details
+
+The preferred contract is:
+
+```go
+type InteractionRenderer interface {
+    RenderInteraction(context.Context, io.Writer, InteractionPage) error
+}
+```
+
+The renderer is trusted presentation code. The provider remains the only owner
+of headers, cookies, status, CSRF validation, stored interactions, required
+actions, authentication, consent, code issuance, and redirects.
+
+## Step 4: Validate and deliver the design bundle
+
+This step completed the ticket hygiene and published the core documentation as
+one reMarkable PDF with a table of contents. Validation was run before delivery
+so the uploaded document reflects a structurally sound ticket rather than a
+working draft.
+
+The preserved standards packet remains local in `sources/`; the reMarkable
+bundle contains the authored index, design guide, diary, tasks, and changelog so
+the main engineering narrative remains navigable.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Validate the complete ticket and upload the
+intern-facing documentation to the requested device.
+
+**Inferred user intent:** Make the design available for offline review and
+handoff while retaining reproducible local evidence.
+
+### What I did
+
+- Ran frontmatter validation on the design guide and diary.
+- Ran:
+
+  ```bash
+  docmgr doctor --ticket TINYIDP-UI-001 --stale-after 30
+  ```
+
+- Completed a dry-run bundle upload.
+- Uploaded the five core ticket documents as
+  `TINYIDP UI 001 Secure Interaction Renderer.pdf`.
+- Recorded the destination `/ai/2026/07/13/TINYIDP-UI-001`.
+
+### Why
+
+- `docmgr doctor` detects missing files, metadata errors, vocabulary drift, and
+  stale documentation before handoff.
+- A bundled PDF preserves document order and provides one table of contents for
+  reMarkable review.
+- Full source captures remain better suited to repository search than a very
+  large device bundle.
+
+### What worked
+
+- Both substantive documents reported `Frontmatter OK`.
+- `docmgr doctor` reported one ticket with all checks passed.
+- The dry run listed all five intended documents and the expected destination.
+- The real upload reported:
+
+  ```text
+  OK: uploaded TINYIDP UI 001 Secure Interaction Renderer.pdf -> /ai/2026/07/13/TINYIDP-UI-001
+  ```
+
+### What didn't work
+
+- N/A. Validation, PDF rendering, and upload completed without errors.
+
+### What I learned
+
+- The core authored bundle is large enough to carry the complete design while
+  remaining separate from the 739 KiB raw source packet.
+- Ticket validation is clean before implementation begins.
+
+### What was tricky to build
+
+The delivery bundle needed to balance traceability with readability. Including
+all captured standards would add more than ten thousand source lines and obscure
+the authored guide. The design links every local capture, so excluding raw
+sources from the device bundle does not weaken repository traceability.
+
+### What warrants a second pair of eyes
+
+- Confirm that the reMarkable bundle ordering is comfortable for review: index,
+  design, diary, tasks, then changelog.
+- Review the seven proposed decisions before checking Task 0.6.
+
+### What should be done in the future
+
+- Begin Phase 1 only after architecture and security approval.
+- Record all implementation commands, failures, tests, and commits as new diary
+  steps.
+
+### Code review instructions
+
+- Run `docmgr doctor --ticket TINYIDP-UI-001 --stale-after 30` after any
+  documentation edit.
+- Review Task 0.6 and the open questions before creating `pkg/idpui`.
+
+### Technical details
+
+The delivered PDF contains:
+
+1. `index.md`
+2. the primary design guide
+3. this investigation diary
+4. `tasks.md`
+5. `changelog.md`
+
+## Step 5: Receive implementation approval and prepare the baseline
+
+The user explicitly directed implementation to begin task by task, with a
+detailed diary and focused commits. This satisfies the ticket's architecture
+approval gate for beginning Phase 1. It does not pre-approve every open release
+question; those still require evidence and explicit decisions as their tasks are
+reached.
+
+Before changing runtime code, I reread the ticket, verified the worktree, and
+prepared a documentation-only baseline commit. This keeps the approved design
+and source packet independently reviewable from subsequent implementation
+checkpoints.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Ok, now implement this task by task, keeping a detailed diaryas you work, committing at appropriate intervals."
+
+**Assistant interpretation:** Treat the design as approved, implement the
+recorded phases sequentially, update the diary and docmgr artifacts continuously,
+and create focused Git commits at meaningful boundaries.
+
+**Inferred user intent:** Complete the feature professionally while preserving a
+reviewable history that a new engineer can resume or audit.
+
+### What I did
+
+- Reread the diary, task list, recent Git history, and worktree status.
+- Confirmed the only unrelated worktree entries are the two pre-existing
+  untracked source directories under `TINYIDP-PROD-001`.
+- Marked Task 0.6 complete based on the explicit implementation instruction.
+- Prepared to stage only the `TINYIDP-UI-001` ticket for the baseline commit.
+
+### Why
+
+- A clean design checkpoint separates approved intent from implementation
+  details and makes later review bisectable.
+- Explicit staging prevents unrelated research directories from entering the
+  commit.
+
+### What worked
+
+- The ticket remained clean under `docmgr doctor` before implementation.
+- The current branch and recent commits were identified without modifying any
+  existing source file.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- The ticket directory was still untracked because the design-only request did
+  not include a commit. It must be committed before Phase 1 code so later diary
+  entries can reference a stable baseline.
+
+### What was tricky to build
+
+The approval gate distinguishes permission to start implementation from closure
+of technical questions. The user's instruction closes Task 0.6, while CSP image
+and font policy, retry status, redirect status, and combined consent semantics
+remain decisions to resolve with tests during their recorded phases.
+
+### What warrants a second pair of eyes
+
+- Confirm the baseline commit contains only `TINYIDP-UI-001`.
+- Confirm future commits never include the unrelated `TINYIDP-PROD-001` source
+  directories.
+
+### What should be done in the future
+
+- Begin Phase 1 with the dependency-light public package and no adapter changes
+  in the same code checkpoint.
+
+### Code review instructions
+
+- Review the baseline commit as documentation only.
+- Run `git diff --cached --name-only` before committing and verify every path is
+  under the new ticket.
+
+### Technical details
+
+The planned checkpoint message is:
+
+```text
+Docs: design secure interaction renderer
+```
+
+## Step 6: Implement the public renderer contract and secure default
+
+Phase 1 introduced the presentation boundary as an isolated public package. The
+package contains no Fosite, store, HTTP response, request, or xapp dependency. A
+renderer receives a context, an `io.Writer`, and a validated clone of a typed
+page model; the built-in implementation uses Go's contextual HTML template
+escaping.
+
+The phase was validated both locally and through the complete repository suite
+before its focused code commit. This keeps provider integration out of the first
+checkpoint and makes the API reviewable on its own.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Implement Phase 1 completely, verify it, commit
+the code boundary, and record exact evidence before changing the provider.
+
+**Inferred user intent:** Establish a high-quality reusable contract that future
+xgoja hosts can consume without duplicating or weakening tiny-idp protocol code.
+
+**Commit (code):** e77158fc5c9412ce4b8e1113b7d6402445e917da — "IdP: add secure interaction renderer contract"
+
+### What I did
+
+- Added `pkg/idpui` with public actions, login reasons, public error codes, field
+  identifiers, page/form/prompt models, validation, and defensive cloning.
+- Added `InteractionRenderer` with the exact writer-based contract.
+- Added a concurrency-safe `html/template` default renderer and embedded full
+  HTML document template.
+- Added explicit visible labels, autocomplete metadata, required fields,
+  accessible error associations, consent disclosure, and a denial button that
+  bypasses browser constraint validation.
+- Added a semantic combined-page golden example without making whitespace an API.
+- Added tests for page shapes, escaping hostile values, password omission,
+  contract rejection, clone isolation, canceled contexts, and golden semantics.
+- Ran:
+
+  ```bash
+  go fmt ./pkg/idpui
+  go test ./pkg/idpui -count=1
+  go test ./... -count=1
+  ```
+
+### Why
+
+- The public model needs to be stable and testable before it is threaded through
+  security-sensitive authorize code.
+- A validated page catches provider programming errors before a custom renderer
+  sees them.
+- Structural HTML tests exercise actual parsed elements and attributes rather
+  than relying on regular expressions.
+
+### What worked
+
+- The package test completed in approximately two milliseconds.
+- The full repository suite passed, including strict provider, embedded provider,
+  xapp, production-review analyzers, and external-consumer tests.
+- Hostile client, scope, login, title, and error strings remained text and did
+  not create script, image, style, frame, object, embed, or event-handler nodes.
+- The model has no password value member, and the rendered password input never
+  has a `value` attribute.
+
+### What didn't work
+
+- N/A. The first implementation compiled and all selected and complete tests
+  passed.
+
+### What I learned
+
+- The denial action needs `formnovalidate` when login inputs are `required`, or
+  the browser prevents a user from denying a combined login/consent request with
+  empty credentials.
+- Validating an absolute HTTP(S) action URL in the public package provides a
+  useful fail-fast check while still permitting loopback HTTP development.
+- Defensive cloning must copy nested pointers and both action and scope slices;
+  copying only the top-level struct would still share mutable backing arrays.
+
+### What was tricky to build
+
+The default template must preserve two independent layers of validation.
+Browser-required fields improve usability, but the browser is untrusted and can
+be bypassed. The provider will still reject missing credentials. Conversely,
+browser validation must not block a security-relevant denial action. The
+`Action.SkipsConstraintValidation` method makes that required exception explicit
+without granting the renderer protocol authority.
+
+### What warrants a second pair of eyes
+
+- Review the exported struct surface for future additive evolution.
+- Review whether public English `Label` and `Explanation` methods belong on the
+  semantic types or only in the default renderer.
+- Review the strict action-URL validation against unusual but valid issuer
+  deployments.
+- Confirm the default error semantics associate invalid credentials with both
+  username and password without revealing which field failed.
+
+### What should be done in the future
+
+- Thread the renderer through `embeddedidp.Options` and the strict provider.
+- Add conformance analysis that prevents trusted-content wrappers in downstream
+  renderers, since the public model alone cannot stop a host from converting a
+  string to `template.HTML`.
+
+### Code review instructions
+
+- Start with `pkg/idpui/renderer.go` and `types.go`, then inspect the embedded
+  template and hostile-input tests.
+- Validate with:
+
+  ```bash
+  go test ./pkg/idpui -count=1
+  go test ./... -count=1
+  ```
+
+### Technical details
+
+The committed package contains 705 lines across seven files. `NewDefaultRenderer`
+parses its embedded template once, and `html/template.Template` is safe for
+concurrent execution after parsing.
+
+## Step 7: Integrate the renderer with the strict authorization provider
+
+Phases 2 and 3 moved presentation behind the public renderer contract without
+moving protocol authority. `pkg/embeddedidp` now accepts a renderer through its
+options, while the strict provider still creates and validates the interaction,
+owns headers and response status, authenticates credentials, enforces consent,
+and consumes the interaction exactly once.
+
+The integration deliberately made submitted actions stricter. A POST must carry
+an explicit `approve` or `deny` value corresponding to the rendered controls.
+There is no compatibility fallback for an omitted action. Existing test helpers
+were changed to model the button a browser actually submitted.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Complete the provider integration and retry/error
+behavior before beginning the xapp-specific visual renderer, with security
+regressions and a focused commit boundary.
+
+**Inferred user intent:** Make customization usable through the public embedding
+API without weakening forced-login, consent, CSRF, redirect, or interaction
+lifecycle invariants.
+
+**Commits (code):**
+
+- 817fb15 — "IdP: integrate customizable interaction rendering"
+- fdd008f — "IdP: enforce renderer output bound defensively"
+
+### What I did
+
+- Added `embeddedidp.UIConfig` and forwarded its renderer through the embedding
+  provider to `fositeadapter.Options`.
+- Defaulted a nil renderer to the built-in contextual template renderer.
+- Replaced scalar HTML construction with a typed interaction-page builder that
+  derives missing-session, `prompt=login`, `max_age`, consent, and step-up state.
+- Buffered rendered documents behind a 256 KiB writer and rejected failures,
+  empty output, and oversized output before committing HTML response headers.
+- Retained provider ownership of CSP, cache control, status, redirects, and audit
+  records. Render failures emit only a bounded reason code.
+- Re-rendered missing-credential and invalid-credential failures with generic
+  public errors. The normalized login may be retained; the model has no password
+  value field.
+- Required an explicit closed action value on resume and retained server-side
+  validation independent of whatever controls a custom renderer displays.
+- Converted successful authorization redirects following credential POSTs from
+  302 to 303.
+- Added recording, failing, oversized, retry, page-state, CSP, cache, redirect,
+  and public-construction tests.
+- Ran:
+
+  ```bash
+  go test ./pkg/idpui ./pkg/embeddedidp ./internal/fositeadapter ./internal/cmds -count=1
+  go test ./...
+  go test -race ./pkg/idpui ./pkg/embeddedidp ./internal/fositeadapter ./internal/cmds -count=1
+  ```
+
+### Why
+
+- A renderer is trusted to present a page, but it must never decide that an
+  authorization request is valid or that consent occurred.
+- Rendering into a bounded intermediate document prevents a template error from
+  producing a partially committed authentication page and limits memory use.
+- A 303 after a successful POST instructs the user agent to retrieve the client
+  redirect target with GET and avoids carrying POST semantics across the OAuth
+  redirect.
+- Retry pages improve user experience while preserving a generic credential
+  failure message and the same server-bound pending interaction.
+
+### What worked
+
+- Focused provider and embedding tests passed.
+- The complete repository suite passed, including xapp, production review
+  analyzers, verification scenarios, and external-consumer tests.
+- Race-enabled tests passed for all four packages touched by the integration.
+- Renderer errors and output-limit failures returned a generic plain-text 500;
+  neither template errors nor partially rendered HTML reached the response.
+- A custom renderer supplied through the public `embeddedidp.Options` path was
+  invoked by a real authorization request.
+
+### What didn't work
+
+- The first focused provider run produced repeated `invalid interaction action`
+  failures. The old test fixtures POSTed credentials without representing a
+  clicked submit button. I updated shared helpers to set `action=approve`; I did
+  not add a permissive production fallback.
+- A shared consent helper then changed two tests that intentionally exercise a
+  missing decision. One initial patch placed `form.Del("action")` in the adjacent
+  `prompt=none` test, causing that test to return 400 while the intended test
+  still reached a client redirect. I inspected the exact call sites, moved the
+  deletion to the production missing-consent test, and reran both packages.
+- The first full suite after provider tests passed found the same fixture issue
+  in `internal/cmds/TestStrictProviderHonorsSeededUserPassword`: expected 401 or
+  a redirect became 400. `fetchStrictCSRF` now explicitly submits `approve`.
+
+### What I learned
+
+- Test helpers for browser forms are part of the security model. Treating a
+  missing submit-button value as approval hid an ambiguity that production code
+  should reject.
+- A writer can ignore the error returned by a bounded destination. The provider
+  therefore records an overflow flag in addition to returning
+  `errInteractionDocumentTooLarge`, so even a faulty custom renderer cannot turn
+  a truncated page into a successful response.
+- Failure `Content-Type` must be selected after rendering succeeds. Setting HTML
+  before `http.Error` would label the generic failure body as HTML.
+
+### What was tricky to build
+
+Retryable failures must preserve the interaction handle and CSRF token while
+not recreating or consuming the interaction. Terminal failures such as invalid
+action, invalid binding, replay, expiry, and denial must continue through their
+existing fail-closed paths. The page builder is only invoked for the explicitly
+recoverable credential and consent branches.
+
+The 303 conversion also had to be narrowly scoped. It wraps only the Fosite
+authorize response writer for a POST; ordinary authorization GET redirects and
+all error handling retain their existing behavior.
+
+### What warrants a second pair of eyes
+
+- Confirm the retry status policy of 400 for missing credentials and 401 for
+  invalid credentials is appropriate for every reverse proxy and browser host.
+- Review whether retaining the normalized login after an invalid password is the
+  desired privacy/usability balance.
+- Review that a custom renderer which deliberately omits an action cannot create
+  a confusing loop; the provider correctly rejects the POST, but conformance
+  tooling should diagnose the page before deployment.
+- Confirm the 256 KiB bound and generic render-failure audit reasons are suitable
+  operational defaults.
+
+### What should be done in the future
+
+- Build the xapp-owned renderer and same-origin stylesheet.
+- Add reusable structural conformance tests and Go static analysis so downstream
+  renderers are checked for scripts, unsafe URLs, trusted-content wrappers, and
+  direct HTML construction.
+- Add bounded renderer metrics and browser-level CSP/accessibility evidence.
+
+### Code review instructions
+
+- Start at `pkg/embeddedidp/options.go`, then follow renderer forwarding into
+  `internal/fositeadapter/provider.go` and `rendering.go`.
+- Inspect `rendering_test.go` before reviewing the implementation; it documents
+  the intended trust boundary and response behavior.
+- Re-run:
+
+  ```bash
+  go test ./internal/fositeadapter ./pkg/embeddedidp ./internal/cmds -count=1
+  go test -race ./pkg/idpui ./pkg/embeddedidp ./internal/fositeadapter ./internal/cmds -count=1
+  ```
+
+### Technical details
+
+The provider's reviewed interaction CSP is:
+
+```text
+default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'
+```
+
+This permits only same-origin external CSS. Scripts, inline styles, images,
+fonts, frames, objects, and network connections remain denied by default.
+
+## Step 8: Build and wire the xapp-owned interaction presentation
+
+Phase 4 added a host-specific renderer under
+`cmd/tinyidp-xapp/internal/loginui`. It uses a compiled contextual Go template
+and an embedded stylesheet, while depending only on the public `pkg/idpui`
+contract. Both the ephemeral development application and initialized persistent
+application construct the same renderer and pass it through `embeddedidp.UI`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Implement the preferred host-owned customization
+method in the actual xgoja application, preserving the previously requested
+retro monochrome visual direction and production construction path.
+
+**Inferred user intent:** Make the running BBS application visibly coherent at
+the login boundary without coupling tiny-idp core to BBS product styling.
+
+**Commit (code):** fc16a87 — "Xapp: add themed IdP interaction UI"
+
+### What I did
+
+- Added an xapp-local `InteractionRenderer` implementation with a compile-time
+  interface assertion.
+- Embedded a complete interaction template and CSS using `_ "embed"`.
+- Validated stylesheet URLs as clean, root-relative, same-origin paths below
+  `/static/`; absolute URLs, scheme-relative URLs, query strings, fragments,
+  traversal, and backslashes are rejected at construction.
+- Mounted the stylesheet explicitly at `GET /static/tinyidp/` on the outer host.
+- Implemented the requested monochrome early-Macintosh character with square
+  geometry, monospaced system fonts, strong black outlines, and restrained mint,
+  rose, blue, and gold foreground accents. It has no menu bar, window chrome, or
+  Chicago font dependency.
+- Kept labels, alert associations, autocomplete hints, focus indicators,
+  responsive actions, reduced-motion behavior, and an always-available deny
+  action.
+- Added renderer tests for login-only, forced login, consent-only, combined,
+  denial, credential error, and consent error shapes.
+- Added end-to-end HTTP assertions for themed login HTML, stylesheet reachability
+  and media type, exact CSP compatibility, and initialized-production asset
+  mounting.
+- Ran focused xapp tests and the complete repository suite.
+
+### Why
+
+- The application host owns product identity and static assets; tiny-idp owns
+  authorization semantics. The public view model is the narrow boundary between
+  them.
+- A same-origin stylesheet fits the strict CSP without enabling inline style,
+  script, image, font, or third-party network sources.
+- Using the same constructor in both modes prevents an attractive development
+  page from masking a missing production asset mount.
+
+### What worked
+
+- All renderer and xapp integration tests passed on the first run.
+- The login-to-application vertical slice loaded the themed IdP page, fetched the
+  CSS, authenticated, completed the OIDC callback, and reached the BBS session.
+- The full Go suite passed after the xapp integration.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- The outer xapp mux is the correct asset owner. The in-process IdP transport is
+  used for OIDC back-channel calls, while the browser reaches `/idp/authorize`
+  and `/static/tinyidp/login.css` through the combined host.
+- A renderer-specific asset handler can remain separate from the renderer
+  interface. This avoids giving presentation code an HTTP response writer while
+  still letting the host mount immutable embedded resources explicitly.
+
+### What was tricky to build
+
+The page must support consent-only interactions without emitting empty login
+controls, and combined login/consent interactions without letting HTML required
+fields block denial. The template renders only typed page sections and derives
+error associations from stable public field identifiers.
+
+### What warrants a second pair of eyes
+
+- Review the visual hierarchy and pastel contrast in a real browser at 200%
+  zoom, high contrast, and narrow mobile width.
+- Confirm the footer's local-processing statement remains correct for every
+  deployment topology of this particular xapp.
+- Review whether the short five-minute stylesheet cache is the desired release
+  behavior or whether content-hashed asset naming should precede a long cache.
+
+### What should be done in the future
+
+- Run structural conformance against both the built-in and xapp renderers.
+- Add browser automation and accessibility evidence beyond HTTP and parsed-DOM
+  tests.
+
+### Code review instructions
+
+- Review `internal/loginui/renderer.go`, then its template and stylesheet.
+- Follow construction from both application constructors into the outer mux.
+- Validate with:
+
+  ```bash
+  go test ./cmd/tinyidp-xapp/internal/loginui ./cmd/tinyidp-xapp -count=1
+  go test ./...
+  ```
+
+### Technical details
+
+The stylesheet is served only for GET and HEAD at the validated configured path
+with `text/css; charset=utf-8` and a five-minute public cache. The authorization
+document itself remains `no-store` and carries the provider-owned CSP.
+
+## Step 9: Build the assurance toolchain and run a real-browser canary
+
+Phase 5 converted the design's safety properties into reusable tests, static
+analysis, fuzzing, metrics, an operational doctor, and a real Chromium probe.
+The work also found and removed a pre-existing raw HTML write in the logout page.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Complete the implementation phases with
+professional static and runtime assurance, preserve every tool under the ticket,
+and gather evidence from the actual xapp rather than an isolated template.
+
+**Inferred user intent:** Leave a maintainable security engineering system that
+future renderers and hosts can run repeatedly, not only a one-time visual change.
+
+**Commit (code):** 8e51f4b — "IdP: add interaction renderer assurance tooling"
+
+### What I did
+
+- Added `pkg/idpui/idpuitest`, a parsed-DOM conformance checker reusable by
+  downstream hosts.
+- Added rules for active content, scripts, style elements, inline style,
+  event-handler attributes, dangerous URL schemes, external origins, meta
+  refresh, protocol hidden fields, form action/method, action matrices, deny
+  behavior, password retention, labels, autocomplete, and error alerts.
+- Ran the conformance package against both the built-in renderer and the xapp
+  renderer.
+- Added a Go `analysis` analyzer under the ticket `scripts/` directory. It
+  rejects `text/template`, trusted-content conversions, direct raw HTML writes,
+  and `RenderInteraction` APIs that accept `http.ResponseWriter` or
+  `*http.Request`.
+- Added `analysistest` safe/unsafe fixtures and a command-line entry point.
+- Added `make idpui-analyzer` and included the analyzer in `make lint`.
+- Migrated the raw logout success page from a byte-string write to a compiled
+  `html/template` after the new analyzer found it.
+- Added fuzz targets for hostile and Unicode renderer values, parsed-DOM
+  conformance input, and bounded-writer chunk/limit combinations.
+- Preserved the first fuzz-found whitespace-only public-error corpus as a
+  regression seed.
+- Added process-local renderer counters and latency aggregates with no sensitive
+  or high-cardinality labels, exposed through both adapter and embedding APIs.
+- Added tests for successful, failed, oversized, empty, and response-write-failed
+  metric outcomes.
+- Added a production interaction doctor that follows the real in-process login
+  initiation, validates same-origin redirection, CSP, `no-store`, output bounds,
+  the declared `/static/` stylesheet, status, and media type, without returning
+  page or token values.
+- Updated the xapp doctor source checks to the current React and login renderer
+  paths and added optional initialized-state interaction health checks.
+- Added optional second development credentials so browser assurance can test
+  two distinct subjects without adding an account chooser or changing
+  production identity behavior.
+- Wrote and ran a Playwright/Chromium browser probe against a disposable xapp
+  canary in tmux on port 8790.
+- Inspected the screenshot from `/tmp`; it contained no secret and was not
+  committed.
+
+### Why
+
+- Template escaping addresses dynamic text, while DOM conformance addresses the
+  renderer's entire output structure and protocol-field fidelity.
+- Go AST/type-aware analysis catches unsafe implementation intent before the
+  renderer executes.
+- Fuzzing explores parser and escaping boundaries that curated hostile strings
+  do not cover, including invalid UTF-8 and long Unicode input.
+- Real-browser evidence is required for CSP, framing, computed focus/contrast,
+  resource loading, reflow, password-manager metadata, and the actual OIDC
+  redirect chain.
+- Metrics and doctor checks make the feature operable after release rather than
+  test-only.
+
+### What worked
+
+- Both production renderers passed the reusable conformance harness with zero
+  violations.
+- The analyzer fixtures passed and `make idpui-analyzer` completed against the
+  real renderer/provider packages.
+- Three three-second fuzz runs completed successfully after the regression fix:
+  approximately 13,993 renderer executions, 61,242 parser executions, and
+  13,873 bounded-writer executions were observed in the recorded runs.
+- The full repository suite passed after the assurance implementation.
+- Race-enabled tests passed for `pkg/idpui/...`, `pkg/embeddedidp`,
+  `internal/fositeadapter`, and `cmd/tinyidp-xapp`.
+- Explicit model, linearizability, and verification scenario tests passed.
+- The real Chromium canary loaded only its own origin, loaded the CSS as
+  `text/css`, contained zero scripts/inline styles/event handlers/password value
+  attributes, and was blocked from a frame.
+- Keyboard order was username, password, approve, deny. The focused username
+  had a solid four-pixel outline.
+- There was no horizontal overflow at 320 CSS pixels or at 200% zoom.
+- Browser-measured contrast ranged from 6.94:1 to 14.12:1 across all sampled
+  normal text.
+- Two isolated browser contexts authenticated as distinct subjects and each
+  completed the OIDC callback to the application.
+
+### What didn't work
+
+- The negative conformance test initially expected an `inline-style` violation
+  but included only a `<style>` element, which correctly produced
+  `active-content`. I added a separate `style` attribute so every expected rule
+  had a direct fixture.
+- The first renderer fuzz run found a whitespace-only error summary. The fuzz
+  setup replaced only an empty string, while `InteractionPage.Validate` rejects
+  trimmed emptiness. I changed seed normalization to use `strings.TrimSpace` and
+  retained the generated corpus file.
+- The first real-browser framing assertion treated the Chrome-generated error
+  document's own heading as framed IdP content. The child URL was already
+  `chrome-error://chromewebdata/`, proving blocking. The probe now classifies the
+  child frame URL and fails only if the configured origin actually loads.
+- An intermediate zoom check combined a 320-pixel viewport with two-times CSS
+  zoom, effectively testing a much narrower layout than the stated 200% desktop
+  condition. The probe now tests 320-pixel reflow separately and 200% zoom in a
+  1280-pixel viewport; both pass.
+- The first multi-user seed used the display name `Primary user`, causing the
+  existing BBS test to report an unexpected author. I restored the original
+  `Alice` display name. I also preserved the original `dev-alice` user ID and
+  subject so existing development Durable Object actor state remains reachable.
+
+### What I learned
+
+- Static analysis is most valuable when it is allowed to fail on existing code.
+  The first real run found the logout raw HTML write; suppressing it would have
+  normalized two rendering policies inside the same provider.
+- Fuzz harness validity is itself part of the test. Generated inputs may violate
+  model preconditions before exercising the intended escaping property, so the
+  harness must normalize only the prerequisite while preserving hostile data.
+- Browser frame blocking creates a Chrome error document inside the child frame.
+  Assertions must distinguish browser error UI from target-origin content.
+- Identity test data has persistence semantics. Even development-only user IDs
+  can key durable objects, so browser-test support must preserve the established
+  primary subject.
+- A doctor can exercise the entire browser-facing document without leaking it:
+  parse only enough structure to locate a validated stylesheet, return bounded
+  byte counts, and discard cookies and HTML locally.
+
+### What was tricky to build
+
+The conformance checker must allow the provider's absolute form action while
+rejecting every other external origin. It must also inspect the parsed DOM, not
+raw source, because browsers repair malformed HTML and normalize attributes.
+
+The metrics path has to count failure after a response disconnect without
+recording a request label or raw error. Atomics provide a lock-free snapshot;
+latency uses total and maximum nanoseconds rather than unbounded histograms or
+labels.
+
+The browser probe deliberately does not print HTML, cookies, hidden values,
+session values, or user IDs. For the two-account check it compares subject IDs in
+memory and emits only `distinct_authenticated_subjects: true`.
+
+### What warrants a second pair of eyes
+
+- Review the analyzer's HTML-literal heuristic for false negatives in custom
+  write wrappers and false positives in unrelated renderer-adjacent packages.
+- Review whether the conservative conformance ban on SVG and images should
+  remain permanent or become an explicitly reviewed future CSP profile.
+- Review the doctor redirect/cookie emulation against every supported external
+  host topology.
+- Perform a human screen-reader pass even though labels, alert roles, keyboard,
+  focus, zoom, contrast, and autocomplete are automated.
+- Confirm operations can export `InteractionRenderStats` into the chosen metrics
+  system without adding sensitive labels.
+
+### What should be done in the future
+
+- Run a production canary behind its real TLS and reverse proxy.
+- Record named identity, host, frontend, accessibility, security, and operations
+  approvals.
+- Consider checking custom writer wrappers with SSA/dataflow analysis in the
+  broader static-analysis ticket.
+
+### Code review instructions
+
+- Review `pkg/idpui/idpuitest/conformance.go` rule by rule against the design
+  trust boundary.
+- Review the analyzer and both analysistest fixtures before its Makefile gate.
+- Review `interaction_doctor.go` specifically for absence of token/page output.
+- Run:
+
+  ```bash
+  make idpui-analyzer
+  go test ./pkg/idpui/... ./pkg/embeddedidp ./internal/fositeadapter ./cmd/tinyidp-xapp -count=1
+  go test -race ./pkg/idpui/... ./pkg/embeddedidp ./internal/fositeadapter ./cmd/tinyidp-xapp -count=1
+  ```
+
+### Technical details
+
+The local canary used a fresh temporary state root and was killed with
+`lsof-who -p 8790 -k` before its tmux session was removed. The long-running user
+xapp on port 8787 was not disturbed during assurance work.
+
+## Step 10: Publish operator documentation and refresh the reMarkable bundle
+
+Phase 6 documentation now describes the public rendering API, CSP and asset
+contract, reverse-proxy requirements, conformance tooling, metrics, production
+doctor, canary procedure, leakage review, residual risks, and rollback paths.
+The ticket bundle was rebuilt with all implementation documents and preserved
+research sources.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Deliver the implemented feature as a reviewable
+and operable system, while leaving external production deployment and human
+approval gates visibly open.
+
+**Inferred user intent:** Ensure another engineer can release or roll back the
+feature without reconstructing design decisions from commits.
+
+### What I did
+
+- Added `docs/interaction-rendering.md` with public API examples, field/action
+  contracts, safe template guidance, CSP, static assets, caching, reverse proxy,
+  conformance, analyzer, metrics, doctor, production verification, and rollback.
+- Added a sanitized browser/accessibility/local-canary evidence reference.
+- Added a production release and rollback runbook with preflight, fuzz, doctor,
+  canary, metrics, audit, headers, page source, triggers, rollback, risks, and
+  approval records.
+- Related every ticket document to its code/tool files with docmgr file notes.
+- Updated the ticket index and tasks to reflect completed implementation versus
+  remaining external release gates.
+- Ran `docmgr doctor --ticket TINYIDP-UI-001`; all checks passed.
+- Used the reMarkable bundle workflow to upload the 14,107-line packet,
+  including the primary design, public guide, full diary, browser evidence,
+  runbook, tasks, changelog, and all seven preserved source documents.
+
+### Why
+
+- Release documentation must state both what is automated and what still
+  requires a human or production environment.
+- A presentation-only rollback is safer than reverting protocol hardening; the
+  operator needs that distinction before an incident.
+- Including preserved sources lets a reviewer trace implementation rules back
+  to the exact research packet without repository access.
+
+### What worked
+
+- Ticket validation passed after file notes were added.
+- The reMarkable upload completed successfully in one upload operation:
+
+  ```text
+  OK: uploaded TINYIDP UI 001 Secure Interaction Renderer.pdf -> /ai/2026/07/13/TINYIDP-UI-001
+  ```
+
+### What didn't work
+
+- The first `docmgr doctor` after adding the two reference documents warned that
+  their related files lacked notes. I used `docmgr doc relate --file-note` for
+  all six paths and validation then passed.
+
+### What I learned
+
+- The original ticket index still described runtime implementation as not
+  started. Long-running tickets need explicit index refreshes at major phase
+  boundaries; task checkboxes and diaries alone are not sufficient orientation.
+- Release approval is not implied by successful local evidence. Production
+  topology and named human ownership remain distinct gates.
+
+### What was tricky to build
+
+The release packet must be complete without accidentally treating standards
+copies as implementation claims. The evidence and runbook distinguish local
+browser facts, automated structural properties, residual risks, and future
+production observations.
+
+### What warrants a second pair of eyes
+
+- Review the public guide for API naming and long-term compatibility promises.
+- Review the production runbook against the actual deployment platform.
+- Confirm whether overwriting the reMarkable bundle should preserve annotations
+  through a separately named revision in future deliveries.
+
+### What should be done in the future
+
+- Execute Task 6.3 in the real production canary topology and attach sanitized
+  evidence.
+- Execute Task 6.5 by recording named reviewer and operator approval.
+
+### Code review instructions
+
+- Read `docs/interaction-rendering.md` as the external contract.
+- Use `reference/03-interaction-ui-release-and-rollback-runbook.md` for rollout.
+- Do not mark the two remaining tasks complete from local test evidence alone.
+
+### Technical details
+
+The uploaded bundle name and remote directory intentionally match the earlier
+design delivery; `--force` replaced it with the implementation-complete packet.
+
+## Step 11: Restart and verify the initialized xapp handoff
+
+After all code and documentation commits, I restarted the user's existing
+`tinyidp-xapp-e2e` tmux session with its exact initialized TLS server command.
+This did not substitute the disposable port-8790 canary; it refreshed the
+long-running xapp that the user had asked to keep available.
+
+### Prompt Context
+
+**User prompt (verbatim):** "restart the xapp in the tmux, once done."
+
+**Assistant interpretation:** Restart only after implementation, validation,
+documentation, commits, and delivery are complete; preserve the existing
+initialized state, TLS files, listen address, logging level, and session name.
+
+**Inferred user intent:** Leave the newly themed, hardened application running
+in the same operational location for immediate manual use.
+
+### What I did
+
+- Read the tmux pane's current path and start command rather than guessing its
+  mode or port.
+- Determined that the session served initialized TLS on
+  `127.0.0.1:19443`, not development HTTP on port 8787.
+- Stopped the listening process with `lsof-who -p 19443 -k`.
+- Recreated `tinyidp-xapp-e2e` with the exact prior `serve-initialized` command,
+  state root, certificate, key, maintenance interval, and debug log level.
+- Captured the new pane output and confirmed the initialized TLS server startup
+  message.
+- Verified `GET /readyz` returned 200 with JSON.
+- Verified `GET /static/tinyidp/login.css` returned 200,
+  `text/css; charset=utf-8`, and 3,092 bytes.
+
+### Why
+
+- Reusing the exact initialized command prevents accidental replacement of the
+  persistent application with a development server.
+- Port-aware termination follows the workspace operating rules and avoids an
+  orphan listener.
+- Readiness plus the themed CSS route verifies both core construction and the
+  newly added outer-host mount after restart.
+
+### What worked
+
+- The old process received TERM successfully.
+- The new initialized server bound the same TLS address and became ready.
+- The embedded themed asset was available from the fresh process.
+- The tmux session remains named `tinyidp-xapp-e2e`.
+
+### What didn't work
+
+- The first three readiness polls saw connection refused while `go run` compiled
+  and the initialized application opened its stores. The bounded poll continued,
+  and the next request succeeded. This was expected startup behavior, not a
+  server fault.
+
+### What I learned
+
+- The active handoff server uses port 19443 and initialized persistent state;
+  port 8787 was only a historical development default. Inspecting tmux metadata
+  is necessary before every restart.
+
+### What was tricky to build
+
+N/A. The restart reused an already proven command and required no runtime code
+change.
+
+### What warrants a second pair of eyes
+
+- Open the live login flow at `https://127.0.0.1:19443/auth/login` in the trusted
+  local browser and visually confirm the intended theme.
+- Do not treat this local initialized server as the outstanding production
+  canary approval.
+
+### What should be done in the future
+
+- Complete the two remaining external Phase 6 gates when the deployment and
+  human reviewers are available.
+
+### Code review instructions
+
+- Review tmux with `tmux capture-pane -pt tinyidp-xapp-e2e:0 -S -100`.
+- Recheck readiness without printing bodies or cookies.
+
+### Technical details
+
+The final handoff bundle will be refreshed once more after this diary entry is
+committed so the reMarkable copy contains the complete restart record.

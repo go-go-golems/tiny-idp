@@ -1,0 +1,37 @@
+package externalmessagedesk
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+
+	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
+)
+
+func TestSeedManifestBootstrapIsIdempotentAndRejectsDrift(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := SeedManifest{ClientID: "message-desk", RedirectURIs: []string{"http://127.0.0.1:8080/auth/callback"}, PostLogoutRedirectURIs: []string{"http://127.0.0.1:8080/"}, Accounts: []SeedAccount{{ID: "demo-amelie", Subject: "demo-amelie", Login: "amelie", Password: "long-demo-password", Name: "Amelie", Email: "amelie@example.test"}}}
+	if err := manifest.Bootstrap(ctx, store, accounts, embeddedidp.DevMode); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.Bootstrap(ctx, store, accounts, embeddedidp.DevMode); err != nil {
+		t.Fatalf("idempotent bootstrap: %v", err)
+	}
+	drift := manifest
+	drift.Accounts = append([]SeedAccount(nil), manifest.Accounts...)
+	drift.Accounts[0].Name = "Different"
+	if err := drift.Bootstrap(ctx, store, accounts, embeddedidp.DevMode); err == nil {
+		t.Fatal("seed identity drift was accepted")
+	}
+}

@@ -1,0 +1,66 @@
+version: 2
+project_name: tinyidp
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: tinyidp-linux
+    env:
+      - CGO_ENABLED=1
+      - CC_linux_amd64=gcc
+      - CXX_linux_amd64=g++
+      - CC_linux_arm64=aarch64-linux-gnu-gcc
+      - CXX_linux_arm64=aarch64-linux-gnu-g++
+      - 'CC={{ index .Env (print "CC_" .Os "_" .Arch) }}'
+      - 'CXX={{ index .Env (print "CXX_" .Os "_" .Arch) }}'
+    main: ./cmd/tinyidp
+    binary: tinyidp
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+  - id: tinyidp-darwin
+    env:
+      - CGO_ENABLED=1
+    main: ./cmd/tinyidp
+    binary: tinyidp
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+signs:
+  - artifacts: checksum
+    args: ["--batch", "-u", "{{ .Env.GPG_FINGERPRINT }}", "--output", "${signature}", "--detach-sign", "${artifact}"]
+
+homebrew_casks:
+  - name: tinyidp
+    description: "tinyidp is a compact, self-contained OpenID Connect Identity Provider."
+    homepage: "https://github.com/go-go-golems/tiny-idp"
+    repository:
+      owner: go-go-golems
+      name: homebrew-go-go-go
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    binaries:
+      - tinyidp
+
+# The package license field is intentionally omitted until this repository has
+# an explicit, committed distribution license.

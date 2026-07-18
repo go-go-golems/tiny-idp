@@ -55,11 +55,11 @@ determinism and failure coverage, not hardening.
 From the repository root:
 
     go build -o tinyidp ./cmd/tinyidp
-    ./tinyidp serve --config-file examples/configs/dev-root.yaml
+    ./tinyidp serve-dev --config-file examples/configs/dev-root.yaml
 
 The server starts on `http://localhost:5556`. Leave it running in one
 terminal; the examples below assume it is reachable at that URL. You can
-also run `./tinyidp serve` with no config file; `dev-root.yaml` simply
+also run `./tinyidp serve-dev` with no config file; `dev-root.yaml` simply
 makes the default local setup explicit.
 
 ## Step 2 — confirm discovery
@@ -109,9 +109,9 @@ scenarios without changing the relying party configuration.
 
 Checked-in examples are available when you want a copy/paste starting point:
 
-    ./tinyidp serve --config-file examples/configs/dev-root.yaml
-    ./tinyidp serve --config-file examples/configs/personal-inbox-root.yaml
-    ./tinyidp serve --config-file examples/configs/personal-inbox-realm.yaml
+    ./tinyidp serve-dev --config-file examples/configs/dev-root.yaml
+    ./tinyidp serve-dev --config-file examples/configs/personal-inbox-root.yaml
+    ./tinyidp serve-dev --config-file examples/configs/personal-inbox-realm.yaml
 
 `oidc.users-file` paths in config files are resolved relative to the process
 working directory, so run these commands from the tinyidp repository root or
@@ -143,5 +143,5 @@ state without adding log statements.
 
 ## See also
 
-- `tinyidp serve --help`
+- `tinyidp serve-dev --help`
 - `tinyidp print-config` — print the resolved provider configuration.

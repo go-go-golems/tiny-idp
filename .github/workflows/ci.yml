@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+  GOWORK: "off"
+
+jobs:
+  test:
+    name: Build, test, vet, and production smokes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up exact release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+          cache: true
+
+      - name: Record toolchain and CGO environment
+        run: |
+          go version
+          go env GOVERSION GOTOOLCHAIN GOWORK CGO_ENABLED GOOS GOARCH
+
+      - name: Build
+        run: go build ./...
+
+      - name: Check formatting
+        run: make fmt-check
+
+      - name: Unit and integration tests
+        run: go test ./... -count=1
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: CLI smoke test
+        run: |
+          go run ./cmd/tinyidp --help
+          go run ./cmd/tinyidp serve-production --help
+
+      - name: Repository-specific Go AST analyzers
+        run: make auditlint
+
+      - name: Check generated logcopter package loggers
+        run: make logcopter-check
+
+      - name: Parser fuzz seed corpus
+        run: go test ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts -count=1
+
+      - name: External consumer production flow
+        run: bash ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/external-api-smoke.sh
+
+      - name: Backup and restore regression gate
+        run: go test ./pkg/sqlitestore -run 'TestOnlineBackupVerifyAndRestore|TestRestorePreservesRollbackAndRejectsCorruption|TestBackupDuringConcurrentWritesIsSelfConsistent|TestBackupDiskFullLeavesPublishedFileUntouched' -count=1
+
+  lint:
+    name: Pinned lint suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up exact release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+          cache: true
+
+      - name: Run repository linters
+        run: make lint
+
+  vulnerability:
+    name: Reachable vulnerability gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up exact release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.5
+          cache: true
+
+      - name: Install pinned govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
+
+      - name: Reject reachable known vulnerabilities
+        run: govulncheck ./...

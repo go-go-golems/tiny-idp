@@ -17,6 +17,24 @@ topics:
       description: Authentication and authorization
     - slug: xgoja
       description: xgoja generated host examples, providers, and smoke-test workflows
+    - slug: architecture
+      description: Topic used by TINYIDP-JITSI-001 research and design.
+    - slug: authentication
+      description: Topic used by TINYIDP-JITSI-001 research and design.
+    - slug: jitsi
+      description: Topic used by TINYIDP-JITSI-001 research and design.
+    - slug: research
+      description: Topic used by TINYIDP-JITSI-001 research and design.
+    - slug: security
+      description: Security architecture, analysis, verification, controls, and assurance evidence
+    - slug: oauth2
+      description: OAuth 2.0 protocols, grants, clients, and authorization-server security
+    - slug: docker
+      description: Containerized deployment topology and Docker Compose operations.
+    - slug: operations
+      description: Operational deployment, supervision, and recovery work
+    - slug: durable-objects
+      description: Durable object state, dispatch, and object-ownership design
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes

@@ -112,7 +112,7 @@ func ProfileMiddlewaresFunc(appName string, configPlanBuilder cli.ConfigPlanBuil
 // parse, then applies env (TINYIDP_PROFILE / TINYIDP_PROFILE_FILE) on top so
 // env selection works even though the bootstrap parse didn't run env. Falls
 // back to the default profile file and "default" profile name when unset.
-func resolveProfileSelection(appName string, parsedCommandSections *values.Values) (profile, profileFile string, err error) {
+func resolveProfileSelection(appName string, parsedCommandSections *values.Values) (string, string, error) {
 	ps := &cli.ProfileSettings{}
 	if err := parsedCommandSections.DecodeSectionInto(cli.ProfileSettingsSlug, ps); err != nil {
 		return "", "", fmt.Errorf("decode profile-settings: %w", err)

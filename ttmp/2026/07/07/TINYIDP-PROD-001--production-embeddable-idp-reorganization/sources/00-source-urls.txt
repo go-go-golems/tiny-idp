@@ -1,0 +1,12 @@
+https://openid.net/specs/openid-connect-core-1_0.html
+https://datatracker.ietf.org/doc/html/rfc9700
+https://pkg.go.dev/github.com/ory/fosite
+https://pkg.go.dev/github.com/ory/fosite/compose
+https://openid.net/specs/openid-connect-discovery-1_0.html
+https://openid.net/certification/
+https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html
+https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
+https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
+https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html
+https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html

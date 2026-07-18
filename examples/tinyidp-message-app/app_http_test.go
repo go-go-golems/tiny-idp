@@ -1,0 +1,727 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
+	"golang.org/x/oauth2"
+)
+
+const registrationTestOrigin = "https://app.example.test"
+
+func TestSessionEndpointAndLogoutUseIndependentAppSession(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{9}, sha256.Size)
+	if err := store.createAppSession(ctx, "browser-token", appSession{Subject: "subject", DisplayName: "Alice", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, nil, nil, nil, false)
+	app.now = func() time.Time { return now }
+	request := httptest.NewRequest(http.MethodGet, "/api/session", nil)
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"authenticated":true`) || !strings.Contains(response.Body.String(), base64.RawURLEncoding.EncodeToString(csrf)) {
+		t.Fatalf("session response = %d %s", response.Code, response.Body.String())
+	}
+	logout := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	logout.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
+	logout.Header.Set("X-CSRF-Token", base64.RawURLEncoding.EncodeToString(csrf))
+	logoutResponse := httptest.NewRecorder()
+	app.ServeHTTP(logoutResponse, logout)
+	if logoutResponse.Code != http.StatusNoContent {
+		t.Fatalf("logout status = %d: %s", logoutResponse.Code, logoutResponse.Body.String())
+	}
+	if _, err := store.getAppSession(ctx, "browser-token", now.Add(time.Second)); err == nil {
+		t.Fatal("logout did not revoke application session")
+	}
+}
+
+func TestExternalModeDoesNotExposeSelfRegistration(t *testing.T) {
+	store, err := openAppStore(context.Background(), filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := newMessageApp(store, nil, nil, nil, false)
+	app.registrationEnabled = false
+
+	session := httptest.NewRecorder()
+	app.ServeHTTP(session, httptest.NewRequest(http.MethodGet, "/api/session", nil))
+	if session.Code != http.StatusOK || !strings.Contains(session.Body.String(), `"registrationEnabled":false`) {
+		t.Fatalf("external session capability = %d: %s", session.Code, session.Body.String())
+	}
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/api/registration", nil),
+		httptest.NewRequest(http.MethodPost, "/api/accounts", nil),
+	} {
+		response := httptest.NewRecorder()
+		app.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s %s status = %d: %s", request.Method, request.URL.Path, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestLogoutReturnsBrowserNavigableIDPEndSessionURL(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{7}, sha256.Size)
+	if err := store.createAppSession(ctx, "browser-token", appSession{Subject: "subject", DisplayName: "Alice", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, &oidcClient{publicOrigin: registrationTestOrigin}, nil, nil, false)
+	app.now = func() time.Time { return now }
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
+	request.Header.Set("X-CSRF-Token", base64.RawURLEncoding.EncodeToString(csrf))
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("logout status = %d: %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		EndSessionURL string `json:"endSessionUrl"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(body.EndSessionURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.String() != registrationTestOrigin+"/idp/end-session?client_id="+clientID+"&post_logout_redirect_uri="+url.QueryEscape(registrationTestOrigin+"/") {
+		t.Fatalf("end-session URL = %q", parsed.String())
+	}
+	if _, err := store.getAppSession(ctx, "browser-token", now.Add(time.Second)); err == nil {
+		t.Fatal("logout did not revoke application session")
+	}
+}
+
+func TestLocalLogoutRevokesOnlyTheApplicationSession(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{8}, sha256.Size)
+	if err := store.createAppSession(ctx, "browser-token", appSession{Subject: "subject", DisplayName: "Alice", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, &oidcClient{publicOrigin: registrationTestOrigin}, nil, nil, false)
+	app.now = func() time.Time { return now }
+	request := httptest.NewRequest(http.MethodPost, "/auth/logout/local", nil)
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
+	request.Header.Set("X-CSRF-Token", base64.RawURLEncoding.EncodeToString(csrf))
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || response.Body.Len() != 0 {
+		t.Fatalf("local logout = %d: %s", response.Code, response.Body.String())
+	}
+	if _, err := store.getAppSession(ctx, "browser-token", now.Add(time.Second)); err == nil {
+		t.Fatal("local logout did not revoke application session")
+	}
+}
+
+func TestLoginRejectsAmbiguousReturnTo(t *testing.T) {
+	store, err := openAppStore(context.Background(), filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := newMessageApp(store, &oidcClient{config: oauth2.Config{Endpoint: oauth2.Endpoint{AuthURL: "http://issuer/authorize"}}, now: time.Now}, nil, nil, false)
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/auth/login?return_to=//attacker.test", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("login status = %d", response.Code)
+	}
+}
+
+func TestLoginSwitchAccountStartsOIDCForAnAuthenticatedApplicationSession(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{9}, sha256.Size)
+	if err := store.createAppSession(ctx, "browser-token", appSession{Subject: "subject", DisplayName: "Amelie", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, &oidcClient{config: oauth2.Config{ClientID: clientID, Endpoint: oauth2.Endpoint{AuthURL: "https://issuer.example.test/authorize"}, RedirectURL: registrationTestOrigin + callbackPath}, now: func() time.Time { return now }}, nil, nil, false)
+	request := httptest.NewRequest(http.MethodGet, "/auth/login?return_to=/&switch_account=1", nil)
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: "browser-token"})
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("switch-account login = %d: %s", response.Code, response.Body.String())
+	}
+	location, err := url.Parse(response.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if location.Host != "issuer.example.test" || location.Query().Get("prompt") != "select_account" {
+		t.Fatalf("switch-account location = %q", location.String())
+	}
+}
+
+func TestRegistrationEndpointCreatesOneTimePreSession(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	app := newMessageApp(store, nil, nil, nil, false)
+	app.now = func() time.Time { return now }
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/registration", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("registration status = %d: %s", response.Code, response.Body.String())
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != registerCookie || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].Value == "" {
+		t.Fatalf("registration cookie = %#v", cookies)
+	}
+	var payload struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	csrf, err := base64.RawURLEncoding.DecodeString(payload.CSRFToken)
+	if err != nil || len(csrf) != sha256.Size {
+		t.Fatalf("registration CSRF = %q, %v", payload.CSRFToken, err)
+	}
+	attempt, err := store.consumeRegistrationAttempt(ctx, cookies[0].Value, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(attempt.CSRFSecret, csrf) || !attempt.ExpiresAt.Equal(now.Add(registrationAttemptLifetime)) {
+		t.Fatalf("stored registration attempt = %#v", attempt)
+	}
+}
+
+func TestMessageFeedUsesCursorAndDoesNotExposeSubject(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	stamp := time.Now().UTC()
+	for _, body := range []string{"first", "second", "third"} {
+		if _, err := store.createMessage(ctx, message{AuthorSubject: "private-subject", AuthorName: "Alice", Body: body, CreatedAt: stamp}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := newMessageApp(store, nil, nil, nil, false)
+	first := httptest.NewRecorder()
+	app.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/messages?limit=2", nil))
+	var page struct {
+		Messages   []messageResponse `json:"messages"`
+		NextCursor string            `json:"nextCursor"`
+	}
+	if first.Code != http.StatusOK || json.Unmarshal(first.Body.Bytes(), &page) != nil || len(page.Messages) != 2 || page.Messages[0].Body != "third" || page.NextCursor == "" || strings.Contains(first.Body.String(), "private-subject") {
+		t.Fatalf("first page = %d: %s", first.Code, first.Body.String())
+	}
+	second := httptest.NewRecorder()
+	app.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/messages?before="+url.QueryEscape(page.NextCursor)+"&limit=2", nil))
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), `"body":"first"`) {
+		t.Fatalf("second page = %d: %s", second.Code, second.Body.String())
+	}
+}
+
+func TestMessageAppServesEmbeddedRetroFrontendOnlyAtStaticPrefix(t *testing.T) {
+	store, err := openAppStore(context.Background(), filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := newMessageApp(store, nil, nil, nil, false)
+	root := httptest.NewRecorder()
+	app.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "/", nil))
+	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), `id="root"`) || !strings.Contains(root.Header().Get("Content-Security-Policy"), "default-src 'none'") {
+		t.Fatalf("root = %d: %s", root.Code, root.Body.String())
+	}
+	asset := httptest.NewRecorder()
+	app.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/static/app/assets/main.js", nil))
+	if asset.Code != http.StatusOK || !strings.Contains(asset.Header().Get("Content-Type"), "javascript") ||
+		!strings.Contains(asset.Body.String(), "Passwords need at least 15 characters") ||
+		!strings.Contains(asset.Body.String(), "this form has been refreshed for a new attempt") {
+		t.Fatalf("frontend asset = %d content-type=%q", asset.Code, asset.Header().Get("Content-Type"))
+	}
+	loginStyles := httptest.NewRecorder()
+	app.ServeHTTP(loginStyles, httptest.NewRequest(http.MethodGet, "/static/tinyidp/login.css", nil))
+	if loginStyles.Code != http.StatusOK || strings.Contains(strings.ToLower(loginStyles.Body.String()), "chicago") {
+		t.Fatalf("login styles = %d", loginStyles.Code)
+	}
+	notFound := httptest.NewRecorder()
+	app.ServeHTTP(notFound, httptest.NewRequest(http.MethodGet, "/not-a-ui-route", nil))
+	if notFound.Code != http.StatusNotFound {
+		t.Fatalf("non-root UI route = %d", notFound.Code)
+	}
+}
+
+func TestCreateMessageUsesVerifiedSessionAuthorAndCSRF(t *testing.T) {
+	ctx := context.Background()
+	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	csrf := bytes.Repeat([]byte{4}, sha256.Size)
+	if err := store.createAppSession(ctx, "session-token", appSession{Subject: "verified-subject", DisplayName: "Verified Alice", CSRFSecret: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(store, nil, nil, nil, false)
+	app.publicOrigin = registrationTestOrigin
+	for name, mutate := range map[string]func(*http.Request){
+		"missing csrf":   func(r *http.Request) { r.Header.Del("X-CSRF-Token") },
+		"foreign origin": func(r *http.Request) { r.Header.Set("Origin", "https://attacker.example.test") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := newMessageRequest(t, `{"body":"hello"}`, "session-token", csrf)
+			mutate(request)
+			response := httptest.NewRecorder()
+			app.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("message create = %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+	request := newMessageRequest(t, `{"body":"hello","authorSubject":"attacker"}`, "session-token", csrf)
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("spoofed author status = %d: %s", response.Code, response.Body.String())
+	}
+	created := httptest.NewRecorder()
+	app.ServeHTTP(created, newMessageRequest(t, `{"body":"hello"}`, "session-token", csrf))
+	if created.Code != http.StatusCreated || strings.Contains(created.Body.String(), "verified-subject") {
+		t.Fatalf("message create = %d: %s", created.Code, created.Body.String())
+	}
+	values, err := store.listMessages(ctx, nil, 10)
+	if err != nil || len(values) != 1 || values[0].AuthorSubject != "verified-subject" || values[0].AuthorName != "Verified Alice" {
+		t.Fatalf("stored message = %#v, %v", values, err)
+	}
+}
+
+func newMessageRequest(t *testing.T, body, token string, csrf []byte) *http.Request {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, "/api/messages", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", registrationTestOrigin)
+	request.Header.Set("X-CSRF-Token", base64.RawURLEncoding.EncodeToString(csrf))
+	request.AddCookie(&http.Cookie{Name: appCookieName, Value: token})
+	return request
+}
+
+func TestCreateAccountRequiresPreSessionCSRFAndUsesPublicAccountService(t *testing.T) {
+	ctx := context.Background()
+	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appStore.Close()
+	identityStore, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "identity.sqlite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer identityStore.Close()
+	accounts, err := idpaccounts.NewService(identityStore, idpaccounts.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(appStore, nil, accounts, nil, false)
+	app.publicOrigin = registrationTestOrigin
+	audit := idp.NewMemorySink()
+	app.audit = audit
+	noPreSession := httptest.NewRecorder()
+	app.ServeHTTP(noPreSession, newAccountRequest(t, createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}, "", nil))
+	if noPreSession.Code != http.StatusForbidden {
+		t.Fatalf("account creation without pre-session = %d", noPreSession.Code)
+	}
+
+	cookie, csrf := registrationContext(t, app)
+	created := httptest.NewRecorder()
+	app.ServeHTTP(created, newAccountRequest(t, createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}, csrf, cookie))
+	if created.Code != http.StatusCreated || !strings.Contains(created.Body.String(), `"next":"/"`) {
+		t.Fatalf("account creation = %d: %s", created.Code, created.Body.String())
+	}
+	if _, err := accounts.AuthenticatePassword(ctx, "alice", "this is a long enough password", idp.LoginMetadata{}); err != nil {
+		t.Fatalf("new account cannot authenticate: %v", err)
+	}
+	var appCookie *http.Cookie
+	for _, setCookie := range created.Result().Cookies() {
+		if setCookie.Name == appCookieName {
+			appCookie = setCookie
+		}
+	}
+	if appCookie == nil || appCookie.Value == "" || !appCookie.HttpOnly || appCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("registration did not establish a protected application session: %#v", appCookie)
+	}
+	session, err := appStore.getAppSession(ctx, appCookie.Value, time.Now().UTC())
+	if err != nil || session.Subject == "" || session.DisplayName != "Alice" {
+		t.Fatalf("automatic application session = %#v, %v", session, err)
+	}
+	app.oidc = &oidcClient{}
+	continuation := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/auth/login?return_to=/messages", nil)
+	request.AddCookie(appCookie)
+	app.ServeHTTP(continuation, request)
+	if continuation.Code != http.StatusSeeOther || continuation.Header().Get("Location") != "/messages" {
+		t.Fatalf("registered session login continuation = %d %q", continuation.Code, continuation.Header().Get("Location"))
+	}
+	events := audit.Events()
+	if len(events) != 2 || events[0].Name != "account.self_registration" || events[0].Result != "rejected" || events[0].Reason != "csrf_rejected" ||
+		events[1].Name != "account.self_registration" || events[1].Result != "accepted" || events[1].Reason != "" || events[1].Subject == "" {
+		t.Fatalf("registration audit events = %#v", events)
+	}
+	for _, event := range events {
+		if len(event.Fields) != 0 {
+			t.Fatalf("registration audit fields leak request data: %#v", event)
+		}
+	}
+}
+
+func TestCreateAccountRejectsUnknownAndMultipleJSONValues(t *testing.T) {
+	ctx := context.Background()
+	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appStore.Close()
+	identityStore, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "identity.sqlite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer identityStore.Close()
+	accounts, err := idpaccounts.NewService(identityStore, idpaccounts.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(appStore, nil, accounts, nil, false)
+	app.publicOrigin = registrationTestOrigin
+	for name, body := range map[string]string{
+		"unknown field": `{"login":"alice","displayName":"Alice","password":"this is a long enough password","passwordConfirmation":"this is a long enough password","admin":true}`,
+		"two values":    `{"login":"alice","displayName":"Alice","password":"this is a long enough password","passwordConfirmation":"this is a long enough password"} {}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			cookie, csrf := registrationContext(t, app)
+			request := httptest.NewRequest(http.MethodPost, "/api/accounts", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("X-CSRF-Token", csrf)
+			request.Header.Set("Origin", registrationTestOrigin)
+			request.AddCookie(cookie)
+			response := httptest.NewRecorder()
+			app.ServeHTTP(response, request)
+			if response.Code != http.StatusUnprocessableEntity || response.Body.String() != "{\"error\":\"account could not be created\"}\n" {
+				t.Fatalf("account creation = %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateAccountRejectsForeignOriginBeforeConsumingPreSession(t *testing.T) {
+	ctx := context.Background()
+	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appStore.Close()
+	identityStore, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "identity.sqlite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer identityStore.Close()
+	accounts, err := idpaccounts.NewService(identityStore, idpaccounts.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := newMessageApp(appStore, nil, accounts, nil, false)
+	app.publicOrigin = registrationTestOrigin
+	cookie, csrf := registrationContext(t, app)
+	payload := createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "this is a long enough password", PasswordConfirmation: "this is a long enough password"}
+	foreign := httptest.NewRecorder()
+	request := newAccountRequest(t, payload, csrf, cookie)
+	request.Header.Set("Origin", "https://attacker.example.test")
+	app.ServeHTTP(foreign, request)
+	if foreign.Code != http.StatusForbidden {
+		t.Fatalf("foreign origin status = %d", foreign.Code)
+	}
+	fetchCrossSite := httptest.NewRecorder()
+	request = newAccountRequest(t, payload, csrf, cookie)
+	request.Header.Set("Sec-Fetch-Site", "cross-site")
+	app.ServeHTTP(fetchCrossSite, request)
+	if fetchCrossSite.Code != http.StatusForbidden {
+		t.Fatalf("cross-site fetch status = %d", fetchCrossSite.Code)
+	}
+	created := httptest.NewRecorder()
+	app.ServeHTTP(created, newAccountRequest(t, payload, csrf, cookie))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("valid retry after foreign origin = %d: %s", created.Code, created.Body.String())
+	}
+}
+
+func TestRegistrationRateLimitsAddressAndCanonicalLogin(t *testing.T) {
+	app := &messageApp{addressResolver: idp.DirectClientAddressResolver{}, registrationLimiter: idp.NewFixedWindowRateLimiter(1, time.Hour)}
+	firstAddress := httptest.NewRequest(http.MethodPost, "/api/accounts", nil)
+	firstAddress.RemoteAddr = "192.0.2.1:1234"
+	if !app.allowRegistration(firstAddress, "Alice") {
+		t.Fatal("first registration was rate limited")
+	}
+	secondAddress := httptest.NewRequest(http.MethodPost, "/api/accounts", nil)
+	secondAddress.RemoteAddr = "192.0.2.2:1234"
+	if app.allowRegistration(secondAddress, " alice ") {
+		t.Fatal("canonical login did not share a rate-limit key")
+	}
+	app.registrationLimiter = idp.NewFixedWindowRateLimiter(1, time.Hour)
+	if !app.allowRegistration(firstAddress, "alice") {
+		t.Fatal("first address-limit registration was rate limited")
+	}
+	if app.allowRegistration(firstAddress, "bob") {
+		t.Fatal("address did not share a rate-limit key")
+	}
+}
+
+func registrationContext(t *testing.T, app *messageApp) (*http.Cookie, string) {
+	t.Helper()
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/registration", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("registration context status = %d", response.Code)
+	}
+	var payload struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("registration cookies = %#v", cookies)
+	}
+	return cookies[0], payload.CSRFToken
+}
+
+func newAccountRequest(t *testing.T, payload createAccountRequest, csrf string, cookie *http.Cookie) *http.Request {
+	t.Helper()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/accounts", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", registrationTestOrigin)
+	if csrf != "" {
+		request.Header.Set("X-CSRF-Token", csrf)
+	}
+	if cookie != nil {
+		request.AddCookie(cookie)
+	}
+	return request
+}
+
+func TestBrowserLoginCompletesAgainstEmbeddedProvider(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewUnstartedServer(nil)
+	baseURL := "http://" + server.Listener.Addr().String()
+
+	identityStore, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "identity.sqlite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer identityStore.Close()
+	accounts, err := idpaccounts.NewService(identityStore, idpaccounts.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuer := baseURL + issuerPath
+	if _, err := embeddedidp.Bootstrap(ctx, identityStore, embeddedidp.BootstrapConfig{Mode: embeddedidp.DevMode,
+		Clients:      []embeddedidp.ClientSpec{embeddedidp.BrowserClient(clientID, []string{baseURL + callbackPath}, []string{baseURL + "/"}, []string{"openid", "profile"})},
+		SigningKeyID: "message-app-browser-test-key"}); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := embeddedidp.New(ctx, embeddedidp.Options{Issuer: issuer, Mode: embeddedidp.DevMode, Store: identityStore,
+		Token: embeddedidp.TokenConfig{SecretKey: []byte("message-app-browser-test-secret-key-32")}, Authenticator: accounts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close(context.Background())
+	transport, err := embeddedidp.NewInProcessIssuerTransport(issuer, provider.Handler(), embeddedidp.InProcessTransportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oidc, err := newOIDCClient(ctx, issuer, baseURL, &http.Client{Transport: transport, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appStore, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appStore.Close()
+	app := newMessageApp(appStore, oidc, accounts, provider.Handler(), false)
+	server.Config.Handler = app
+	server.Start()
+	defer server.Close()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	registrationResponse, err := browser.Get(server.URL + "/api/registration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registration struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(registrationResponse.Body).Decode(&registration); err != nil {
+		registrationResponse.Body.Close()
+		t.Fatal(err)
+	}
+	registrationResponse.Body.Close()
+	registrationBody, err := json.Marshal(createAccountRequest{Login: "alice", DisplayName: "Alice", Password: "correct horse battery staple 2026", PasswordConfirmation: "correct horse battery staple 2026"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrationRequest, err := http.NewRequest(http.MethodPost, server.URL+"/api/accounts", bytes.NewReader(registrationBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrationRequest.Header.Set("Content-Type", "application/json")
+	registrationRequest.Header.Set("Origin", server.URL)
+	registrationRequest.Header.Set("X-CSRF-Token", registration.CSRFToken)
+	registrationResponse, err = browser.Do(registrationRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registrationResponse.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(registrationResponse.Body)
+		registrationResponse.Body.Close()
+		t.Fatalf("registration status = %d: %s", registrationResponse.StatusCode, body)
+	}
+	registrationResponse.Body.Close()
+	// Registration now establishes the relying-party session immediately. Use a
+	// clean browser profile for the separate OIDC login/callback exercise below.
+	loginJar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser = &http.Client{Jar: loginJar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	loginResponse, err := browser.Get(server.URL + "/auth/login?return_to=/messages")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loginResponse.Body.Close()
+	if loginResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login status = %d", loginResponse.StatusCode)
+	}
+	authorizeURL := loginResponse.Header.Get("Location")
+	if !strings.HasPrefix(authorizeURL, issuer+"/authorize?") {
+		t.Fatalf("login location = %q", authorizeURL)
+	}
+
+	pageResponse, err := browser.Get(authorizeURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, readErr := io.ReadAll(pageResponse.Body)
+	pageResponse.Body.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if pageResponse.StatusCode != http.StatusOK {
+		t.Fatalf("authorize page status = %d: %s", pageResponse.StatusCode, page)
+	}
+	form := url.Values{"login": {"alice"}, "password": {"correct horse battery staple 2026"}, "action": {"approve"}}
+	form.Set("csrf_token", hiddenFormValue(t, page, "csrf_token"))
+	form.Set("interaction", hiddenFormValue(t, page, "interaction"))
+	postResponse, err := browser.PostForm(issuer+"/authorize", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer postResponse.Body.Close()
+	if postResponse.StatusCode != http.StatusFound && postResponse.StatusCode != http.StatusSeeOther {
+		body, _ := io.ReadAll(postResponse.Body)
+		t.Fatalf("authorize submit status = %d: %s", postResponse.StatusCode, body)
+	}
+	callbackURL := postResponse.Header.Get("Location")
+	if !strings.HasPrefix(callbackURL, baseURL+callbackPath+"?") {
+		t.Fatalf("callback location = %q", callbackURL)
+	}
+
+	callbackResponse, err := browser.Get(callbackURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callbackResponse.Body.Close()
+	if callbackResponse.StatusCode != http.StatusSeeOther || callbackResponse.Header.Get("Location") != "/messages" {
+		body, _ := io.ReadAll(callbackResponse.Body)
+		t.Fatalf("callback = %d %q: %s", callbackResponse.StatusCode, callbackResponse.Header.Get("Location"), body)
+	}
+	sessionResponse, err := browser.Get(server.URL + "/api/session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sessionResponse.Body.Close()
+	sessionBody, _ := io.ReadAll(sessionResponse.Body)
+	if sessionResponse.StatusCode != http.StatusOK || !strings.Contains(string(sessionBody), `"authenticated":true`) || !strings.Contains(string(sessionBody), `"subject"`) {
+		t.Fatalf("session = %d: %s", sessionResponse.StatusCode, sessionBody)
+	}
+
+	replayResponse, err := browser.Get(callbackURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replayResponse.Body.Close()
+	if replayResponse.StatusCode != http.StatusBadGateway {
+		t.Fatalf("replayed callback status = %d", replayResponse.StatusCode)
+	}
+}
+
+func hiddenFormValue(t *testing.T, page []byte, name string) string {
+	t.Helper()
+	re := regexp.MustCompile(`name="` + regexp.QuoteMeta(name) + `" value="([^"]+)"`)
+	matches := re.FindStringSubmatch(string(page))
+	if len(matches) != 2 {
+		t.Fatalf("hidden %q not found in: %s", name, page)
+	}
+	return matches[1]
+}

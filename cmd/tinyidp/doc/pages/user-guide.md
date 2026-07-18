@@ -33,7 +33,7 @@ tinyidp implements the OIDC authorization-code flow, OAuth device-code flow, and
 
 The default server is intentionally local:
 
-    tinyidp serve
+    tinyidp serve-dev
 
 This starts an issuer at `http://localhost:5556` and listens on `127.0.0.1:5556`. The default client is `dev-client`, a public client with no secret and permissive local redirect URIs.
 
@@ -48,13 +48,13 @@ This starts an issuer at `http://localhost:5556` and listens on `127.0.0.1:5556`
 
 For a root issuer, they usually share the same host and port:
 
-    tinyidp serve \
+    tinyidp serve-dev \
       --issuer http://127.0.0.1:19087 \
       --addr 127.0.0.1:19087
 
 For a path-based issuer, only `issuer` contains the path:
 
-    tinyidp serve \
+    tinyidp serve-dev \
       --issuer http://127.0.0.1:19087/realms/personal-inbox \
       --addr 127.0.0.1:19087
 
@@ -74,7 +74,7 @@ The built-in clients are:
 
 You can configure one client through flags or config files:
 
-    tinyidp serve \
+    tinyidp serve-dev \
       --client-id personal-inbox-local \
       --redirect-uris http://127.0.0.1:19794/auth/callback
 
@@ -94,7 +94,7 @@ Config files put OIDC settings under the `oidc` section:
 
 Run with:
 
-    tinyidp serve --config-file examples/configs/personal-inbox-root.yaml
+    tinyidp serve-dev --config-file examples/configs/personal-inbox-root.yaml
 
 Inspect without starting the server:
 
@@ -131,7 +131,7 @@ Without a users file, any login name derives a synthetic user. That is enough fo
 
 Start with:
 
-    tinyidp serve --users-file examples/users/personal-inbox-users.yaml
+    tinyidp serve-dev --users-file examples/users/personal-inbox-users.yaml
 
 Seeded users override built-ins with the same login. If you define `alice`, logging in as `alice` uses your deterministic fixture, not the built-in synthetic Alice.
 

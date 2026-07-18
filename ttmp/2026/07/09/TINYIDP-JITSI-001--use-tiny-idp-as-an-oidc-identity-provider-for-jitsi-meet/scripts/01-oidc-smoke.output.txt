@@ -1,0 +1,158 @@
+== starting tiny-idp on http://127.0.0.1:15574 (mock engine) ==
+2026-07-09T12:26:17.321787027-04:00 INF tinyidp listening addr=127.0.0.1:15574 area=tinyidp.internal.cmds clients=3 engine=mock issuer=http://127.0.0.1:15574
+
+== 1. discovery ==
+{
+  "authorization_endpoint": "http://127.0.0.1:15574/authorize",
+  "claims_supported": [
+    "sub",
+    "iss",
+    "aud",
+    "exp",
+    "iat",
+    "auth_time",
+    "nonce",
+    "email",
+    "email_verified",
+    "name",
+    "groups",
+    "roles",
+    "tenant",
+    "preferred_username",
+    "locale"
+  ],
+  "code_challenge_methods_supported": [
+    "S256",
+    "plain"
+  ],
+  "device_authorization_endpoint": "http://127.0.0.1:15574/device_authorization",
+  "dpop_signing_alg_values_supported": [
+    "ES256",
+    "RS256"
+  ],
+  "end_session_endpoint": "http://127.0.0.1:15574/end-session",
+  "grant_types_supported": [
+    "authorization_code",
+    "refresh_token",
+    "urn:ietf:params:oauth:grant-type:device_code"
+  ],
+  "id_token_signing_alg_values_supported": [
+    "RS256"
+  ],
+  "issuer": "http://127.0.0.1:15574",
+  "jwks_uri": "http://127.0.0.1:15574/jwks",
+  "prompt_values_supported": [
+    "none",
+    "login"
+  ],
+  "response_types_supported": [
+    "code"
+  ],
+  "scopes_supported": [
+    "openid",
+    "profile",
+    "email",
+    "offline_access"
+  ],
+  "subject_types_supported": [
+    "public"
+  ],
+  "token_endpoint": "http://127.0.0.1:15574/token",
+  "token_endpoint_auth_methods_supported": [
+    "none",
+    "client_secret_basic",
+    "client_secret_post"
+  ],
+  "userinfo_endpoint": "http://127.0.0.1:15574/userinfo"
+}
+
+== 2. jwks (RS256 public keys) ==
+{
+  "keys": [
+    {
+      "alg": "RS256",
+      "e": "AQAB",
+      "kid": "dev-key-1",
+      "kty": "RSA",
+      "n": "tLiVqjnovZUkJzJk3o5I084yuKYmH1JQ4zZb_z61wDlZyMHSdKCxe147XRbftKn25kbC3z_3uVUzJKqn1EKSVx8RfWIA5aBznlC-W_9tYZr5WepSIoIy_TevFt6IJZzTStVl-ZsbXVllLRstB4lClD31QJNQ3ooE-Gg0NbYebbsXUfsJU7XiLDji1CSi5mt9ulTN2gcyHU-uioVlSiGcjnTKeq_niwxSD5OYcwn5uz1P3jSDQSESd7ubSayrMGnrOcT8eg83TtQgdTmxf_2ds1UJpemlrE9T0UTJqH40ZRmL8o0yfvbsI6Obyr9n_Klo-hbVsXPojDwDBXX6rWwaHQ",
+      "use": "sig"
+    },
+    {
+      "alg": "RS256",
+      "e": "AQAB",
+      "kid": "rotated-key-2",
+      "kty": "RSA",
+      "n": "0PGlBHilGi45DysTmlMAsx7uOGDHXHUAZIxbFkUcL22BpyBzyCgqoNhCl_UV4_QUZJNCtr20acpuDGoZxLPS1POJ1xb8tcbfJUHs-ebNGHR4FxuWmjpj45dZs_yGdj8GV6IOl6LQOMcnm5iLeivDPMAmXPhoN-Z86ZSqOGV52diywu_0GU1p1-zCv35m35_vl_Lk-gmy3uWQKwXohnJyV8hgxUOCUZ3d_3ZkM7D2ylWELOP8ijPUWz5Tb5xFTrVYmLBfki8dflMxuuKpTW2mgyFYbHEfBgBYWRw-v0ZZeNB-AP3V3rVWhk6eIiDE6byZrXakmD9U4AxF-KjYgj5Mqw",
+      "use": "sig"
+    },
+    {
+      "alg": "RS256",
+      "e": "AQAB",
+      "kid": "bad-sig-key",
+      "kty": "RSA",
+      "n": "wATcovrgWbOgOOIRQ-t2Rk8u88KPbkg22CcYWimPG59v_U_CMMTqY9UeFjyRNWGOpKqdILZLlaM1AISXTzQr-MPez4yXAWNV23zrQ0SFO-y-TflovuM4fOpQmxS95T15dTlTtN_Y47A5tkRQdY9AjKdbdvBAeuBi4mbIOAYHreIHAQZoTC2au1Ib4bxXkRKe65TpVI1sKNsoc-avijbB5MNhZ8LqXfVX3WTGwB4ANImKWuPacJ_pyy9J_JbT03N0hssm0fYJ1usbav0znDuH3X-BBuZSYD4CapWqSnH54f5XXJm77XLhTxjW7qO2tO3q6PgXKZO_po1c272WUN1bmw",
+      "use": "sig"
+    }
+  ]
+}
+
+== 3. authorization-code flow ==
+redirect Location: http://127.0.0.1:3000/callback?code=qtqxlIgj8Lrwd1w0syBhLSxemvThgJVddn6AEMcHFe0&state=st-123
+authorization code: qtqxlIgj8Lrwd1w0syBhLSxemvThgJVddn6AEMcHFe0
+
+== 4. token exchange ==
+{
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "openid profile email",
+  "has_id_token": true,
+  "has_access_token": true,
+  "has_refresh_token": false
+}
+
+== 5. id_token (the claims a Jitsi adapter would map) ==
+HEADER: {
+  "alg": "RS256",
+  "kid": "dev-key-1",
+  "typ": "JWT"
+}
+PAYLOAD: {
+  "aud": "dev-client",
+  "auth_time": 1783614378,
+  "email": "alice@example.test",
+  "email_verified": true,
+  "exp": 1783617978,
+  "groups": [
+    "inbox-users"
+  ],
+  "iat": 1783614378,
+  "iss": "http://127.0.0.1:15574",
+  "locale": "en-US",
+  "name": "Alice Inbox",
+  "nonce": "nonce-xyz",
+  "preferred_username": "alice",
+  "roles": [
+    "writer"
+  ],
+  "sub": "user-alice-fixed",
+  "tenant": "personal"
+}
+
+== 6. userinfo ==
+{
+  "email": "alice@example.test",
+  "email_verified": true,
+  "groups": [
+    "inbox-users"
+  ],
+  "locale": "en-US",
+  "name": "Alice Inbox",
+  "preferred_username": "alice",
+  "roles": [
+    "writer"
+  ],
+  "sub": "user-alice-fixed",
+  "tenant": "personal"
+}
+
+== OK: tiny-idp served a complete OIDC authorization-code flow ==

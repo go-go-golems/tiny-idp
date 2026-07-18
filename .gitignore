@@ -10,3 +10,14 @@
 .DS_Store
 .idea/
 .vscode/
+
+# Local release and documentation-export artifacts.
+dist/
+.docsctl/
+
+# Hosted OIDF suite traces include captured HTTP traffic, temporary public
+# endpoints, test-owner identifiers, and development credentials. Keep them in
+# the ticket source bundle or secured evidence storage; commit only sanitized
+# reports and conclusions.
+/ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python/
+/ttmp/2026/07/07/TINYIDP-PROD-001--production-embeddable-idp-reorganization/sources/oidf-hosted-python-distinct-clients/

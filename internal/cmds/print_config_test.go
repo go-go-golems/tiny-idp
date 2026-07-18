@@ -9,7 +9,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"github.com/go-go-golems/glazed/pkg/middlewares"
 	"github.com/go-go-golems/glazed/pkg/types"
-	"github.com/manuel/tinyidp/internal/sections/oidc"
+	"github.com/go-go-golems/tiny-idp/internal/sections/oidc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,6 +66,7 @@ func TestPrintConfigEmitsResolvedDefaults(t *testing.T) {
 	assert.Equal(t, "127.0.0.1:5556", rowVal(row, "addr"))
 	assert.Equal(t, "dev-client", rowVal(row, "client_id"))
 	assert.Equal(t, "", rowVal(row, "users_file"))
+	assert.Equal(t, "mock", rowVal(row, "engine"))
 }
 
 // TestPrintConfigReflectsEnvOverride verifies that values resolved above

@@ -1,0 +1,41 @@
+== INPUT OIDC claims (from tiny-idp) ==
+{
+  "email": "alice@example.test",
+  "email_verified": true,
+  "groups": [
+    "inbox-users"
+  ],
+  "locale": "en-US",
+  "name": "Alice Inbox",
+  "preferred_username": "alice",
+  "roles": [
+    "writer"
+  ],
+  "sub": "user-alice-fixed",
+  "tenant": "personal"
+}
+
+== OUTPUT Jitsi JWT (HS256, what Prosody validates) ==
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJqaXRzaSIsImNvbnRleHQiOnsidXNlciI6eyJhdmF0YXIiOiIiLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUudGVzdCIsImlkIjoidXNlci1hbGljZS1maXhlZCIsIm1vZGVyYXRvciI6InRydWUiLCJuYW1lIjoiQWxpY2UgSW5ib3gifX0sImV4cCI6MTc4MzYyNTE2MiwiaWF0IjoxNzgzNjE0MzYyLCJpc3MiOiJqaXRzaSIsIm5iZiI6MTc4MzYxNDM2Miwicm9vbSI6InN0YW5kdXAiLCJzdWIiOiJwZXJzb25hbCJ9.Sn1MIc2BHdm-x1VDPzRgiffawWbRszRPzx3xv_kQMaU
+
+== decoded Jitsi payload ==
+{
+  "aud": "jitsi",
+  "context": {
+    "user": {
+      "avatar": "",
+      "email": "alice@example.test",
+      "id": "user-alice-fixed",
+      "moderator": "true",
+      "name": "Alice Inbox"
+    }
+  },
+  "exp": 1783625162,
+  "iat": 1783614362,
+  "iss": "jitsi",
+  "nbf": 1783614362,
+  "room": "standup",
+  "sub": "personal"
+}
+
+Jitsi joins via:  https://<jitsi-host>/standup?jwt=<jwt>

@@ -28,7 +28,7 @@ tinyidp separates command wiring, configuration, protocol behavior, and fixture 
 |---|---|
 | `cmd/tinyidp` | Cobra root, Glazed help wiring, command registration. |
 | `cmd/tinyidp/doc` | Embedded Glazed help pages loaded into the help system. |
-| `internal/cmds` | Glazed command implementations such as `serve` and `print-config`. |
+| `internal/cmds` | Glazed command implementations such as `serve-dev` and `print-config`. |
 | `internal/sections/oidc` | Reusable OIDC configuration section and typed settings decode. |
 | `internal/client` | Built-in clients, redirect/scope/PKCE rules, and merge behavior. |
 | `internal/scenario` | Scenario registry, built-in scenarios, seeded-user conversion. |
@@ -217,7 +217,7 @@ Do not read environment variables directly in server code. The command layer res
 
 ## Client registry workflow
 
-The client registry owns redirect allowlists, scope allowlists, PKCE requirements, and secrets. Built-ins are defined in `internal/client`. The `serve` command builds the registry from settings.
+The client registry owns redirect allowlists, scope allowlists, PKCE requirements, and secrets. Built-ins are defined in `internal/client`. The `serve-dev` command builds the registry from settings.
 
 When a configured client ID matches a built-in, tinyidp merges configured redirect URIs into the built-in while preserving behavior such as PKCE requirement. This prevents a config file from accidentally turning `public-spa` into a non-PKCE client.
 

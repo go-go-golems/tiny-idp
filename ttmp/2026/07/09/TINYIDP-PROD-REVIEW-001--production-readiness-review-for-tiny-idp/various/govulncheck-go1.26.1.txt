@@ -1,0 +1,162 @@
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-5856
+    Invoking Encrypted Client Hello privacy leak in crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-5856
+  Standard library
+    Found in: crypto/tls@go1.26.1
+    Fixed in: crypto/tls@go1.26.5
+    Example traces found:
+      #1: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls tls.Conn.HandshakeContext
+      #2: internal/admin/backup.go:43:27: admin.CreateSQLiteBackup calls io.Copy, which eventually calls tls.Conn.Read
+      #3: ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go:103:14: runtime.main calls fmt.Fprintf, which calls tls.Conn.Write
+      #4: ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go:400:24: runtime.execute calls http.Client.Do, which eventually calls tls.Dialer.DialContext
+
+Vulnerability #2: GO-2026-5039
+    Arbitrary inputs are included in errors without any escaping in
+    net/textproto
+  More info: https://pkg.go.dev/vuln/GO-2026-5039
+  Standard library
+    Found in: net/textproto@go1.26.1
+    Fixed in: net/textproto@go1.26.4
+    Example traces found:
+      #1: internal/admin/backup.go:43:27: admin.CreateSQLiteBackup calls io.Copy, which eventually calls textproto.Reader.ReadMIMEHeader
+
+Vulnerability #3: GO-2026-5037
+    Inefficient candidate hostname parsing in crypto/x509
+  More info: https://pkg.go.dev/vuln/GO-2026-5037
+  Standard library
+    Found in: crypto/x509@go1.26.1
+    Fixed in: crypto/x509@go1.26.4
+    Example traces found:
+      #1: internal/admin/backup.go:43:27: admin.CreateSQLiteBackup calls io.Copy, which eventually calls x509.Certificate.Verify
+      #2: internal/admin/backup.go:43:27: admin.CreateSQLiteBackup calls io.Copy, which eventually calls x509.Certificate.VerifyHostname
+      #3: cmd/tinyidp/main.go:91:32: tinyidp.main calls cobra.Command.Execute, which eventually calls x509.HostnameError.Error
+
+Vulnerability #4: GO-2026-4982
+    Bypass of meta content URL escaping causes XSS in html/template
+  More info: https://pkg.go.dev/vuln/GO-2026-4982
+  Standard library
+    Found in: html/template@go1.26.1
+    Fixed in: html/template@go1.26.3
+    Example traces found:
+      #1: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls template.Template.Execute
+      #2: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls template.Template.ExecuteTemplate
+
+Vulnerability #5: GO-2026-4980
+    Escaper bypass leads to XSS in html/template
+  More info: https://pkg.go.dev/vuln/GO-2026-4980
+  Standard library
+    Found in: html/template@go1.26.1
+    Fixed in: html/template@go1.26.3
+    Example traces found:
+      #1: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls template.Template.Execute
+      #2: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls template.Template.ExecuteTemplate
+
+Vulnerability #6: GO-2026-4971
+    Panic in Dial and LookupPort when handling NUL byte on Windows in net
+  More info: https://pkg.go.dev/vuln/GO-2026-4971
+  Standard library
+    Found in: net@go1.26.1
+    Fixed in: net@go1.26.3
+    Example traces found:
+      #1: ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go:192:2: runtime.run calls httptest.Server.Close, which eventually calls net.Dialer.DialContext
+      #2: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls net.Listen
+
+Vulnerability #7: GO-2026-4947
+    Unexpected work during chain building in crypto/x509
+  More info: https://pkg.go.dev/vuln/GO-2026-4947
+  Standard library
+    Found in: crypto/x509@go1.26.1
+    Fixed in: crypto/x509@go1.26.2
+    Example traces found:
+      #1: internal/admin/backup.go:43:27: admin.CreateSQLiteBackup calls io.Copy, which eventually calls x509.Certificate.Verify
+
+Vulnerability #8: GO-2026-4946
+    Inefficient policy validation in crypto/x509
+  More info: https://pkg.go.dev/vuln/GO-2026-4946
+  Standard library
+    Found in: crypto/x509@go1.26.1
+    Fixed in: crypto/x509@go1.26.2
+    Example traces found:
+      #1: internal/admin/backup.go:43:27: admin.CreateSQLiteBackup calls io.Copy, which eventually calls x509.Certificate.Verify
+
+Vulnerability #9: GO-2026-4945
+    Go JOSE Panics in JWE decryption in github.com/go-jose/go-jose
+  More info: https://pkg.go.dev/vuln/GO-2026-4945
+  Module: github.com/go-jose/go-jose/v3
+    Found in: github.com/go-jose/go-jose/v3@v3.0.3
+    Fixed in: github.com/go-jose/go-jose/v3@v3.0.5
+    Example traces found:
+      #1: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.JSONWebKeySet.Key
+      #2: internal/fositeadapter/provider.go:419:45: fositeadapter.Provider.token calls fosite.Fosite.NewAccessResponse, which eventually calls jose.JSONWebSignature.CompactSerialize
+      #3: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.JSONWebSignature.UnsafePayloadWithoutVerification
+      #4: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.JSONWebSignature.Verify
+      #5: internal/fositeadapter/provider.go:419:45: fositeadapter.Provider.token calls fosite.Fosite.NewAccessResponse, which eventually calls jose.NewSigner
+      #6: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.ParseSigned
+      #7: internal/fositeadapter/provider.go:419:45: fositeadapter.Provider.token calls fosite.Fosite.NewAccessResponse, which eventually calls jose.genericSigner.Sign
+      #8: internal/fositeadapter/provider.go:24:2: fositeadapter.init calls jwt.init, which calls jose.init
+
+Vulnerability #10: GO-2026-4918
+    Infinite loop in HTTP/2 transport when given bad SETTINGS_MAX_FRAME_SIZE in
+    net/http/internal/http2 in golang.org/x/net
+  More info: https://pkg.go.dev/vuln/GO-2026-4918
+  Standard library
+    Found in: net/http@go1.26.1
+    Fixed in: net/http@go1.26.3
+    Example traces found:
+      #1: ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go:203:29: runtime.run calls http.Client.CloseIdleConnections
+      #2: ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go:400:24: runtime.execute calls http.Client.Do
+      #3: ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go:192:2: runtime.run calls httptest.Server.Close, which calls http.Transport.CloseIdleConnections
+
+Vulnerability #11: GO-2026-4870
+    Unauthenticated TLS 1.3 KeyUpdate record can cause persistent connection
+    retention and DoS in crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-4870
+  Standard library
+    Found in: crypto/tls@go1.26.1
+    Fixed in: crypto/tls@go1.26.2
+    Example traces found:
+      #1: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls tls.Conn.HandshakeContext
+      #2: internal/admin/backup.go:43:27: admin.CreateSQLiteBackup calls io.Copy, which eventually calls tls.Conn.Read
+      #3: ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go:103:14: runtime.main calls fmt.Fprintf, which calls tls.Conn.Write
+      #4: ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/runtime-probe/main.go:400:24: runtime.execute calls http.Client.Do, which eventually calls tls.Dialer.DialContext
+
+Vulnerability #12: GO-2026-4866
+    Case-sensitive excludedSubtrees name constraints cause Auth Bypass in
+    crypto/x509
+  More info: https://pkg.go.dev/vuln/GO-2026-4866
+  Standard library
+    Found in: crypto/x509@go1.26.1
+    Fixed in: crypto/x509@go1.26.2
+    Example traces found:
+      #1: internal/admin/backup.go:43:27: admin.CreateSQLiteBackup calls io.Copy, which eventually calls x509.Certificate.Verify
+
+Vulnerability #13: GO-2026-4865
+    JsBraceDepth Context Tracking Bugs (XSS) in html/template
+  More info: https://pkg.go.dev/vuln/GO-2026-4865
+  Standard library
+    Found in: html/template@go1.26.1
+    Fixed in: html/template@go1.26.2
+    Example traces found:
+      #1: cmd/tinyidp/main.go:91:32: tinyidp.main calls cobra.Command.Execute, which eventually calls template.Error.Error
+      #2: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls template.Template.Execute
+      #3: internal/cmds/serve.go:133:31: cmds.Run calls http.ListenAndServe, which eventually calls template.Template.ExecuteTemplate
+      #4: internal/keys/keys.go:33:34: keys.ParseRSAPrivateKey calls x509.ParsePKCS1PrivateKey, which eventually calls template.Template.Funcs
+      #5: internal/server/embed.go:22:56: server.init calls template.Template.Parse
+      #6: internal/passwordhash/argon2id.go:71:24: passwordhash.Hasher.HashPassword calls fmt.Sprintf, which eventually calls template.context.String
+
+Vulnerability #14: GO-2025-3485
+    DoS in go-jose Parsing in github.com/go-jose/go-jose
+  More info: https://pkg.go.dev/vuln/GO-2025-3485
+  Module: github.com/go-jose/go-jose/v3
+    Found in: github.com/go-jose/go-jose/v3@v3.0.3
+    Fixed in: github.com/go-jose/go-jose/v3@v3.0.4
+    Example traces found:
+      #1: internal/fositeadapter/provider.go:311:42: fositeadapter.Provider.authorize calls fosite.Fosite.NewAuthorizeRequest, which eventually calls jose.ParseSigned
+
+Your code is affected by 14 vulnerabilities from 1 module and the Go standard library.
+This scan also found 9 vulnerabilities in packages you import and 1
+vulnerability in modules you require, but your code doesn't appear to call these
+vulnerabilities.
+Use '-show verbose' for more details.

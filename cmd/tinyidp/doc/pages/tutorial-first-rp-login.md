@@ -42,11 +42,11 @@ That URI is accepted by the built-in `dev-client`.
 
 Start the provider with the basic root-issuer config:
 
-    tinyidp serve --config-file examples/configs/dev-root.yaml
+    tinyidp serve-dev --config-file examples/configs/dev-root.yaml
 
 If you are running from source:
 
-    go run ./cmd/tinyidp serve --config-file examples/configs/dev-root.yaml
+    go run ./cmd/tinyidp serve-dev --config-file examples/configs/dev-root.yaml
 
 The provider listens on `127.0.0.1:5556` and advertises the issuer `http://localhost:5556`.
 

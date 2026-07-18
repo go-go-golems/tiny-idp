@@ -36,7 +36,7 @@ single login change exercises a different code path in your RP.
 
 Start the server:
 
-    ./tinyidp serve
+    ./tinyidp serve-dev
 
 Trigger a login from your RP. At tinyidp's login page, type `alice` and
 submit. Your RP receives an authorization code, exchanges it for an ID

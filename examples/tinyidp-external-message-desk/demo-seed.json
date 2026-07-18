@@ -1,0 +1,9 @@
+{
+  "ClientID": "tinyidp-message-app",
+  "RedirectURIs": ["http://localhost:8080/auth/callback"],
+  "PostLogoutRedirectURIs": ["http://localhost:8080/"],
+  "Accounts": [
+    {"ID": "demo-amelie", "Subject": "demo-amelie", "Login": "amelie", "Password": "dev-only-not-a-secret-12345", "Name": "Amelie"},
+    {"ID": "demo-wesen", "Subject": "demo-wesen", "Login": "wesen", "Password": "dev-only-not-a-secret-12345", "Name": "Wesen"}
+  ]
+}

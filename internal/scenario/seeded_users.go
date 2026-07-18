@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/manuel/tinyidp/internal/user"
+	"github.com/go-go-golems/tiny-idp/internal/user"
 	"gopkg.in/yaml.v3"
 )
 

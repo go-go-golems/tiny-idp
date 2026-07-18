@@ -1,0 +1,101 @@
+schema: xgoja/v2
+name: tinyidp-xapp
+app:
+  name: tinyidp-xapp
+  envPrefix: TINYIDP_XAPP
+go:
+  module: github.com/go-go-golems/tiny-idp
+  version: "1.26"
+workspace:
+  mode: auto
+providers:
+  - id: go-go-goja-core
+    import: github.com/go-go-golems/go-go-goja/pkg/xgoja/providers/core
+    register: Register
+  - id: go-go-goja-host
+    import: github.com/go-go-golems/go-go-goja/pkg/xgoja/providers/host
+    register: Register
+  - id: go-go-goja-http
+    import: github.com/go-go-golems/go-go-goja/pkg/xgoja/providers/http
+    register: Register
+  - id: go-go-objects-durableobjects
+    import: github.com/go-go-golems/go-go-objects/pkg/xgoja/providers/durableobjects
+    register: Register
+runtime:
+  modules:
+    - provider: go-go-goja-core
+      name: timer
+      as: timer
+    - provider: go-go-goja-host
+      name: fs
+      as: fs:assets
+      config:
+        embedded:
+          allow: true
+          mounts:
+            - asset: frontend-assets
+              mount: /app
+    - provider: go-go-goja-http
+      name: express
+      as: express
+      config:
+        reject-raw-routes: true
+        dev-errors: false
+    - provider: go-go-objects-durableobjects
+      name: durableobjects
+      as: durableobjects
+      config:
+        storageRoot: ./var/durable-objects
+        bundleAsset: object-bundle
+        bundleAssetPath: objects.js
+        alarmInterval: 1s
+        idleInterval: 1m
+        enableRawGateway: false
+sources:
+  - id: application-routes
+    kind: jsverbs
+    from:
+      dir: ./app/routes
+    language: javascript
+  - id: frontend-assets
+    kind: assets
+    from:
+      dir: ./app/frontend/dist
+  - id: object-bundle
+    kind: assets
+    from:
+      dir: ./app/objects
+commands:
+  - id: routes
+    type: builtin.jsverbs
+    name: routes
+    sources:
+      - application-routes
+  - id: generated-serve
+    type: provider.command-set
+    provider: go-go-goja-http
+    name: serve
+    mount: generated-serve
+    sources:
+      - application-routes
+      - frontend-assets
+artifacts:
+  - id: declarations
+    type: dts
+    output: cmd/tinyidp-xapp/app/types/xgoja-modules.d.ts
+    strict: true
+  - id: runtime-package
+    type: runtime-package
+    output: cmd/tinyidp-xapp/internal/xgojaruntime
+    package: xgojaruntime
+    sources:
+      - application-routes
+      - frontend-assets
+      - object-bundle
+  # Asset sources require this marker in addition to the runtime-package
+  # source list so the generated host receives an embedded fs.FS.
+  - id: frontend-embedded-assets
+    type: embedded-assets
+    sources:
+      - frontend-assets
+      - object-bundle

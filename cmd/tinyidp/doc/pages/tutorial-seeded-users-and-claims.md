@@ -59,7 +59,7 @@ The two email-verified spellings are both accepted: `email_verified` and `email-
 
 Run:
 
-    tinyidp serve \
+    tinyidp serve-dev \
       --issuer http://127.0.0.1:19087 \
       --addr 127.0.0.1:19087 \
       --client-id dev-client \
@@ -85,7 +85,7 @@ The output should include:
     client_id: dev-client
     users_file: ./users.yaml
 
-`print-config` resolves the same OIDC section as `serve`, so it is the safest way to check flags, env vars, profiles, and config files before starting the server.
+`print-config` resolves the same OIDC section as `serve-dev`, so it is the safest way to check flags, env vars, profiles, and config files before starting the server.
 
 ## Step 4 — log in as Alice
 
