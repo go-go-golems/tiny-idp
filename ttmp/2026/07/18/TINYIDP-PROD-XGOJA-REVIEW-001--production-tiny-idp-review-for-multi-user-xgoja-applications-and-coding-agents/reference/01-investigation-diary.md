@@ -1109,3 +1109,80 @@ product goal
   -> PR 98 scope
   -> detailed hardening plan
 ~~~
+
+## Step 10: Publish the context-complete edition
+
+This step published the expanded guide under a new name. The shorter first
+edition was not overwritten, so any annotations made between uploads remain
+recoverable.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 9)
+
+**Assistant interpretation:** Deliver the self-contained revision to
+reMarkable after validation and a focused commit.
+
+**Inferred user intent:** Ensure the actual intern receives the edition that
+does not assume hidden project knowledge.
+
+**Commit (documentation):** f270bf4b4b3264736ccadc1b5a0e8b88990dc1c1 —
+"Docs: explain PR 98 project and cluster context"
+
+### What I did
+
+- Committed the context expansion, diary, task, and changelog changes.
+- Rendered the 1,527-line document with a depth-two table of contents.
+- Uploaded it under a distinct context-complete name without force.
+
+### Why
+
+- A new name avoids destructive replacement of the first PDF and any possible
+  annotations.
+- The title tells the implementer that the artifact includes both orientation
+  and implementation instructions.
+
+### What worked
+
+The uploader returned:
+
+~~~text
+OK: uploaded PR 98 Hostauth Context and Implementation Guide.pdf -> /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+~~~
+
+### What didn't work
+
+No render, authentication, or upload step failed.
+
+### What I learned
+
+- The larger context-complete document renders successfully as one artifact.
+
+### What was tricky to build
+
+- Publishing under the earlier name would have required `--force`, which can
+  remove annotations. A new name preserved both artifacts safely.
+
+### What warrants a second pair of eyes
+
+- The context-complete PDF is the intended handoff artifact; reviewers should
+  avoid annotating only the shorter first edition by mistake.
+
+### What should be done in the future
+
+- If the shorter edition is confirmed unannotated and no longer useful, remove
+  it manually as an explicit cleanup decision rather than during this workflow.
+
+### Code review instructions
+
+- Review f270bf4 after the original guide commit 45f0fdc.
+- Confirm the ticket has zero open tasks and the working tree is clean.
+
+### Technical details
+
+~~~text
+source: design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md
+name:   PR 98 Hostauth Context and Implementation Guide
+target: /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+mode:   bundle, ToC depth 2, non-interactive, no force
+~~~

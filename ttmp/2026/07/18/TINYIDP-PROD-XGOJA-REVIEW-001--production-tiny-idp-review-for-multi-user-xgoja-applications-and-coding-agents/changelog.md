@@ -82,3 +82,12 @@ Expanded the PR 98 implementation guide with a foundational explanation of the p
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md — Context-complete intern guide
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/reference/01-investigation-diary.md — Step 9 context revision record
 
+
+## 2026-07-18
+
+Published the context-complete PR 98 hostauth guide as a separate reMarkable PDF, preserving the shorter first edition and any possible annotations.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md — Context-complete published source
+
