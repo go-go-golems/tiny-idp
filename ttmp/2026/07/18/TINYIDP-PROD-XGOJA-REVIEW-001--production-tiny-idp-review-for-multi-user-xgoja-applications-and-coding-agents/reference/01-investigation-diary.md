@@ -904,3 +904,84 @@ canonical request identity
   -> owner-scoped disconnect
   -> metrics, retention, migration, deployment proof
 ~~~
+
+## Step 8: Publish the PR 98 implementation guide
+
+This step committed the validated implementation chapter and uploaded it as a
+standalone PDF. The separate artifact preserves the earlier broad architecture
+review and phase-one k3s design while giving the PR 98 implementer a focused
+document to annotate.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 7)
+
+**Assistant interpretation:** Publish the completed intern-facing chapter to
+the ticket's reMarkable directory and retain an exact receipt.
+
+**Inferred user intent:** Make the implementation guidance available for
+offline review and annotation without replacing prior documents.
+
+**Commit (documentation):** 45f0fdc56acc23210dde803804be6430ac7a9d0c —
+"Docs: add PR 98 production hardening guide"
+
+### What I did
+
+- Reviewed the staged file list and statistics before committing.
+- Committed only the guide, index link, tasks, changelog, and diary checkpoint.
+- Rendered the single Markdown guide with a depth-two table of contents.
+- Uploaded it non-interactively to the existing dated ticket directory without
+  force.
+
+### Why
+
+- A standalone PDF keeps the implementation sequence easy to navigate.
+- Avoiding force protects existing documents and annotations.
+- Recording the commit and upload receipt makes the published source exact.
+
+### What worked
+
+The uploader returned:
+
+~~~text
+OK: uploaded PR 98 Production Hardening Implementation Guide.pdf -> /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+~~~
+
+### What didn't work
+
+No render, authentication, or upload step failed.
+
+### What I learned
+
+- The 1,100-line chapter renders successfully as one reMarkable PDF with its
+  code blocks, tables, diagrams, and checklist intact.
+
+### What was tricky to build
+
+- The document needed a distinct upload name to avoid replacing the previous
+  two ticket artifacts. The upload intentionally omitted `--force`.
+
+### What warrants a second pair of eyes
+
+- Review the rendered tables and long Go signatures on-device; the Markdown
+  source is authoritative if a narrow page wraps a code line.
+
+### What should be done in the future
+
+- Use annotations from the implementer review to refine the implementation
+  phases, not to blur the app-owned and IdP-owned token models.
+
+### Code review instructions
+
+- Review commit 45f0fdc and this publication bookkeeping commit.
+- Confirm docmgr reports no open ticket tasks and doctor reports all checks
+  passed.
+
+### Technical details
+
+~~~text
+source: design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md
+name:   PR 98 Production Hardening Implementation Guide
+target: /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
+mode:   bundle, ToC depth 2, non-interactive, no force
+~~~

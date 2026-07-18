@@ -15,4 +15,4 @@
 - [x] Upload the focused initial-scope design to reMarkable <!-- t:rmbl -->
 - [x] Write an intern-facing PR 98 production hardening implementation guide <!-- t:ofi2 -->
 - [x] Relate and validate the PR 98 implementation guide <!-- t:qn06 -->
-- [ ] Upload the PR 98 implementation guide to reMarkable <!-- t:py0p -->
+- [x] Upload the PR 98 implementation guide to reMarkable <!-- t:py0p -->

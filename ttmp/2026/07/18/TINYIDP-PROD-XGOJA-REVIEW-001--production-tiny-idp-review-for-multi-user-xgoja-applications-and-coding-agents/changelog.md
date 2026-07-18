@@ -63,3 +63,12 @@ Added and validated a textbook-style PR 98 implementation guide covering trusted
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md — Primary intern-facing PR 98 implementation guide
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/reference/01-investigation-diary.md — Step 7 evidence and review record
 
+
+## 2026-07-18
+
+Published the PR 98 production hardening implementation guide as a standalone reMarkable PDF with a depth-two table of contents.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001--production-tiny-idp-review-for-multi-user-xgoja-applications-and-coding-agents/design-doc/03-pr-98-production-hardening-implementation-guide-for-xgoja-hostauth.md — Published source document
+
