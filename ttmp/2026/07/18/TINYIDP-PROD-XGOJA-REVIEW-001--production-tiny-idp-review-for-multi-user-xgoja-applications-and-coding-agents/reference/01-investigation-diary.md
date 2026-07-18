@@ -1186,3 +1186,136 @@ name:   PR 98 Hostauth Context and Implementation Guide
 target: /ai/2026/07/18/TINYIDP-PROD-XGOJA-REVIEW-001
 mode:   bundle, ToC depth 2, non-interactive, no force
 ~~~
+
+## Step 11: Design the planned Express OAuth route contract
+
+This step turned the architecture review's short `express.oauth()` sketch into
+a complete implementation contract for a new go-go-goja contributor. The
+result is a companion chapter that begins with the product and repository
+boundaries, then follows the declaration through the JavaScript builder, typed
+route plan, external token verifier, local identity mapping, application
+authorization, handler context, audit, and tests.
+
+The design is deliberately based on merged PR 95 and the current PR 98 branch.
+It preserves their `express.agent()`, `express.sessionUser()`, `express.anyOf`,
+`AuthResult`, composite authenticator, and optional hostauth work instead of
+describing the pre-PR-95 API.
+
+### Prompt Context
+
+**User prompt (verbatim):** "can you make another document like this about the changes to go-go-goja express auth API for supporting our new route syntax (from the review doc)?"
+
+**Assistant interpretation:** Create another self-contained, textbook-style
+implementation guide in the same ticket for the proposed
+`express.oauth().issuer().resource().scopes()` API and all Go enforcement
+changes needed behind it.
+
+**Inferred user intent:** Give an unfamiliar implementer enough context and a
+precise enough contract to build the new route syntax without conflating
+tiny-idp-issued device tokens, application-owned PR 95 agents, and browser
+sessions.
+
+### What I did
+
+- Re-read the review's existing Express route and planned OAuth sections.
+- Inspected the post-PR-95 builder API, TypeScript declarations,
+  `AuthRequirement`, `AuthResult`, enforcer, composite authenticator,
+  application auth store, programmatic token verifier, and PR 98 hostauth
+  wiring.
+- Inspected tiny-idp's existing strict RFC 7662 resource authenticator and
+  Go-owned device API as the protocol reference.
+- Added a 1,412-line design and implementation guide with diagrams, tables,
+  pseudocode, API declarations, file maps, phases, negative tests, trace, code
+  review order, and definition of done.
+- Related the focused go-go-goja and tiny-idp source files to the new doc.
+- Ran frontmatter validation, docmgr doctor, and whitespace validation.
+
+### Why
+
+- `express.agent()` restricts principal kind but does not declare issuer,
+  OAuth resource, scopes, client identity, or external-token verification.
+- The route syntax is safe only if the short JavaScript declaration compiles
+  into host-enforced, typed requirements and malformed policies fail startup.
+- The implementer needs to understand that go-go-goja remains general-purpose
+  and that tiny-idp is one optional RFC 7662 provider, not a core dependency.
+
+### What worked
+
+- PR 95 had already introduced the richer auth-result and requirement model
+  needed to express the follow-up without a separate enforcement pipeline.
+- tiny-idp's `resourceauth` package supplied concrete, tested behavior for
+  strict Bearer parsing, discovery pinning, authenticated introspection,
+  audience and scope checks, HMAC-keyed caching, and unavailable outcomes.
+- Frontmatter validation and docmgr doctor passed on the first validation run.
+
+### What didn't work
+
+- The first draft used `express.resource("board").idLiteral("main")` in its
+  canonical JavaScript example. The Go resource builder has `IDLiteral`, but
+  the current JavaScript `ResourceBuilder` does not export `idLiteral`. The
+  self-review found the mismatch with `rg`; the example was changed to a
+  `:boardId` route parameter and the existing `.idFromParam("boardId")` API.
+
+### What I learned
+
+- PR 95 already provides `express.agent()`, `express.sessionUser()`, and
+  `express.anyOf(...)`; the review's OAuth syntax is a credential requirement
+  layered on top, not a replacement for those principal requirements.
+- A tiny-idp native device token represents an issuer user subject and OAuth
+  client. Calling the client process an agent does not turn the authenticated
+  principal into PR 95's application-owned `Agent` record.
+- The current default appauth store indexes a `KeycloakSub` without issuer.
+  Supporting a route-declared issuer exposes the need for `(issuer, subject)`
+  identity mapping.
+
+### What was tricky to build
+
+- The same word `resource` names both the OAuth resource indicator and the
+  application object resolved for authorization. The guide keeps them in
+  different typed structures and teaches the distinction explicitly.
+- `AuthMethodAccessToken` already names PR 95 app-owned access tokens. The new
+  design therefore adds typed verified OAuth context and route-directed
+  verifier selection instead of assuming every access token shares a trust
+  root.
+- Supporting OAuth inside `anyOf` would immediately create mixed session and
+  bearer precedence and CSRF semantics. The first API deliberately rejects
+  that combination and uses separate browser and agent URL namespaces.
+
+### What warrants a second pair of eyes
+
+- Confirm that the intended public builder name remains `express.oauth()` and
+  that issuer, resource, and scopes are all required at route registration.
+- Confirm the product decision that a native tiny-idp device token maps to the
+  existing local user rather than creating an application-owned Agent.
+- Review whether issuer-qualified appauth identity storage belongs in the
+  first implementation PR or a prerequisite migration PR.
+- Review the deliberate first-version rejection of OAuth in `express.anyOf`.
+
+### What should be done in the future
+
+- Implement the phases in dependency order and create a focused tiny-idp
+  device-to-planned-Express smoke alongside the existing app-owned device-flow
+  example.
+- Add route-level OAuth client allowlists only if a concrete product policy
+  requires them; do not infer them from scopes or application actions.
+
+### Code review instructions
+
+- Begin with Sections 2 through 7 of the new guide to review the semantic and
+  typed API contract before reviewing host networking code.
+- Compare every proposed builder method with
+  `modules/express/auth_builders.go` and `modules/express/typescript.go`.
+- Compare verifier behavior with tiny-idp's
+  `cmd/tinyidp-xapp/internal/resourceauth/resourceauth.go`.
+- Run `docmgr validate frontmatter`, `docmgr doctor`, and `git diff --check`.
+
+### Technical details
+
+~~~text
+document: design-doc/04-express-oauth-route-syntax-api-design-and-implementation-guide.md
+lines:    1,412
+words:    7,509
+syntax:   express.oauth().issuer().resource().scopes()
+baseline: merged PR 95 plus open PR 98
+scope:    documentation and design only; no go-go-goja code changed
+~~~
