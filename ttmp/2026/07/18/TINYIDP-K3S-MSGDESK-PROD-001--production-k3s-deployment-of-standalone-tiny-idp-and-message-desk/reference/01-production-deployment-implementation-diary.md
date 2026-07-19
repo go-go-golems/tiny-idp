@@ -70,6 +70,9 @@ known-host entry was deleted and no SSH security check was bypassed.
 - Queried the live cluster using `kubeconfig-k3s-demo-1.tail879302.ts.net.yaml`.
 - Recorded the current node (`91.98.46.169`), Traefik Pod (`10.42.0.193` at observation time), local-path storage, VSO/Argo/cert-manager CRDs, ingresses, and prod-apps policy.
 - Wrote the trust boundaries, invariants, phases, acceptance matrix, rollback contract, open risks, and file-review map.
+- Merged refreshed Tiny-IDP `origin/main` in commit `4cce6b6` without conflicts.
+- Verified the node Pod CIDR is `10.42.0.0/24`; Traefik is a single non-root Pod and records forwarded headers while dropping other headers from access-log output.
+- Verified existing NetworkPolicy objects are installed and the new policy can select Traefik by its stable labels rather than an ephemeral Pod IP.
 
 ### Why
 
@@ -121,6 +124,10 @@ network access succeeded.
   cannot be separated into deadlocking sync waves.
 - Traefik Pod IPs are ephemeral. Proxy trust must use a verified narrow network
   contract plus NetworkPolicy rather than pinning the observed Pod address.
+- The first-release proxy resolver can trust one hop from `10.42.0.0/24`, while
+  the Kubernetes policy admits only the labeled Traefik Pod to public workload
+  ports. Kubelet probes carry no forwarded identity and therefore do not gain
+  proxy authority.
 
 ### What was tricky to build
 
@@ -156,8 +163,10 @@ network access succeeded.
 ```text
 Tiny-IDP branch: task/prod-tiny-idp
 Tiny-IDP upstream: origin/main at bbc8500 after refresh
+Phase 0 merge: 4cce6b6
 k3s upstream: origin/main at 8d1db2d after refresh
 cluster node: k3s-demo-1 / 91.98.46.169 / k3s v1.34.5+k3s1
 storage: local-path / WaitForFirstConsumer
+Pod CIDR: 10.42.0.0/24; trusted proxy hop target: 1
 public ingress: Traefik 3.6.9 + cert-manager letsencrypt-prod
 ```

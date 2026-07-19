@@ -2,10 +2,10 @@
 
 ## TODO
 
-- [ ] Phase 0: Refresh remotes and merge current origin/main into the implementation branch <!-- t:pxdl -->
-- [ ] Phase 0: Record production hostnames, one-replica SQLite topology, signup policy, and deferred device/multi-app scope <!-- t:d7s0 -->
-- [ ] Phase 0: Inspect current cluster Traefik forwarding, NetworkPolicy, prod-apps, Vault/VSO, registry, and backup contracts <!-- t:k9g9 -->
-- [ ] Phase 0: Write the detailed implementation design, acceptance matrix, rollback plan, and implementation diary <!-- t:avj8 -->
+- [x] Phase 0: Refresh remotes and merge current origin/main into the implementation branch <!-- t:pxdl -->
+- [x] Phase 0: Record production hostnames, one-replica SQLite topology, signup policy, and deferred device/multi-app scope <!-- t:d7s0 -->
+- [x] Phase 0: Inspect current cluster Traefik forwarding, NetworkPolicy, prod-apps, Vault/VSO, registry, and backup contracts <!-- t:k9g9 -->
+- [x] Phase 0: Write the detailed implementation design, acceptance matrix, rollback plan, and implementation diary <!-- t:avj8 -->
 - [ ] Phase 1: Design provider-owned signup as part of an existing OIDC authorization interaction <!-- t:ev4b -->
 - [ ] Phase 1: Implement durable one-use provider registration attempts with expiry and replay protection <!-- t:bumr -->
 - [ ] Phase 1: Implement provider registration GET/POST interactions using idpaccounts.Service.Create <!-- t:g4u2 -->
