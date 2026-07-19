@@ -5908,3 +5908,43 @@ made the test policy exhaustive. No production protocol behavior was affected.
   HTML is produced.
 - Run the two commands above, then inspect the account/device route tests to
   see that all POST and protocol transitions remain native.
+
+## Step 57: Run the Phase 7 strict protocol regression matrix
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+### What I did
+
+Ran the focused Phase 7 matrix rather than adding redundant wrappers around
+the established protocol tests:
+
+```bash
+go test ./internal/fositeadapter -run 'Test(BrowserSessionSilentAuthorizeAndPromptNone|PromptNoneReturnsConsentRequiredWhenNewScopesNeedConsent|PromptSelectAccountPresentationPolicyDecoratesNativeChooserAndConsent|AuthorizationPolicyDeniesAfterNativeValidationBeforeCodeIssuance|AuthorizationAndClaimsPolicyFailuresDoNotIssueCode|SQLiteRefreshRotationHistoryIsLinearizableAndReuseRevokesFamily|DeviceClaimsPolicyPersistsAdditionalClaimToUserInfo|DeviceVerificationPresentationPolicyDecoratesNativeConfirmation|SQLiteDeviceBrowserApprovalTokenUserInfoAndReplay)' -count=1
+go test ./pkg/idprecovery ./pkg/idppolicy -count=1
+```
+
+Both commands passed.
+
+### Coverage map
+
+- `session_test.go` and `consent_test.go` cover fresh/existing browser sessions,
+  silent `prompt=none`, and consent-required outcomes.
+- `select_account_test.go` covers remembered-account selection, the following
+  consent continuation, native credential fallback, and the new bounded
+  presentation callback.
+- `hardening_test.go` covers native validation before Goja authorization,
+  allow/deny/error fail-closed behavior, including `prompt=none`.
+- `claims_policy_test.go`, `device_authorization_test.go`, and SQLite refresh
+  tests cover protected claims, refresh consistency, token issuance, UserInfo,
+  device verification, and durable replay resistance.
+- `idprecovery/service_test.go` covers one-time recovery evidence and rejects
+  non-recovery templates.
+
+### Why this is sufficient
+
+The tests exercise the same native protocol endpoints and persistence paths
+that production uses. The additions in Step 56 fill the previously missing
+presentation-handler cases; no test replaces Fosite, a browser continuation,
+or the device-grant store with a test-only shortcut.

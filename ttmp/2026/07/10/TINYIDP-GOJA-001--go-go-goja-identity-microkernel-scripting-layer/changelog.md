@@ -484,3 +484,18 @@ ownership, and RFC 8628 state transitions.
 - internal/fositeadapter/rendering.go — Native route rendering and fail-closed decoration
 - internal/fositeadapter/select_account_test.go — Account chooser and consent route proof
 - internal/fositeadapter/device_authorization_test.go — Device confirmation route proof
+
+## 2026-07-19 - Step 57: Phase 7 strict protocol regression matrix
+
+Completed lf85 by validating the complete native/Goja interaction matrix:
+browser session and `prompt=none`, consent, account chooser, authorization
+allow/deny/error behavior, protected claims through UserInfo, refresh rotation,
+password-recovery replay prevention, and native device verification.
+
+### Related Files
+
+- internal/fositeadapter/session_test.go — Existing-session and `prompt=none` behavior
+- internal/fositeadapter/select_account_test.go — Account chooser and consent continuation behavior
+- internal/fositeadapter/hardening_test.go — Authorization deny/error behavior
+- internal/fositeadapter/device_authorization_test.go — Device, claims, UserInfo, and SQLite proof
+- pkg/idprecovery/service_test.go — Recovery one-use evidence behavior
