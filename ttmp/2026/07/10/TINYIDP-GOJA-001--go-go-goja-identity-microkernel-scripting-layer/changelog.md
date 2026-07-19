@@ -124,3 +124,46 @@ Step 12: completed lf06-lf08 with isolated require("tinyidp").v1 builders, immut
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp — Phase 0 JavaScript builder module and identity-branded lambda handles.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript — Isolated compiler, artifact, runtime factory, lifecycle, and integration tests.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 12 records failures, fixes, invariants, validation, and review guidance.
+
+## 2026-07-19
+
+Step 13: completed lf09-lf14 with an isolated bounded runtime pool, Promise capability bridge, cancellation/deadline interruption and unsafe-worker replacement, bounded JSON codecs, TypeScript declarations, a checked no-browser example, and concurrency/race acceptance tests (commit 10cd9e6).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript — Runtime pool, capability bindings, bounded codecs, invocation lifecycle, and acceptance tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp/typescript.go — Phase 0 TypeScript declaration descriptor.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-script/phase0.js — Checked compile-only pure and Promise-capability example.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 13 records implementation, failure analysis, validation, and the Git checkpoint constraint.
+
+## 2026-07-19
+
+Step 14: completed lf15-lf19 with versioned VM-independent continuation records, HMAC-hashed public handles, mandatory workflow/client/browser/generation bindings, an atomic memory store, SQLite migration 011 and transactional SQLite operations, plus a shared race-tested conformance suite foundation (commit 1765f61).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation — Durable continuation contracts, service, classifications, and validation tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/memorystore/continuation.go — Atomic in-memory continuation store.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation.go — Transactional durable continuation operations.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/migrations/011_workflow_continuations.sql — Durable continuation schema and expiry index.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/idpcontinuationtest/suite.go — Reusable store conformance and concurrency suite.
+
+## 2026-07-19
+
+Step 15: completed lf20-lf25 and the Phase 1 gate with shared resume/carry schema validation, sensitive-carry rejection, exact generation pinning, uniform public terminal failures plus bounded audit classes, retry-safe attachment cleanup, complete store conformance, and SQLite restart/resume proof; direct, race, and GOWORK-off tests pass (commit 1765f61).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/value.go — Shared bounded JSON and public-only carry validator.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service.go — Generation-pinned validation, classified failures, resume inputs, and retry-safe cleanup ordering.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service_test.go — Malformed state, generation, sensitive data, and safe-terminal tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation_test.go — Store restart and newly constructed service resume test.
+
+## 2026-07-19
+
+Step 16: completed lf26-lf27 by freezing the provider-owned signup field and action vocabulary in pkg/idpworkflow, including normalization, bounds, sensitivity, autocomplete, redisplay, labels, and deny/form-validation behavior; direct and race tests pass (commit f645f0c).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/descriptors.go — Closed host-owned field/action registry and validation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/descriptors_test.go — Security-policy and registry regression tests.

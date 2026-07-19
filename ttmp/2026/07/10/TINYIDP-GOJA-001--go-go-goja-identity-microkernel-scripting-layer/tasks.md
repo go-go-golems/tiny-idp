@@ -176,12 +176,12 @@ browser, persistence, Fosite, or account-creation behavior.
 - [x] Implement the isolated `require("tinyidp").v1` module with only `program`, `workflow`, `lambda`, and the Phase 0 result builders needed by the spike <!-- t:lf06 -->
 - [x] Compile source into an immutable artifact containing the canonical program, callback metadata, compiled source, required capabilities, and fingerprints without starting a server or mutating global registries <!-- t:lf07 -->
 - [x] Load one artifact into at least two separately owned runtimes and reject activation if their callback IDs or fingerprints differ <!-- t:lf08 -->
-- [ ] Build an explicit runtime factory whose module resolver exposes only the Tiny-IDP module and approved language/runtime primitives; add negative resolution tests for filesystem, process, execution, database, network, OS, and arbitrary loaders <!-- t:lf09 -->
-- [ ] Implement single-owner worker acquisition, invocation, release, discard, and replacement so no request goroutine touches a Goja runtime directly <!-- t:lf10 -->
-- [ ] Implement bounded invocation of synchronous and Promise-returning lambdas, with request cancellation, deadline interruption, `ClearInterrupt` ordering, late-settlement containment, panic recovery, output validation, and mandatory worker discard after unsafe termination <!-- t:lf11 -->
-- [ ] Bind only declared capabilities to an invocation, enforce call/effect/time/output budgets, and prove retained globals cannot reuse an expired binding <!-- t:lf12 -->
-- [ ] Publish TypeScript declarations and one compile-only no-browser example covering a pure lambda and a bounded Promise-returning capability lambda <!-- t:lf13 -->
-- [ ] Add unit, concurrency, and race tests that exercise two workers, simultaneous invocations, forbidden modules, undeclared capabilities, invalid outcomes, timeout, cancellation, panic, late settlement, discard, and replacement <!-- t:lf14 -->
+- [x] Build an explicit runtime factory whose module resolver exposes only the Tiny-IDP module and approved language/runtime primitives; add negative resolution tests for filesystem, process, execution, database, network, OS, and arbitrary loaders <!-- t:lf09 -->
+- [x] Implement single-owner worker acquisition, invocation, release, discard, and replacement so no request goroutine touches a Goja runtime directly <!-- t:lf10 -->
+- [x] Implement bounded invocation of synchronous and Promise-returning lambdas, with request cancellation, deadline interruption, `ClearInterrupt` ordering, late-settlement containment, panic recovery, output validation, and mandatory worker discard after unsafe termination <!-- t:lf11 -->
+- [x] Bind only declared capabilities to an invocation, enforce call/effect/time/output budgets, and prove retained globals cannot reuse an expired binding <!-- t:lf12 -->
+- [x] Publish TypeScript declarations and one compile-only no-browser example covering a pure lambda and a bounded Promise-returning capability lambda <!-- t:lf13 -->
+- [x] Add unit, concurrency, and race tests that exercise two workers, simultaneous invocations, forbidden modules, undeclared capabilities, invalid outcomes, timeout, cancellation, panic, late settlement, discard, and replacement <!-- t:lf14 -->
 
 **Phase 0 gate:** Two owned workers load the same callback registry and execute
 concurrent calls under the race detector; forbidden modules and undeclared
@@ -213,17 +213,17 @@ generation-aware create/load/advance/consume/cleanup semantics.
 
 #### Phase 1 tasks
 
-- [ ] Define versioned `WorkflowContinuation`, public carry, native evidence references, native secret references, presentation state, generation binding, expiry, and terminal outcome types without embedding Goja values <!-- t:lf15 -->
-- [ ] Define a narrow continuation store interface and service contract for create, load, advance, terminal consume, revoke, and cleanup operations <!-- t:lf16 -->
-- [ ] Generate high-entropy public handles, store only keyed handle hashes, and bind every record to workflow, handler, client, browser, generation, revision, and expiry <!-- t:lf17 -->
-- [ ] Implement memory storage with atomic compare-and-advance and terminal consume semantics <!-- t:lf18 -->
-- [ ] Add the SQLite migration and SQLite store implementation with the same atomicity, conflict, expiry, and one-use behavior <!-- t:lf19 -->
-- [ ] Validate resumed input and carry against the destination handler schema and reject unknown handlers, incompatible schema versions, oversized state, and forbidden secret values <!-- t:lf20 -->
-- [ ] Implement generation lookup and pinning so a continuation resumes only against its compatible compiled program generation <!-- t:lf21 -->
-- [ ] Define the safe terminal response and audit classification for missing, expired, replayed, browser-mismatched, client-mismatched, and unavailable-generation continuations <!-- t:lf22 -->
-- [ ] Implement cleanup that expires continuations and removes attached native pending-secret or challenge state without exposing raw handles <!-- t:lf23 -->
-- [ ] Add a reusable store conformance suite covering create/load, one-use advance, one-use consume, conflict, replay, expiry, revocation, cleanup, and concurrent POST races <!-- t:lf24 -->
-- [ ] Add a restart integration test that creates with one service/store instance and resumes with another while proving no runtime or Goja heap object is retained <!-- t:lf25 -->
+- [x] Define versioned `WorkflowContinuation`, public carry, native evidence references, native secret references, presentation state, generation binding, expiry, and terminal outcome types without embedding Goja values <!-- t:lf15 -->
+- [x] Define a narrow continuation store interface and service contract for create, load, advance, terminal consume, revoke, and cleanup operations <!-- t:lf16 -->
+- [x] Generate high-entropy public handles, store only keyed handle hashes, and bind every record to workflow, handler, client, browser, generation, revision, and expiry <!-- t:lf17 -->
+- [x] Implement memory storage with atomic compare-and-advance and terminal consume semantics <!-- t:lf18 -->
+- [x] Add the SQLite migration and SQLite store implementation with the same atomicity, conflict, expiry, and one-use behavior <!-- t:lf19 -->
+- [x] Validate resumed input and carry against the destination handler schema and reject unknown handlers, incompatible schema versions, oversized state, and forbidden secret values <!-- t:lf20 -->
+- [x] Implement generation lookup and pinning so a continuation resumes only against its compatible compiled program generation <!-- t:lf21 -->
+- [x] Define the safe terminal response and audit classification for missing, expired, replayed, browser-mismatched, client-mismatched, and unavailable-generation continuations <!-- t:lf22 -->
+- [x] Implement cleanup that expires continuations and removes attached native pending-secret or challenge state without exposing raw handles <!-- t:lf23 -->
+- [x] Add a reusable store conformance suite covering create/load, one-use advance, one-use consume, conflict, replay, expiry, revocation, cleanup, and concurrent POST races <!-- t:lf24 -->
+- [x] Add a restart integration test that creates with one service/store instance and resumes with another while proving no runtime or Goja heap object is retained <!-- t:lf25 -->
 
 **Phase 1 gate:** Memory and SQLite pass the same conformance suite, exactly one
 concurrent advance succeeds, restart/resume works without a Goja object, and
@@ -253,8 +253,8 @@ presentation outcome builders, and exact POST projection.
 
 #### Phase 2 tasks
 
-- [ ] Define stable typed field descriptors for the design-03 signup surface, including value kind, normalization, requiredness, bounds, sensitivity, autocomplete, and public redisplay policy <!-- t:lf26 -->
-- [ ] Define stable action descriptors and require every submitted action to match an action declared by the active presentation <!-- t:lf27 -->
+- [x] Define stable typed field descriptors for the design-03 signup surface, including value kind, normalization, requiredness, bounds, sensitivity, autocomplete, and public redisplay policy <!-- t:lf26 -->
+- [x] Define stable action descriptors and require every submitted action to match an action declared by the active presentation <!-- t:lf27 -->
 - [ ] Generalize `pkg/idpui` with a `WorkflowPage` or compatible `InteractionPage` extension that renders only host-validated descriptors and never script-supplied HTML <!-- t:lf28 -->
 - [ ] Implement `ctx.present.form` and the Phase 2 field/action builders so an outcome names the resume handler, allowed edge, fields, actions, public values, errors, carry, and expiry <!-- t:lf29 -->
 - [ ] Validate presentation outcomes against the compiled handler graph, field/action registries, schema bounds, capability declarations, and continuation expiry limit before persistence or rendering <!-- t:lf30 -->

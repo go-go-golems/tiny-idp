@@ -16,10 +16,44 @@ Owners: []
 RelatedFiles:
     - Path: repo://go.mod
       Note: Phase 0 baseline source for the Go 1.26 toolchain and pinned go-go-goja dependency recorded in Step 10.
+    - Path: repo://lefthook.yml
+      Note: Step 17 exact pre-commit test and lint policy whose runner orphaned children
+    - Path: repo://pkg/idpcontinuation/idpcontinuationtest/suite.go
+      Note: Step 14 reusable memory and SQLite concurrency contract
+    - Path: repo://pkg/idpcontinuation/service.go
+      Note: Step 14 keyed handle, binding, generation, schema, and cleanup service
+    - Path: repo://pkg/idpcontinuation/service_test.go
+      Note: Step 15 generation, binding, resume-input, and safe-terminal tests
+    - Path: repo://pkg/idpcontinuation/store.go
+      Note: Step 14 atomic store and generation-resolution interfaces
+    - Path: repo://pkg/idpcontinuation/types.go
+      Note: Step 14 versioned VM-independent durable continuation contract
+    - Path: repo://pkg/idpprogram/value.go
+      Note: Step 14 shared runtime-independent JSON and public-carry validation
+    - Path: repo://pkg/idpprogram/value_test.go
+      Note: Step 15 sensitive-carry and bounded JSON regression tests
+    - Path: repo://pkg/idpscript/codec.go
+      Note: Step 15 runtime now shares the core schema validator
+    - Path: repo://pkg/idpworkflow/descriptors.go
+      Note: Step 16 closed provider-owned field and action vocabulary
+    - Path: repo://pkg/idpworkflow/descriptors_test.go
+      Note: Step 16 authority-policy regression tests
+    - Path: repo://pkg/memorystore/continuation.go
+      Note: Step 14 atomic ephemeral implementation
+    - Path: repo://pkg/memorystore/continuation_test.go
+      Note: Step 15 memory-store conformance entry point
+    - Path: repo://pkg/sqlitestore/continuation.go
+      Note: Step 14 transactional durable implementation
+    - Path: repo://pkg/sqlitestore/continuation_test.go
+      Note: Step 15 SQLite conformance and restart-resume proof
+    - Path: repo://pkg/sqlitestore/migrations/011_workflow_continuations.sql
+      Note: Step 14 durable schema and expiry index
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md
       Note: Primary design produced by the investigation
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
-      Note: Normative design produced and recorded in Step 7
+      Note: |-
+        Normative design produced and recorded in Step 7
+        Normative continuation and generation design governing Step 14
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/02-security-verification-scripting-plane-assessment.md
       Note: Step 4 focused verification-plane design
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/sources/01-colleague-identity-microkernel-research.md
@@ -32,6 +66,23 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1693,4 +1744,832 @@ artifact VM state: reusable *goja.Program only
 worker callback state: fresh VM-local goja.Callable registry
 activation identity: program + callback registry + schema fingerprints
 next task: lf09
+```
+
+## Step 13: Complete the bounded no-browser runtime and Phase 0 gate
+
+This step completed the Phase 0 execution boundary. A bounded pool now owns a
+fixed number of independent Goja runtimes, leases each runtime exclusively to
+one invocation, posts every VM operation through the runtime owner, and returns
+only copied JSON outcomes. JavaScript receives a deeply frozen native input and
+only the capabilities declared by its lambda contract. Capability work runs
+outside the runtime owner and settles its Promise by posting back to that same
+owner.
+
+Unsafe termination is deliberately destructive. A thrown exception, invalid
+output, request cancellation, active-JavaScript deadline interruption, or
+failed Promise invocation causes the worker to be closed and replaced. A late
+capability completion is contained by an invocation-scoped active flag and
+context, so it cannot post into or affect a replacement runtime.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 10)
+
+**User blocking clarification (verbatim):** "don't touch grass unless you are genuinely blocked, btw"
+
+**Assistant interpretation:** Finish the Phase 0 runtime spike through its
+acceptance gate, continue through ordinary failures, and stop only for a real
+environmental impasse.
+
+**Inferred user intent:** Obtain a race-tested owner-safe runtime substrate that
+later browser-continuation phases can trust, with an exact audit trail of
+security and lifecycle behavior.
+
+**Commit (code):** `10cd9e6` — "Feat: add bounded scripting runtime pool"
+
+### What I did
+
+- Added a bounded `idpscript.Pool` with exclusive acquire/release, saturation,
+  close, discard, replacement, and race-safe stats.
+- Added invocation input/output codecs that enforce registered schema shapes,
+  byte limits, integer/string/bytes constraints, required fields, and no
+  additional properties unless declared.
+- Converted validated JSON through guest `JSON.parse` so values are ordinary
+  JavaScript objects rather than Go host objects, then recursively froze the
+  invocation context.
+- Added synchronous and Promise-returning lambda invocation through
+  `runtime.Owner.Call`, deadline interruption, ordered `ClearInterrupt`,
+  cancellation classification, output validation, and unsafe-worker discard.
+- Added declared-only capability bindings with versions, input/output limits,
+  call budgets, panic recovery, invocation expiry, background `errgroup`
+  settlement, and owner-posted Promise resolution.
+- Added exhaustive ambient-module denial tests, missing and undeclared
+  capability tests, retained-binding expiry tests, saturation and concurrent
+  two-worker tests, active-JavaScript interruption, caller cancellation,
+  capability panic, invalid output, thrown exception, late settlement, discard,
+  and replacement tests.
+- Added a `modules.TypeScriptDeclarer` descriptor and the checked
+  `examples/tinyidp-script/phase0.js` source demonstrating one pure lambda and
+  one bounded asynchronous capability lambda.
+- Ran:
+
+  ```bash
+  go test ./pkg/idpprogram ./pkg/idpscript ./internal/gojamodules/tinyidp -count=1
+  go test -race ./pkg/idpscript ./internal/gojamodules/tinyidp -count=1
+  GOWORK=off go test ./pkg/idpprogram ./pkg/idpscript ./internal/gojamodules/tinyidp -count=1
+  go vet ./pkg/idpprogram ./pkg/idpscript ./internal/gojamodules/tinyidp
+  go test ./... -count=1
+  ```
+
+- Checked tasks `lf09` through `lf14` only after the Phase 0 gate passed.
+
+### Why
+
+- Goja values and functions are runtime-owned. Routing all access through one
+  owner and copying JSON at every boundary prevents cross-goroutine VM use.
+- A capability is authority, not configuration. Constructing `ctx.cap` from
+  the lambda's declared requirements means a host-supplied extra binding is not
+  visible to the script.
+- Timeout and cancellation can leave JavaScript or Promise state uncertain.
+  Replacing the entire worker is simpler to reason about than attempting to
+  prove a partially interrupted heap safe for reuse.
+- Native JavaScript values are necessary for meaningful immutability. Goja host
+  maps expose Go-backed fields that `Object.freeze` cannot make read-only.
+
+### What worked
+
+- Direct, full-repository, `GOWORK=off`, vet, and targeted race gates pass.
+- Forty simultaneous invocations over two workers pass under the race detector
+  and return request-specific values without cross-talk.
+- Active infinite JavaScript is interrupted on its lambda deadline, the worker
+  is discarded, and the replacement immediately executes a safe lambda.
+- A capability that ignores cancellation and finishes late cannot settle into
+  the replacement worker.
+- Retaining a capability function in a JavaScript global does not extend its
+  invocation authority.
+
+### What didn't work
+
+- The first invocation run failed with:
+
+  ```text
+  TypeError: Host object field value cannot be made read-only
+  ```
+
+  `vm.ToValue` had converted the decoded Go map into a Goja host object. The
+  correction crosses the boundary through guest `JSON.parse`, producing native
+  objects that can be recursively frozen. Capability results now use the same
+  boundary.
+- The first ambient-module matrix expected every denial to use the custom
+  loader text. Goja-node's built-in-name resolver rejects `node:fs`, `node:os`,
+  and `node:process` earlier with `No such built-in module`. The test now accepts
+  either fail-closed diagnostic while still requiring every family to fail.
+- The first repository lint run found two justified named returns and two dead
+  helper functions. The helpers were removed and the named returns received
+  narrow rationale comments and `nonamedreturns` suppressions.
+- A second `make lint` could not reach the actual linter because the wrapper
+  attempted to download its pinned `glazed-lint` tool and sandbox DNS was
+  blocked. An escalated rerun was denied by the permission reviewer. The
+  reported source issues were fixed; direct tests, race tests, vet, and
+  `git diff --check` pass.
+- `git add` succeeded with permission, but `git commit` failed with:
+
+  ```text
+  fatal: Unable to create '/home/manuel/code/wesen/go-go-golems/tiny-idp/.git/worktrees/tiny-idp/index.lock': Read-only file system
+  ```
+
+  The permission reviewer denied the escalated commit even though the user
+  requested checkpoint commits. Full access later resolved this in Step 17;
+  the code was committed as `10cd9e6` after the exact hook commands passed.
+
+### What I learned
+
+- JSON is not only the validation format; guest-side parsing is the clean
+  conversion from bounded host bytes to native, freezable JavaScript values.
+- Goja-node handles some built-in module names before its source loader. Module
+  isolation tests must assert denial, not overfit to one resolver's wording.
+- Context cancellation of a pending capability and deadline interruption of
+  active JavaScript follow different internal paths but share the same safety
+  rule: close and replace the worker.
+
+### What was tricky to build
+
+- Promise settlement cannot touch Goja from the capability goroutine. The
+  capability copies JSON, validates it off-VM, posts one settlement closure to
+  the runtime owner, and checks the invocation's active flag both before and
+  inside the post.
+- `ClearInterrupt` must happen only through the runtime owner and the worker is
+  still discarded whenever the deadline callback may have fired. This avoids a
+  race between clearing an interrupt and accidentally reusing uncertain state.
+- Pool replacement must update active/capacity statistics without putting a
+  closing or discarded worker back on the idle channel.
+
+### What warrants a second pair of eyes
+
+- Review Promise rejection redaction: Phase 0 exposes only the stable
+  `capability_failed` token to JavaScript and keeps backend error text in Go.
+- Review whether every abnormal JavaScript exception should continue to force
+  replacement once production metrics make the cost visible.
+- Review Step 17's Lefthook execution-wrapper behavior; linked-worktree metadata
+  permission is now resolved.
+
+### What should be done in the future
+
+- Begin `lf15` with VM-independent continuation records and a narrow store
+  service; do not place a Promise, closure, goroutine, or Goja value in the
+  continuation.
+- Re-run `make lint` when the pinned-tool lookup is available.
+- Commit the staged Phase 0 checkpoint before mixing it with Phase 1 if Git
+  metadata write permission becomes available.
+
+### Code review instructions
+
+- Start with `pkg/idpscript/pool.go`, then read `invoke.go`, `capabilities.go`,
+  and `codec.go` alongside `invoke_test.go`.
+- Review `internal/gojamodules/tinyidp/typescript.go` and compile
+  `examples/tinyidp-script/phase0.js` via `TestPhase0ExampleCompiles`.
+- Confirm all VM access is inside `Owner.Call` or `Owner.Post` closures.
+- Run the five validation commands above; run `make lint` when dependency
+  lookup is available.
+
+### Technical details
+
+```text
+tasks completed: lf09, lf10, lf11, lf12, lf13, lf14
+code commit: 10cd9e6
+pool ownership: one worker per invocation
+capability settlement: errgroup + Owner.Post
+unsafe completion: discard and replace
+Phase 0 direct/race/GOWORK-off gate: pass
+next task: lf15
+```
+
+## Step 14: Establish durable continuation contracts and atomic stores
+
+This step created the durable half of the explicit-continuation architecture.
+The new `pkg/idpcontinuation` record is versioned pure Go data: it contains
+stable workflow and handler IDs, copied JSON carry, native secret/evidence
+references, browser/client/request bindings, the exact program fingerprint,
+revision, expiry, and terminal state. It cannot contain a Goja function,
+Promise, runtime, closure, or goroutine.
+
+The service generates 256-bit public handles and stores only a
+domain-separated HMAC-SHA-256 hash. Both the new memory store and SQLite store
+implement one-use advance and terminal consume. The SQLite implementation adds
+migration 011 and makes “mark current advanced plus insert successor” one
+transaction, which is the central concurrent-POST invariant.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ake sure to keep a frequent detailed diary. Backfill. Use skill to look up the format"
+
+**Assistant interpretation:** Pause further feature work long enough to audit
+the prescribed diary format, backfill the current continuation work in that
+format, and increase diary checkpoint frequency.
+
+**Inferred user intent:** Preserve enough exact implementation and debugging
+context that the user or a new intern can review, validate, and resume the work
+without reconstructing decisions from the diff.
+
+**Commit (code):** `1765f61` — "Feat: add durable workflow continuations"
+
+### What I did
+
+- Re-read the complete `diary` skill and its
+  `references/diary.md` rationale before writing this entry.
+- Added `pkg/idpcontinuation` contracts for:
+  - versioned continuation status and terminal outcomes;
+  - public carry, presentation state, evidence references, and secret
+    references;
+  - workflow/handler/schema/generation identity;
+  - request, client, redirect, browser, session, and browser-context bindings;
+  - revision, creation, and expiry metadata.
+- Added a narrow `Store` interface for create, load, atomic advance, atomic
+  terminal consume, revoke, and bounded expiry cleanup.
+- Added `Service` handle generation, keyed hashing, mandatory binding checks,
+  safe failure classifications, generation resolution, destination validation,
+  resume-input validation, revocation, and attachment cleanup coordination.
+- Added runtime-independent `idpprogram.ValidateJSON` and
+  `ValidatePublicJSON`; public continuation carry rejects schema fields marked
+  sensitive while ephemeral resume input may contain them.
+- Added `pkg/memorystore.ContinuationStore` with mutex-protected compare and
+  transition semantics.
+- Added SQLite migration `011_workflow_continuations.sql` and transactional
+  `Store` methods in `pkg/sqlitestore/continuation.go`.
+- Added `pkg/idpcontinuation/idpcontinuationtest.RunStoreSuite` and invoked it
+  for both storage implementations. The suite covers raw-handle separation,
+  create/load, one-use advance, one-use consume, revision conflict, revocation,
+  expiry, binding failure, exactly-one-winner concurrent advance, and cleanup
+  of attached references.
+- Added a SQLite restart test that closes the first store, opens a new store and
+  service using the same key and generation resolver, loads the continuation,
+  and consumes it without retaining any Goja state.
+- Ran:
+
+  ```bash
+  go test ./pkg/idpprogram ./pkg/idpcontinuation/... ./pkg/memorystore ./pkg/sqlitestore -count=1 -timeout=90s
+  go test -race ./pkg/idpcontinuation/... ./pkg/memorystore ./pkg/sqlitestore -count=1 -timeout=120s
+  git diff --check
+  ```
+
+- Checked tasks `lf15` through `lf19` after both implementations passed the
+  shared race-tested contract.
+
+### Why
+
+- An explicit continuation is a durable state-machine token, not a suspended
+  JavaScript execution. Keeping the contract VM-independent makes restart,
+  process replacement, and horizontal request routing possible.
+- The raw browser handle is a bearer secret. A keyed, domain-separated hash
+  prevents a database read from directly yielding usable continuation handles
+  and avoids cross-protocol hash reuse.
+- Advancing must consume the old handle and create the successor atomically;
+  otherwise two browser POSTs can both execute the same workflow step.
+- Carry and submitted input have different secrecy rules. Public durable carry
+  may not contain sensitive schema fields, while a bounded ephemeral form
+  projection can contain a password before it is converted to a native secret
+  reference.
+
+### What worked
+
+- The initial package compile passed after formatting.
+- The complete direct suite passes for `idpprogram`, `idpcontinuation`, the
+  conformance helper, memory storage, and SQLite storage.
+- The race suite passes for the service and both stores. Twenty-four concurrent
+  advance attempts produce exactly one winner in each implementation.
+- The restart test proves the record is sufficient to resume and consume after
+  reconstructing both the SQLite store and continuation service.
+- The shared suite observes that the stored 32-byte hash differs from the raw
+  32-byte handle decoded from the browser token.
+
+### What didn't work
+
+- The first patch that simplified `GenerationResolver` failed to apply because
+  its expected context accidentally included an extra closing brace:
+
+  ```text
+  apply_patch verification failed: Failed to find expected lines in
+  .../pkg/idpcontinuation/store.go
+  ```
+
+  I read the exact file, applied a smaller context-correct patch, and compiled
+  the new packages before continuing.
+- A follow-up patch intended to correct JSON fixture escaping did not match
+  because the tool had already emitted the desired unescaped raw strings. I
+  inspected the exact lines with `rg`, changed only the actually missing import,
+  and avoided an unnecessary rewrite.
+- The required checkpoint commit is still unavailable. The precise Git
+  `index.lock` error and permission-review denial are recorded in Step 13; no
+  alternate Git metadata path or compatibility workaround was introduced.
+
+### What I learned
+
+- The same schema vocabulary can safely serve runtime invocation and durable
+  continuation boundaries when the API distinguishes general JSON validation
+  from public-only carry validation.
+- SQLite's one-connection production envelope and the store mutex make the
+  transaction boundary explicit and deterministic, but the SQL still uses
+  revision and active-status predicates as defense in depth.
+- Generation availability and generation mismatch are operationally distinct:
+  unavailable means the exact compiled generation is no longer retained;
+  mismatch means the browser/request attempted to resume against a different
+  generation.
+
+### What was tricky to build
+
+- Service-level advance first authenticates and validates the current record,
+  then asks the store to compare the same revision atomically. The initial load
+  is useful for safe diagnostics, but only the store transaction decides the
+  winner.
+- Successor records inherit every immutable binding from the current record and
+  reject an attempted change. Only the resume handler, presentation/carry,
+  native references, and expiry are allowed to advance.
+- Cleanup spans the continuation store and native attachment owners. The
+  current service returns removed records from the bounded store cleanup and
+  invokes a typed attachment cleaner without exposing raw handles.
+
+### What warrants a second pair of eyes
+
+- Review whether attachment deletion needs a durable tombstone/outbox before
+  Phase 3; if the external cleaner fails after record deletion, a retry needs a
+  retained cleanup intent. Do not paper over this with a compatibility adapter.
+- Review SQLite error classification: unique insert failures intentionally map
+  to continuation conflict, but unrelated database failures must remain
+  distinguishable as the implementation is hardened.
+- Review which bindings are mandatory at each provider resume call. The service
+  currently requires workflow, client, redirect, client generation, program
+  fingerprint, request digest, and browser binding; session/context hashes are
+  optional but checked when supplied.
+
+### What should be done in the future
+
+- Complete `lf20` through `lf25` with explicit malformed-state tests,
+  generation-unavailable and safe-terminal classification coverage, cleanup
+  durability review, and the final restart/race phase gate.
+- Replace the duplicate internal invocation schema validator with the new
+  `idpprogram.ValidateJSON` primitive so schema behavior cannot drift.
+- Preserve Phase 0 and Phase 1 as separate focused commits; Step 17 records the
+  completed hashes and validation.
+
+### Code review instructions
+
+- Start with `pkg/idpcontinuation/types.go`, then read `store.go` and
+  `service.go`.
+- Read `pkg/idpcontinuation/idpcontinuationtest/suite.go` alongside
+  `pkg/memorystore/continuation.go` and
+  `pkg/sqlitestore/continuation.go`.
+- Review migration 011 before the SQLite implementation and verify it remains
+  contiguous with migration 010.
+- Run the direct and race commands above. Search the continuation packages for
+  `goja` and confirm there are no imports or stored runtime values.
+
+### Technical details
+
+```text
+tasks completed: lf15, lf16, lf17, lf18, lf19
+record version: 1
+public handle entropy: 256 bits
+stored handle identity: HMAC-SHA-256("tiny-idp/workflow-continuation/v1\\x00" || raw)
+SQLite migration: 011_workflow_continuations.sql
+atomic advance: mark current advanced + insert successor in one transaction
+direct continuation suite: pass
+race continuation suite: pass
+next task: lf20
+```
+
+## Step 15: Close the continuation validation, cleanup, and restart gate
+
+This step completed Phase 1 by hardening the service around the atomic stores
+from Step 14. Every resume now supplies a complete expected binding projection,
+resolves the exact retained program fingerprint, verifies the workflow version
+and handler-to-lambda input schema, and validates the projected browser input.
+Durable carry uses the stricter public-only validator, so a field marked
+sensitive can be accepted transiently on resume but cannot be stored in carry.
+
+Cleanup ordering was also corrected before the phase gate. The store first
+lists bounded expired records, the host invokes an idempotent typed attachment
+cleaner, and only then deletes the continuation. If attachment cleanup fails,
+the record remains as a durable retry intent rather than losing the only
+references to pending-secret or evidence state.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 14)
+
+**Assistant interpretation:** Continue implementation while making the diary a
+frequent part of the implementation loop rather than an end-of-session summary.
+
+**Inferred user intent:** Finish each security-sensitive cluster with both
+executable evidence and a detailed narrative that exposes assumptions and
+review risks.
+
+**Commit (code):** `1765f61` — "Feat: add durable workflow continuations"
+
+### What I did
+
+- Required complete workflow, client, redirect, client-generation,
+  program-generation, request-digest, and browser-binding expectations on every
+  service load/advance/consume path.
+- Added `Service.ValidateResumeInput`, which resolves the exact generation and
+  validates input against the destination handler's lambda schema.
+- Added `idpprogram.ValidateJSON` and `ValidatePublicJSON` tests for sensitive
+  fields, unknown schemas, multiple JSON values, maximum bytes, and string
+  bounds.
+- Reused `idpprogram.ValidateJSON` from `pkg/idpscript` and removed the duplicate
+  invocation schema walker so runtime and continuation validation cannot drift.
+- Added generation-unavailable, generation-mismatch, missing, malformed
+  bindings, unknown handler, oversized input, and forbidden sensitive carry
+  tests.
+- Added `SafeTerminal` and `ClassifyTerminal`: every browser-visible failure
+  uses `interaction_unavailable`, while internal audit receives one bounded
+  `FailureClass` and no raw handle or backend error detail.
+- Replaced delete-first cleanup with `ListExpired` plus `DeleteExpired` and
+  documented that attachment cleaners must be idempotent.
+- Added a fail-once cleaner test proving the expired record remains available
+  after attachment cleanup failure and is removed on retry.
+- Re-ran the shared suite for memory and SQLite, including the 24-way concurrent
+  advance race and process-restart simulation.
+- Ran:
+
+  ```bash
+  go test ./pkg/idpprogram ./pkg/idpscript ./pkg/idpcontinuation/... ./pkg/memorystore ./pkg/sqlitestore -count=1 -timeout=90s
+  go test -race ./pkg/idpcontinuation/... ./pkg/memorystore ./pkg/sqlitestore -count=1 -timeout=120s
+  GOWORK=off go test ./pkg/idpcontinuation/... ./pkg/memorystore ./pkg/sqlitestore -count=1 -timeout=90s
+  ! rg 'dop251/goja|go-go-goja' pkg/idpcontinuation pkg/memorystore pkg/sqlitestore/continuation.go
+  git diff --check
+  ```
+
+- Checked tasks `lf20` through `lf25` only after these commands passed.
+
+### Why
+
+- A valid handle alone is insufficient: the current browser, OAuth request,
+  client configuration, workflow, and exact script generation must all still
+  be the ones that created the continuation.
+- Uniform public failure text avoids turning continuation handling into an
+  existence, replay, or generation-retention oracle. Bounded internal classes
+  preserve operational usefulness without recording bearer material.
+- Delete-first cleanup could orphan external secrets after a cleaner failure.
+  Keeping the record until idempotent attachment deletion succeeds makes
+  cleanup restartable without introducing an outbox compatibility layer.
+- Sharing one schema validator makes validation semantics a deliberate core
+  primitive rather than two similar implementations that silently diverge.
+
+### What worked
+
+- Direct, race, and pinned-dependency (`GOWORK=off`) continuation gates pass.
+- Both stores satisfy exactly the same conformance suite.
+- Exactly one of 24 concurrent advances succeeds under the race detector.
+- SQLite restart loads and consumes a continuation using a new store and
+  service instance with no Goja heap or runtime state.
+- Search confirms the continuation contracts, services, stores, and migration
+  do not import Goja or go-go-goja.
+- A failed attachment cleanup retains one expired record; a subsequent cleanup
+  succeeds and deletes it.
+
+### What didn't work
+
+- No implementation or test command failed in this step.
+- The environment-level commit and lint-wrapper constraints from Step 13 remain
+  unresolved. They were not bypassed or treated as reasons to weaken the phase
+  validation.
+
+### What I learned
+
+- Cleanup needs a durable retry point even in an initial design. Listing before
+  idempotent deletion is sufficient for this single-store boundary and is much
+  safer than returning already-deleted attachment references.
+- The browser response and audit record are two separate projections of the
+  same error. Modeling that split explicitly prevents accidental leakage by a
+  later HTTP handler.
+- Destination validation must walk handler to lambda to schema; trusting the
+  continuation's copied schema name alone would allow malformed durable state
+  to select an unrelated schema.
+
+### What was tricky to build
+
+- Required bindings and optional bindings need different rules. Workflow,
+  client, redirect, client generation, program, request, and browser binding
+  are always required. Session and browser-context hashes remain optional for
+  flows where native session state does not yet exist, but are compared in
+  constant time whenever supplied.
+- Cleanup cannot make a SQLite transaction atomic with arbitrary native secret
+  stores. The safe seam is an idempotent cleaner plus a retained continuation
+  retry intent, not a callback executed while holding the database transaction.
+- Refactoring invocation validation had to preserve the separate outer outcome
+  byte budget and the named output-schema validation.
+
+### What warrants a second pair of eyes
+
+- Review whether session and browser-context bindings should become mandatory
+  for every Phase 3 production signup flow.
+- Review the `interaction_unavailable` public code and confirm the provider UI
+  will render one neutral restart response for every failure class.
+- Review idempotence requirements for future pending-password, email-code, and
+  invite-evidence cleaners before those native stores are implemented.
+
+### What should be done in the future
+
+- Begin Phase 2 at `lf26` with closed field and action descriptor registries;
+  do not grant JavaScript raw form, template, header, cookie, CSRF, or response
+  authority.
+- At the next Git-capable checkpoint, commit Phase 1 separately from the staged
+  Phase 0 code and then commit diary/task bookkeeping independently.
+
+### Code review instructions
+
+- Start at `pkg/idpprogram/value.go`, then read
+  `pkg/idpcontinuation/service.go` methods `Load`, `ValidateResumeInput`,
+  `Advance`, and `Cleanup`.
+- Read `service_test.go`, the shared conformance suite, and
+  `pkg/sqlitestore/continuation_test.go` as executable security requirements.
+- Inspect `pkg/sqlitestore/migrations/011_workflow_continuations.sql` and the
+  `Advance` transaction together.
+- Run all five validation commands above.
+
+### Technical details
+
+```text
+tasks completed: lf20, lf21, lf22, lf23, lf24, lf25
+public failure code: interaction_unavailable
+internal audit dimension: FailureClass
+carry validator: ValidatePublicJSON
+resume validator: ValidateJSON after exact handler/lambda/schema resolution
+cleanup ordering: list -> idempotent attachments -> delete record
+Phase 1 direct/race/GOWORK-off gate: pass
+next task: lf26
+```
+
+## Step 16: Freeze the provider-owned field and action vocabulary
+
+This step began Phase 2 with the smallest authority-bearing contract. The new
+`pkg/idpworkflow` registry defines the fields a signup workflow may select and
+the actions a browser may submit. JavaScript will receive builder handles for
+these registered descriptors; it will not define input names, HTML types,
+normalizers, secret policies, autocomplete behavior, or redisplay rules.
+
+The initial vocabulary covers display name, email, password, password
+confirmation, and optional invite code, plus submit and deny. Secret fields are
+structurally required to use no normalization and never redisplay. Deny is the
+only initial action allowed to bypass browser constraint validation.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 14)
+
+**Assistant interpretation:** Continue in small auditable task clusters and
+write the diary entry immediately after each cluster passes.
+
+**Inferred user intent:** Make implementation progress reviewable at the same
+granularity as the ticket tasks, especially where a descriptor grants or
+withholds authority.
+
+**Commit (code):** `f645f0c` — "Feat: define workflow presentation descriptors"
+
+### What I did
+
+- Added stable `FieldID`, `ValueKind`, `Normalization`, and `RedisplayPolicy`
+  enums.
+- Added fully host-owned `FieldDescriptor` values containing input name, label,
+  kind, normalizer, requiredness, length bounds, sensitivity, autocomplete, and
+  redisplay policy.
+- Added stable `ActionID` and `ActionDescriptor` values with host-owned labels
+  and form-validation policy.
+- Added registry construction that rejects invalid descriptors, duplicate IDs,
+  duplicate HTML input names, and authority-changing secret/action policies.
+- Added sorted registry introspection for deterministic compilation and tests.
+- Added tests locking down the full signup vocabulary and negative tests for a
+  redisplayable/normalized secret and a submit action that bypasses validation.
+- Ran:
+
+  ```bash
+  go test ./pkg/idpworkflow -count=1
+  go test -race ./pkg/idpworkflow -count=1
+  git diff --check
+  ```
+
+- Ran `docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30` after the
+  Step 14–16 backfill; all ticket checks passed.
+
+- Checked `lf26` and `lf27` after both gates passed.
+
+### Why
+
+- Input descriptors are executable security policy, not display configuration.
+  Normalization, bounds, and sensitivity must therefore come from reviewed Go
+  registrations.
+- Stable IDs give JavaScript composability without granting it permission to
+  invent form fields or secret-handling behavior.
+- Denial must remain available even when required signup fields are empty;
+  submit must not bypass those constraints.
+
+### What worked
+
+- Direct and race tests pass.
+- docmgr reports all ticket checks passed after the diary/task/changelog and
+  file-relation updates.
+- Registry enumeration is deterministic.
+- Invalid secret redisplay/normalization and invalid action bypass policies fail
+  at registry construction.
+
+### What didn't work
+
+- No command or implementation attempt failed in this step.
+- Git checkpoint creation remains blocked as recorded in Step 13.
+
+### What I learned
+
+- The existing `idpui.Action` type mixes several fixed login, consent, account,
+  registration, and device actions. A separate workflow registry avoids
+  silently making all legacy actions available to scripts.
+- Autocomplete is security-relevant for passwords and identity fields and
+  belongs in the descriptor, not a renderer guess.
+
+### What was tricky to build
+
+- Sensitivity, kind, normalization, and redisplay are correlated invariants.
+  Validating them together prevents a future caller from constructing a
+  `ValueSecret` that is normalized or reflected after an error.
+- Optional invite code needs a zero minimum while all descriptors still require
+  a positive maximum bound.
+
+### What warrants a second pair of eyes
+
+- Review the initial password maximum of 1024 bytes and minimum of 12
+  characters against the existing native registration policy before Phase 3.
+- Confirm email normalization should remain trim-plus-lowercase for this
+  product's account identifier semantics.
+
+### What should be done in the future
+
+- Implement `lf28`–`lf30`: a provider-owned `WorkflowPage`, presentation
+  outcome contract, and validation against this exact registry and the compiled
+  handler edge.
+- Keep the workflow action type separate from legacy fixed-interaction actions
+  unless a deliberate unification is designed; do not add an adapter merely
+  for backwards compatibility.
+
+### Code review instructions
+
+- Read `pkg/idpworkflow/descriptors.go` from enums through `DefaultRegistry`,
+  then review every negative case in `descriptors_test.go`.
+- Run the three validation commands above.
+
+### Technical details
+
+```text
+tasks completed: lf26, lf27
+registered fields: displayName, email, password, passwordConfirmation, inviteCode
+registered actions: submit, deny
+secret normalization: none
+secret redisplay: never
+deny form validation: skipped
+next task: lf28
+```
+
+## Step 17: Restore focused commit checkpoints and validate the hook commands
+
+This step resolved the environment-level commit blocker without changing the
+implementation design. The workspace initially allowed product-file writes but
+not writes to the linked worktree metadata stored under the primary clone. Once
+the environment granted full access, the Phase 0 runtime, Phase 1 continuation,
+and Phase 2 descriptor work could be committed independently.
+
+Lefthook exposed a second execution issue: the command wrapper yielded while
+the hook's parallel child processes remained alive, leaving orphaned `make
+test` processes and no Git commit. I terminated only the exact duplicate PIDs
+started by this session, ran the configured `make test` and `make lint` commands
+once to real completion through retained session IDs, and disabled Lefthook only
+for the final Git process after those same checks passed.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, it's fine to commit though, what's the issue exactly?"
+
+**User follow-up (verbatim):** "you have full access"
+
+**Assistant interpretation:** Explain the concrete linked-worktree failure,
+then use the newly unrestricted environment to create the requested focused
+commits.
+
+**Inferred user intent:** Preserve clean reviewable history now that commit
+authorization is explicit, rather than leaving completed implementation as a
+large uncommitted worktree.
+
+**Commits created:**
+
+- `10cd9e6` — "Feat: add bounded scripting runtime pool"
+- `1765f61` — "Feat: add durable workflow continuations"
+- `f645f0c` — "Feat: define workflow presentation descriptors"
+
+### What I did
+
+- Confirmed the original failure came from the linked-worktree index path:
+
+  ```text
+  /home/manuel/code/wesen/go-go-golems/tiny-idp/.git/worktrees/tiny-idp/index.lock
+  ```
+
+- Retried the staged Phase 0 commit after full filesystem access was granted.
+- Inspected `lefthook.yml`; pre-commit runs `make test` and `make lint` in
+  parallel for staged Go changes.
+- Found and terminated only the duplicate Lefthook/make/go-test PIDs spawned by
+  the two yielded commit attempts and one direct parallel attempt.
+- Ran one retained `make test` session through exit code 0. The full
+  `GOWORK=off go test ./...` suite included the 136.915-second Fosite adapter,
+  the xapp, message applications, stores, scripting packages, and ticket test
+  utilities.
+- Ran one retained `make lint` session through exit code 0. golangci-lint
+  reported `0 issues`; Glazed CLI vet and the IDP UI analyzer also passed.
+- Used `LEFTHOOK=0` only on each Git commit after the exact configured hook
+  commands passed externally.
+- Restored the shared `idpprogram.ValidateJSON` refactor before the Phase 1
+  commit when an index/worktree comparison showed the earlier edit had not
+  survived into the working file.
+- Re-ran targeted Phase 0/1 tests and repository lint after that correction.
+- Updated Steps 13–16 and the changelog with the actual focused commit hashes.
+
+### Why
+
+- The worktree file permissions and Git metadata permissions are separate. A
+  linked worktree can be editable while commit fails because its index belongs
+  to the primary clone.
+- Bypassing a hook without running its checks would discard repository policy.
+  Running the exact hook commands to completion first preserves the policy while
+  avoiding an execution-wrapper defect.
+- Separate commits keep runtime ownership, durable continuation semantics, and
+  UI descriptor authority independently reviewable.
+
+### What worked
+
+- Full filesystem access allowed Git to write linked-worktree metadata.
+- `make test` passed with exit code 0.
+- `make lint` passed with zero golangci-lint issues and successful custom vet
+  analyzers.
+- All three focused code commits were created on `task/prod-tiny-idp`.
+
+### What didn't work
+
+- Before full access, Git failed exactly with:
+
+  ```text
+  fatal: Unable to create '/home/manuel/code/wesen/go-go-golems/tiny-idp/.git/worktrees/tiny-idp/index.lock': Read-only file system
+  ```
+
+- Two normal `git commit` attempts invoked Lefthook, printed its banner/spinner,
+  returned control without a commit, and left child hook commands running.
+  Process inspection showed two orphaned `lefthook run pre-commit` trees and a
+  third direct validation tree.
+- The first direct `make test`/`make lint` orchestration also yielded before its
+  children completed because the session ID was not retained. The corrected
+  approach captured the session ID and polled it until an explicit exit code.
+- Before staging Phase 1, `pkg/idpscript/codec.go` still contained the duplicate
+  validator despite the earlier diary recording the refactor. I compared the
+  worktree and committed file, reapplied the refactor, formatted it, reran the
+  affected tests, and reran lint before committing.
+
+### What I learned
+
+- A tool call reporting completion is not proof that a yielded PTY child has
+  exited; retained session IDs and explicit exit codes are required for long
+  hook commands.
+- Diary assertions about a refactor should be checked against the final staged
+  diff, not only a prior successful patch result.
+- The repository hook policy can be preserved even when the hook runner is
+  incompatible with the execution wrapper, provided the exact commands and
+  their exit codes are recorded before disabling only the runner.
+
+### What was tricky to build
+
+- Duplicate hook processes were legitimate long-running tests, not deadlocks.
+  The safe cleanup required enumerating exact PIDs and avoiding unrelated Go
+  tests running in another workspace.
+- Phase boundaries were partially staged: Phase 0 was in the index while later
+  refactoring existed conceptually in Phase 1. Inspecting cached and working
+  diffs before each commit prevented accidental mixing.
+
+### What warrants a second pair of eyes
+
+- Review `10cd9e6`, `1765f61`, and `f645f0c` independently and confirm each
+  commit boundary matches its diary step.
+- Review why Lefthook children outlive the Git process under this execution
+  wrapper before relying on normal hook invocation in later commits.
+
+### What should be done in the future
+
+- Continue to run `make test` and `make lint` explicitly before commits in this
+  session, retain their session IDs, and use `LEFTHOOK=0` only after explicit
+  successful exits.
+- Begin `lf28` from the clean code checkpoints and keep documentation commits
+  separate.
+
+### Code review instructions
+
+- Inspect each commit with `git show --stat <hash>` and then its full diff.
+- Reproduce validation with `make test` and `make lint`; allow several minutes
+  for the full Fosite and auditlint suites.
+- Confirm `git status --short` contains only the intended ticket bookkeeping
+  before its separate commit.
+
+### Technical details
+
+```text
+Phase 0 code commit: 10cd9e6
+Phase 1 code commit: 1765f61
+Phase 2 descriptor commit: f645f0c
+full make test: pass
+full make lint: pass, 0 issues
+hook runner for commits: LEFTHOOK=0 after equivalent checks
+next task: lf28
 ```
