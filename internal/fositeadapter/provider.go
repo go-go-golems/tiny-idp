@@ -84,6 +84,7 @@ type Options struct {
 	Audit                 idp.Sink
 	Consent               idp.ConsentPolicy
 	Authorization         idp.AuthorizationPolicy
+	Claims                idp.ClaimsPolicy
 	RateLimiter           idp.RateLimiter
 	ClientAddress         idp.ClientAddressResolver
 	Authenticator         idp.PasswordAuthenticator
@@ -129,6 +130,7 @@ type Provider struct {
 	securityEvents        securitytrace.Sink
 	consent               idp.ConsentPolicy
 	authorization         idp.AuthorizationPolicy
+	claims                idp.ClaimsPolicy
 	rateLimiter           idp.RateLimiter
 	clientAddress         idp.ClientAddressResolver
 	authenticator         idp.PasswordAuthenticator
@@ -395,7 +397,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("create scripted signup continuation service: %w", continuationErr)
 		}
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, authorization: opts.Authorization, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, authorization: opts.Authorization, claims: opts.Claims, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -1498,7 +1500,7 @@ func (p *Provider) grantRequestedAccessScopes(ar fosite.AccessRequester) {
 	}
 }
 
-func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosite.Requester, authTime time.Time) *openid.DefaultSession {
+func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosite.Requester, authTime time.Time) (*openid.DefaultSession, error) {
 	now := p.now()
 	claims := &fositejwt.IDTokenClaims{
 		Issuer:   p.issuer.String(),
@@ -1513,7 +1515,34 @@ func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosit
 	if promptHas(prompt, "none") || promptHas(prompt, "login") || ar.GetRequestForm().Get("max_age") != "" {
 		claims.RequestedAt = now
 	}
-	for k, v := range idpstore.ClaimsForScopes(u, []string(ar.GetGrantedScopes())) {
+	nativeClaims := idpstore.ClaimsForScopes(u, []string(ar.GetGrantedScopes()))
+	if p.claims != nil {
+		base := make(map[string]json.RawMessage, len(nativeClaims))
+		for name, value := range nativeClaims {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return nil, fmt.Errorf("encode native claim %q: %w", name, err)
+			}
+			base[name] = encoded
+		}
+		output, err := p.claims.Claims(ctx, idp.ClaimsInput{Subject: idp.AuthorizationSubject{Subject: u.Sub, Tenant: u.Tenant, Groups: append([]string(nil), u.Groups...), Roles: append([]string(nil), u.Roles...), EmailVerified: u.EmailVerified}, Client: idp.AuthorizationClient{ID: ar.GetClient().GetID(), Public: ar.GetClient().IsPublic()}, GrantedScopes: []string(ar.GetGrantedScopes()), Base: base}.Clone())
+		if err != nil {
+			return nil, err
+		}
+		merged, err := idp.MergeClaims(base, output)
+		if err != nil {
+			return nil, err
+		}
+		nativeClaims = map[string]any{}
+		for name, value := range merged {
+			var decoded any
+			if err := json.Unmarshal(value, &decoded); err != nil {
+				return nil, fmt.Errorf("decode policy claim %q: %w", name, err)
+			}
+			nativeClaims[name] = decoded
+		}
+	}
+	for k, v := range nativeClaims {
 		if k != "sub" {
 			claims.Extra[k] = v
 		}
@@ -1522,7 +1551,7 @@ func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosit
 	if key, err := p.store.ActiveSigningKey(ctx); err == nil && key.ID != "" {
 		headers.Add("kid", key.ID)
 	}
-	return &openid.DefaultSession{Claims: claims, Headers: headers, Subject: u.Sub, Username: u.PreferredUsername, ExpiresAt: map[fosite.TokenType]time.Time{}}
+	return &openid.DefaultSession{Claims: claims, Headers: headers, Subject: u.Sub, Username: u.PreferredUsername, ExpiresAt: map[fosite.TokenType]time.Time{}}, nil
 }
 
 func (p *Provider) rejectUnsupportedRequestObject(w http.ResponseWriter, r *http.Request) bool {
@@ -1675,7 +1704,12 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 	}
 	p.grantRequestedScopes(ar)
 	p.grantRequestedAudience(ar)
-	session := p.newOIDCSession(r.Context(), u, ar, authTime)
+	session, err := p.newOIDCSession(r.Context(), u, ar, authTime)
+	if err != nil {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "claims.policy.failed", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "policy_unavailable"})
+		http.Error(w, "claims policy failed", http.StatusInternalServerError)
+		return
+	}
 	protocolContext := fosite.NewContext()
 	var finishLifecycle func(bool) error
 	if p.sqlStore != nil {

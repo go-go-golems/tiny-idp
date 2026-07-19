@@ -95,6 +95,7 @@ type Options struct {
 	Audit          idp.Sink
 	Consent        idp.ConsentPolicy
 	Authorization  idp.AuthorizationPolicy
+	Claims         idp.ClaimsPolicy
 	RateLimiter    idp.RateLimiter
 	ClientAddress  idp.ClientAddressResolver
 	Authenticator  idp.PasswordAuthenticator

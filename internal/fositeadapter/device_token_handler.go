@@ -100,7 +100,11 @@ func (h *deviceTokenHandler) HandleTokenEndpointRequest(ctx context.Context, req
 		request.GrantAudience(audience)
 	}
 	request.SetID("device:" + grant.ID)
-	request.SetSession(h.provider.newOIDCSession(ctx, user, request, grant.AuthTime))
+	session, err := h.provider.newOIDCSession(ctx, user, request, grant.AuthTime)
+	if err != nil {
+		return fosite.ErrServerError
+	}
+	request.SetSession(session)
 	now := h.provider.now()
 	accessTTL := fosite.GetEffectiveLifespan(client, idpstore.GrantDeviceCode, fosite.AccessToken, h.provider.config.GetAccessTokenLifespan(ctx))
 	request.GetSession().SetExpiresAt(fosite.AccessToken, now.Add(accessTTL).Round(time.Second))
