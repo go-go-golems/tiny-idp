@@ -36,7 +36,7 @@ func NewGenerationManager(ctx context.Context, source string, workers, retained 
 	if retained < 0 {
 		return nil, errors.New("generation manager retained generation count must not be negative")
 	}
-	candidate, err := New(ctx, source, workers)
+	candidate, err := warmGeneration(ctx, source, workers)
 	if err != nil {
 		return nil, errors.Wrap(err, "warm initial signup generation")
 	}
@@ -50,7 +50,7 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 	if m == nil {
 		return "", errors.New("generation manager is unavailable")
 	}
-	candidate, err := New(ctx, source, m.workers)
+	candidate, err := warmGeneration(ctx, source, m.workers)
 	if err != nil {
 		return "", errors.Wrap(err, "warm candidate signup generation")
 	}
@@ -78,6 +78,24 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 		}
 	}
 	return fingerprint, nil
+}
+
+func warmGeneration(ctx context.Context, source string, workers int) (*Executor, error) {
+	candidate, err := New(ctx, source, workers)
+	if err != nil {
+		return nil, err
+	}
+	for _, result := range candidate.RunTests(ctx) {
+		if result.Passed {
+			continue
+		}
+		_ = candidate.Close(context.Background())
+		if result.Err != nil {
+			return nil, errors.Wrapf(result.Err, "embedded test %q", result.ID)
+		}
+		return nil, errors.Errorf("embedded test %q expected outcome %q, got %q", result.ID, result.Expected, result.Actual)
+	}
+	return candidate, nil
 }
 
 // Active returns the executor for new browser interactions. Callers that

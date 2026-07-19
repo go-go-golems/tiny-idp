@@ -52,3 +52,15 @@ func TestGenerationManagerEvictsOnlyBeyondRetention(t *testing.T) {
 	_, err = manager.ExecutorFor(third)
 	require.NoError(t, err)
 }
+
+func TestGenerationManagerKeepsActiveGenerationWhenEmbeddedTestFails(t *testing.T) {
+	ctx := context.Background()
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.EmailVerifiedSource, 1, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, manager.Close(context.Background())) })
+	active := manager.Snapshot().ActiveFingerprint
+	failing := strings.Replace(idpsignup.EmailVerifiedSource, `expectedKind:"present"`, `expectedKind:"deny"`, 1)
+	_, err = manager.Activate(ctx, failing)
+	require.Error(t, err)
+	assert.Equal(t, active, manager.Snapshot().ActiveFingerprint)
+}
