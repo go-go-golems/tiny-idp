@@ -259,10 +259,10 @@ presentation outcome builders, and exact POST projection.
 - [x] Implement `ctx.present.form` and the Phase 2 field/action builders so an outcome names the resume handler, allowed edge, fields, actions, public values, errors, carry, and expiry <!-- t:lf29 -->
 - [x] Validate presentation outcomes against the compiled handler graph, field/action registries, schema bounds, capability declarations, and continuation expiry limit before persistence or rendering <!-- t:lf30 -->
 - [x] Implement native GET rendering with the current CSP, security headers, CSRF token, origin policy, browser binding, body limit, and cache behavior unchanged <!-- t:lf31 -->
-- [ ] Implement native POST parsing that rejects duplicate singleton fields, missing or extra fields, unknown actions, invalid encodings, oversized values, and normalization failures before invoking JavaScript <!-- t:lf32 -->
-- [ ] Project sensitive inputs as invocation-scoped opaque handles and project only explicitly public normalized values as ordinary JavaScript data <!-- t:lf33 -->
-- [ ] Implement rerender behavior using stable public error codes and field errors without reflecting secrets, raw exceptions, or attacker-controlled HTML <!-- t:lf34 -->
-- [ ] Add renderer, request-validation, CSRF, origin, browser-binding, field-set, normalization, secret-redaction, and browser smoke tests for the current signup form <!-- t:lf35 -->
+- [x] Implement native POST parsing that rejects duplicate singleton fields, missing or extra fields, unknown actions, invalid encodings, oversized values, and normalization failures before invoking JavaScript <!-- t:lf32 -->
+- [x] Project sensitive inputs as invocation-scoped opaque handles and project only explicitly public normalized values as ordinary JavaScript data <!-- t:lf33 -->
+- [x] Implement rerender behavior using stable public error codes and field errors without reflecting secrets, raw exceptions, or attacker-controlled HTML <!-- t:lf34 -->
+- [x] Add renderer, request-validation, CSRF, origin, browser-binding, field-set, normalization, secret-redaction, and browser smoke tests for the current signup form <!-- t:lf35 -->
 
 **Phase 2 gate:** A checked script can present, submit, reject, and rerender the
 current signup form through native HTTP handling, with existing browser security
@@ -293,14 +293,14 @@ named atomic commit operation, and a checked-in open-signup JavaScript program.
 #### Phase 3 tasks
 
 - [ ] Add immutable workflow input projection for the validated client, authorization request, browser session, interaction, presentation, carry, and existing native evidence views needed by signup <!-- t:lf36 -->
-- [ ] Route only natively validated `tinyidp_signup=1` authorization interactions into the configured `signup.start` handler <!-- t:lf37 -->
-- [ ] Persist the `signup.start` presentation as a continuation and route a natively validated POST into the declared `signup.submitted` handler <!-- t:lf38 -->
-- [ ] Implement invocation-scoped password secret handles and prevent their serialization into carry, continuation rows, logs, traces, metrics, or JavaScript strings <!-- t:lf39 -->
-- [ ] Define and validate the native password-credential and local-identity effect plans emitted by `signup.submitted` <!-- t:lf40 -->
+- [x] Route only natively validated `tinyidp_signup=1` authorization interactions into the configured `signup.start` handler <!-- t:lf37 -->
+- [x] Persist the `signup.start` presentation as a continuation and route a natively validated POST into the declared `signup.submitted` handler <!-- t:lf38 -->
+- [x] Implement invocation-scoped password secret handles and prevent their serialization into carry, continuation rows, logs, traces, metrics, or JavaScript strings <!-- t:lf39 -->
+- [x] Define and validate the native password-credential and local-identity effect plans emitted by `signup.submitted` <!-- t:lf40 -->
 - [ ] Add `SignupCommitter` as the single named atomic operation for identity creation, credential creation, continuation consumption, interaction update, and session effects <!-- t:lf41 -->
 - [ ] Map duplicate login, password-policy rejection, invalid input, store conflict, and internal failure to stable non-enumerating workflow outcomes and audit events <!-- t:lf42 -->
-- [ ] Express the current open-signup behavior entirely in a checked-in JavaScript program using `signup.start`, `signup.submitted`, `ctx.present.form`, and `ctx.commit.signup` <!-- t:lf43 -->
-- [ ] Thread the activated program/executor through `pkg/embeddedidp/options.go`, the Fosite adapter, and production serving without transferring listener, TLS, OAuth, key, cookie, or store ownership to JavaScript <!-- t:lf44 -->
+- [x] Express the current open-signup behavior entirely in a checked-in JavaScript program using `signup.start`, `signup.submitted`, `ctx.present.form`, and `ctx.commit.signup` <!-- t:lf43 -->
+- [x] Thread the activated program/executor through `pkg/embeddedidp/options.go`, the Fosite adapter, and production serving without transferring listener, TLS, OAuth, key, cookie, or store ownership to JavaScript <!-- t:lf44 -->
 - [ ] Differential-test the hardcoded and scripted paths for equivalent successful and failing behavior, then delete the hardcoded registration branch instead of retaining an adapter or fallback <!-- t:lf45 -->
 - [ ] Run the existing PKCE registration, replay, CSRF, origin, duplicate-login, password-policy, consent, session, audit, callback, and SQLite test suites through the scripted path <!-- t:lf46 -->
 

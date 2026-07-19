@@ -206,3 +206,20 @@ workflow route before Phase 3 routing (code commit `87db6ba`).
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Workflow renderer dependency wiring.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/workflow.go — Redirect-origin contract used for provider CSP construction.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/workflow_rendering_internal_test.go — Security-envelope regression test.
+
+## 2026-07-19
+
+Step 21: completed the Phase 2 POST projection and most of the Phase 3 signup
+vertical routing (`lf32-lf35`, `lf37-lf40`, `lf43-lf44`): host-owned
+continuation form control, strict parser, opaque password handles, a
+checked-in `open_signup.js` workflow, Fosite routing, and embedded option
+wiring. The focused adapter/UI/workflow/executor suite passes. Atomic
+cross-record signup commitment and legacy-branch removal remain explicitly
+open.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Native Fosite-to-script routing and safe form projection.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/open_signup.js — Checked-in open-signup workflow.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/submission.go — Closed-set form parser and opaque secret handles.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Explicit activated executor/continuation configuration.

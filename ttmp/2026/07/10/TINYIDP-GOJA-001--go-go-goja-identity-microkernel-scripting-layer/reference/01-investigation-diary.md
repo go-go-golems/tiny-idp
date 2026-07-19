@@ -2965,3 +2965,88 @@ HTML: bounded buffer, validated WorkflowPage, renderer gets io.Writer only
 public route: intentionally absent until Fosite-validated Phase 3 routing
 next task: lf32
 ```
+
+## Step 21: Integrate the native signup POST projection and checked-in workflow
+
+This step joins the already completed worker, continuation, descriptor, and
+renderer slices into one real browser flow. It deliberately remains a narrow
+vertical slice: Fosite validates the authorization request first; Go validates
+and projects the form second; JavaScript only selects the declared continuation
+and emits native effect plans; Go owns account creation, sessions, OAuth, and
+the response.
+
+### What I did
+
+- Added the `workflow_continuation` hidden field to the host-owned workflow
+  form and made it mandatory in the page model and exact POST parser.
+- Extended the strict parser so it rejects duplicate singleton controls,
+  missing/extra controls, disallowed actions, invalid normalizations, and
+  overlong values before any JavaScript invocation. Password values are put in
+  the invocation secret set as opaque handles; only normalized display name
+  and email are ordinary JavaScript data.
+- Added `internal/fositeadapter/scripted_signup.go`. After the existing
+  Fosite/CSRF/browser/origin/client-generation checks, it runs
+  `signup.start`, persists a bound continuation, renders the native form, and
+  on POST invokes only the continuation's declared `signup.submitted` lambda.
+- Added the checked-in `pkg/idpsignup/open_signup.js` program. Its start lambda
+  selects the four host-owned signup fields and submit/deny actions. Its
+  submitted lambda calls `ctx.commit.signup`; it cannot parse HTTP, inspect a
+  cookie, render HTML, create a password hash, or issue an OAuth response.
+- Threaded an optional activated executor and continuation store through
+  `embeddedidp.Options` into the Fosite adapter. The adapter can construct the
+  checked-in bounded default only when native registration is enabled. In
+  production it refuses an absent durable continuation store.
+- Updated the PKCE registration integration test to exercise the script-owned
+  page and continuation POST. It still proves cross-site rejection, callback
+  resumption, one-use replay rejection, and redacted audit fields.
+
+### What worked
+
+The focused integration gate passed:
+
+```bash
+go test ./internal/fositeadapter ./pkg/embeddedidp ./pkg/idpui ./pkg/idpworkflow ./pkg/idpsignup -count=1
+```
+
+The Fosite adapter package, including the real PKCE registration browser
+round-trip, passed in about twenty seconds. Formatting and `git diff --check`
+also passed.
+
+### What remains deliberately open
+
+This is not yet the Phase 3 gate. The native workflow input projection
+(`lf36`), one named transaction-spanning `SignupCommitter` (`lf41`), stable
+failure classification (`lf42`), deletion of the now-unreachable legacy
+registration branch (`lf45`), and the full regression matrix (`lf46`) still
+need their own reviewable changes. The current effect execution calls the
+existing atomic account service, then consumes the continuation and continues
+the browser/OAuth lifecycle. That is safe for the tested happy and replay
+paths, but it is not the requested single all-record atomic operation and must
+not be represented as one.
+
+### Code review instructions
+
+- Begin with `pkg/idpworkflow/submission.go`; confirm the POST vocabulary is a
+  closed set and sensitive values become handles, not public strings.
+- Follow `internal/fositeadapter/scripted_signup.go` from `beginScriptedSignup`
+  to `resumeScriptedSignup`; check that Fosite, CSRF, origin, browser binding,
+  client generation, and continuation bindings are all native checks.
+- Read `pkg/idpsignup/open_signup.js` beside `pkg/idpsignup/executor.go`; the
+  JavaScript program should contain policy/flow selection only.
+- Confirm `pkg/embeddedidp/options.go` exposes no listener, TLS, OAuth key,
+  cookie, renderer authority, or raw store capability to JavaScript.
+- Re-run the focused command above. The next checkpoint, after the remaining
+  Phase 3 work, is the complete Phase 2/3 direct, race, lint, and full suite.
+
+### Technical details
+
+```text
+tasks completed: lf32-lf35, lf37-lf40, lf43-lf44
+new public form control: workflow_continuation
+secret boundary: native parser -> idpworkflow.SecretHandle -> ctx.secret
+continuation binding: workflow, program, request, client, browser, expiry
+script authority: field/action selection and declared native signup effects
+native authority: HTTP, CSRF, CSP, cookies, account service, sessions, OAuth
+validation: focused direct package suite passes
+next tasks: lf36, lf41-lf42, lf45-lf46
+```
