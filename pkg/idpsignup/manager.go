@@ -1,0 +1,175 @@
+package idpsignup
+
+import (
+	"context"
+	"sync"
+
+	"github.com/pkg/errors"
+
+	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+)
+
+// GenerationManager atomically publishes warmed signup executors. It retains
+// a bounded number of prior fingerprints so a host can route compatible
+// browser continuations explicitly rather than resuming them on whichever
+// source happened to become active last.
+type GenerationManager struct {
+	mu       sync.RWMutex
+	workers  int
+	retained int
+	active   *Executor
+	byHash   map[string]*Executor
+	order    []string
+	closed   bool
+}
+
+type GenerationSnapshot struct {
+	ActiveFingerprint string
+	Retained          []string
+	Ready             bool
+}
+
+func NewGenerationManager(ctx context.Context, source string, workers, retained int) (*GenerationManager, error) {
+	if workers <= 0 {
+		return nil, errors.New("generation manager worker count must be positive")
+	}
+	if retained < 0 {
+		return nil, errors.New("generation manager retained generation count must not be negative")
+	}
+	candidate, err := New(ctx, source, workers)
+	if err != nil {
+		return nil, errors.Wrap(err, "warm initial signup generation")
+	}
+	fingerprint := candidate.Fingerprint()
+	return &GenerationManager{workers: workers, retained: retained, active: candidate, byHash: map[string]*Executor{fingerprint: candidate}, order: []string{fingerprint}}, nil
+}
+
+// Activate compiles and warms a candidate before taking the publication lock.
+// On every candidate failure the active generation remains unchanged.
+func (m *GenerationManager) Activate(ctx context.Context, source string) (string, error) {
+	if m == nil {
+		return "", errors.New("generation manager is unavailable")
+	}
+	candidate, err := New(ctx, source, m.workers)
+	if err != nil {
+		return "", errors.Wrap(err, "warm candidate signup generation")
+	}
+	fingerprint := candidate.Fingerprint()
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		_ = candidate.Close(context.Background())
+		return "", errors.New("generation manager is closed")
+	}
+	if existing := m.byHash[fingerprint]; existing != nil {
+		m.active = existing
+		m.mu.Unlock()
+		_ = candidate.Close(context.Background())
+		return fingerprint, nil
+	}
+	m.active = candidate
+	m.byHash[fingerprint] = candidate
+	m.order = append(m.order, fingerprint)
+	toClose := m.evictLocked()
+	m.mu.Unlock()
+	for _, executor := range toClose {
+		if closeErr := executor.Close(context.Background()); closeErr != nil {
+			return "", errors.Wrap(closeErr, "close drained signup generation")
+		}
+	}
+	return fingerprint, nil
+}
+
+// Active returns the executor for new browser interactions. Callers that
+// resume a continuation must use ExecutorFor with its persisted fingerprint.
+func (m *GenerationManager) Active() (*Executor, error) {
+	if m == nil {
+		return nil, errors.New("generation manager is unavailable")
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed || m.active == nil {
+		return nil, errors.New("active signup generation is unavailable")
+	}
+	return m.active, nil
+}
+
+func (m *GenerationManager) ExecutorFor(fingerprint string) (*Executor, error) {
+	if m == nil || fingerprint == "" {
+		return nil, errors.New("signup generation is unavailable")
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return nil, errors.New("generation manager is closed")
+	}
+	executor := m.byHash[fingerprint]
+	if executor == nil {
+		return nil, errors.New("signup generation is unavailable")
+	}
+	return executor, nil
+}
+
+func (m *GenerationManager) ResolveProgram(ctx context.Context, fingerprint string) (idpprogram.Program, error) {
+	executor, err := m.ExecutorFor(fingerprint)
+	if err != nil {
+		return idpprogram.Program{}, err
+	}
+	return executor.ResolveProgram(ctx, fingerprint)
+}
+
+func (m *GenerationManager) Snapshot() GenerationSnapshot {
+	if m == nil {
+		return GenerationSnapshot{}
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	snapshot := GenerationSnapshot{Ready: !m.closed && m.active != nil, Retained: append([]string(nil), m.order...)}
+	if m.active != nil {
+		snapshot.ActiveFingerprint = m.active.Fingerprint()
+	}
+	return snapshot
+}
+
+func (m *GenerationManager) Close(ctx context.Context) error {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil
+	}
+	m.closed = true
+	executors := make([]*Executor, 0, len(m.byHash))
+	for _, executor := range m.byHash {
+		executors = append(executors, executor)
+	}
+	m.byHash = nil
+	m.active = nil
+	m.order = nil
+	m.mu.Unlock()
+	for _, executor := range executors {
+		if err := executor.Close(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *GenerationManager) evictLocked() []*Executor {
+	limit := m.retained + 1 // active generation plus retained predecessors
+	toClose := []*Executor{}
+	for len(m.order) > limit {
+		fingerprint := m.order[0]
+		m.order = m.order[1:]
+		executor := m.byHash[fingerprint]
+		if executor == m.active {
+			m.order = append(m.order, fingerprint)
+			continue
+		}
+		delete(m.byHash, fingerprint)
+		toClose = append(toClose, executor)
+	}
+	return toClose
+}

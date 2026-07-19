@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"strings"
 
 	"github.com/pkg/errors"
 
@@ -94,7 +95,17 @@ func (e *Executor) Close(ctx context.Context) error {
 
 func (e *Executor) Program() idpprogram.Program { return e.artifact.Program() }
 
-func (e *Executor) Fingerprint() string { return e.artifact.Fingerprints().Program }
+// Fingerprint identifies the executable generation, not merely its declared
+// program contract. A lambda body can change while handlers/schemas/effects
+// stay identical, so both source and program fingerprints are persisted into
+// continuations and used for generation routing.
+func (e *Executor) Fingerprint() string {
+	if e == nil || e.artifact == nil {
+		return ""
+	}
+	fingerprints := e.artifact.Fingerprints()
+	return strings.Join([]string{fingerprints.Source, fingerprints.Program}, ":")
+}
 
 func (e *Executor) ResolveProgram(_ context.Context, fingerprint string) (idpprogram.Program, error) {
 	if e == nil || e.artifact == nil || fingerprint != e.Fingerprint() {
