@@ -415,7 +415,7 @@ manager, operational health/metrics/audit surfaces, and rollback behavior.
 #### Phase 6 tasks
 
 - [x] Implement `tinyidp script validate` to compile, canonicalize, validate, bind a named production profile, and report stable source/program/schema/callback fingerprints without executing requests <!-- t:lf67 -->
-- [ ] Implement collection and execution of embedded program tests with deterministic fake clock, random, mailer, identity, invitation, and store capabilities <!-- t:lf68 -->
+- [x] Implement collection and execution of embedded program tests with deterministic fake clock, random, mailer, identity, invitation, and store capabilities <!-- t:lf68 -->
 - [x] Implement `tinyidp script test` with stable per-case diagnostics and nonzero exit behavior for compilation, binding, assertion, timeout, or leak failures <!-- t:lf69 -->
 - [x] Implement `tinyidp script explain` for workflows, handler edges, schemas, capabilities, effects, budgets, continuations, providers, state/replay/revocation semantics, and production-profile violations <!-- t:lf70 -->
 - [ ] Implement a generation manager that compiles, validates, binds capabilities, creates workers, verifies fingerprints, runs embedded tests, and warms the pool before activation <!-- t:lf71 -->

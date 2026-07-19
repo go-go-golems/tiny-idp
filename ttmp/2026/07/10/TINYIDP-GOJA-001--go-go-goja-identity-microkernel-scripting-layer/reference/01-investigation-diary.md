@@ -32,6 +32,8 @@ RelatedFiles:
       Note: |-
         Optional invite code can only become declared consumeInvitation plan (commit 84a9995)
         Typed ctx.challenge.emailCode outcome builder (commit 2e8a517)
+    - Path: repo://internal/gojamodules/tinyidp/typescript.go
+      Note: JavaScript and TypeScript test fakes API
     - Path: repo://lefthook.yml
       Note: Step 17 exact pre-commit test and lint policy whose runner orphaned children
     - Path: repo://pkg/embeddedidp/options.go
@@ -59,7 +61,9 @@ RelatedFiles:
     - Path: repo://pkg/idpinvite/durable.go
       Note: Keyed code hashing and transaction-scoped one-time invitation redemption (commit 21c7c4c)
     - Path: repo://pkg/idpprogram/program.go
-      Note: Declarative embedded test contract
+      Note: |-
+        Declarative embedded test contract
+        Declarative fake fixture data contract
     - Path: repo://pkg/idpprogram/value.go
       Note: Step 14 shared runtime-independent JSON and public-carry validation
     - Path: repo://pkg/idpprogram/value_test.go
@@ -68,6 +72,8 @@ RelatedFiles:
       Note: Step 15 runtime now shares the core schema validator
     - Path: repo://pkg/idpscript/invoke.go
       Note: Invocation-scoped evidence projection (commit c14d70f)
+    - Path: repo://pkg/idpsignup/executor.go
+      Note: Fixed test-only deterministic capability catalog
     - Path: repo://pkg/idpsignup/executor_test.go
       Note: Invitation workflow output regression (commit 84a9995)
     - Path: repo://pkg/idpsignup/manager.go
@@ -118,6 +124,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -4598,4 +4605,98 @@ test suite to bind/timeout/leak failures before Phase 6 is declared complete.
 valid test + matching outcome --> row { passed: true } --> exit 0
 valid test + mismatched outcome --> row { passed: false } --> stable error --> nonzero
 invalid test declaration --> compile diagnostic --> nonzero
+```
+
+## Step 42: Add deterministic embedded-test capability fakes
+
+Embedded tests can now exercise capability-using lambdas without connecting to
+production services. The program supplies only JSON fixture output; native code
+owns the fixed capability vocabulary and binds it only during `RunTests`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 39)
+
+**Assistant interpretation:** Finish the Phase 6 embedded-test capability
+contract while retaining the no-ambient-authority model.
+
+**Inferred user intent:** Let scripts test workflows that depend on time,
+randomness, mail, identity, invitations, or storage without making JavaScript
+a production integration harness.
+
+**Commit (code):** `9b22790` — "Feat: bind deterministic script test fakes"
+
+### What I did
+
+- Added optional `fakes` JSON outputs to `ProgramTest` and the TypeScript API.
+- Validated that every fake is bounded JSON and names a capability actually
+  required by the test lambda.
+- Added six runner-owned deterministic fake IDs: `clock.now`, `random.bytes`,
+  `mailer.send`, `identity.lookup`, `invitation.lookup`, and `store.get`.
+- Bound only declared known fake requirements during `Executor.RunTests`; an
+  unknown required capability still fails closed.
+- Added an async JavaScript test using configured `clock.now` output and
+  confirmed it observes the fixture value rather than a wall clock.
+- Checked off `lf68`.
+
+### Why
+
+Deterministic workflow tests need controlled dependency responses, but test
+fixtures must not become a path to mail delivery, database access, account
+mutation, or arbitrary host code. JSON return values keep the seam bounded,
+serializable, and reviewable.
+
+### What worked
+
+```bash
+go test ./pkg/idpprogram ./internal/gojamodules/tinyidp ./pkg/idpsignup -count=1 -v
+git commit -m 'Feat: bind deterministic script test fakes'
+```
+
+The configured clock fake test passed, and the full commit lint gate passed.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+Test fakes belong to the runner, not the general capability API. A program can
+declare a production capability contract, but only the dedicated test runner
+recognizes this fixed test vocabulary and supplies controlled output.
+
+### What was tricky to build
+
+The same program contract is compiled for production and test. Validation can
+ensure a fixture refers to a lambda-required capability, while the profile
+runner must separately reject known-but-unbound or unknown capability IDs.
+That split prevents a generic `fakes` object from granting authority at normal
+request invocation time.
+
+### What warrants a second pair of eyes
+
+- The default fake outputs are intentionally minimal and response-only. Add
+  explicit request assertions only if a later test contract needs them; do not
+  turn these into embedded JavaScript callbacks.
+
+### What should be done in the future
+
+Add targeted tests for unknown fake IDs and fake-output bounds as the test
+contract grows, then complete lifecycle, metrics, audit, and reload coverage.
+
+### Code review instructions
+
+- Review `ProgramTest.Fakes`, the validation loop, and
+  `Executor.testCapabilities` together.
+- Run the command in **What worked**.
+- Confirm ordinary `Executor.Start`/`Submit` calls do not use this method.
+
+### Technical details
+
+```text
+program.test { fakes: { "clock.now": { unixMillis: 42 } } }
+     --> validated JSON fixture --> test-only native binding
+     --> ctx.cap.clock.now({}) --> { unixMillis: 42 }
+
+normal browser request --> no test binding --> production host binding only
 ```

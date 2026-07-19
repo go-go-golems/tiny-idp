@@ -390,3 +390,11 @@ Step 41: proved script-test structured success output and stable failing-case di
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/script_test.go — CLI operational test evidence
+
+## 2026-07-19
+
+Step 42: added bounded deterministic clock/random/mailer/identity/invitation/store test fakes, bound only by the embedded-test runner (commit 9b22790).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Test-only capability binding
