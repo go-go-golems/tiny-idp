@@ -94,6 +94,9 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	input, err := p.scriptedSignup.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
+	if err == nil {
+		input, err = mergeWorkflowCarry(continuation.Carry, input)
+	}
 	var evidence map[string]json.RawMessage
 	verifiedEmail := ""
 	if challengeID, ok := emailChallengeReference(continuation); ok {
@@ -373,6 +376,24 @@ func emailChallengeReference(continuation idpcontinuation.WorkflowContinuation) 
 		}
 	}
 	return "", false
+}
+
+func mergeWorkflowCarry(carry, input json.RawMessage) (json.RawMessage, error) {
+	if len(carry) == 0 {
+		return input, nil
+	}
+	values := map[string]any{}
+	if err := json.Unmarshal(carry, &values); err != nil {
+		return nil, err
+	}
+	var submitted map[string]any
+	if err := json.Unmarshal(input, &submitted); err != nil {
+		return nil, err
+	}
+	for key, value := range submitted {
+		values[key] = value
+	}
+	return json.Marshal(values)
 }
 
 func workflowDescriptors(state idpcontinuation.PresentationState) ([]idpworkflow.FieldDescriptor, []idpworkflow.ActionDescriptor, error) {
