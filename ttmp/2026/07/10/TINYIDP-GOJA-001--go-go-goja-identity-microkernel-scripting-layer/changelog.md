@@ -254,3 +254,14 @@ updated to include the mandatory workflow continuation field (commit d65eff0).
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — Secret-projection fixture using the complete workflow form contract.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Scripted signup PKCE/cross-origin/replay/audit browser regression.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation_test.go — SQLite transaction-scoped continuation regression.
+
+## 2026-07-19
+
+Step 24: completed `lf47` with fingerprinted typed identity/invitation
+provider contracts, explicit state/replay/revocation semantics, handler/schema
+pinning, and deterministic invalid-contract diagnostics (commit 414cfb4).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/providers.go — Provider state, replay, revocation, and handler contracts.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/validate.go — Compile-time provider invariant validation.

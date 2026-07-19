@@ -334,7 +334,7 @@ implementations.
 
 #### Phase 4 tasks
 
-- [ ] Define typed identity-provider and invite-provider contracts with stable provider IDs, declared capabilities/effects, bounded inputs, normalized outputs, and explicit replay/revocation semantics <!-- t:lf47 -->
+- [x] Define typed identity-provider and invite-provider contracts with stable provider IDs, declared capabilities/effects, bounded inputs, normalized outputs, and explicit replay/revocation semantics <!-- t:lf47 -->
 - [ ] Add JavaScript provider registration and invocation through the same artifact registry, worker ownership, budgets, and schema validation used by workflow lambdas <!-- t:lf48 -->
 - [ ] Implement deterministic virtual subject derivation and protected claim projection without requiring a local user row <!-- t:lf49 -->
 - [ ] Implement signed stateless invitation verification with audience, issuer, expiry, policy-version, and subject/email constraints expressed as native validated output <!-- t:lf50 -->

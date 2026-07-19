@@ -3227,3 +3227,60 @@ full suite: passed
 lint: passed, zero issues
 next normative work: Phase 4 virtual identity and invitation providers
 ```
+
+## Step 24: Freeze the Phase 4 virtual-provider artifact contract
+
+Phase 4 begins by making the security properties of an identity or invitation
+provider fingerprinted program data. This prevents a later implementation from
+claiming one-time redemption or durable revocation where its storage model
+cannot provide it.
+
+### What I did
+
+- Added identity/invitation provider contracts with stable ID, version, state,
+  replay-protection, revocation, and handler metadata.
+- Defined `virtual`/`durable` state, `none`/`expiry`/`one_time` replay
+  protection, and `none`/`key_rollover`/`durable` revocation vocabulary.
+- Pinned each provider handler to a `LambdaKindProvider` callback and exact
+  input/output schema. Identity providers require `establish`; invitation
+  providers require `validate`.
+- Added deterministic validation for unknown schemas, workflow callbacks used
+  as provider callbacks, virtual one-time claims, and durable revocation
+  without durable state.
+- Added a valid durable-invitation fixture and negative diagnostic tests.
+
+### Why
+
+The declaration lets future activation and explain tooling state where provider
+data exists, how replay is stopped, and how revocation works without inspecting
+arbitrary JavaScript. It is a contract, not a service locator or a database
+handle exposed to scripts.
+
+### What worked
+
+```bash
+go test ./pkg/idpprogram -count=1
+```
+
+passed. Code checkpoint: `414cfb4 Feat: define virtual provider contracts`.
+
+### What should be done next
+
+Implement `lf48`: add provider registration to the isolated module and route
+provider callbacks through the existing artifact registry and bounded worker
+pool, without adding ambient host authority.
+
+### Code review instructions
+
+- Start with `pkg/idpprogram/providers.go` for the complete vocabulary.
+- Review the provider validation block in `pkg/idpprogram/validate.go`.
+- Review `pkg/idpprogram/program_test.go` for stable diagnostic expectations.
+
+### Technical details
+
+```text
+task completed: lf47
+artifact addition: Program.Providers
+provider callback kind: LambdaKindProvider only
+next task: lf48
+```
