@@ -39,7 +39,7 @@ type promiseState struct {
 
 // Named results let the interrupt-cleanup defer force discard and preserve a
 // cleanup failure without obscuring an earlier invocation error.
-func (w *worker) invokeWithSecrets(ctx context.Context, lambdaID string, input json.RawMessage, supplied map[string]CapabilityBinding, secrets map[string]idpworkflow.SecretHandle) (outcome idpprogram.Outcome, safe bool, err error) { //nolint:nonamedreturns
+func (w *worker) invokeWithSecrets(ctx context.Context, lambdaID string, input json.RawMessage, supplied map[string]CapabilityBinding, secrets map[string]idpworkflow.SecretHandle, evidence map[string]json.RawMessage) (outcome idpprogram.Outcome, safe bool, err error) { //nolint:nonamedreturns
 	if w == nil || w.image == nil || w.image.runtime == nil {
 		return idpprogram.Outcome{}, false, errors.New("runtime worker is not initialized")
 	}
@@ -114,6 +114,19 @@ func (w *worker) invokeWithSecrets(ctx context.Context, lambdaID string, input j
 		}
 		if err := ctxObject.Set("commit", tinyidpmodule.NewCommitContext(vm, invocationSecrets)); err != nil {
 			return nil, errors.Wrap(err, "set lambda commit context")
+		}
+		evidenceObject := vm.NewObject()
+		for name, raw := range evidence {
+			value, err := parseJSONValue(vm, raw)
+			if err != nil {
+				return nil, errors.Wrap(err, "decode native evidence")
+			}
+			if err := evidenceObject.Set(name, value); err != nil {
+				return nil, errors.Wrap(err, "set native evidence")
+			}
+		}
+		if err := ctxObject.Set("evidence", evidenceObject); err != nil {
+			return nil, errors.Wrap(err, "set native evidence context")
 		}
 		if err := deepFreeze(vm, ctxObject); err != nil {
 			return nil, errors.Wrap(err, "freeze lambda context")

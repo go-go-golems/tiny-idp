@@ -85,11 +85,22 @@ func (p *Pool) Invoke(ctx context.Context, lambdaID string, input json.RawMessag
 // InvokeWithSecrets adds request-scoped opaque secret handles to an invocation.
 // The JSON input remains public data; secret values are never encoded into it.
 func (p *Pool) InvokeWithSecrets(ctx context.Context, lambdaID string, input json.RawMessage, capabilities map[string]CapabilityBinding, secrets map[string]idpworkflow.SecretHandle) (idpprogram.Outcome, error) {
+	return p.invoke(ctx, lambdaID, input, capabilities, secrets, nil)
+}
+
+// InvokeWithSecretsAndEvidence projects native-verified evidence into exactly
+// one owned invocation. Callers cannot install evidence on a worker or reuse
+// it after the invocation returns.
+func (p *Pool) InvokeWithSecretsAndEvidence(ctx context.Context, lambdaID string, input json.RawMessage, capabilities map[string]CapabilityBinding, secrets map[string]idpworkflow.SecretHandle, evidence map[string]json.RawMessage) (idpprogram.Outcome, error) {
+	return p.invoke(ctx, lambdaID, input, capabilities, secrets, evidence)
+}
+
+func (p *Pool) invoke(ctx context.Context, lambdaID string, input json.RawMessage, capabilities map[string]CapabilityBinding, secrets map[string]idpworkflow.SecretHandle, evidence map[string]json.RawMessage) (idpprogram.Outcome, error) {
 	worker, err := p.acquire(ctx)
 	if err != nil {
 		return idpprogram.Outcome{}, err
 	}
-	outcome, safe, invokeErr := worker.invokeWithSecrets(ctx, lambdaID, input, capabilities, secrets)
+	outcome, safe, invokeErr := worker.invokeWithSecrets(ctx, lambdaID, input, capabilities, secrets, evidence)
 	if safe {
 		p.release(worker)
 		return outcome, invokeErr
