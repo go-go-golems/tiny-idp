@@ -5416,3 +5416,132 @@ logic.
 - Review `ClaimsOutput.Validate` and `MergeClaims` for protected/native names.
 - Trace `newOIDCSession` through both authorization-code and device callers.
 - Run the direct session regression and confirm `sub` cannot be replaced.
+
+## Step 51: Make password-recovery evidence a one-time native effect
+
+Password recovery now has a deliberately small native boundary: it accepts a
+previously verified and bound email challenge, verifies that the challenge was
+issued for the recovery template, consumes that verified evidence exactly once,
+and asks the existing account service to replace the password. No JavaScript
+API, browser form, or configuration object receives password-hash, credential,
+or recovery-record write authority.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue Phase 7 without widening the script
+surface. Complete the recovery primitive before attempting any browser
+presentation integration.
+
+**Commits (code):** `0da0c0c` — "Feat: add native password recovery effect";
+`222a5b6` — "Test: reject non-recovery password reset evidence";
+`e003858` — "Feat: consume password recovery evidence once"
+
+### What I did
+
+- Added `idprecovery.Service`, which only rehydrates evidence through
+  `idpemailchallenge.Service` and delegates password replacement to
+  `idpaccounts.Service`.
+- Extended the email-challenge store with a named
+  `ConsumeVerifiedEmailChallenge` transition and `consumed` terminal status.
+  Both the in-memory and SQLite stores enforce the original durable bindings
+  and make the transition atomically.
+- Made `ResetPassword` check the recovery-template discriminator before it
+  consumes evidence. It consumes first and then replaces the credential, so a
+  replay cannot win a race and choose a second password.
+- Added tests for a successful reset, rejection of a verified signup
+  challenge, one-time evidence consumption, recovery replay, and SQLite
+  persistence.
+
+### Why
+
+`Evidence` intentionally permits signup's declared multi-page continuation to
+rehydrate proof more than once. Treating that same read operation as a reset
+capability would leave a verified recovery code reusable until expiry. Recovery
+therefore needs a distinct, native, terminal consume transition. The
+fail-closed order is intentional: if credential storage is unavailable after
+the consume, the user must begin a new recovery request rather than retain a
+reusable credential-reset capability.
+
+### What worked
+
+```bash
+gofmt -w pkg/idpemailchallenge/types.go pkg/idpemailchallenge/store.go \\
+  pkg/idpemailchallenge/memory.go pkg/idpemailchallenge/service.go \\
+  pkg/idpemailchallenge/service_test.go pkg/idpemailchallenge/sqlite_test.go \\
+  pkg/idprecovery/service.go pkg/idprecovery/service_test.go \\
+  pkg/sqlitestore/email_challenge.go
+go test ./pkg/idpemailchallenge ./pkg/sqlitestore ./pkg/idprecovery -count=1
+git diff --check
+```
+
+The focused tests passed. The commit hook then passed repository lint and vet.
+
+### What didn't work
+
+The first recovery service implementation could rehydrate verified evidence
+but had no terminal use transition. That was safe for signup proof carry but
+not sufficient for a password-reset effect. The missing transition was fixed
+before adding a browser endpoint or any script hook.
+
+### What I learned
+
+There are two different meanings of verified email proof in this system:
+
+- a workflow may carry evidence across several declared provider-controlled
+  presentation steps; and
+- a security-sensitive native effect may require one-time consumption.
+
+Encoding the second meaning in the typed challenge store preserves the first
+without a special case in JavaScript or an in-memory replay cache.
+
+### What was tricky to build
+
+The recovery service and account service deliberately expose separate narrow
+interfaces. A strict cross-store transaction would require expanding the
+public storage abstraction. Instead this first safe boundary consumes before
+mutation: it favors replay safety over retrying an uncertain credential write.
+The next recovery-browser implementation must make this availability tradeoff
+visible in its operator documentation and start a fresh challenge on retry.
+
+### What warrants a second pair of eyes
+
+- Confirm that consuming before password replacement is the right operational
+  choice for the configured credential store; it intentionally trades a
+  failed storage write for a new recovery email.
+- Review all future callers of `ConsumeEvidence`; only native terminal effects
+  should use it. Signup must continue to use `Evidence` while progressing its
+  declared continuation graph.
+- Verify that any future recovery UI uses the same browser binding and does
+  not accept a recipient address or synthetic verified marker on its reset
+  POST.
+
+### Code review instructions
+
+- Trace `idprecovery.Service.ResetPassword`: evidence read, template check,
+  native consume, then `idpaccounts.SetPassword`.
+- Inspect memory and SQLite `ConsumeVerifiedEmailChallenge` implementations;
+  a second use must return `ErrAlreadyTerminal`.
+- Run:
+
+  ```bash
+  go test ./pkg/idpemailchallenge ./pkg/sqlitestore ./pkg/idprecovery -count=1
+  ```
+
+### Technical details
+
+```text
+browser code -> native Verify -> status=verified
+                                  |
+                                  v
+                      recovery template check
+                                  |
+                                  v
+                      native ConsumeEvidence -> status=consumed
+                                  |
+                                  v
+                      idpaccounts.SetPassword
+
+replay -> ConsumeEvidence -> ErrAlreadyTerminal -> no credential write
+```

@@ -437,3 +437,14 @@ Completed the Phase 6 generation lifecycle gate by adding concurrent retained-ex
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Browser continuation generation-routing regression evidence
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager_test.go — Concurrent activation and retained executor test
+
+## 2026-07-19 - Step 51: one-time native password recovery evidence
+
+Completed the Phase 7 recovery primitive through typed native email-challenge and credential services. Verified recovery evidence is now consumed once before password replacement; memory and SQLite tests reject replay and non-recovery templates.
+
+### Related Files
+
+- pkg/idpemailchallenge/service.go — Verified evidence consumption boundary
+- pkg/idprecovery/service.go — Native recovery effect boundary
+- pkg/idprecovery/service_test.go — Recovery replay and template regression coverage
+- pkg/sqlitestore/email_challenge.go — Durable one-time challenge transition
