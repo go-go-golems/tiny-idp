@@ -403,7 +403,11 @@ func signupSubmissionSecrets(submission idpworkflow.Submission) map[string]idpwo
 }
 
 func (p *Provider) renderScriptedSignupError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string) {
-	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: idpworkflow.FieldEmail, Code: idpworkflow.ErrorRejected}}))
+	errorField := idpworkflow.FieldEmail
+	if len(fields) > 0 {
+		errorField = fields[0].ID
+	}
+	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: idpworkflow.ErrorRejected}}))
 }
 
 func (p *Provider) signupBindings(record idpstore.InteractionRecord, r *http.Request) idpcontinuation.Bindings {

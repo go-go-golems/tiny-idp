@@ -259,6 +259,27 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 	codeForm := parseInteractionInputs(string(body))
 	codeForm.Set(idpui.ActionFieldName, "submit")
 	codeForm.Set("email_code", mail.requests[2].Code)
+	attacker := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	attackerResponse := submitRegistration(t, attacker, server.URL, codeForm)
+	attackerResponse.Body.Close()
+	if attackerResponse.StatusCode == http.StatusOK || attackerResponse.StatusCode == http.StatusSeeOther {
+		t.Fatalf("different-browser code submission status=%d", attackerResponse.StatusCode)
+	}
+	wrongCodeForm := parseInteractionInputs(string(body))
+	wrongCodeForm.Set(idpui.ActionFieldName, "submit")
+	wrongCodeForm.Set("email_code", mail.requests[1].Code)
+	response = submitRegistration(t, client, server.URL, wrongCodeForm)
+	body, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("wrong-code status=%d body=%s", response.StatusCode, body)
+	}
+	codeForm = parseInteractionInputs(string(body))
+	codeForm.Set(idpui.ActionFieldName, "submit")
+	codeForm.Set("email_code", mail.requests[2].Code)
 
 	response = submitRegistration(t, client, server.URL, codeForm)
 	body, err = io.ReadAll(response.Body)
@@ -268,6 +289,11 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 	}
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="`+idpui.PasswordFieldName+`"`) || !strings.Contains(string(body), `name="`+idpui.PasswordConfirmationFieldName+`"`) {
 		t.Fatalf("password page status=%d body=%s", response.StatusCode, body)
+	}
+	replay := submitRegistration(t, client, server.URL, codeForm)
+	replay.Body.Close()
+	if replay.StatusCode != http.StatusBadRequest {
+		t.Fatalf("verified-code replay status=%d", replay.StatusCode)
 	}
 	passwordForm := parseInteractionInputs(string(body))
 	passwordForm.Set(idpui.ActionFieldName, "submit")
