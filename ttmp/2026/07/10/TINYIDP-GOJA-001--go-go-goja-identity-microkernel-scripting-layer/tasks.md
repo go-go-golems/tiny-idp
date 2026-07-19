@@ -380,10 +380,10 @@ workflow.
 - [x] Implement native challenge creation and bounded email dispatch with redacted audit events and retry classification <!-- t:lf60 -->
 - [x] Add typed email-code field/action descriptors and `ctx.challenge` outcomes that name the resume handler and declared evidence <!-- t:lf61 -->
 - [x] Validate and atomically consume a submitted code before producing unforgeable verified-email evidence for the resumed lambda <!-- t:lf62 -->
-- [ ] Enforce attempt limits, resend policy, expiry, browser/client/workflow/generation binding, cleanup, and generic non-enumerating public errors <!-- t:lf63 -->
-- [ ] Update the signup workflow to collect the password only after email verification, or use the approved native pending-credential reference if collection must precede suspension <!-- t:lf64 -->
-- [ ] Bind verified-email evidence into `SignupCommitter` and reject any script-created or stale substitute <!-- t:lf65 -->
-- [ ] Add restart, replay, concurrent-submit, wrong-code, expired-code, resend, attempt-limit, browser mismatch, client mismatch, generation mismatch, mailer failure, and cleanup integration tests <!-- t:lf66 -->
+- [x] Enforce attempt limits, resend policy, expiry, browser/client/workflow/generation binding, cleanup, and generic non-enumerating public errors <!-- t:lf63 -->
+- [x] Update the signup workflow to collect the password only after email verification, or use the approved native pending-credential reference if collection must precede suspension <!-- t:lf64 -->
+- [x] Bind verified-email evidence into `SignupCommitter` and reject any script-created or stale substitute <!-- t:lf65 -->
+- [x] Add restart, replay, concurrent-submit, wrong-code, expired-code, resend, attempt-limit, browser mismatch, client mismatch, generation mismatch, mailer failure, and cleanup integration tests <!-- t:lf66 -->
 
 **Phase 5 gate:** A process restart between send and verify preserves the signup
 flow, exactly one correct submission yields native verified-email evidence, and

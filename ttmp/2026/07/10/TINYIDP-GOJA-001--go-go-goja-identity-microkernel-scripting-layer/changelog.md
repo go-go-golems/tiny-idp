@@ -346,3 +346,12 @@ Step 34-35: completed the verified-email signup browser workflow, durable native
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Provider-owned proof and browser flow
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/service.go — Native delivery and resend lifecycle
+
+## 2026-07-19
+
+Step 36: completed Phase 5 lifecycle enforcement, post-verification password collection, native commit proof binding, restart/replay/binding/resend/mailer-failure/concurrency coverage, and Phase 5 gate validation (commits 14e374c, 1799362).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Browser and SQLite restart Phase 5 evidence
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/memory_test.go — Atomic correct-code concurrency evidence

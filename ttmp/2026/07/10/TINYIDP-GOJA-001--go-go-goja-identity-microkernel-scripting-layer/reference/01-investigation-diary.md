@@ -3957,3 +3957,113 @@ password form --Evidence(reference, bindings)--> native signup commit
 
 resend form --Resend(reference, bindings)--> rotate code hash -> typed delivery
 ```
+
+## Step 36: Pass the complete Phase 5 acceptance gate
+
+Phase 5 is now complete. The flow is restart-safe and proof-carrying from the
+first identity page through the final account transaction, while the browser
+receives only generic failures for incorrect, replayed, mismatched, expired,
+or otherwise unusable state.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 34)
+
+**Assistant interpretation:** Finish the remaining Phase 5 adversarial and
+durability work, commit it, and keep the ticket diary/task ledger current.
+
+**Inferred user intent:** Have a defensible, end-to-end implementation gate
+before expanding the scripting system into operational activation features.
+
+**Commit (code):** `14e374c` — "Test: cover adversarial email signup submissions"; `1799362` — "Test: prove email signup restart and atomic verification"
+
+### What I did
+
+- Added browser tests for a code POST from a separate cookie jar, a rotated-out
+  code, and a replay of a correctly verified code.
+- Corrected generic error rendering to attach its field error to the active
+  presentation's first registered field; an email-code error no longer tries
+  to render an absent `email` field.
+- Added a full SQLite/provider/executor restart test that restarts after send
+  and before verification, then finishes the password commit on the new
+  provider process.
+- Added a two-goroutine correct-code test proving exactly one native memory
+  store verification succeeds.
+- Checked off `lf63`, `lf64`, `lf65`, and `lf66` in the normative task ledger.
+
+### Why
+
+The important Phase 5 property is not merely that a code can be verified. It
+is that no replay, cross-browser form, rotated secret, process restart, or
+delivery failure creates an alternate route to account creation.
+
+### What worked
+
+```bash
+go test ./pkg/idpcontinuation ./pkg/idpworkflow ./pkg/memorystore ./pkg/sqlitestore -count=1
+go test ./internal/fositeadapter ./pkg/embeddedidp -count=1
+go test -race ./pkg/idpcontinuation ./pkg/idpworkflow ./pkg/sqlitestore -count=1
+```
+
+Every command passed. The provider/embedded suite passed in about 24 seconds;
+the targeted race checks passed for continuation, presentation, and SQLite
+stores.
+
+### What didn't work
+
+The first wrong-code browser test returned `500 workflow page unavailable`
+instead of the intended generic `400`. The underlying page validation rejected
+an error for `email` because the active page only declared `emailCode`. The
+host renderer was corrected to select an error field from the active
+presentation, after which the test passed with the safe generic response.
+
+### What I learned
+
+Native presentation metadata is also a security boundary. Even error paths
+must refer only to descriptors persisted in the active continuation; otherwise
+a safe protocol rejection can become a server error and leak an implementation
+distinction to the browser.
+
+### What was tricky to build
+
+The restart test uses a different `httptest` listener after reopening SQLite.
+To test the real browser binding rather than bypass it, it copies the existing
+cookie jar's cookies to the replacement listener before posting the durable
+code form. The old continuation is then validated by a newly created executor
+and provider, demonstrating that no Goja object or prior process memory is
+required.
+
+### What warrants a second pair of eyes
+
+- Confirm the deployment-level maintenance job invokes continuation and email
+  challenge cleanup at the desired cadence; the stores and cleanup contracts
+  are tested, but scheduling belongs to the hosting deployment.
+- Review whether the generic code-page error should avoid field-specific
+  highlighting entirely for product UX; it is presently generic and
+  non-enumerating, but still highlights the only active field.
+
+### What should be done in the future
+
+Begin Phase 6 (`lf67`): production-profile validation, then embedded tests,
+CLI diagnostics, and generation activation. Do not expand Phase 7 OAuth
+customization until those operational gates are in place.
+
+### Code review instructions
+
+- Start at `TestEmailVerifiedScriptedSignupSurvivesSQLiteRestart` and
+  `TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification`.
+- Follow the provider calls into `resumeScriptedSignup` and the challenge
+  service/store methods.
+- Run the three Phase 5 commands above; for the primary user-visible flow run
+  `go test ./internal/fositeadapter -run TestEmailVerifiedScriptedSignup -count=1 -v`.
+
+### Technical details
+
+```text
+browser A + code form --restart--> SQLite continuation + challenge
+new provider/executor + same cookies --Verify--> verified reference -> password
+
+browser B + copied form --binding check--> generic rejection
+old/rotated/replayed code --native state transition--> generic rejection
+two correct submissions --atomic Verify--> exactly one VerifiedEmailEvidence
+```
