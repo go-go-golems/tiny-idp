@@ -5545,3 +5545,90 @@ browser code -> native Verify -> status=verified
 
 replay -> ConsumeEvidence -> ErrAlreadyTerminal -> no credential write
 ```
+
+## Step 52: Extend the Phase 7 authorization and claims regression matrix
+
+The policy seams now have browser and device-grant regression coverage beyond
+their direct contract tests. The important assertion is not merely that a
+policy receives data; it is that every policy result remains inside the
+provider-owned OAuth/OIDC state machine.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue Phase 7 after the recovery checkpoint,
+adding high-value matrix coverage before generalizing presentation contracts.
+
+**Commits (tests):** `0ae3c51` — "Test: cover silent-session authorization
+denial"; `88002e3` — "Test: preserve claims policy through device userinfo";
+`4a9ae39` — "Test: fail closed on policy errors"
+
+### What I did
+
+- Added an existing-browser-session `prompt=none` test where a policy permits
+  the interactive login but denies the silent follow-up. The result is a
+  standard `access_denied` redirect with no authorization code.
+- Added a complete RFC 8628 browser-approval/token/UserInfo test with an
+  additional claim from `ClaimsPolicy`. The `community_role` value reaches
+  UserInfo through the persisted native OIDC session.
+- Added table-driven tests for authorization-policy and claims-policy errors.
+  Both become a 500 response before any redirect/code is produced.
+
+### Why
+
+The policy hooks sit on paths that often look equivalent in unit tests but are
+operationally distinct: a browser session can bypass an interactive form,
+while device grants construct their OIDC session during token redemption.
+Testing the public paths proves the hooks neither bypass native validation nor
+drift from the session consumed by UserInfo.
+
+### What worked
+
+```bash
+go test ./internal/fositeadapter \\
+  -run 'TestAuthorizationPolicyDenies(AfterNativeValidationBeforeCodeIssuance|PromptNoneWithExistingSessionBeforeCodeIssuance)' \\
+  -count=1
+go test ./internal/fositeadapter \\
+  -run 'Test(DeviceClaimsPolicyPersistsAdditionalClaimToUserInfo|DeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo)' \\
+  -count=1
+go test ./internal/fositeadapter \\
+  -run 'TestAuthorization(PolicyDenies|AndClaimsPolicyFailures)' -count=1
+```
+
+All focused commands passed, followed by successful lint/vet commit hooks.
+
+### What didn't work
+
+N/A. The key architectural limitation was confirmed rather than worked
+around: the current generic `WorkflowPage` models registered text/secret
+fields and submit/deny/resend actions. It cannot faithfully represent account
+chooser entries, consent scope displays, or the device-verification page
+without a new provider-owned presentation descriptor.
+
+### What I learned
+
+`prompt=none` does not mean "skip policy." It means the provider may not
+interact with the browser. A policy denial remains a protocol redirect, while
+a policy execution failure must fail closed without issuing an artifact.
+
+Similarly, claims policy is evaluated while building an OIDC session, not
+while rendering a particular endpoint. That is why the same persisted
+additional claim naturally appears at UserInfo for a device grant.
+
+### What warrants a second pair of eyes
+
+- Review the silent-session test's two policy calls: the first deliberately
+  permits login so the second verifies the no-form path.
+- Review the device test alongside `newOIDCSession` and the device token
+  handler; no device/user code is presented to the policy.
+- Do not mark the Phase 7 test-matrix task complete yet: recovery browser
+  flow, account/consent presentation integration, and the production gate
+  still need their own evidence.
+
+### Code review instructions
+
+- Run the three focused commands above.
+- Trace `finishAuthorize` and the device token handler into `newOIDCSession`.
+- Confirm failures return before `NewAuthorizeResponse` or any token/code
+  persistence call.

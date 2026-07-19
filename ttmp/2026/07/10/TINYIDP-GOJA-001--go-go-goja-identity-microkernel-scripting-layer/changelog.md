@@ -448,3 +448,12 @@ Completed the Phase 7 recovery primitive through typed native email-challenge an
 - pkg/idprecovery/service.go — Native recovery effect boundary
 - pkg/idprecovery/service_test.go — Recovery replay and template regression coverage
 - pkg/sqlitestore/email_challenge.go — Durable one-time challenge transition
+
+## 2026-07-19 - Step 52: Phase 7 authorization and claims matrix
+
+Added public-path regressions for prompt=none existing-session authorization denial, device-grant claims propagation to UserInfo, and fail-closed authorization/claims policy errors.
+
+### Related Files
+
+- internal/fositeadapter/device_authorization_test.go — Device claims to UserInfo coverage
+- internal/fositeadapter/hardening_test.go — Browser policy denial and error fail-closed coverage
