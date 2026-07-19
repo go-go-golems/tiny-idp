@@ -320,3 +320,12 @@ Step 31: completed lf57 with versioned pending-email challenge, safe reference, 
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/types.go — Phase 5 native contract boundary
+
+## 2026-07-19
+
+Step 32: completed lf58-lf60 with atomic memory/SQLite email-challenge persistence, a narrow typed mailer interface, generated-code dispatch, and native verified evidence (commits 9a970d5, 04a514f, 0beb0b5).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/service.go — Native dispatch and evidence service
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/email_challenge.go — SQLite atomic lifecycle

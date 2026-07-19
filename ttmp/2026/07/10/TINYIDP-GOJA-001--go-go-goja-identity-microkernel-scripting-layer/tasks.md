@@ -375,9 +375,9 @@ workflow.
 #### Phase 5 tasks
 
 - [x] Define versioned pending-email challenge, challenge reference, verified-email evidence, attempt, resend, expiry, and terminal-consumption contracts <!-- t:lf57 -->
-- [ ] Add memory and SQLite challenge persistence with hashed codes, one-use atomic consumption, continuation binding, cleanup, and conformance tests <!-- t:lf58 -->
-- [ ] Add a narrowly typed mailer capability that accepts a native challenge reference and approved template data rather than arbitrary SMTP, network, or message authority <!-- t:lf59 -->
-- [ ] Implement native challenge creation and bounded email dispatch with redacted audit events and retry classification <!-- t:lf60 -->
+- [x] Add memory and SQLite challenge persistence with hashed codes, one-use atomic consumption, continuation binding, cleanup, and conformance tests <!-- t:lf58 -->
+- [x] Add a narrowly typed mailer capability that accepts a native challenge reference and approved template data rather than arbitrary SMTP, network, or message authority <!-- t:lf59 -->
+- [x] Implement native challenge creation and bounded email dispatch with redacted audit events and retry classification <!-- t:lf60 -->
 - [ ] Add typed email-code field/action descriptors and `ctx.challenge` outcomes that name the resume handler and declared evidence <!-- t:lf61 -->
 - [ ] Validate and atomically consume a submitted code before producing unforgeable verified-email evidence for the resumed lambda <!-- t:lf62 -->
 - [ ] Enforce attempt limits, resend policy, expiry, browser/client/workflow/generation binding, cleanup, and generic non-enumerating public errors <!-- t:lf63 -->
