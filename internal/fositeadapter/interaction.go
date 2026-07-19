@@ -18,13 +18,15 @@ import (
 const interactionFieldName = "interaction"
 
 var transientAuthorizeFields = map[string]struct{}{
-	interactionFieldName: {},
-	"action":             {},
-	"consent_approved":   {},
-	"csrf_token":         {},
-	"login":              {},
-	"password":           {},
-	"account":            {},
+	interactionFieldName:    {},
+	"action":                {},
+	"consent_approved":      {},
+	"csrf_token":            {},
+	"login":                 {},
+	"password":              {},
+	"password_confirmation": {},
+	"display_name":          {},
+	"account":               {},
 }
 
 func canonicalAuthorizeForm(ar fosite.AuthorizeRequester) url.Values {
@@ -94,7 +96,7 @@ func (p *Provider) createInteractionForSession(w http.ResponseWriter, r *http.Re
 	canonical := canonicalAuthorizeForm(ar)
 	now := p.now()
 	var browserContextHash []byte
-	if actions.Has(idpstore.InteractionRequireLogin) {
+	if actions.Has(idpstore.InteractionRequireLogin) || actions.Has(idpstore.InteractionRequireRegistration) {
 		sessionIDHash = nil
 	}
 	if actions.Has(idpstore.InteractionRequireAccountSelection) {

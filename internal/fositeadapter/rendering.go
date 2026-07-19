@@ -30,12 +30,17 @@ func (p *Provider) newInteractionPage(
 	publicError *idpui.PublicError,
 ) idpui.InteractionPage {
 	needLogin := actions.Has(idpstore.InteractionRequireLogin) || actions.Has(idpstore.InteractionRequireFreshLogin) || actions.Has(idpstore.InteractionRequireStepUp)
+	needRegistration := actions.Has(idpstore.InteractionRequireRegistration)
 	formActions := []idpui.Action{idpui.ActionContinue}
-	if includeConsent {
+	if needRegistration {
+		formActions = []idpui.Action{idpui.ActionRegister, idpui.ActionDeny}
+	} else if includeConsent {
 		formActions = []idpui.Action{idpui.ActionApprove, idpui.ActionDeny}
 	}
 	title := "Continue authorization"
-	if needLogin && includeConsent {
+	if needRegistration {
+		title = "Create an account"
+	} else if needLogin && includeConsent {
 		title = "Sign in and approve access"
 	} else if needLogin {
 		title = "Sign in"
@@ -63,6 +68,15 @@ func (p *Provider) newInteractionPage(
 			PasswordField: idpui.PasswordFieldName,
 			LoginValue:    loginValue,
 			Autofocus:     true,
+		}
+	}
+	if needRegistration {
+		page.Registration = &idpui.RegistrationPrompt{
+			LoginField:                idpui.LoginFieldName,
+			DisplayNameField:          idpui.DisplayNameFieldName,
+			PasswordField:             idpui.PasswordFieldName,
+			PasswordConfirmationField: idpui.PasswordConfirmationFieldName,
+			LoginValue:                loginValue,
 		}
 	}
 	if includeConsent {

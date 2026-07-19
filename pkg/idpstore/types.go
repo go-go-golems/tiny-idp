@@ -227,6 +227,11 @@ const (
 	InteractionRequireConsent
 	InteractionRequireStepUp
 	InteractionRequireAccountSelection
+	// InteractionRequireRegistration marks a provider-owned account-creation
+	// continuation. It is only created after the authorization request has been
+	// parsed and validated, and it remains subject to the normal one-use,
+	// expiry, client-generation, and browser-binding checks.
+	InteractionRequireRegistration
 )
 
 func (a InteractionRequiredAction) Has(want InteractionRequiredAction) bool { return a&want != 0 }

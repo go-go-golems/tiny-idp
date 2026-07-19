@@ -26,17 +26,17 @@ const (
 	browserSessionUnavailable  browserSessionState = "unavailable"
 )
 
-func (p *Provider) createBrowserSession(w http.ResponseWriter, r *http.Request, u idpstore.User, authTime time.Time) error {
+func (p *Provider) createBrowserSession(w http.ResponseWriter, r *http.Request, u idpstore.User, authTime time.Time) ([]byte, error) {
 	handle, err := randomB64(32)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	hash := idpstore.HashSecret(p.csrfKey, handle)
 	now := p.now()
 	session := idpstore.Session{IDHash: hash, UserID: u.ID, AuthTime: authTime, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(p.sessionTTL)}
 	contextHandle, remembered, err := p.persistBrowserSession(r, u, session, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	http.SetCookie(w, &http.Cookie{Name: p.sessionCookieName, Value: handle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.sessionTTL.Seconds())})
 	if contextHandle != "" {
@@ -45,7 +45,7 @@ func (p *Provider) createBrowserSession(w http.ResponseWriter, r *http.Request, 
 	if remembered {
 		p.recordAudit(r.Context(), idp.Event{Time: now, Name: "browser_session.remembered", Subject: u.Sub, Result: "accepted"})
 	}
-	return nil
+	return hash, nil
 }
 
 // persistBrowserSession creates the active session and, when explicitly

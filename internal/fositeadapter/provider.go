@@ -49,6 +49,8 @@ var ProductionHandlerFactories = []string{
 	"OAuth2TokenIntrospectionFactory",
 }
 
+const registrationIntentParameter = "tinyidp_signup"
+
 type Options struct {
 	Issuer          string
 	Store           idpstore.Store
@@ -78,6 +80,7 @@ type Options struct {
 	Authenticator     idp.PasswordAuthenticator
 	PasswordPolicy    idp.PasswordAcceptancePolicy
 	PasswordWork      idp.PasswordWorkConfig
+	Registration      RegistrationConfig
 	// AuthorizePersistenceHook is a test-only failpoint hook for the durable
 	// authorization response lifecycle. Production callers should leave it nil.
 	AuthorizePersistenceHook func(point string) error
@@ -113,6 +116,7 @@ type Provider struct {
 	rateLimiter          idp.RateLimiter
 	clientAddress        idp.ClientAddressResolver
 	authenticator        idp.PasswordAuthenticator
+	registration         *idpaccounts.Service
 	auditFailures        atomic.Uint64
 	securityFailures     atomic.Uint64
 	sessionTTL           time.Duration
@@ -122,6 +126,15 @@ type Provider struct {
 	deviceVerificationUI idpui.DeviceVerificationRenderer
 	deviceCodeGenerator  func() (deviceCode, userCode string, err error)
 	renderMetrics        interactionRenderMetrics
+}
+
+// RegistrationConfig enables provider-owned account creation during a
+// validated browser authorization interaction. The account service is optional
+// only when the configured password authenticator is the standard account
+// service; production callers using a custom authenticator must provide one.
+type RegistrationConfig struct {
+	Enabled  bool
+	Accounts *idpaccounts.Service
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -239,6 +252,13 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		}
 		opts.Authenticator = authenticator
 	}
+	if opts.Registration.Enabled && opts.Registration.Accounts == nil {
+		accounts, ok := opts.Authenticator.(*idpaccounts.Service)
+		if !ok {
+			return nil, fmt.Errorf("provider-owned registration requires an idpaccounts service")
+		}
+		opts.Registration.Accounts = accounts
+	}
 	if opts.CodeTTL == 0 {
 		opts.CodeTTL = 5 * time.Minute
 	}
@@ -307,7 +327,11 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	registration := opts.Registration.Accounts
+	if !opts.Registration.Enabled {
+		registration = nil
+	}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -653,6 +677,20 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown or disabled client", http.StatusBadRequest)
 		return
 	}
+	registrationRequested, registrationErr := authorizeRegistrationIntent(ar.GetRequestForm())
+	if registrationErr != nil || (registrationRequested && p.registration == nil) {
+		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrInvalidRequest.WithHint("invalid registration request"))
+		return
+	}
+	if registrationRequested && hasSession {
+		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrInvalidRequest.WithHint("registration requires a new browser session"))
+		return
+	}
+	if registrationRequested {
+		needLogin = false
+		actions &^= idpstore.InteractionRequireLogin | idpstore.InteractionRequireFreshLogin
+		actions |= idpstore.InteractionRequireRegistration
+	}
 	selectAccount := p.chooser.Enabled && promptHas(ar.GetRequestForm().Get("prompt"), "select_account") && !needLogin
 	var chooserEntries []idpstore.RememberedBrowserSession
 	if selectAccount {
@@ -683,6 +721,10 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if promptHas(ar.GetRequestForm().Get("prompt"), "none") {
+		if registrationRequested {
+			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrLoginRequired)
+			return
+		}
 		if actions.Has(idpstore.InteractionRequireAccountSelection) || (selectAccount && needLogin) {
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, accountSelectionRequiredError())
 			return
@@ -696,7 +738,7 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !needLogin && !requireConsent && !actions.Has(idpstore.InteractionRequireAccountSelection) {
+	if !needLogin && !requireConsent && !actions.Has(idpstore.InteractionRequireAccountSelection) && !actions.Has(idpstore.InteractionRequireRegistration) {
 		p.finishAuthorize(w, r, ar, u, sess.AuthTime, false, nil)
 		return
 	}
@@ -705,7 +747,7 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create authorization interaction failed", http.StatusInternalServerError)
 		return
 	}
-	page := p.newInteractionPage(handle, csrfToken, actions, ar.GetRequestForm(), !actions.Has(idpstore.InteractionRequireAccountSelection), client.ID, []string(ar.GetRequestedScopes()), strings.TrimSpace(ar.GetRequestForm().Get("login_hint")), nil)
+	page := p.newInteractionPage(handle, csrfToken, actions, ar.GetRequestForm(), !actions.Has(idpstore.InteractionRequireAccountSelection) && !actions.Has(idpstore.InteractionRequireRegistration), client.ID, []string(ar.GetRequestedScopes()), strings.TrimSpace(ar.GetRequestForm().Get("login_hint")), nil)
 	if actions.Has(idpstore.InteractionRequireAccountSelection) {
 		page.DocumentTitle = "Choose an account"
 		page.AccountChooser = chooserPrompt(chooserEntries)
@@ -781,7 +823,8 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	action := idpui.Action(r.PostForm.Get(idpui.ActionFieldName))
 	selectionRequired := record.RequiredActions.Has(idpstore.InteractionRequireAccountSelection)
-	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionRemoveAccount && action != idpui.ActionDeny) || (!selectionRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
+	registrationRequired := record.RequiredActions.Has(idpstore.InteractionRequireRegistration)
+	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionRemoveAccount && action != idpui.ActionDeny) || (registrationRequired && action != idpui.ActionRegister && action != idpui.ActionDeny) || (!selectionRequired && !registrationRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
 		http.Error(w, "invalid interaction action", http.StatusBadRequest)
 		return
 	}
@@ -863,6 +906,60 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	hasSession := sessionState == browserSessionActive
 	authTime := sess.AuthTime
+	if registrationRequired {
+		if err := validateRegistrationPostForm(r.PostForm); err != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "invalid_form"})
+			renderRegistrationError(p, w, r, record, ar, client, handle, "", "")
+			return
+		}
+		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get(idpui.LoginFieldName)))
+		if !p.allowRegistration(r.Context(), ar.GetClient().GetID(), clientAddress, login) {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "rate_limited"})
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			return
+		}
+		password := []byte(r.PostForm.Get(idpui.PasswordFieldName))
+		confirmation := []byte(r.PostForm.Get(idpui.PasswordConfirmationFieldName))
+		defer clearBytes(password)
+		defer clearBytes(confirmation)
+		if len(password) == 0 || !equalBytes(password, confirmation) {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "registration_rejected"})
+			renderRegistrationError(p, w, r, record, ar, client, handle, login, strings.TrimSpace(r.PostForm.Get(idpui.DisplayNameFieldName)))
+			return
+		}
+		registered, registrationErr := p.registration.Create(r.Context(), idpaccounts.CreateRequest{Login: login, Name: strings.TrimSpace(r.PostForm.Get(idpui.DisplayNameFieldName)), Password: password})
+		if registrationErr != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "registration_rejected"})
+			renderRegistrationError(p, w, r, record, ar, client, handle, login, strings.TrimSpace(r.PostForm.Get(idpui.DisplayNameFieldName)))
+			return
+		}
+		sessionHash, sessionErr := p.createBrowserSession(w, r, registered, p.now())
+		if sessionErr != nil {
+			http.Error(w, "create session failed", http.StatusInternalServerError)
+			return
+		}
+		u, authTime, hasSession = registered, p.now(), true
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
+		requireConsent, consentErr := p.consent.RequireConsent(r.Context(), u, client, []string(ar.GetRequestedScopes()))
+		if consentErr != nil {
+			http.Error(w, "consent policy failed", http.StatusInternalServerError)
+			return
+		}
+		if requireConsent {
+			if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
+				http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
+				return
+			}
+			consentHandle, consentCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireConsent, sessionHash)
+			if err != nil {
+				http.Error(w, "create consent interaction failed", http.StatusInternalServerError)
+				return
+			}
+			page := p.newInteractionPage(consentHandle, consentCSRF, idpstore.InteractionRequireConsent, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
+			p.renderInteraction(w, r, http.StatusOK, page)
+			return
+		}
+	}
 	if selectionRequired {
 		entryHash, decodeErr := base64.RawURLEncoding.DecodeString(r.PostForm.Get(idpui.AccountFieldName))
 		if decodeErr != nil || len(entryHash) == 0 {
@@ -940,7 +1037,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		u = result.User
 		authTime = p.now()
 		hasSession = true
-		if err := p.createBrowserSession(w, r, u, authTime); err != nil {
+		if _, err := p.createBrowserSession(w, r, u, authTime); err != nil {
 			http.Error(w, "create session failed", http.StatusInternalServerError)
 			return
 		}
@@ -1018,6 +1115,57 @@ func (p *Provider) allowLogin(ctx context.Context, clientID, clientAddress, logi
 		}
 	}
 	return allowed
+}
+
+func (p *Provider) allowRegistration(ctx context.Context, clientID, clientAddress, login string) bool {
+	sum := sha256.Sum256([]byte(idpaccounts.NormalizeLogin(login)))
+	account := hex.EncodeToString(sum[:])
+	keys := []string{
+		"registration:account:" + account,
+		"registration:client:" + clientID,
+		"registration:address:" + clientAddress,
+	}
+	allowed := true
+	for _, key := range keys {
+		if !p.rateLimiter.Allow(ctx, key) {
+			allowed = false
+		}
+	}
+	return allowed
+}
+
+func authorizeRegistrationIntent(values url.Values) (bool, error) {
+	entries, ok := values[registrationIntentParameter]
+	if !ok {
+		return false, nil
+	}
+	if len(entries) != 1 || entries[0] != "1" {
+		return false, fmt.Errorf("invalid registration intent")
+	}
+	return true, nil
+}
+
+func validateRegistrationPostForm(form url.Values) error {
+	for _, field := range []string{idpui.InteractionFieldName, idpui.CSRFFieldName, idpui.ActionFieldName, idpui.LoginFieldName, idpui.DisplayNameFieldName, idpui.PasswordFieldName, idpui.PasswordConfirmationFieldName} {
+		if duplicateFormValue(form, field) {
+			return fmt.Errorf("duplicate registration field %q", field)
+		}
+	}
+	return nil
+}
+
+func renderRegistrationError(p *Provider, w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, ar fosite.AuthorizeRequester, client idpstore.Client, handle, login, displayName string) {
+	page := p.newInteractionPage(handle, r.PostForm.Get(idpui.CSRFFieldName), record.RequiredActions, url.Values(record.CanonicalRequest), false, client.ID, []string(ar.GetRequestedScopes()), login, &idpui.PublicError{Code: idpui.ErrorRegistrationRejected, Field: idpui.FieldRegistration, Summary: "Account creation was not accepted. Choose a different login and password and try again."})
+	if page.Registration != nil {
+		page.Registration.DisplayNameValue = displayName
+	}
+	p.renderInteraction(w, r, http.StatusBadRequest, page)
+}
+
+func clearBytes(value []byte) {
+	for index := range value {
+		value[index] = 0
+	}
 }
 
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {

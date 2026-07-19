@@ -11,6 +11,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/keys"
 	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
@@ -37,6 +38,14 @@ type TokenConfig struct {
 type UIConfig struct {
 	Renderer                   idpui.InteractionRenderer
 	DeviceVerificationRenderer idpui.DeviceVerificationRenderer
+}
+
+// RegistrationConfig enables provider-owned self-registration as a continuation
+// of an already-validated authorization request. The provider remains the only
+// component with access to the password/account-creation service.
+type RegistrationConfig struct {
+	Enabled  bool
+	Accounts *idpaccounts.Service
 }
 
 // AccountChooserConfig opts a host into provider-owned remembered-account
@@ -77,6 +86,7 @@ type Options struct {
 	Maintenance    MaintenanceConfig
 	UI             UIConfig
 	AccountChooser AccountChooserConfig
+	Registration   RegistrationConfig
 }
 
 func (o Options) Validate(ctx context.Context) error {
