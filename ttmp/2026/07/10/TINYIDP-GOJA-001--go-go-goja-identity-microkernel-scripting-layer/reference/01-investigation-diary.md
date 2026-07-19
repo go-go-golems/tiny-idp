@@ -4865,3 +4865,90 @@ activation -> {success|failure} counter
 eviction -> evicted counter
 snapshot -> retained count + pool {capacity, active}
 ```
+
+## Step 45: Add redacted activation audit and invocation metrics
+
+Script activation and execution now have bounded operational signals without
+making JavaScript source, user data, browser state, or handler labels part of
+the observable API. Activation emits a redacted audit event; executor metrics
+count fixed outcome families and resource disruption.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 39)
+
+**Assistant interpretation:** Finish the Phase 6 observability boundary before
+enabling Phase 7 protocol customization.
+
+**Inferred user intent:** Make production script behavior diagnosable without
+turning telemetry into a secret or high-cardinality data channel.
+
+**Commit (code):** `a92339e` — "Feat: audit scripted generation activation";
+`9b77ae1` — "Feat: expose signup invocation metrics"
+
+### What I did
+
+- Added optional manager audit/clock options and emitted
+  `script.signup.activation` accepted/rejected records.
+- Included only source/program fingerprints and fixed result/reason values;
+  counted audit-delivery failures separately.
+- Added executor counters for invocations, failures, fixed outcome buckets,
+  cumulative latency, and discarded worker deltas.
+- Added tests proving no client/subject/source text enters activation audit and
+  that a challenge transition increments only bounded metrics.
+
+### Why
+
+Operations needs enough information to correlate a reload and diagnose a
+worker interruption, but must not record credentials, invite codes, emails,
+callback names, or raw JavaScript exceptions.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup -run TestGenerationManagerActivationAuditIsRedacted -count=1 -v
+go test ./pkg/idpsignup -run TestExecutorReportsBoundedInvocationMetrics -count=1
+```
+
+Both focused tests and their commit hooks passed.
+
+### What didn't work
+
+The outcome metric switch initially omitted several closed `OutcomeKind` cases;
+the exhaustive linter correctly required an explicit mapping of all remaining
+terminal outcomes into the fixed `other` bucket.
+
+### What I learned
+
+The right metric dimensions are protocol-stable categories, not workflow
+handler IDs. Latency is exported only as cumulative nanoseconds here; a host
+can derive rates without a per-request trace label.
+
+### What was tricky to build
+
+Activation failure can happen before an executor exists. The audit helper
+therefore emits no hash fields for a failed warmup rather than logging source
+or compiler errors; successful records take hashes from the compiled artifact.
+
+### What warrants a second pair of eyes
+
+- Continuation create/resume/replay/expiry metrics still belong in the
+  continuation service; this executor/manager work does not claim them.
+
+### What should be done in the future
+
+Complete continuation metrics and the repeated-reload failure matrix, then run
+the Phase 6 gate before beginning Phase 7 handlers.
+
+### Code review instructions
+
+- Read `GenerationManager.auditActivation` and `Executor.Metrics`.
+- Run the two focused commands above.
+- Verify audit fields contain hashes but no source or identity values.
+
+### Technical details
+
+```text
+activation --> audit { event, accepted|rejected, reason, sourceHash, programHash }
+invoke --> counters { outcome family, failure, latency total, discarded }
+```
