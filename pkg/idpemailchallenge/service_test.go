@@ -36,6 +36,11 @@ func TestServiceCreatesMailAndNativeEvidence(t *testing.T) {
 	assert.Equal(t, e, rehydrated)
 	_, err = s.Evidence(context.Background(), ref, idpemailchallenge.VerificationBindings{WorkflowID: "other"})
 	assert.ErrorIs(t, err, idpemailchallenge.ErrBinding)
+	consumed, err := s.ConsumeEvidence(context.Background(), ref, b)
+	require.NoError(t, err)
+	assert.Equal(t, e, consumed)
+	_, err = s.ConsumeEvidence(context.Background(), ref, b)
+	assert.ErrorIs(t, err, idpemailchallenge.ErrAlreadyTerminal)
 }
 
 func TestServiceResendRotatesCodeAndEnforcesPolicy(t *testing.T) {

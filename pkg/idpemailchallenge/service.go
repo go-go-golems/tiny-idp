@@ -126,6 +126,18 @@ func (s *Service) Evidence(ctx context.Context, ref Reference, b VerificationBin
 	}
 	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Template: c.Template, Method: "email_code", VerifiedAt: c.VerifiedAt.UTC()}, nil
 }
+
+// ConsumeEvidence performs the one-time native transition from verified
+// evidence to a consumed terminal record. It is deliberately separate from
+// Evidence: ordinary signup continuations can rehydrate verified evidence
+// while progressing through their declared presentation steps, whereas a
+// credential-recovery effect must be replay-proof.
+func (s *Service) ConsumeEvidence(ctx context.Context, ref Reference, b VerificationBindings) (VerifiedEmailEvidence, error) {
+	if s == nil || ref.Version != RecordVersionV1 || !valid(ref.ID) {
+		return VerifiedEmailEvidence{}, ErrConflict
+	}
+	return s.store.ConsumeVerifiedEmailChallenge(ctx, ref.ID, b, s.now())
+}
 func (s *Service) hash(code string) []byte {
 	m := hmac.New(sha256.New, s.key)
 	_, _ = m.Write([]byte(codeDomain))

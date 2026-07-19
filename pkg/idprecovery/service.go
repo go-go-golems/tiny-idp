@@ -40,6 +40,12 @@ func (s *Service) ResetPassword(ctx context.Context, ref idpemailchallenge.Refer
 	if evidence.Template != EmailTemplate {
 		return errors.New("verified email challenge is not a password recovery challenge")
 	}
+	// Consume before the credential mutation. This deliberately fails closed:
+	// an unavailable credential store requires a new recovery request instead
+	// of leaving a reusable verified reset capability behind.
+	if _, err := s.challenges.ConsumeEvidence(ctx, ref, bindings); err != nil {
+		return errors.Wrap(err, "consume verified recovery evidence")
+	}
 	if err := s.accounts.SetPassword(ctx, idpaccounts.SetPasswordRequest{Login: evidence.Address, Password: password}); err != nil {
 		return errors.Wrap(err, "replace recovered password")
 	}

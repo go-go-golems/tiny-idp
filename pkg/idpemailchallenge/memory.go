@@ -65,6 +65,27 @@ func (s *MemoryStore) VerifyEmailChallenge(_ context.Context, id string, codeHas
 	s.records[id] = c
 	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Template: c.Template, Method: "email_code", VerifiedAt: at}, nil
 }
+
+func (s *MemoryStore) ConsumeVerifiedEmailChallenge(_ context.Context, id string, b VerificationBindings, now time.Time) (VerifiedEmailEvidence, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.records[id]
+	if !ok {
+		return VerifiedEmailEvidence{}, ErrNotFound
+	}
+	if !c.ExpiresAt.After(now) {
+		return VerifiedEmailEvidence{}, ErrExpired
+	}
+	if err := c.VerifyEvidenceBindings(b); err != nil {
+		return VerifiedEmailEvidence{}, err
+	}
+	if c.Status != StatusVerified || c.VerifiedAt == nil {
+		return VerifiedEmailEvidence{}, ErrAlreadyTerminal
+	}
+	c.Status = StatusConsumed
+	s.records[id] = c
+	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Template: c.Template, Method: "email_code", VerifiedAt: c.VerifiedAt.UTC()}, nil
+}
 func (s *MemoryStore) RecordEmailChallengeAttempt(_ context.Context, id string, b VerificationBindings, now time.Time) (AttemptResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

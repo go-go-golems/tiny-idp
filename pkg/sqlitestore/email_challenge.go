@@ -63,6 +63,31 @@ func (s *Store) VerifyEmailChallenge(ctx context.Context, id string, hash []byte
 	}
 	return idpemailchallenge.VerifiedEmailEvidence{Version: 1, ChallengeID: c.ID, Address: c.Email, Template: c.Template, Method: "email_code", VerifiedAt: at}, nil
 }
+func (s *Store) ConsumeVerifiedEmailChallenge(ctx context.Context, id string, b idpemailchallenge.VerificationBindings, now time.Time) (idpemailchallenge.VerifiedEmailEvidence, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return idpemailchallenge.VerifiedEmailEvidence{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	c, err := s.load(ctx, tx, id, now)
+	if err != nil {
+		return idpemailchallenge.VerifiedEmailEvidence{}, err
+	}
+	if err := c.VerifyEvidenceBindings(b); err != nil {
+		return idpemailchallenge.VerifiedEmailEvidence{}, err
+	}
+	if c.Status != idpemailchallenge.StatusVerified || c.VerifiedAt == nil {
+		return idpemailchallenge.VerifiedEmailEvidence{}, idpemailchallenge.ErrAlreadyTerminal
+	}
+	c.Status = idpemailchallenge.StatusConsumed
+	if err := s.save(ctx, tx, c); err != nil {
+		return idpemailchallenge.VerifiedEmailEvidence{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return idpemailchallenge.VerifiedEmailEvidence{}, err
+	}
+	return idpemailchallenge.VerifiedEmailEvidence{Version: idpemailchallenge.RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Template: c.Template, Method: "email_code", VerifiedAt: c.VerifiedAt.UTC()}, nil
+}
 func (s *Store) RecordEmailChallengeAttempt(ctx context.Context, id string, b idpemailchallenge.VerificationBindings, now time.Time) (idpemailchallenge.AttemptResult, error) {
 	c, err := s.checked(ctx, s.db, id, b, now)
 	if err != nil {

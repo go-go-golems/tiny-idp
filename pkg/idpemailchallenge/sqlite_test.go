@@ -31,6 +31,22 @@ func TestSQLiteChallengeSurvivesRestartAndAllowsOneVerification(t *testing.T) {
 	assert.ErrorIs(t, err, idpemailchallenge.ErrAlreadyTerminal)
 }
 
+func TestSQLiteChallengeConsumesVerifiedEvidenceOnce(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	challenge := testChallenge(now)
+	require.NoError(t, store.CreateEmailChallenge(ctx, challenge))
+	_, err = store.VerifyEmailChallenge(ctx, challenge.ID, challenge.CodeHash, testBindings(), now)
+	require.NoError(t, err)
+	_, err = store.ConsumeVerifiedEmailChallenge(ctx, challenge.ID, testBindings(), now)
+	require.NoError(t, err)
+	_, err = store.ConsumeVerifiedEmailChallenge(ctx, challenge.ID, testBindings(), now)
+	assert.ErrorIs(t, err, idpemailchallenge.ErrAlreadyTerminal)
+}
+
 func TestChallengeAttemptsExpiryResendAndCleanupFailClosed(t *testing.T) {
 	now := time.Now().UTC()
 	store := idpemailchallenge.NewMemoryStore()

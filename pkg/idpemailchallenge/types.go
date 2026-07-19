@@ -17,6 +17,10 @@ type Status string
 const (
 	StatusPending  Status = "pending"
 	StatusVerified Status = "verified"
+	// StatusConsumed records a one-time native use of verified evidence. It is
+	// distinct from revocation so audit and storage inspection can distinguish a
+	// successful terminal effect from administrative invalidation.
+	StatusConsumed Status = "consumed"
 	StatusRevoked  Status = "revoked"
 )
 
