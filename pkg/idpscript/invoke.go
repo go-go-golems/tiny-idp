@@ -11,6 +11,7 @@ import (
 
 	tinyidpmodule "github.com/go-go-golems/tiny-idp/internal/gojamodules/tinyidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	"github.com/go-go-golems/tiny-idp/pkg/idpworkflow"
 )
 
 var (
@@ -38,7 +39,7 @@ type promiseState struct {
 
 // Named results let the interrupt-cleanup defer force discard and preserve a
 // cleanup failure without obscuring an earlier invocation error.
-func (w *worker) invoke(ctx context.Context, lambdaID string, input json.RawMessage, supplied map[string]CapabilityBinding) (outcome idpprogram.Outcome, safe bool, err error) { //nolint:nonamedreturns
+func (w *worker) invokeWithSecrets(ctx context.Context, lambdaID string, input json.RawMessage, supplied map[string]CapabilityBinding, secrets map[string]idpworkflow.SecretHandle) (outcome idpprogram.Outcome, safe bool, err error) { //nolint:nonamedreturns
 	if w == nil || w.image == nil || w.image.runtime == nil {
 		return idpprogram.Outcome{}, false, errors.New("runtime worker is not initialized")
 	}
@@ -106,6 +107,13 @@ func (w *worker) invoke(ctx context.Context, lambdaID string, input json.RawMess
 		}
 		if err := ctxObject.Set("present", tinyidpmodule.NewPresentationContext(vm, w.image.collector)); err != nil {
 			return nil, errors.Wrap(err, "set lambda presentation context")
+		}
+		invocationSecrets := tinyidpmodule.NewInvocationSecrets(vm, secrets)
+		if err := ctxObject.Set("secret", invocationSecrets.Context()); err != nil {
+			return nil, errors.Wrap(err, "set lambda secrets")
+		}
+		if err := ctxObject.Set("commit", tinyidpmodule.NewCommitContext(vm, invocationSecrets)); err != nil {
+			return nil, errors.Wrap(err, "set lambda commit context")
 		}
 		if err := deepFreeze(vm, ctxObject); err != nil {
 			return nil, errors.Wrap(err, "freeze lambda context")

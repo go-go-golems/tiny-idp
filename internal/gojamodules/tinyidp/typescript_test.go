@@ -18,6 +18,8 @@ func TestTypeScriptDeclarationsCoverPhase0Surface(t *testing.T) {
 		"interface PresentationBuilders",
 		"interface FieldBuilders",
 		"interface ActionBuilders",
+		"interface SecretHandle",
+		"interface CommitBuilders",
 		"Promise<Outcome>",
 		"interface ProgramBuilder",
 		"readonly result: ResultBuilders",

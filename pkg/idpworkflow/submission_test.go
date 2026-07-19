@@ -20,7 +20,12 @@ func TestParseSubmissionProjectsPublicValuesAndSecretsSeparately(t *testing.T) {
 	assert.Equal(t, idpworkflow.ActionSubmit, result.Action)
 	assert.Equal(t, "Ada", result.PublicValues[idpworkflow.FieldDisplayName])
 	assert.Equal(t, "ada@example.test", result.PublicValues[idpworkflow.FieldEmail])
-	assert.Equal(t, []byte("correct horse battery staple"), result.SecretValues[idpworkflow.FieldPassword])
+	password, ok := result.ResolveSecret(result.Secrets[idpworkflow.FieldPassword])
+	require.True(t, ok)
+	assert.Equal(t, []byte("correct horse battery staple"), password)
+	result.DestroySecrets()
+	_, ok = result.ResolveSecret(result.Secrets[idpworkflow.FieldPassword])
+	assert.False(t, ok, "destroyed secrets must not remain resolvable")
 	_, present := result.PublicValues[idpworkflow.FieldPassword]
 	assert.False(t, present, "a secret must not enter the public projection")
 }

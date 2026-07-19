@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	"github.com/go-go-golems/tiny-idp/pkg/idpworkflow"
 )
 
 var (
@@ -78,11 +79,17 @@ func NewPool(ctx context.Context, artifact *Artifact, factory *engine.RuntimeFac
 
 // Invoke acquires one worker, runs a lambda, and releases only a safe worker.
 func (p *Pool) Invoke(ctx context.Context, lambdaID string, input json.RawMessage, capabilities map[string]CapabilityBinding) (idpprogram.Outcome, error) {
+	return p.InvokeWithSecrets(ctx, lambdaID, input, capabilities, nil)
+}
+
+// InvokeWithSecrets adds request-scoped opaque secret handles to an invocation.
+// The JSON input remains public data; secret values are never encoded into it.
+func (p *Pool) InvokeWithSecrets(ctx context.Context, lambdaID string, input json.RawMessage, capabilities map[string]CapabilityBinding, secrets map[string]idpworkflow.SecretHandle) (idpprogram.Outcome, error) {
 	worker, err := p.acquire(ctx)
 	if err != nil {
 		return idpprogram.Outcome{}, err
 	}
-	outcome, safe, invokeErr := worker.invoke(ctx, lambdaID, input, capabilities)
+	outcome, safe, invokeErr := worker.invokeWithSecrets(ctx, lambdaID, input, capabilities, secrets)
 	if safe {
 		p.release(worker)
 		return outcome, invokeErr

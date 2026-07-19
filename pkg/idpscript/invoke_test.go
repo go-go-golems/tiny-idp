@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
+	"github.com/go-go-golems/tiny-idp/pkg/idpworkflow"
 )
 
 func TestPoolInvokesSynchronousLambdaWithFrozenInput(t *testing.T) {
@@ -60,6 +62,37 @@ func TestPoolBuildsDataOnlyPresentationOutcome(t *testing.T) {
 		"carry":{"value":"Ada"},
 		"expiresInSeconds":300
 	}`, string(outcome.Presentation))
+}
+
+func TestPoolProjectsSecretsAsOpaqueCommitHandles(t *testing.T) {
+	pool := newInvocationPool(t, 1)
+	registry := idpworkflow.DefaultRegistry()
+	password, ok := registry.Field(idpworkflow.FieldPassword)
+	require.True(t, ok)
+	confirmation, ok := registry.Field(idpworkflow.FieldPasswordConfirmation)
+	require.True(t, ok)
+	submit, ok := registry.Action(idpworkflow.ActionSubmit)
+	require.True(t, ok)
+	submission, err := idpworkflow.ParseSubmission([]idpworkflow.FieldDescriptor{password, confirmation}, []idpworkflow.ActionDescriptor{submit}, url.Values{
+		"interaction":           {"interaction"},
+		"csrf_token":            {"csrf"},
+		"action":                {"submit"},
+		"password":              {"correct horse battery staple"},
+		"password_confirmation": {"correct horse battery staple"},
+	})
+	require.NoError(t, err)
+	defer submission.DestroySecrets()
+
+	outcome, err := pool.InvokeWithSecrets(context.Background(), "test.commit", input("Ada"), nil, map[string]idpworkflow.SecretHandle{
+		"password":             submission.Secrets[idpworkflow.FieldPassword],
+		"passwordConfirmation": submission.Secrets[idpworkflow.FieldPasswordConfirmation],
+	})
+	require.NoError(t, err)
+	require.Equal(t, idpprogram.OutcomeCommit, outcome.Kind)
+	require.Len(t, outcome.Effects, 2)
+	assert.Equal(t, idpprogram.EffectCreateLocalIdentity, outcome.Effects[0].Kind)
+	assert.Equal(t, idpprogram.EffectAttachPasswordCredential, outcome.Effects[1].Kind)
+	assert.NotContains(t, string(outcome.Effects[1].Payload), "correct horse battery staple")
 }
 
 func TestInvocationCapabilityBudgetAndExpiredBindingFailClosed(t *testing.T) {
@@ -419,6 +452,18 @@ module.exports = A.program("invocation-tests", program => {
     version: 1, entry: "start", handlers: {start: present, submitted},
     edges: [{from: "start", outcome: "present", to: "submitted", input: "input"}],
   });
+  const commit = A.lambda("test.commit", {
+    input: "input", output: "result", outcomes: ["commit"],
+    effects: ["createLocalIdentity", "attachPasswordCredential"], capabilities: [],
+    timeoutMs: 200, maxCapabilityCalls: 0, maxOutputBytes: 1024,
+    run: ctx => ctx.commit.signup({
+      login: ctx.input.value + "@example.test",
+      displayName: ctx.input.value,
+      password: ctx.secret.password,
+      passwordConfirmation: ctx.secret.passwordConfirmation,
+    }),
+  });
+  workflow("commit", commit);
   workflow("spin", lambda("test.spin", _ => { for (;;) {} }, {timeoutMs: 15}));
   workflow("throw", lambda("test.throw", _ => { throw new Error("secret exception text"); }));
   workflow("invalid", lambda("test.invalid", _ => undefined));

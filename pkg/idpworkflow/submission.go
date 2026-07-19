@@ -23,7 +23,8 @@ type Submission struct {
 	CSRFToken    string
 	Action       ActionID
 	PublicValues map[FieldID]string
-	SecretValues map[FieldID][]byte
+	Secrets      map[FieldID]SecretHandle
+	secretSet    *SecretSet
 }
 
 // ParseSubmission accepts exactly the fields declared by a validated
@@ -80,7 +81,14 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 		return Submission{}, errors.Errorf("workflow submission has unsupported action %q", actionValue)
 	}
 
-	result := Submission{Interaction: interaction, CSRFToken: csrfToken, Action: action.ID, PublicValues: map[FieldID]string{}, SecretValues: map[FieldID][]byte{}}
+	result := Submission{Interaction: interaction, CSRFToken: csrfToken, Action: action.ID, PublicValues: map[FieldID]string{}}
+	secretValues := map[FieldID][]byte{}
+	defer func() {
+		for field, value := range secretValues {
+			clear(value)
+			delete(secretValues, field)
+		}
+	}()
 	for inputName, field := range expected {
 		raw, err := singleton(form, inputName, false)
 		if err != nil {
@@ -96,7 +104,7 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 			if !action.SkipFormValidation && utf8.RuneCountInString(raw) > field.MaxLength {
 				return Submission{}, errors.Errorf("workflow field %q exceeds maximum length", field.ID)
 			}
-			result.SecretValues[field.ID] = append([]byte(nil), raw...)
+			secretValues[field.ID] = append([]byte(nil), raw...)
 			continue
 		}
 		normalized, err := normalizeField(field, raw)
@@ -119,8 +127,24 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 			result.PublicValues[field.ID] = normalized
 		}
 	}
+	secretSet, handles, err := newSecretSet(secretValues)
+	if err != nil {
+		return Submission{}, err
+	}
+	result.secretSet = secretSet
+	result.Secrets = handles
 	return result, nil
 }
+
+// ResolveSecret supplies a clone for immediate trusted native work. A secret
+// can never be recovered from a serialized workflow outcome or presentation.
+func (s Submission) ResolveSecret(handle SecretHandle) ([]byte, bool) {
+	return s.secretSet.Resolve(handle)
+}
+
+// DestroySecrets erases parsed secret bytes once the request's native commit
+// work has completed or failed.
+func (s Submission) DestroySecrets() { s.secretSet.Destroy() }
 
 func singleton(values url.Values, name string, nonEmpty bool) (string, error) {
 	entries, ok := values[name]

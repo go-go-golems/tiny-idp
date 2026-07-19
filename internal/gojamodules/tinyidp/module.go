@@ -402,6 +402,73 @@ func NewPresentationContext(vm *goja.Runtime, collector *Collector) *goja.Object
 	return present
 }
 
+// InvocationSecrets binds opaque native secret handles to one owned VM call.
+// Its objects have no serializable properties and are accepted only by the
+// matching ctx.commit builder.
+type InvocationSecrets struct {
+	context *goja.Object
+	handles map[*goja.Object]idpworkflow.SecretHandle
+}
+
+func NewInvocationSecrets(vm *goja.Runtime, secrets map[string]idpworkflow.SecretHandle) *InvocationSecrets {
+	bindings := &InvocationSecrets{context: vm.NewObject(), handles: map[*goja.Object]idpworkflow.SecretHandle{}}
+	for name, handle := range secrets {
+		if handle.Token() == "" {
+			panic(vm.NewTypeError("secret handle %q is invalid", name))
+		}
+		object := vm.NewObject()
+		bindings.handles[object] = handle
+		mustSet(vm, bindings.context, name, object)
+	}
+	return bindings
+}
+
+func (s *InvocationSecrets) Context() *goja.Object {
+	if s == nil || s.context == nil {
+		panic("tinyidp invocation secrets are nil")
+	}
+	return s.context
+}
+
+// NewCommitContext exposes the closed native signup commit request. It accepts
+// opaque secret object identities, not string handles or secret bytes, and
+// returns effect plans for trusted Go to validate and commit atomically.
+func NewCommitContext(vm *goja.Runtime, secrets *InvocationSecrets) *goja.Object {
+	commit := vm.NewObject()
+	mustSet(vm, commit, "signup", func(call goja.FunctionCall) goja.Value {
+		requireArgumentCount(vm, call, 1, "ctx.commit.signup(spec)")
+		spec := requireObject(vm, call.Argument(0), "signup commit spec")
+		password := requireSecretHandle(vm, secrets, spec.Get("password"), "signup password")
+		confirmation := requireSecretHandle(vm, secrets, spec.Get("passwordConfirmation"), "signup password confirmation")
+		return vm.ToValue(map[string]any{
+			"kind": idpprogram.OutcomeCommit,
+			"effects": []map[string]any{
+				{"kind": idpprogram.EffectCreateLocalIdentity, "payload": map[string]any{
+					"login":       requireString(vm, spec.Get("login"), "signup login"),
+					"displayName": requireString(vm, spec.Get("displayName"), "signup display name"),
+				}},
+				{"kind": idpprogram.EffectAttachPasswordCredential, "payload": map[string]any{
+					"passwordHandle":             password.Token(),
+					"passwordConfirmationHandle": confirmation.Token(),
+				}},
+			},
+		})
+	})
+	return commit
+}
+
+func requireSecretHandle(vm *goja.Runtime, secrets *InvocationSecrets, value goja.Value, name string) idpworkflow.SecretHandle {
+	if secrets == nil {
+		panic(vm.NewTypeError("%s is unavailable", name))
+	}
+	object := requireObject(vm, value, name)
+	handle, ok := secrets.handles[object]
+	if !ok {
+		panic(vm.NewTypeError("%s must be an invocation-scoped secret handle", name))
+	}
+	return handle
+}
+
 func presentationFieldIDs(vm *goja.Runtime, collector *Collector, value goja.Value) []string {
 	array := requireArray(vm, value, "presentation fields")
 	ret := make([]string, 0, array.Get("length").ToInteger())
