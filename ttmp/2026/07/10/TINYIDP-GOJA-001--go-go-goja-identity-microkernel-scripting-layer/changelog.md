@@ -177,3 +177,18 @@ Step 18: completed lf28 and lf30 with a provider-owned WorkflowPage/default rend
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/presentation.go — Data-only presentation result and compiled graph/registry/schema/expiry validation.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/workflow.go — Provider-owned workflow page and renderer contract.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/templates/workflow.html — Escaping generic field/action template.
+
+## 2026-07-19
+
+Step 19: completed lf29 with branded `A.field.*` / `A.action.*` descriptor
+builders and the data-only `ctx.present.form` outcome bridge. The runtime now
+copies a presentation envelope alongside its browser continuation without
+exposing HTTP or rendering authority to JavaScript; direct/race tests and lint
+pass (code commit `7f1497e`).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp/module.go — Branded descriptor builders and invocation-scoped form presentation bridge.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/outcomes.go — VM-independent presentation JSON envelope with outcome-family validation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke.go — Per-invocation frozen `ctx.present` binding.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — End-to-end presentation serialization regression test.

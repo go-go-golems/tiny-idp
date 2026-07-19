@@ -2711,3 +2711,147 @@ full make lint: pass, 0 issues
 hook runner for commits: LEFTHOOK=0 after equivalent checks
 next task: lf28
 ```
+
+## Step 19: Add the constrained `ctx.present.form` browser-continuation builder
+
+This step completes `lf29`, the narrow JavaScript-to-browser boundary required
+before native HTTP routes are added. A lambda can now choose registered fields
+and actions and return a data-only `present` outcome. It still cannot render a
+template, write a response, read raw HTTP state, set cookies, select a redirect
+URI, or receive a raw password string through this API.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Continue"
+
+**Assistant interpretation:** Continue the ticket strictly task by task, using
+the existing normative design and task ledger rather than expanding into native
+GET/POST routes.
+
+**Inferred user intent:** Build the smallest coherent scripting primitive that
+makes the explicit browser-continuation design executable and reviewable.
+
+### What I did
+
+- Extended the VM-local Tiny-IDP collector with separately branded field and
+  action handle registries. `A.field.*()` and `A.action.*()` create opaque
+  identities that cannot be forged by passing a string or a look-alike object.
+- Exposed the bounded public builders:
+
+  ```javascript
+  A.field.displayName()
+  A.field.email()
+  A.field.password()
+  A.field.passwordConfirmation()
+  A.field.inviteCode()
+  A.action.submit()
+  A.action.deny()
+  ```
+
+  They select host-owned descriptors only; requiredness, labels, input names,
+  normalization, redisplay rules, and secret treatment remain Go policy.
+- Added invocation-scoped `ctx.present.form(spec)`. It requires a title,
+  resume handler, field/action handle arrays, carry value, and positive expiry;
+  it optionally accepts public values and stable field-error codes. Its return
+  value contains a normal `present` continuation plus a copied `presentation`
+  object for the later native boundary.
+- Added `Outcome.Presentation` as VM-independent JSON. The generic outcome
+  validator rejects this field for every non-`present` outcome. The existing
+  graph/registry/schema validator remains the authority that will interpret it
+  before persistence or rendering in later Phase 2 tasks.
+- Bound `ctx.present` immediately before deep-freezing the invocation context,
+  preserving the existing immutable-context isolation model.
+- Updated generated TypeScript declarations and added an end-to-end runtime
+  test that verifies selected descriptors, public values, error code, carry,
+  expiry, and continuation handler after JSON copying.
+- Marked `lf29` complete in `tasks.md`.
+
+### Why
+
+Browser interaction must be a durable state transition, not a suspended VM or
+a script-controlled HTTP response. Branded handles prevent scripts from
+inventing unreviewed input descriptors, while the JSON descriptor makes the
+later Go HTTP layer responsible for CSRF, CSP, form parsing, browser binding,
+and template selection. Keeping the data in `Outcome` also ensures it crosses
+the runtime boundary by serialization rather than by a Goja object reference.
+
+### What worked
+
+- `go test ./internal/gojamodules/tinyidp ./pkg/idpprogram ./pkg/idpscript -count=1`
+  passed.
+- `go test -race ./internal/gojamodules/tinyidp ./pkg/idpprogram ./pkg/idpscript -count=1`
+  passed.
+- `make lint` passed with golangci-lint reporting no issues; the configured
+  Glazed and IDP UI analyzer steps also completed successfully.
+- The new runtime test proved the exact output shape is copied JSON rather
+  than a retained script object.
+
+### What didn't work
+
+- No implementation or validation command failed in this step.
+- The normative design examples use a broader `signupForm` spelling and
+  descriptor-option examples. The checked task ledger explicitly names the
+  initial primitive `ctx.present.form`; this step implements that smaller
+  closed surface and does not silently add per-script label, requiredness, or
+  HTML customization.
+
+### What I learned
+
+- The collector is the correct ownership point for browser descriptor handles:
+  it is already runtime-scoped, and Goja object identity is available only
+  while that runtime is owned.
+- `Outcome.Presentation` must be treated as a transport envelope, not as proof
+  of safety. `ValidatePresentation` remains necessary because only it has the
+  compiled workflow graph, host registry, schema catalog, and TTL policy.
+
+### What was tricky to build
+
+- A field name string would make it too easy for a script to bypass the
+  intended descriptor selection boundary. The builder therefore records the
+  object identity in the collector and rejects objects not created by that
+  module instance.
+- The presentation has two intentionally matching pieces of data: continuation
+  metadata drives durable resume mechanics, while presentation metadata drives
+  rendering. The next native boundary must verify their agreement rather than
+  trusting the script's duplication.
+
+### What warrants a second pair of eyes
+
+- Confirm whether the normative public spelling should eventually standardize
+  on `ctx.present.form` or rename the design examples from `signupForm`; no
+  alias was added because the ticket prohibits scope expansion and compatibility
+  layers.
+- Review the hand-off parser in the next task to ensure it rejects a mismatch
+  between `Outcome.Continuation` and `Outcome.Presentation` before creating a
+  continuation record.
+
+### What should be done in the future
+
+- Implement `lf31`: native GET rendering using the existing security envelope
+  and the already validated `WorkflowPage` model.
+- Then add exact POST projection and secret-handle behavior in `lf32` and
+  `lf33`; do not pass raw request objects or secrets to JavaScript.
+
+### Code review instructions
+
+- Start at `internal/gojamodules/tinyidp/module.go`: inspect handle creation,
+  identity checks, and the deliberately data-only `NewPresentationContext`.
+- Then inspect `pkg/idpscript/invoke.go` to verify `ctx.present` is created
+  per invocation before `deepFreeze`.
+- Read `pkg/idpscript/invoke_test.go` as the end-to-end contract and compare
+  the raw JSON result with `pkg/idpworkflow/presentation.go`.
+- Verify declaration parity in `internal/gojamodules/tinyidp/typescript.go`.
+- Re-run the direct, race, and lint commands recorded above.
+
+### Technical details
+
+```text
+task completed: lf29
+code commit: 7f1497e — Feat: add form presentation scripting bridge
+new JS surface: A.field.*, A.action.*, ctx.present.form(spec)
+script authority: descriptor selection and data-only outcome construction
+native authority: graph validation, templates, HTTP, CSRF, CSP, cookies, secrets
+transport: copied JSON in Outcome.Presentation
+validation: targeted direct tests, targeted race tests, make lint all pass
+next task: lf31
+```

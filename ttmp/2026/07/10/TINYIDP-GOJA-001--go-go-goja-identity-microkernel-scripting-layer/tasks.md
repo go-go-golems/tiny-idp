@@ -256,7 +256,7 @@ presentation outcome builders, and exact POST projection.
 - [x] Define stable typed field descriptors for the design-03 signup surface, including value kind, normalization, requiredness, bounds, sensitivity, autocomplete, and public redisplay policy <!-- t:lf26 -->
 - [x] Define stable action descriptors and require every submitted action to match an action declared by the active presentation <!-- t:lf27 -->
 - [x] Generalize `pkg/idpui` with a `WorkflowPage` or compatible `InteractionPage` extension that renders only host-validated descriptors and never script-supplied HTML <!-- t:lf28 -->
-- [ ] Implement `ctx.present.form` and the Phase 2 field/action builders so an outcome names the resume handler, allowed edge, fields, actions, public values, errors, carry, and expiry <!-- t:lf29 -->
+- [x] Implement `ctx.present.form` and the Phase 2 field/action builders so an outcome names the resume handler, allowed edge, fields, actions, public values, errors, carry, and expiry <!-- t:lf29 -->
 - [x] Validate presentation outcomes against the compiled handler graph, field/action registries, schema bounds, capability declarations, and continuation expiry limit before persistence or rendering <!-- t:lf30 -->
 - [ ] Implement native GET rendering with the current CSP, security headers, CSRF token, origin policy, browser binding, body limit, and cache behavior unchanged <!-- t:lf31 -->
 - [ ] Implement native POST parsing that rejects duplicate singleton fields, missing or extra fields, unknown actions, invalid encodings, oversized values, and normalization failures before invoking JavaScript <!-- t:lf32 -->

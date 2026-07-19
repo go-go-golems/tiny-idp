@@ -14,10 +14,20 @@ DocType: index
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
-      Note: Normative lambda-first JavaScript API, explicit browser continuation, virtual resource, and implementation design
+    - Path: repo://internal/gojamodules/tinyidp/module.go
+      Note: Branded field/action builders and data-only ctx.present.form bridge.
+    - Path: repo://internal/gojamodules/tinyidp/typescript.go
+      Note: TypeScript declarations for presentation and descriptor handles.
+    - Path: repo://pkg/idpprogram/outcomes.go
+      Note: VM-independent presentation transport envelope.
+    - Path: repo://pkg/idpscript/invoke.go
+      Note: Frozen per-invocation presentation context binding.
+    - Path: repo://pkg/idpscript/invoke_test.go
+      Note: End-to-end presentation outcome serialization coverage.
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md
       Note: Deprecated historical graph-first analysis and implementation guide
+    - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
+      Note: Normative lambda-first JavaScript API, explicit browser continuation, virtual resource, and implementation design
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md
       Note: Chronological evidence and validation record
 ExternalSources: []
@@ -26,6 +36,7 @@ LastUpdated: 2026-07-19T12:00:00-04:00
 WhatFor: Planning and implementing the tiny-idp identity-microkernel scripting layer.
 WhenToUse: Start here when reviewing, implementing, or resuming TINYIDP-GOJA-001.
 ---
+
 
 
 
