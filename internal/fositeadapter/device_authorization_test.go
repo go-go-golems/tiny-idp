@@ -530,6 +530,68 @@ func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *t
 	}
 }
 
+func TestDeviceClaimsPolicyPersistsAdditionalClaimToUserInfo(t *testing.T) {
+	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	provider, _, _ := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-claims", "QRST-UVWX", nil }, now)
+	provider.claims = staticClaimsPolicy{output: idp.ClaimsOutput{Additional: map[string]json.RawMessage{"community_role": json.RawMessage(`"member"`)}}}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	client := newDeviceVerificationHTTPClient(t)
+
+	start, err := client.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var device deviceAuthorizationResponse
+	if err := json.NewDecoder(start.Body).Decode(&device); err != nil {
+		t.Fatal(err)
+	}
+	_ = start.Body.Close()
+	page := getDeviceVerificationPage(t, client, server.URL+"/device?user_code="+device.UserCode, http.StatusOK)
+	decision := deviceVerificationHiddenFields(t, page)
+	decision.Set(idpui.ActionFieldName, string(idpui.ActionApprove))
+	decision.Set(idpui.LoginFieldName, "alice")
+	decision.Set(idpui.PasswordFieldName, "password")
+	approval, err := client.PostForm(server.URL+"/device", decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = approval.Body.Close()
+	token := postDeviceToken(t, client, server.URL, device.DeviceCode, "device-cli")
+	if token.StatusCode != http.StatusOK {
+		t.Fatalf("token status=%d body=%q", token.StatusCode, readAndClose(t, token))
+	}
+	var tokens map[string]any
+	if err := json.NewDecoder(token.Body).Decode(&tokens); err != nil {
+		t.Fatal(err)
+	}
+	_ = token.Body.Close()
+	accessToken, _ := tokens["access_token"].(string)
+	if accessToken == "" {
+		t.Fatalf("token response=%#v", tokens)
+	}
+	userinfo, err := http.NewRequest(http.MethodGet, server.URL+"/userinfo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userinfo.Header.Set("Authorization", "Bearer "+accessToken)
+	response, err := client.Do(userinfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("userinfo status=%d body=%q", response.StatusCode, readAndClose(t, response))
+	}
+	var claims map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&claims); err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if claims["sub"] != "user-alice" || claims["community_role"] != "member" {
+		t.Fatalf("userinfo claims=%#v", claims)
+	}
+}
+
 func TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
