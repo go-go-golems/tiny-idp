@@ -54,6 +54,10 @@ func NewStandaloneIDP(ctx context.Context, cfg StandaloneIDPConfig) (*embeddedid
 		Token:  embeddedidp.TokenConfig{SecretKey: cfg.TokenSecret}, Audit: cfg.Audit,
 		RateLimiter: idp.NewFixedWindowRateLimiter(30, time.Minute), ClientAddress: idp.DirectClientAddressResolver{},
 		Authenticator: cfg.Accounts, UI: embeddedidp.UIConfig{Renderer: renderer},
+		// This development topology exercises the same provider-owned signup
+		// interaction as production. The relying party still receives only the
+		// resulting OIDC identity, never an account-service handle or password.
+		Registration: embeddedidp.RegistrationConfig{Enabled: true, Accounts: cfg.Accounts},
 		AccountChooser: embeddedidp.AccountChooserConfig{Enabled: true, RememberOnPasswordLogin: true, DisplayLabel: func(user idpstore.User) (string, error) {
 			if name := strings.TrimSpace(user.Name); name != "" {
 				return name, nil
