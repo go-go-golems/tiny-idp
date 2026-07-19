@@ -463,8 +463,8 @@ password-recovery, and device-verification flows described by design 03.
 
 - [x] Define immutable authorization input, allowed allow/deny/skip outcomes, declared evidence, and stable denial diagnostics without exposing Fosite or token mutation authority <!-- t:lf78 -->
 - [x] Invoke authorization lambdas only after native client, redirect URI, scope, PKCE, prompt, session, authentication, and request validation and before native consent/code issuance <!-- t:lf79 -->
-- [ ] Define immutable claims input and bounded claims output with native protection for issuer, subject, audience, expiry, nonce, authentication time, and other protocol-owned claims <!-- t:lf80 -->
-- [ ] Invoke claims lambdas before native OIDC session persistence and preserve refresh-token and UserInfo consistency <!-- t:lf81 -->
+- [x] Define immutable claims input and bounded claims output with native protection for issuer, subject, audience, expiry, nonce, authentication time, and other protocol-owned claims <!-- t:lf80 -->
+- [x] Invoke claims lambdas before native OIDC session persistence and preserve refresh-token and UserInfo consistency <!-- t:lf81 -->
 - [ ] Express account selection and consent as workflow handlers only where the Phase 0–6 presentation/continuation contracts fit without moving OAuth decisions or response writing into JavaScript <!-- t:lf82 -->
 - [ ] Add password recovery only through existing native credential and challenge effects; do not permit scripts to write password hashes, credentials, or recovery state directly <!-- t:lf83 -->
 - [ ] Integrate device-verification presentation through workflow handlers while leaving RFC 8628 device/user code generation, polling, expiry, authorization, denial, and token transitions native <!-- t:lf84 -->

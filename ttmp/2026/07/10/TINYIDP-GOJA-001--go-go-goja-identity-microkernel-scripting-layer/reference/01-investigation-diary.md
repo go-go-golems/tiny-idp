@@ -5356,3 +5356,63 @@ the existing `302`/`303` redirect behavior rather than asserting a new status.
 - Review `AuthorizationInput.Clone` and `AuthorizationDecision.Validate`.
 - Trace `Provider.finishAuthorize` to verify policy precedes consent/code.
 - Run the focused Fosite adapter test and inspect the redirect for no `code`.
+
+## Step 50: Add protected claims policy and native session integration
+
+Claims customization is now constrained to additional application data in the
+native OIDC session. The policy cannot overwrite protocol claims or the
+scope-filtered claims already owned by the provider, and its output is shared
+by token and UserInfo paths through the persisted session.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the ordered Phase 7 work after the
+authorization seam, retaining strict native ownership of OAuth/OIDC state.
+
+**Commit (code):** `fc2721e` — "Feat: define protected claims policy contracts";
+`ab032a7` — "Feat: apply claims policies to OIDC sessions";
+`a451b4a` — "Test: cover claims policy session boundaries"
+
+### What I did
+
+- Added immutable `ClaimsInput`, bounded additional JSON claim output, and a
+  protected-name set for all issuer/subject/audience/time/nonce/authentication
+  claim names.
+- Rejected overrides of native scope-filtered claims as well as protocol
+  claims.
+- Invoked the policy while constructing the OIDC session for authorization
+  code and device grants; errors prevent session/token persistence.
+- Added a direct session test proving `community_role` persists while a `sub`
+  override fails closed.
+
+### Why
+
+ID tokens, refresh-token sessions, and UserInfo must observe the same claim
+set. A policy applied only at response rendering would drift across those
+surfaces. Persisting validated additions in `Claims.Extra` keeps one native
+source of truth.
+
+### What worked
+
+```bash
+go test ./pkg/idp -count=1
+go test ./internal/fositeadapter ./pkg/embeddedidp ./pkg/idp -count=1
+go test ./internal/fositeadapter -run TestClaimsPolicyPersistsOnlyAdditionalClaimsInOIDCSession -count=1
+```
+
+The full commit hook passed repository tests, lint, and vet.
+
+### What didn't work
+
+The direct session test initially constructed a custom-lifespan client with a
+nil embedded `fosite.DefaultClient`; `GetID` correctly panicked. Supplying the
+real initialized Fosite client fixed the fixture without changing production
+logic.
+
+### Code review instructions
+
+- Review `ClaimsOutput.Validate` and `MergeClaims` for protected/native names.
+- Trace `newOIDCSession` through both authorization-code and device callers.
+- Run the direct session regression and confirm `sub` cannot be replaced.
