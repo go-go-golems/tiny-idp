@@ -133,6 +133,15 @@ func (e *Executor) SubmitWithEvidence(ctx context.Context, values map[idpworkflo
 	return e.pool.InvokeWithSecretsAndEvidence(ctx, "signup.submitted", input, nil, secrets, evidence)
 }
 
+// Resume invokes the exact handler named by a validated continuation. The
+// provider obtains that name from idpcontinuation, never from a browser form.
+func (e *Executor) Resume(ctx context.Context, handler string, input json.RawMessage, evidence map[string]json.RawMessage) (idpprogram.Outcome, error) {
+	if e == nil || e.pool == nil || handler == "" {
+		return idpprogram.Outcome{}, errors.New("signup resume is unavailable")
+	}
+	return e.pool.InvokeWithSecretsAndEvidence(ctx, handler, input, nil, nil, evidence)
+}
+
 func schemas() map[string]idpprogram.Schema {
 	return map[string]idpprogram.Schema{
 		"signupStartInput": {ID: "signupStartInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 2048, Additional: false, Fields: map[string]idpprogram.SchemaField{
