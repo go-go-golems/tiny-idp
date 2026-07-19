@@ -24,6 +24,7 @@ type WorkflowPage struct {
 
 type WorkflowForm struct {
 	ActionURL        string
+	RedirectOrigin   string
 	InteractionField string
 	Interaction      string
 	CSRFField        string
@@ -53,6 +54,13 @@ func (p WorkflowPage) Validate() error {
 	if err != nil || actionURL.Scheme == "" || actionURL.Host == "" || actionURL.User != nil || actionURL.Fragment != "" ||
 		(actionURL.Scheme != "http" && actionURL.Scheme != "https") {
 		return fmt.Errorf("workflow action URL must be an absolute HTTP(S) URL without user info or fragment")
+	}
+	if p.Form.RedirectOrigin != "" {
+		redirectOrigin, err := url.Parse(p.Form.RedirectOrigin)
+		if err != nil || redirectOrigin.Scheme == "" || redirectOrigin.Host == "" || redirectOrigin.User != nil || redirectOrigin.Path != "" || redirectOrigin.RawQuery != "" || redirectOrigin.Fragment != "" ||
+			(redirectOrigin.Scheme != "http" && redirectOrigin.Scheme != "https") {
+			return fmt.Errorf("workflow redirect origin must be an absolute HTTP(S) origin")
+		}
 	}
 	if p.Form.InteractionField != InteractionFieldName || p.Form.CSRFField != CSRFFieldName || p.Form.ActionField != ActionFieldName {
 		return fmt.Errorf("workflow form fields must use the provider contract")

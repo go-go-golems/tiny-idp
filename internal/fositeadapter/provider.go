@@ -92,6 +92,7 @@ type Options struct {
 	TokenPersistenceHook       func(point string) error
 	SecurityEvents             securitytrace.Sink
 	InteractionRenderer        idpui.InteractionRenderer
+	WorkflowRenderer           idpui.WorkflowRenderer
 	DeviceVerificationRenderer idpui.DeviceVerificationRenderer
 	// deviceCodeGenerator is an internal test seam. Production code always uses
 	// cryptographic randomness from generateDeviceCodes.
@@ -126,6 +127,7 @@ type Provider struct {
 	interactionTTL       time.Duration
 	clock                func() time.Time
 	interactionUI        idpui.InteractionRenderer
+	workflowUI           idpui.WorkflowRenderer
 	deviceVerificationUI idpui.DeviceVerificationRenderer
 	deviceCodeGenerator  func() (deviceCode, userCode string, err error)
 	renderMetrics        interactionRenderMetrics
@@ -225,6 +227,17 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 				return nil, fmt.Errorf("build default device verification renderer: %w", rendererErr)
 			}
 			opts.DeviceVerificationRenderer = renderer
+		}
+	}
+	if opts.WorkflowRenderer == nil {
+		if renderer, ok := opts.InteractionRenderer.(idpui.WorkflowRenderer); ok {
+			opts.WorkflowRenderer = renderer
+		} else {
+			renderer, rendererErr := idpui.NewDefaultRenderer()
+			if rendererErr != nil {
+				return nil, fmt.Errorf("build default workflow renderer: %w", rendererErr)
+			}
+			opts.WorkflowRenderer = renderer
 		}
 	}
 	if opts.Consent == nil {
@@ -334,7 +347,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if !opts.Registration.Enabled {
 		registration = nil
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)

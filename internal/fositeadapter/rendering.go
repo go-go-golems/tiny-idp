@@ -163,6 +163,68 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 	succeeded = true
 }
 
+// renderWorkflow is the native rendering boundary for a script-selected,
+// provider-validated workflow presentation. Its caller must already have
+// validated the OAuth request and constructed the interaction/CSRF values; the
+// renderer receives no HTTP authority. Phase 3 will call this only after the
+// signup workflow has produced a validated presentation.
+func (p *Provider) renderWorkflow(w http.ResponseWriter, r *http.Request, status int, page idpui.WorkflowPage) {
+	started := time.Now()
+	p.renderMetrics.attempts.Add(1)
+	succeeded := false
+	defer func() {
+		p.renderMetrics.observe(time.Since(started), succeeded)
+	}()
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	if page.Form.RedirectOrigin != "" {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' "+page.Form.RedirectOrigin+"; base-uri 'none'")
+	}
+	if err := page.Validate(); err != nil {
+		p.recordWorkflowRenderFailure(r, "invalid_page")
+		http.Error(w, "workflow page unavailable", http.StatusInternalServerError)
+		return
+	}
+	buffer := &boundedInteractionBuffer{limit: maxInteractionDocumentBytes}
+	if err := p.workflowUI.RenderWorkflow(r.Context(), buffer, page.Clone()); err != nil {
+		reason := "renderer_failed"
+		if errors.Is(err, errInteractionDocumentTooLarge) {
+			reason = "document_too_large"
+			p.renderMetrics.oversizedDocuments.Add(1)
+		}
+		p.recordWorkflowRenderFailure(r, reason)
+		http.Error(w, "workflow page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if buffer.overflowed {
+		p.renderMetrics.oversizedDocuments.Add(1)
+		p.recordWorkflowRenderFailure(r, "document_too_large")
+		http.Error(w, "workflow page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if buffer.Len() == 0 {
+		p.renderMetrics.emptyDocuments.Add(1)
+		p.recordWorkflowRenderFailure(r, "empty_document")
+		http.Error(w, "workflow page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if written, err := w.Write(buffer.Bytes()); err != nil || written != buffer.Len() {
+		p.renderMetrics.responseWriteFailures.Add(1)
+		p.recordWorkflowRenderFailure(r, "response_write_failed")
+		return
+	}
+	succeeded = true
+}
+
+func (p *Provider) recordWorkflowRenderFailure(r *http.Request, reason string) {
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.render_failed", Result: "rejected", Reason: reason})
+}
+
 func (p *Provider) recordRenderFailure(r *http.Request, page idpui.InteractionPage, reason string) {
 	clientID := ""
 	if page.Consent != nil {

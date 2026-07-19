@@ -36,6 +36,10 @@ func TestWorkflowPageRejectsRenderedSecretAndInvalidDescriptor(t *testing.T) {
 	page.Fields[0].Descriptor.InputName = `"><script>`
 	page.Fields[0].Descriptor.Kind = "html"
 	require.Error(t, page.Validate())
+
+	page = workflowPage(t)
+	page.Form.RedirectOrigin = "https://app.example/path"
+	require.Error(t, page.Validate())
 }
 
 func workflowPage(t *testing.T) idpui.WorkflowPage {
