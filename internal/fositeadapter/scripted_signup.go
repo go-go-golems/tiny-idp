@@ -128,6 +128,12 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		}
 		return
 	}
+	if outcome.Kind == idpprogram.OutcomePresent {
+		if err := p.advanceSignupPresentation(w, r, outcome, continuationHandle, continuation, record, interactionHandle); err != nil {
+			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+		}
+		return
+	}
 	if outcome.Kind != idpprogram.OutcomeCommit {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
@@ -139,6 +145,31 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	p.completeScriptedSignup(w, r, ar, client, record, registered)
+}
+
+func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Request, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string) error {
+	if outcome.Continuation == nil {
+		return errors.New("signup presentation continuation is missing")
+	}
+	presentation, err := idpworkflow.DecodePresentation(outcome.Presentation)
+	if err != nil {
+		return err
+	}
+	validated, err := idpworkflow.ValidatePresentation(p.scriptedSignup.Program(), idpsignup.WorkflowID, current.ResumeHandlerID, presentation, idpworkflow.DefaultRegistry(), idpworkflow.DefaultMaximumContinuationTTL)
+	if err != nil {
+		return err
+	}
+	publicValues, err := json.Marshal(validated.Presentation.PublicValues)
+	if err != nil {
+		return err
+	}
+	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: validated.Presentation.ResumeHandler, InputSchema: validated.InputSchema, Carry: validated.Presentation.Carry, Presentation: idpcontinuation.PresentationState{ID: "signup", Fields: fieldIDs(validated.Fields), AllowedActions: actionIDs(validated.Actions), PublicValues: publicValues}, ExpiresAt: p.now().Add(validated.Presentation.ExpiresIn)}
+	nextHandle, _, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindings(record, r), next)
+	if err != nil {
+		return err
+	}
+	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, validated.Fields, validated.Actions, validated.Presentation.PublicValues, nil))
+	return nil
 }
 
 func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string) error {
