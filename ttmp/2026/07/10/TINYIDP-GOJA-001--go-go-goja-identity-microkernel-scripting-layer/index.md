@@ -79,12 +79,13 @@ that a later validated request resumes. No Goja heap or Promise is persisted.
 ## Current status
 
 Research, the deprecated graph-first design, the assurance refactoring design,
-and the new lambda-first API design are complete. The pure-Go
-`VerificationPlan`, isolated `tinyidp/verify` Goja compiler module, native
-runner, and strict-provider scenario driver already exist. The production
-program compiler, workflow executor, runtime pool, continuation store, virtual
-providers, and effect committer described by design 03 have not been
-implemented.
+and the lambda-first API design are complete. Phases 0–3 of the normative
+ledger are now implemented and gated: the isolated program compiler and owned
+worker pool, durable generation-bound continuations, native workflow forms and
+strict POST projection, and the checked-in open-signup JavaScript workflow with
+one native atomic commit boundary. The remaining work begins at Phase 4:
+virtual identity and invitation providers, then email challenge, activation,
+and additional existing workflows.
 
 The new refactoring proposal recommends consolidating stable resource, fact,
 obligation, step, effect, outcome, observation, and property identifiers before
