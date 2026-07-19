@@ -91,14 +91,14 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
 		return
 	}
-	input, err := json.Marshal(map[string]string{"displayName": submission.PublicValues[idpworkflow.FieldDisplayName], "email": submission.PublicValues[idpworkflow.FieldEmail]})
+	input, err := p.scriptedSignup.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
 	if err != nil || p.workflowContinuations.ValidateResumeInput(r.Context(), continuation, input) != nil {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
-	outcome, err := p.scriptedSignup.Submit(r.Context(), submission.PublicValues, map[string]idpworkflow.SecretHandle{
+	outcome, err := p.scriptedSignup.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, map[string]idpworkflow.SecretHandle{
 		"password": submission.Secrets[idpworkflow.FieldPassword], "passwordConfirmation": submission.Secrets[idpworkflow.FieldPasswordConfirmation],
-	})
+	}, nil)
 	if err != nil || outcome.Kind != idpprogram.OutcomeCommit {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
