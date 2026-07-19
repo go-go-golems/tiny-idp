@@ -94,13 +94,27 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	input, err := p.scriptedSignup.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
+	var evidence map[string]json.RawMessage
+	if challengeID, ok := emailChallengeReference(continuation); ok {
+		if p.emailChallenges == nil {
+			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+			return
+		}
+		verified, verifyErr := p.emailChallenges.Verify(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, submission.PublicValues[idpworkflow.FieldEmailCode], idpemailchallenge.BindingsFromContinuation(continuation))
+		if verifyErr != nil {
+			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+			return
+		}
+		evidence, err = idpemailchallenge.EvidenceProjection(verified)
+		input = continuation.Carry
+	}
 	if err != nil || p.workflowContinuations.ValidateResumeInput(r.Context(), continuation, input) != nil {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
 	outcome, err := p.scriptedSignup.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, map[string]idpworkflow.SecretHandle{
 		"password": submission.Secrets[idpworkflow.FieldPassword], "passwordConfirmation": submission.Secrets[idpworkflow.FieldPasswordConfirmation],
-	}, nil)
+	}, evidence)
 	if err != nil {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
@@ -152,12 +166,16 @@ func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, o
 	code, _ := registry.Field(idpworkflow.FieldEmailCode)
 	submit, _ := registry.Action(idpworkflow.ActionSubmit)
 	deny, _ := registry.Action(idpworkflow.ActionDeny)
-	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: outcome.Continuation.HandlerID, InputSchema: inputSchema, Carry: outcome.Continuation.Carry, Presentation: idpcontinuation.PresentationState{ID: "email-code", Fields: []string{string(idpworkflow.FieldEmailCode)}, AllowedActions: []string{string(idpworkflow.ActionSubmit), string(idpworkflow.ActionDeny)}, PublicValues: json.RawMessage(`{}`)}, ExpiresAt: p.now().Add(time.Duration(outcome.Continuation.ExpiresIn) * time.Second)}
+	challengeID, err := randomB64(24)
+	if err != nil {
+		return errors.Wrap(err, "generate email challenge id")
+	}
+	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: outcome.Continuation.HandlerID, InputSchema: inputSchema, Carry: outcome.Continuation.Carry, EvidenceReferences: []idpcontinuation.EvidenceReference{{Kind: "emailChallenge", ID: challengeID}}, Presentation: idpcontinuation.PresentationState{ID: "email-code", Fields: []string{string(idpworkflow.FieldEmailCode)}, AllowedActions: []string{string(idpworkflow.ActionSubmit), string(idpworkflow.ActionDeny)}, PublicValues: json.RawMessage(`{}`)}, ExpiresAt: p.now().Add(time.Duration(outcome.Continuation.ExpiresIn) * time.Second)}
 	nextHandle, stored, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindings(record, r), next)
 	if err != nil {
 		return err
 	}
-	_, err = p.emailChallenges.CreateAndSend(r.Context(), idpemailchallenge.CreateRequest{ID: nextHandle, Email: request.Email, Template: request.Template, Bindings: idpemailchallenge.BindingsFromContinuation(stored), ExpiresAt: stored.ExpiresAt, MaximumAttempts: uint32(request.MaximumAttempts), MaximumResends: uint32(request.MaximumResends)})
+	_, err = p.emailChallenges.CreateAndSend(r.Context(), idpemailchallenge.CreateRequest{ID: challengeID, Email: request.Email, Template: request.Template, Bindings: idpemailchallenge.BindingsFromContinuation(stored), ExpiresAt: stored.ExpiresAt, MaximumAttempts: uint32(request.MaximumAttempts), MaximumResends: uint32(request.MaximumResends)})
 	if err != nil {
 		return err
 	}
@@ -313,6 +331,15 @@ func workflowPage(p *Provider, record idpstore.InteractionRecord, interactionHan
 		page.Actions = append(page.Actions, idpui.WorkflowAction{Descriptor: action})
 	}
 	return page
+}
+
+func emailChallengeReference(continuation idpcontinuation.WorkflowContinuation) (string, bool) {
+	for _, reference := range continuation.EvidenceReferences {
+		if reference.Kind == "emailChallenge" && reference.ID != "" {
+			return reference.ID, true
+		}
+	}
+	return "", false
 }
 
 func workflowDescriptors(state idpcontinuation.PresentationState) ([]idpworkflow.FieldDescriptor, []idpworkflow.ActionDescriptor, error) {
