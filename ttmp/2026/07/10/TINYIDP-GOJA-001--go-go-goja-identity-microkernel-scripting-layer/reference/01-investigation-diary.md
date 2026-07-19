@@ -16,8 +16,12 @@ Owners: []
 RelatedFiles:
     - Path: repo://go.mod
       Note: Phase 0 baseline source for the Go 1.26 toolchain and pinned go-go-goja dependency recorded in Step 10.
+    - Path: repo://internal/fositeadapter/registration_test.go
+      Note: Browser proof and delivery lifecycle evidence
     - Path: repo://internal/fositeadapter/scripted_signup.go
-      Note: Native signup commit revalidates optional invitation effect and redeems it inside its transaction (commit 84a9995)
+      Note: |-
+        Native signup commit revalidates optional invitation effect and redeems it inside its transaction (commit 84a9995)
+        Native signup continuation, proof, delivery, and resend boundary
     - Path: repo://internal/gojamodules/tinyidp/module.go
       Note: |-
         Optional invite code can only become declared consumeInvitation plan (commit 84a9995)
@@ -37,7 +41,9 @@ RelatedFiles:
     - Path: repo://pkg/idpcontinuation/types.go
       Note: Step 14 versioned VM-independent durable continuation contract
     - Path: repo://pkg/idpemailchallenge/service.go
-      Note: Native one-use verification produces evidence (commits 04a514f, 0beb0b5)
+      Note: |-
+        Native one-use verification produces evidence (commits 04a514f, 0beb0b5)
+        Native verified-email and code-rotation lifecycle
     - Path: repo://pkg/idpinvite/computed.go
       Note: Bounded host eligibility capability and validation seam (commit 40e7747)
     - Path: repo://pkg/idpinvite/computed_test.go
@@ -100,6 +106,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -3722,4 +3729,231 @@ script ctx.challenge.emailCode -> native challenge request + continuation
 native service -> HMAC(code) + durable state -> typed mailer request
 browser code -> atomic VerifyEmailChallenge -> verified-email evidence
 native invocation -> frozen ctx.evidence.email -> resumed lambda
+```
+
+## Step 34: Carry native verified-email evidence into the password commit
+
+The first integrated email challenge flow correctly verified a submitted code,
+but review of the continuation sequence found that the subsequent password
+page no longer had a native reference to that proof. This step makes the
+evidence explicit durable continuation state and rehydrates it only through
+the native challenge service when the final password form is submitted.
+
+### Prompt Context
+
+**User prompt (verbatim):** "DO NOT STOP, CONTINUE WITHUOT STOPPING, DO ALL OF PHASE 5."
+
+**Assistant interpretation:** Finish every remaining Phase 5 correctness and
+test task rather than stopping after the foundational challenge primitives.
+
+**Inferred user intent:** Ensure the production signup flow has a complete,
+reviewable verified-email trust chain, including the browser continuation that
+separates verification from password collection.
+
+**Commit (code):** `706a2c6` — "Feat: persist verified email evidence across signup"
+
+### What I did
+
+- Added `idpemailchallenge.Service.Evidence`, which loads an existing verified
+  challenge, rechecks expiry and all continuation bindings, and returns native
+  `VerifiedEmailEvidence`; it does not accept a browser email value.
+- Split continuation evidence references into `pendingEmailChallenge` and
+  `verifiedEmail`, avoiding an ambiguous state where a verified code would be
+  re-submitted and rejected as already terminal.
+- Replaced the pending reference with the verified reference when the
+  email-verified lambda presents the password form.
+- Rehydrated the evidence again for the password-submit handler and passed its
+  address into the sole native signup commit boundary.
+- Extended the service test to prove rehydration succeeds only with the
+  original challenge bindings.
+
+### Why
+
+Email verification must not become a transient Go value that disappears after
+one lambda call, nor a script-provided `{ verified: true }` object. A password
+continuation needs a durable, native reference so final account creation can
+reject a substituted login address even if a script output is otherwise valid.
+
+### What worked
+
+```bash
+gofmt -w pkg/idpemailchallenge/service.go pkg/idpemailchallenge/service_test.go internal/fositeadapter/scripted_signup.go
+go test ./pkg/idpemailchallenge ./internal/fositeadapter -count=1
+```
+
+Both packages passed. The provider suite took about 21 seconds and exercised
+the existing strict authorization and registration paths.
+
+### What didn't work
+
+N/A. The review found the proof-propagation gap before an end-to-end test could
+mistake a successful page transition for a correct final commit.
+
+### What I learned
+
+The continuation service intentionally does not inherit evidence references
+implicitly. That is the right default: a transition must deliberately retain,
+replace, or discard a proof, so an unrelated next form cannot accidentally
+gain authentication authority.
+
+### What was tricky to build
+
+The same challenge has two semantically different states. The code-entry
+continuation must call `Verify` exactly once, while the password continuation
+must call `Evidence` without consuming it again. Named pending and verified
+reference kinds make the state change visible in durable data and prevent a
+replay from looking like a normal password submission.
+
+### What warrants a second pair of eyes
+
+- Verify the exact intended proof lifetime: `Evidence` currently requires the
+  original challenge not to have expired, so password completion is bounded by
+  the email challenge expiry as well as its own continuation expiry.
+- Review whether an operational resend UI should preserve the same pending
+  continuation handle or mint a new one; the next adversarial integration test
+  slice will make this decision observable.
+
+### What should be done in the future
+
+Complete `lf63–lf66`: wire the service through `embeddedidp`, implement the
+public resend route/limits if the workflow exposes it, and add browser-level
+restart/replay/binding/mailer-failure tests before checking off Phase 5.
+
+### Code review instructions
+
+- Start in `internal/fositeadapter/scripted_signup.go` at
+  `resumeScriptedSignup`, then follow `pendingEmailChallengeReference` and
+  `verifiedEmailReference`.
+- Review `pkg/idpemailchallenge/service.go` `Evidence` for its native binding
+  checks and for the absence of a script-controlled proof constructor.
+- Validate with `go test ./pkg/idpemailchallenge ./internal/fositeadapter -count=1`.
+
+### Technical details
+
+```text
+pending code continuation --Verify(code, bindings)--> verified native record
+  --ctx.evidence.email--> emailVerified lambda --present(password)-->
+verified-email continuation --Evidence(reference, bindings)--> commit check
+
+No continuation stores an email address as proof; it stores only:
+  { kind: "verifiedEmail", id: challengeID }
+```
+
+## Step 35: Complete the browser-facing verified-email and resend slice
+
+This step turned the native challenge primitives into one complete signup
+workflow. The browser first provides only identity data, receives a native
+email code, proves it, and only then receives a password form. The final
+commit reloads the native evidence instead of trusting a prior JavaScript
+result or browser-supplied email flag.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 34)
+
+**Assistant interpretation:** Continue Phase 5 through the real browser flow,
+including delivery failure, resend, and final native account commit behavior.
+
+**Inferred user intent:** Make the explicit-continuation design operational,
+not merely a collection of standalone native primitives.
+
+**Commit (code):** `348df6e` — "Feat: complete verified email signup workflow"; `c7fd7a3` — "Feat: add bounded email challenge resend flow"
+
+### What I did
+
+- Threaded the optional email-challenge service through `embeddedidp` into the
+  Fosite adapter.
+- Added a three-page browser integration test for identity, code verification,
+  and password entry; it proves the created account has `EmailVerified=true`.
+- Fixed the native secret projection so identity/code pages do not pass
+  zero-value password handles to the Goja context.
+- Added `verifiedEmail` continuation references and a native evidence reload
+  path at the password handler/commit boundary.
+- Added native `resend` action handling. It rotates the challenge code
+  atomically, enforces the configured maximum, and sends only a typed mail
+  request.
+- Changed initial delivery ordering: mail delivery completes before the
+  original browser continuation is advanced, so delivery failure leaves that
+  original form retryable and cannot create an account.
+- Added bounded, redacted audit records for initial send and resend results.
+
+### Why
+
+The security property is a sequence, not an isolated verification call:
+identity data must be carried safely across the email page, password material
+must be absent until after verification, and final account creation must be
+able to prove precisely which native challenge attested to the email.
+
+### What worked
+
+```bash
+go test ./internal/fositeadapter -run TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification -count=1 -v
+go test ./pkg/idpemailchallenge ./pkg/idpworkflow ./internal/fositeadapter -run 'Test(ServiceResend|DefaultRegistry|EmailVerified)' -count=1 -v
+```
+
+The integration test covers an intentional mail failure, retry using the same
+identity continuation, resend with code rotation, correct-code verification,
+password collection, and final OIDC authorization continuation.
+
+### What didn't work
+
+The first broad command,
+`go test ./pkg/idpemailchallenge ./pkg/idpsignup ./pkg/embeddedidp ./internal/fositeadapter -count=1`, failed only in the existing
+`TestSQLiteRefreshRotationHistoryIsLinearizableAndReuseRevokesFamily` with
+`active=1, want 0`. Its isolated rerun passed:
+
+```bash
+go test ./internal/fositeadapter -run TestSQLiteRefreshRotationHistoryIsLinearizableAndReuseRevokesFamily -count=1 -v
+```
+
+This was treated as a pre-existing concurrency-test flake, not fixed in the
+email-challenge change set.
+
+### What I learned
+
+An invocation with an empty password map is not equivalent to an invocation
+with two empty secret handles. The latter tries to create unusable Goja native
+capabilities and fails closed, which is correct. The provider must project
+only the secret descriptors active in the persisted presentation.
+
+### What was tricky to build
+
+Delivery cannot be atomically committed with a database update. Advancing the
+browser continuation before calling a mailer stranded the user if delivery
+failed. Reversing that order means a rare advance conflict can leave an
+unreferenced, expiring challenge record, but it never blocks the user or
+authorizes an account; retention cleanup owns that harmless record.
+
+### What warrants a second pair of eyes
+
+- Review the operational delivery policy: a failed send currently leaves an
+  expiring unreferenced challenge record, intentionally favoring a retryable
+  browser flow over impossible cross-system atomicity.
+- The current `ResendNotBefore` contract is supported by the store, but the
+  checked-in email program does not yet select a nonzero cooldown. Confirm the
+  desired production cooldown before enabling this program broadly.
+
+### What should be done in the future
+
+Finish `lf63` and `lf66` with restart, concurrent POST, browser/client/
+generation mismatch, expiration, cleanup, and resend-limit integration tests;
+then mark the remaining Phase 5 tasks complete.
+
+### Code review instructions
+
+- Read `internal/fositeadapter/scripted_signup.go` in this order:
+  `resumeScriptedSignup`, `beginEmailChallenge`, then `commitScriptedSignup`.
+- Review `pkg/idpemailchallenge/service.go` and both store implementations for
+  native code hashing/rotation and binding checks.
+- Run the two commands in **What worked** and inspect the browser test's
+  mail-failure and resend assertions.
+
+### Technical details
+
+```text
+identity form --challenge request--> typed mail delivery --advance--> code form
+code form --Verify--> verifiedEmail reference --present--> password form
+password form --Evidence(reference, bindings)--> native signup commit
+
+resend form --Resend(reference, bindings)--> rotate code hash -> typed delivery
 ```

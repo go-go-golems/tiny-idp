@@ -337,3 +337,12 @@ Step 33: completed lf61-lf62 with typed email-code challenge outcomes and native
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/outcomes.go — Challenge request invariant
+
+## 2026-07-19
+
+Step 34-35: completed the verified-email signup browser workflow, durable native proof carry, retryable delivery ordering, and bounded resend/code-rotation lifecycle (commits 706a2c6, 348df6e, c7fd7a3).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Provider-owned proof and browser flow
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/service.go — Native delivery and resend lifecycle
