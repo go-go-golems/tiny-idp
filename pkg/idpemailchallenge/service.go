@@ -70,7 +70,7 @@ func (s *Service) CreateAndSend(ctx context.Context, r CreateRequest) (Reference
 		return Reference{}, errors.Wrap(err, "generate email challenge code")
 	}
 	c := PendingChallenge{Version: 1, ID: r.ID, CodeHash: s.hash(code), Email: r.Email, Template: r.Template, WorkflowID: r.Bindings.WorkflowID, ResumeHandlerID: r.Bindings.ResumeHandlerID, ProgramFingerprint: r.Bindings.ProgramFingerprint, ClientID: r.Bindings.ClientID, ClientGeneration: r.Bindings.ClientGeneration, BrowserBindingHash: append([]byte(nil), r.Bindings.BrowserBindingHash...), CreatedAt: now, ExpiresAt: r.ExpiresAt, LastSentAt: now, MaximumAttempts: r.MaximumAttempts, MaximumResends: r.MaximumResends, ResendNotBefore: r.ResendNotBefore, Status: StatusPending}
-	if err := s.store.Create(ctx, c); err != nil {
+	if err := s.store.CreateEmailChallenge(ctx, c); err != nil {
 		return Reference{}, err
 	}
 	if err := s.mailer.SendEmailChallenge(ctx, MailRequest{Challenge: c.Reference(), Recipient: c.Email, Template: c.Template, Code: code, ExpiresAt: c.ExpiresAt}); err != nil {
@@ -82,7 +82,7 @@ func (s *Service) Verify(ctx context.Context, ref Reference, code string, b Veri
 	if s == nil || ref.Version != RecordVersionV1 || !valid(code) {
 		return VerifiedEmailEvidence{}, ErrConflict
 	}
-	return s.store.Verify(ctx, ref.ID, s.hash(code), b, s.now())
+	return s.store.VerifyEmailChallenge(ctx, ref.ID, s.hash(code), b, s.now())
 }
 func (s *Service) hash(code string) []byte {
 	m := hmac.New(sha256.New, s.key)

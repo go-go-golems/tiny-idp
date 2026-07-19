@@ -13,21 +13,21 @@ func TestMemoryStoreConsumesCorrectCodeOnce(t *testing.T) {
 	now := time.Now().UTC()
 	s := idpemailchallenge.NewMemoryStore()
 	c := testChallenge(now)
-	require.NoError(t, s.Create(context.Background(), c))
-	e, err := s.Verify(context.Background(), c.ID, c.CodeHash, testBindings(), now)
+	require.NoError(t, s.CreateEmailChallenge(context.Background(), c))
+	e, err := s.VerifyEmailChallenge(context.Background(), c.ID, c.CodeHash, testBindings(), now)
 	require.NoError(t, err)
 	assert.Equal(t, c.Email, e.Address)
-	_, err = s.Verify(context.Background(), c.ID, c.CodeHash, testBindings(), now)
+	_, err = s.VerifyEmailChallenge(context.Background(), c.ID, c.CodeHash, testBindings(), now)
 	assert.ErrorIs(t, err, idpemailchallenge.ErrAlreadyTerminal)
 }
 func TestMemoryStoreRejectsWrongCodeAndBindings(t *testing.T) {
 	now := time.Now().UTC()
 	s := idpemailchallenge.NewMemoryStore()
 	c := testChallenge(now)
-	require.NoError(t, s.Create(context.Background(), c))
-	_, err := s.Verify(context.Background(), c.ID, []byte("badbadbadbadbadbadbadbadbadbadbadb"), testBindings(), now)
+	require.NoError(t, s.CreateEmailChallenge(context.Background(), c))
+	_, err := s.VerifyEmailChallenge(context.Background(), c.ID, []byte("badbadbadbadbadbadbadbadbadbadbadb"), testBindings(), now)
 	assert.ErrorIs(t, err, idpemailchallenge.ErrConflict)
-	_, err = s.Verify(context.Background(), c.ID, c.CodeHash, idpemailchallenge.VerificationBindings{}, now)
+	_, err = s.VerifyEmailChallenge(context.Background(), c.ID, c.CodeHash, idpemailchallenge.VerificationBindings{}, now)
 	assert.ErrorIs(t, err, idpemailchallenge.ErrBinding)
 }
 func testChallenge(now time.Time) idpemailchallenge.PendingChallenge {

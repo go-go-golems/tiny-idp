@@ -17,7 +17,7 @@ func NewMemoryStore() *MemoryStore { return &MemoryStore{records: map[string]Pen
 
 var _ Store = (*MemoryStore)(nil)
 
-func (s *MemoryStore) Create(_ context.Context, c PendingChallenge) error {
+func (s *MemoryStore) CreateEmailChallenge(_ context.Context, c PendingChallenge) error {
 	if err := c.ValidateForCreate(); err != nil {
 		return err
 	}
@@ -29,7 +29,7 @@ func (s *MemoryStore) Create(_ context.Context, c PendingChallenge) error {
 	s.records[c.ID] = clone(c)
 	return nil
 }
-func (s *MemoryStore) Load(_ context.Context, id string, now time.Time) (PendingChallenge, error) {
+func (s *MemoryStore) LoadEmailChallenge(_ context.Context, id string, now time.Time) (PendingChallenge, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.records[id]
@@ -41,7 +41,7 @@ func (s *MemoryStore) Load(_ context.Context, id string, now time.Time) (Pending
 	}
 	return clone(c), nil
 }
-func (s *MemoryStore) Verify(_ context.Context, id string, codeHash []byte, b VerificationBindings, now time.Time) (VerifiedEmailEvidence, error) {
+func (s *MemoryStore) VerifyEmailChallenge(_ context.Context, id string, codeHash []byte, b VerificationBindings, now time.Time) (VerifiedEmailEvidence, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.checked(id, b, now)
@@ -65,7 +65,7 @@ func (s *MemoryStore) Verify(_ context.Context, id string, codeHash []byte, b Ve
 	s.records[id] = c
 	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Method: "email_code", VerifiedAt: at}, nil
 }
-func (s *MemoryStore) RecordAttempt(_ context.Context, id string, b VerificationBindings, now time.Time) (AttemptResult, error) {
+func (s *MemoryStore) RecordEmailChallengeAttempt(_ context.Context, id string, b VerificationBindings, now time.Time) (AttemptResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.checked(id, b, now)
@@ -76,7 +76,7 @@ func (s *MemoryStore) RecordAttempt(_ context.Context, id string, b Verification
 	s.records[id] = c
 	return AttemptResult{RemainingAttempts: c.MaximumAttempts - c.Attempts, Terminal: c.Attempts >= c.MaximumAttempts}, nil
 }
-func (s *MemoryStore) ReserveResend(_ context.Context, id string, b VerificationBindings, now time.Time) (ResendResult, error) {
+func (s *MemoryStore) ReserveEmailChallengeResend(_ context.Context, id string, b VerificationBindings, now time.Time) (ResendResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.checked(id, b, now)
@@ -91,7 +91,7 @@ func (s *MemoryStore) ReserveResend(_ context.Context, id string, b Verification
 	s.records[id] = c
 	return ResendResult{Allowed: true, RemainingResends: c.MaximumResends - c.Resends, NotBefore: c.ResendNotBefore}, nil
 }
-func (s *MemoryStore) ListExpired(_ context.Context, now time.Time, limit int) ([]PendingChallenge, error) {
+func (s *MemoryStore) ListExpiredEmailChallenges(_ context.Context, now time.Time, limit int) ([]PendingChallenge, error) {
 	if limit <= 0 {
 		return nil, ErrConflict
 	}
@@ -105,7 +105,7 @@ func (s *MemoryStore) ListExpired(_ context.Context, now time.Time, limit int) (
 	}
 	return r, nil
 }
-func (s *MemoryStore) DeleteExpired(_ context.Context, id string, now time.Time) error {
+func (s *MemoryStore) DeleteExpiredEmailChallenge(_ context.Context, id string, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.records[id]
