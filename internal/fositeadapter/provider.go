@@ -90,6 +90,7 @@ type Options struct {
 	PasswordWork          idp.PasswordWorkConfig
 	Registration          RegistrationConfig
 	ScriptedSignup        *idpsignup.Executor
+	ScriptedSignupManager *idpsignup.GenerationManager
 	DurableInvitations    *idpinvite.DurableService
 	EmailChallenges       *idpemailchallenge.Service
 	WorkflowContinuations idpcontinuation.Store
@@ -131,6 +132,7 @@ type Provider struct {
 	authenticator         idp.PasswordAuthenticator
 	registration          *idpaccounts.Service
 	scriptedSignup        *idpsignup.Executor
+	scriptedSignupManager *idpsignup.GenerationManager
 	durableInvitations    *idpinvite.DurableService
 	emailChallenges       *idpemailchallenge.Service
 	workflowContinuations *idpcontinuation.Service
@@ -360,7 +362,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if !opts.Registration.Enabled {
 		registration = nil
 	}
-	if opts.ScriptedSignup == nil && registration != nil {
+	if opts.ScriptedSignup == nil && opts.ScriptedSignupManager == nil && registration != nil {
 		executor, executorErr := idpsignup.New(ctx, "", 1)
 		if executorErr != nil {
 			return nil, fmt.Errorf("create default scripted signup executor: %w", executorErr)
@@ -368,7 +370,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		opts.ScriptedSignup = executor
 	}
 	var workflowContinuations *idpcontinuation.Service
-	if opts.ScriptedSignup != nil {
+	if opts.ScriptedSignup != nil || opts.ScriptedSignupManager != nil {
 		continuationStore := opts.WorkflowContinuations
 		if continuationStore == nil {
 			if durableStore, ok := opts.Store.(idpcontinuation.Store); ok {
@@ -380,14 +382,18 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			}
 		}
 		var continuationErr error
+		resolver := idpcontinuation.GenerationResolver(opts.ScriptedSignup)
+		if opts.ScriptedSignupManager != nil {
+			resolver = opts.ScriptedSignupManager
+		}
 		workflowContinuations, continuationErr = idpcontinuation.NewService(continuationStore, idpcontinuation.Config{
-			HashKey: opts.SecretKey, Clock: opts.Clock, Resolver: opts.ScriptedSignup,
+			HashKey: opts.SecretKey, Clock: opts.Clock, Resolver: resolver,
 		})
 		if continuationErr != nil {
 			return nil, fmt.Errorf("create scripted signup continuation service: %w", continuationErr)
 		}
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -805,7 +811,7 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if actions.Has(idpstore.InteractionRequireRegistration) {
-		if p.scriptedSignup == nil {
+		if _, signupErr := p.activeSignupExecutor(); signupErr != nil {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.start_failed", ClientID: client.ID, Result: "rejected", Reason: "workflow_unavailable"})
 			http.Error(w, "registration request was not accepted", http.StatusServiceUnavailable)
 			return
@@ -899,7 +905,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if registrationRequired {
-		if p.scriptedSignup == nil {
+		if _, signupErr := p.activeSignupExecutor(); signupErr != nil {
 			http.Error(w, "registration workflow is unavailable", http.StatusServiceUnavailable)
 			return
 		}

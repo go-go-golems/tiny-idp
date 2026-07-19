@@ -23,14 +23,15 @@ import (
 )
 
 func (p *Provider) beginScriptedSignup(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, client idpstore.Client, interactionHandle, csrfToken string) error {
-	if p.scriptedSignup == nil || p.workflowContinuations == nil {
+	executor, err := p.activeSignupExecutor()
+	if err != nil || p.workflowContinuations == nil {
 		return errors.New("scripted signup is unavailable")
 	}
 	record, err := p.store.GetInteraction(r.Context(), idpstore.HashSecret(p.csrfKey, interactionHandle))
 	if err != nil {
 		return errors.Wrap(err, "load signup authorization interaction")
 	}
-	presentation, err := p.scriptedSignup.Start(r.Context(), idpsignup.StartInput{
+	presentation, err := executor.Start(r.Context(), idpsignup.StartInput{
 		ClientID:          client.ID,
 		RedirectURI:       ar.GetRedirectURI().String(),
 		RequestedScope:    strings.Join(ar.GetRequestedScopes(), " "),
@@ -40,14 +41,14 @@ func (p *Provider) beginScriptedSignup(w http.ResponseWriter, r *http.Request, a
 	if err != nil {
 		return err
 	}
-	workflow := p.scriptedSignup.Program().Workflows[idpsignup.WorkflowID]
+	workflow := executor.Program().Workflows[idpsignup.WorkflowID]
 	publicValues, err := json.Marshal(presentation.Presentation.PublicValues)
 	if err != nil {
 		return errors.Wrap(err, "encode signup public values")
 	}
 	continuationHandle, _, err := p.workflowContinuations.Create(r.Context(), idpcontinuation.WorkflowContinuation{
 		WorkflowID: idpsignup.WorkflowID, ResumeHandlerID: presentation.Presentation.ResumeHandler,
-		ProgramFingerprint: p.scriptedSignup.Fingerprint(), SchemaVersion: "v1", WorkflowVersion: workflow.Version,
+		ProgramFingerprint: executor.Fingerprint(), SchemaVersion: "v1", WorkflowVersion: workflow.Version,
 		RequestDigest: record.RequestDigest, ClientID: record.ClientID, RedirectURI: record.RedirectURI,
 		ClientGeneration: hex.EncodeToString(record.GenerationHash), BrowserBindingHash: record.BrowserBindingHash,
 		SessionIDHash: record.SessionIDHash, BrowserContextHash: record.BrowserContextHash,
@@ -64,12 +65,19 @@ func (p *Provider) beginScriptedSignup(w http.ResponseWriter, r *http.Request, a
 
 func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, client idpstore.Client, record idpstore.InteractionRecord, interactionHandle, clientAddress string) {
 	continuationHandle := r.PostForm.Get(idpui.WorkflowContinuationFieldName)
-	continuation, err := p.workflowContinuations.Load(r.Context(), continuationHandle, p.signupBindings(record, r))
+	continuation, err := p.workflowContinuations.Load(r.Context(), continuationHandle, p.signupLoadBindings(record, r))
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.resume_rejected", ClientID: record.ClientID, Result: "rejected", Reason: "continuation_unavailable"})
 		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
 		return
 	}
+	executor, err := p.signupExecutorFor(continuation.ProgramFingerprint)
+	if err != nil {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.resume_rejected", ClientID: record.ClientID, Result: "rejected", Reason: "generation_unavailable"})
+		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
+		return
+	}
+	continuationBindings := p.signupBindingsFor(record, r, continuation.ProgramFingerprint)
 	fields, actions, err := workflowDescriptors(continuation.Presentation)
 	if err != nil {
 		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
@@ -82,7 +90,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	}
 	defer submission.DestroySecrets()
 	if submission.Action == idpworkflow.ActionDeny {
-		if _, err := p.workflowContinuations.Consume(r.Context(), continuationHandle, continuation.Revision, p.signupBindings(record, r), idpcontinuation.TerminalOutcome{Kind: idpcontinuation.TerminalDeny}); err != nil {
+		if _, err := p.workflowContinuations.Consume(r.Context(), continuationHandle, continuation.Revision, continuationBindings, idpcontinuation.TerminalOutcome{Kind: idpcontinuation.TerminalDeny}); err != nil {
 			http.Error(w, "registration request was not accepted", http.StatusBadRequest)
 			return
 		}
@@ -108,7 +116,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, nil, nil))
 		return
 	}
-	input, err := p.scriptedSignup.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
+	input, err := executor.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
 	if err == nil {
 		input, err = mergeWorkflowCarry(continuation.Carry, input)
 	}
@@ -147,13 +155,13 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
-	outcome, err := p.scriptedSignup.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, signupSubmissionSecrets(submission), evidence)
+	outcome, err := executor.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, signupSubmissionSecrets(submission), evidence)
 	if err != nil {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
 	if outcome.Kind == idpprogram.OutcomeChallenge {
-		if err := p.beginEmailChallenge(w, r, outcome, continuationHandle, continuation, record, interactionHandle); err != nil {
+		if err := p.beginEmailChallenge(w, r, executor, outcome, continuationHandle, continuation, record, interactionHandle); err != nil {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_send", ClientID: record.ClientID, Result: "rejected", Reason: emailChallengeFailureReason(err)})
 			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 			return
@@ -165,7 +173,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		if verifiedReference.ID != "" {
 			evidenceReferences = []idpcontinuation.EvidenceReference{verifiedReference}
 		}
-		if err := p.advanceSignupPresentation(w, r, outcome, continuationHandle, continuation, record, interactionHandle, evidenceReferences); err != nil {
+		if err := p.advanceSignupPresentation(w, r, executor, outcome, continuationHandle, continuation, record, interactionHandle, evidenceReferences); err != nil {
 			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		}
 		return
@@ -174,7 +182,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
-	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, p.signupBindings(record, r), record, clientAddress, verifiedEmail)
+	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, continuationBindings, record, clientAddress, verifiedEmail)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: signupCommitFailureReason(err)})
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
@@ -183,7 +191,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	p.completeScriptedSignup(w, r, ar, client, record, registered)
 }
 
-func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Request, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string, evidenceReferences []idpcontinuation.EvidenceReference) error {
+func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Request, executor *idpsignup.Executor, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string, evidenceReferences []idpcontinuation.EvidenceReference) error {
 	if outcome.Continuation == nil {
 		return errors.New("signup presentation continuation is missing")
 	}
@@ -191,7 +199,7 @@ func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		return err
 	}
-	validated, err := idpworkflow.ValidatePresentation(p.scriptedSignup.Program(), idpsignup.WorkflowID, current.ResumeHandlerID, presentation, idpworkflow.DefaultRegistry(), idpworkflow.DefaultMaximumContinuationTTL)
+	validated, err := idpworkflow.ValidatePresentation(executor.Program(), idpsignup.WorkflowID, current.ResumeHandlerID, presentation, idpworkflow.DefaultRegistry(), idpworkflow.DefaultMaximumContinuationTTL)
 	if err != nil {
 		return err
 	}
@@ -208,7 +216,7 @@ func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Requ
 	return nil
 }
 
-func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string) error {
+func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, executor *idpsignup.Executor, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string) error {
 	if p.emailChallenges == nil || outcome.Continuation == nil {
 		return errors.New("email challenge is unavailable")
 	}
@@ -219,7 +227,7 @@ func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, o
 	if err := json.Unmarshal(outcome.Challenge, &request); err != nil || request.Kind != "email_code" || request.Email == "" || request.MaximumAttempts <= 0 || request.MaximumResends <= 0 {
 		return errors.New("email challenge request is invalid")
 	}
-	workflow := p.scriptedSignup.Program().Workflows[idpsignup.WorkflowID]
+	workflow := executor.Program().Workflows[idpsignup.WorkflowID]
 	currentHandler := workflow.Handlers[current.ResumeHandlerID]
 	inputSchema := ""
 	for _, edge := range currentHandler.ContinuationEdges {
@@ -411,7 +419,45 @@ func (p *Provider) renderScriptedSignupError(w http.ResponseWriter, r *http.Requ
 }
 
 func (p *Provider) signupBindings(record idpstore.InteractionRecord, r *http.Request) idpcontinuation.Bindings {
-	return idpcontinuation.Bindings{WorkflowID: idpsignup.WorkflowID, ClientID: record.ClientID, RedirectURI: record.RedirectURI, ClientGeneration: hex.EncodeToString(record.GenerationHash), ProgramFingerprint: p.scriptedSignup.Fingerprint(), RequestDigest: record.RequestDigest, BrowserBindingHash: p.browserBindingHash(r), SessionIDHash: p.browserSessionHash(r), BrowserContextHash: p.browserContextHash(r)}
+	executor, err := p.activeSignupExecutor()
+	if err != nil {
+		return idpcontinuation.Bindings{}
+	}
+	return p.signupBindingsFor(record, r, executor.Fingerprint())
+}
+
+func (p *Provider) signupBindingsFor(record idpstore.InteractionRecord, r *http.Request, fingerprint string) idpcontinuation.Bindings {
+	bindings := p.signupLoadBindings(record, r)
+	bindings.ProgramFingerprint = fingerprint
+	return bindings
+}
+
+func (p *Provider) signupLoadBindings(record idpstore.InteractionRecord, r *http.Request) idpcontinuation.Bindings {
+	bindings := idpcontinuation.Bindings{WorkflowID: idpsignup.WorkflowID, ClientID: record.ClientID, RedirectURI: record.RedirectURI, ClientGeneration: hex.EncodeToString(record.GenerationHash), RequestDigest: record.RequestDigest, BrowserBindingHash: p.browserBindingHash(r), SessionIDHash: p.browserSessionHash(r), BrowserContextHash: p.browserContextHash(r)}
+	if p.scriptedSignupManager == nil && p.scriptedSignup != nil {
+		bindings.ProgramFingerprint = p.scriptedSignup.Fingerprint()
+	}
+	return bindings
+}
+
+func (p *Provider) activeSignupExecutor() (*idpsignup.Executor, error) {
+	if p.scriptedSignupManager != nil {
+		return p.scriptedSignupManager.Active()
+	}
+	if p.scriptedSignup == nil {
+		return nil, errors.New("scripted signup is unavailable")
+	}
+	return p.scriptedSignup, nil
+}
+
+func (p *Provider) signupExecutorFor(fingerprint string) (*idpsignup.Executor, error) {
+	if p.scriptedSignupManager != nil {
+		return p.scriptedSignupManager.ExecutorFor(fingerprint)
+	}
+	if p.scriptedSignup == nil || p.scriptedSignup.Fingerprint() != fingerprint {
+		return nil, errors.New("scripted signup generation is unavailable")
+	}
+	return p.scriptedSignup, nil
 }
 
 func workflowPage(p *Provider, record idpstore.InteractionRecord, interactionHandle, csrfToken, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, fieldErrors []idpui.WorkflowFieldError) idpui.WorkflowPage {

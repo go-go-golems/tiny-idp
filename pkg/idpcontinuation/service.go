@@ -412,9 +412,9 @@ func validateBindings(record WorkflowContinuation, bindings Bindings) error {
 
 func validateExpectedBindings(bindings Bindings) error {
 	if bindings.WorkflowID == "" || bindings.ClientID == "" || bindings.RedirectURI == "" ||
-		bindings.ClientGeneration == "" || bindings.ProgramFingerprint == "" ||
+		bindings.ClientGeneration == "" ||
 		len(bindings.RequestDigest) == 0 || len(bindings.BrowserBindingHash) == 0 {
-		return errors.New("complete workflow, client, generation, request, and browser bindings are required")
+		return errors.New("complete workflow, client, request, and browser bindings are required")
 	}
 	return nil
 }
