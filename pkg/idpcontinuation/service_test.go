@@ -74,6 +74,47 @@ func TestSafeTerminalKeepsPublicResponseUniformAndAuditClassSpecific(t *testing.
 	assert.Equal(t, idpcontinuation.FailureReplayed, replayed.AuditClass)
 }
 
+func TestServiceReportsBoundedLifecycleMetrics(t *testing.T) {
+	service := newService(t, &toggleResolver{program: continuationProgram()})
+	handle, _, err := service.Create(context.Background(), continuationRecord())
+	require.NoError(t, err)
+	_, err = service.Load(context.Background(), handle, continuationBindings())
+	require.NoError(t, err)
+	_, err = service.Load(context.Background(), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", continuationBindings())
+	require.Error(t, err)
+	metrics := service.Metrics()
+	assert.Equal(t, uint64(1), metrics.Created)
+	assert.Equal(t, uint64(1), metrics.Loaded)
+	assert.Equal(t, uint64(1), metrics.LoadFailures)
+}
+
+func TestServiceReportsReplayExpiryAndCleanupMetrics(t *testing.T) {
+	now := time.Date(2026, time.July, 19, 20, 0, 0, 0, time.UTC)
+	service, err := idpcontinuation.NewService(memorystore.NewContinuationStore(), idpcontinuation.Config{
+		HashKey:  []byte("0123456789abcdef0123456789abcdef"),
+		Clock:    func() time.Time { return now },
+		Resolver: &toggleResolver{program: continuationProgram()},
+	})
+	require.NoError(t, err)
+
+	handle, _, err := service.Create(context.Background(), continuationRecord())
+	require.NoError(t, err)
+	_, _, err = service.Advance(context.Background(), handle, 2, continuationBindings(), continuationRecord())
+	assertFailureClass(t, err, idpcontinuation.FailureReplayed)
+
+	now = now.Add(2 * time.Hour)
+	_, err = service.Load(context.Background(), handle, continuationBindings())
+	assertFailureClass(t, err, idpcontinuation.FailureExpired)
+	removed, err := service.Cleanup(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, removed)
+
+	metrics := service.Metrics()
+	assert.Equal(t, uint64(1), metrics.Replayed)
+	assert.Equal(t, uint64(1), metrics.Expired)
+	assert.Equal(t, uint64(1), metrics.Cleaned)
+}
+
 func newService(t *testing.T, resolver idpcontinuation.GenerationResolver) *idpcontinuation.Service {
 	t.Helper()
 	service, err := idpcontinuation.NewService(memorystore.NewContinuationStore(), idpcontinuation.Config{

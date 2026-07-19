@@ -153,13 +153,16 @@ func (s *Service) Load(ctx context.Context, handle string, bindings Bindings) (W
 	}
 	hash, err := s.hashHandle(handle)
 	if err != nil {
-		s.recordLoadFailure(err)
-		return WorkflowContinuation{}, &Failure{Class: FailureMissing, Err: ErrNotFound}
+		failure := &Failure{Class: FailureMissing, Err: ErrNotFound}
+		s.recordLoadFailure(failure)
+		return WorkflowContinuation{}, failure
 	}
 	now := s.clock().UTC()
 	continuation, err := s.store.Load(ctx, hash, now)
 	if err != nil {
-		return WorkflowContinuation{}, classifyStoreFailure(err)
+		failure := classifyStoreFailure(err)
+		s.recordLoadFailure(failure)
+		return WorkflowContinuation{}, failure
 	}
 	if err := validateBindings(continuation, bindings); err != nil {
 		s.recordLoadFailure(err)
@@ -329,6 +332,7 @@ func (s *Service) Cleanup(ctx context.Context, limit int) (int, error) {
 		}
 		removed++
 	}
+	s.metrics.cleaned.Add(uint64(removed))
 	return removed, nil
 }
 
