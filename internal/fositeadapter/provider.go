@@ -49,7 +49,10 @@ var ProductionHandlerFactories = []string{
 	"OAuth2TokenIntrospectionFactory",
 }
 
-const registrationIntentParameter = "tinyidp_signup"
+const (
+	registrationIntentParameter = "tinyidp_signup"
+	authorizeInteractionMaxBody = 64 << 10
+)
 
 type Options struct {
 	Issuer          string
@@ -637,6 +640,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		p.beginAuthorize(w, r)
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, authorizeInteractionMaxBody)
 		p.resumeAuthorize(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -824,6 +828,11 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	action := idpui.Action(r.PostForm.Get(idpui.ActionFieldName))
 	selectionRequired := record.RequiredActions.Has(idpstore.InteractionRequireAccountSelection)
 	registrationRequired := record.RequiredActions.Has(idpstore.InteractionRequireRegistration)
+	if registrationRequired && !sameOriginBrowserPost(r) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: "origin_rejected"})
+		http.Error(w, "registration request was not accepted", http.StatusForbidden)
+		return
+	}
 	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionRemoveAccount && action != idpui.ActionDeny) || (registrationRequired && action != idpui.ActionRegister && action != idpui.ActionDeny) || (!selectionRequired && !registrationRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
 		http.Error(w, "invalid interaction action", http.StatusBadRequest)
 		return
@@ -1152,6 +1161,26 @@ func validateRegistrationPostForm(form url.Values) error {
 		}
 	}
 	return nil
+}
+
+// sameOriginBrowserPost adds browser-context checks to the interaction's
+// cryptographic CSRF token. It derives the expected origin from the public
+// request Host: the listener/proxy enforces canonical Host handling, while the
+// interaction rejects a cross-site form before account creation. Missing Fetch
+// Metadata is accepted for browser compatibility; a supplied cross-site value
+// is never accepted.
+func sameOriginBrowserPost(r *http.Request) bool {
+	if r == nil || r.Header.Get("Origin") == "" || r.Host == "" {
+		return false
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if r.Header.Get("Origin") != scheme+"://"+r.Host {
+		return false
+	}
+	return strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) != "cross-site"
 }
 
 func renderRegistrationError(p *Provider, w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, ar fosite.AuthorizeRequester, client idpstore.Client, handle, login, displayName string) {

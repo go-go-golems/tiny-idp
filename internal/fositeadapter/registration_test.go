@@ -88,6 +88,24 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 	form.Set(idpui.DisplayNameFieldName, "New User")
 	form.Set(idpui.PasswordFieldName, "correct horse battery staple 2026")
 	form.Set(idpui.PasswordConfirmationFieldName, "correct horse battery staple 2026")
+	crossSiteRequest, err := http.NewRequest(http.MethodPost, server.URL+"/authorize", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossSiteRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	crossSiteRequest.Header.Set("Origin", "https://attacker.example.test")
+	crossSiteRequest.Header.Set("Sec-Fetch-Site", "cross-site")
+	crossSiteResponse, err := client.Do(crossSiteRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossSiteResponse.Body.Close()
+	if crossSiteResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-site registration status=%d", crossSiteResponse.StatusCode)
+	}
+	if _, err := store.GetUserByLogin(ctx, "new-user"); err == nil {
+		t.Fatal("cross-site registration created an account")
+	}
 
 	response = submitRegistration(t, client, server.URL, form)
 	defer response.Body.Close()
@@ -152,6 +170,7 @@ func submitRegistration(t *testing.T, client *http.Client, baseURL string, form 
 		t.Fatal(err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", baseURL)
 	response, err := client.Do(request)
 	if err != nil {
 		t.Fatal(err)

@@ -410,3 +410,69 @@ verify ID token + create app session
   selection.
 - `examples/tinyidp-message-app/ui/src/App.tsx` — credential-boundary copy and
   navigation.
+
+## Step 4 — Harden the provider registration POST boundary
+
+**Status:** complete
+
+Provider-owned registration already used a one-time server-side interaction,
+an HttpOnly browser binding, and a CSRF token. This step makes the browser
+context check explicit and bounds the form body before Go parses it. A
+registration POST must now carry an `Origin` matching the request's public
+scheme and host; if the browser supplies Fetch Metadata, `Sec-Fetch-Site:
+cross-site` is rejected as well. The handler records a generic rejection and
+does not consume the valid interaction, so a legitimate same-origin retry is
+still possible.
+
+### What I did
+
+- Applied a 64 KiB `http.MaxBytesReader` cap to every `/authorize` POST before
+  `ParseForm`; registration fields are therefore never parsed from an
+  unbounded body.
+- Added the provider-local `sameOriginBrowserPost` predicate for registration
+  interactions. It requires `Origin`, rejects an origin different from the
+  current public request origin, and rejects explicit cross-site Fetch
+  Metadata.
+- Kept the existing cryptographic CSRF validation in front of interaction
+  lookup. The new check is defense in depth, not a replacement for the
+  server-side one-use secret.
+- Audited rejected provider registrations as `origin_rejected` without storing
+  any submitted account fields.
+- Extended the full PKCE registration test with a forged cross-site submission;
+  it receives 403, creates no user, and is followed successfully by the same
+  valid form submission.
+
+### Why
+
+CSRF tokens protect the authorization interaction even if a hostile page can
+submit a form, but browser-origin validation eliminates the request earlier and
+makes the policy auditable. It is deliberately scoped to the public account
+creation action: OIDC client back-channel requests are not browser forms, and
+the pre-existing login/consent interaction compatibility behavior remains
+unchanged.
+
+### What worked
+
+- `go test ./internal/fositeadapter -run 'TestProviderOwnedRegistration' -count=1`
+  passed with approved local loopback-listener access.
+- The test confirms a cross-site request does not consume the legitimate
+  registration continuation: the immediately following same-origin submission
+  still completes PKCE authorization.
+
+### What didn't work
+
+- As with the Message Desk browser test, the initial sandboxed run could not
+  bind `httptest`'s IPv6 loopback listener. It was an environment restriction,
+  not a source failure; the same focused command passed with local-listener
+  permission.
+
+### What warrants a second pair of eyes
+
+- The check derives the expected origin from the request's public Host rather
+  than from a new proxy configuration field. This is correct only while the
+  next listener-mode phase enforces canonical Host handling at the trusted
+  proxy boundary. That dependency is explicit in the design and should be
+  retained in deployment review.
+- Decide whether legacy browsers without an `Origin` header must be supported.
+  The first production scope rejects them for registration; Fetch Metadata is
+  optional because not every browser sends it.
