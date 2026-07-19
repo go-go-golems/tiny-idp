@@ -148,7 +148,11 @@ func (f FieldName) Valid() bool {
 // interaction. It contains no password, cookie, redirect URI, authorization
 // code, original OAuth request, or stored interaction record.
 type InteractionPage struct {
-	DocumentTitle  string
+	DocumentTitle string
+	// ClientID is the public OAuth client identifier for the interaction. It is
+	// intentionally distinct from the opaque interaction handle and contains no
+	// credential or redirect data.
+	ClientID       string
 	Form           InteractionForm
 	Login          *LoginPrompt
 	Consent        *ConsentPrompt

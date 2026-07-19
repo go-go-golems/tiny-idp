@@ -26,11 +26,11 @@ func (p *recordingPresentationPolicy) Present(_ context.Context, input idp.Prese
 func TestPresentationPolicyDecoratesOnlyProviderOwnedInteractionMetadata(t *testing.T) {
 	policy := &recordingPresentationPolicy{output: idp.PresentationOutput{DocumentTitle: "Choose your workspace account"}}
 	provider := &Provider{presentation: policy}
-	page := &idpui.InteractionPage{DocumentTitle: "Choose an account", AccountChooser: &idpui.AccountChooserPrompt{AccountField: idpui.AccountFieldName, Entries: []idpui.AccountChooserEntry{{Value: "opaque-entry", Label: "Ada"}}}}
+	page := &idpui.InteractionPage{DocumentTitle: "Choose an account", ClientID: "message-app", AccountChooser: &idpui.AccountChooserPrompt{AccountField: idpui.AccountFieldName, Entries: []idpui.AccountChooserEntry{{Value: "opaque-entry", Label: "Ada"}}}}
 	require.NoError(t, provider.decorateInteractionPage(context.Background(), page))
 	assert.Equal(t, "Choose your workspace account", page.DocumentTitle)
 	assert.Equal(t, idp.PresentationAccountSelection, policy.input.Kind)
-	assert.Equal(t, "account-selection", policy.input.ClientID)
+	assert.Equal(t, "message-app", policy.input.ClientID)
 	assert.Equal(t, 1, policy.input.AccountCount)
 	assert.Empty(t, policy.input.RequestedScope)
 }

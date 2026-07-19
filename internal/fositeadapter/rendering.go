@@ -45,6 +45,7 @@ func (p *Provider) newInteractionPage(
 	}
 	page := idpui.InteractionPage{
 		DocumentTitle: title,
+		ClientID:      clientID,
 		Form: idpui.InteractionForm{
 			ActionURL:        p.issuer.Endpoint("/authorize"),
 			RedirectOrigin:   interactionRedirectOrigin(request.Get("redirect_uri")),
@@ -289,7 +290,7 @@ func (p *Provider) decorateInteractionPage(ctx context.Context, page *idpui.Inte
 	var input idp.PresentationInput
 	switch {
 	case page.AccountChooser != nil:
-		input = idp.PresentationInput{Kind: idp.PresentationAccountSelection, ClientID: interactionClientID(page), AccountCount: len(page.AccountChooser.Entries)}
+		input = idp.PresentationInput{Kind: idp.PresentationAccountSelection, ClientID: page.ClientID, AccountCount: len(page.AccountChooser.Entries)}
 	case page.Consent != nil:
 		input = idp.PresentationInput{Kind: idp.PresentationConsent, ClientID: page.Consent.ClientID, RequestedScope: scopeNames(page.Consent.Scopes)}
 	default:
@@ -317,13 +318,6 @@ func (p *Provider) decorateDeviceVerificationPage(ctx context.Context, page *idp
 		page.DocumentTitle = output.DocumentTitle
 	}
 	return nil
-}
-
-func interactionClientID(page *idpui.InteractionPage) string {
-	if page.Consent != nil {
-		return page.Consent.ClientID
-	}
-	return "account-selection"
 }
 
 func scopeNames(scopes []idpui.Scope) []string {

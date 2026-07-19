@@ -425,6 +425,28 @@ func TestDeviceVerificationRendererFailureFailsClosed(t *testing.T) {
 	t.Fatal("renderer failure was not audited")
 }
 
+func TestDeviceVerificationPresentationPolicyDecoratesNativeConfirmation(t *testing.T) {
+	now := time.Date(2026, 7, 15, 17, 0, 0, 0, time.UTC)
+	provider, _, _ := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-presentation", "WXYZ-ABCD", nil }, now)
+	provider.presentation = devicePresentationTitlePolicy{}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	client := newDeviceVerificationHTTPClient(t)
+	start, err := client.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var device deviceAuthorizationResponse
+	if err := json.NewDecoder(start.Body).Decode(&device); err != nil {
+		t.Fatal(err)
+	}
+	_ = start.Body.Close()
+	page := getDeviceVerificationPage(t, client, server.URL+"/device?user_code="+device.UserCode, http.StatusOK)
+	if !strings.Contains(page, "Review coding-agent access") {
+		t.Fatalf("device presentation title missing from native confirmation: %s", page)
+	}
+}
+
 func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *testing.T) {
 	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
 	provider, _, _ := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-one", "ABCD-EFGH", nil }, now)
@@ -729,6 +751,15 @@ func newDeviceAuthorizationProvider(t *testing.T, generator func() (string, stri
 }
 
 type deviceTestAuthenticator struct{}
+
+type devicePresentationTitlePolicy struct{}
+
+func (devicePresentationTitlePolicy) Present(_ context.Context, input idp.PresentationInput) (idp.PresentationOutput, error) {
+	if input.Kind != idp.PresentationDeviceVerify || input.ClientID != "device-cli" {
+		return idp.PresentationOutput{}, fmt.Errorf("unexpected presentation input: %#v", input)
+	}
+	return idp.PresentationOutput{DocumentTitle: "Review coding-agent access"}, nil
+}
 
 type failingDeviceVerificationRenderer struct{}
 
