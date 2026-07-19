@@ -1,0 +1,119 @@
+package idpinvite
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"time"
+
+	"github.com/pkg/errors"
+
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
+)
+
+const durableCodeDomain = "tiny-idp/durable-invitation/v1\x00"
+
+// DurableIssue is the native request to create a one-time invitation. Code is
+// immediately transformed into a keyed lookup hash; neither the service nor
+// the store retains its browser-visible form.
+type DurableIssue struct {
+	Code          string
+	ID            string
+	Audience      string
+	PolicyVersion string
+	ExpiresAt     time.Time
+}
+
+// DurableEvidence is safe to attach to a native signup decision. It contains
+// no invitation code or lookup hash and proves only that a particular durable
+// invitation was consumed at a specified time.
+type DurableEvidence struct {
+	InvitationID  string
+	Audience      string
+	PolicyVersion string
+	ExpiresAt     time.Time
+	RedeemedAt    time.Time
+}
+
+// DurableService applies the invitation-code secrecy boundary before asking
+// the shared store to create or consume durable state.
+type DurableService struct {
+	store     idpstore.Store
+	lookupKey []byte
+}
+
+func NewDurableService(store idpstore.Store, lookupKey []byte) (*DurableService, error) {
+	if store == nil || len(lookupKey) < 32 {
+		return nil, errors.New("durable invitation store and 32-byte lookup key are required")
+	}
+	return &DurableService{store: store, lookupKey: append([]byte(nil), lookupKey...)}, nil
+}
+
+func (s *DurableService) Issue(ctx context.Context, issue DurableIssue) error {
+	if s == nil || s.store == nil {
+		return errors.New("durable invitation service is unavailable")
+	}
+	if err := validateIssue(issue); err != nil {
+		return err
+	}
+	return s.store.CreateDurableInvitation(ctx, idpstore.DurableInvitation{
+		CodeHash:      s.codeHash(issue.Code),
+		ID:            issue.ID,
+		Audience:      issue.Audience,
+		PolicyVersion: issue.PolicyVersion,
+		ExpiresAt:     issue.ExpiresAt.UTC(),
+	})
+}
+
+// Redeem atomically consumes an invitation in its own transaction. Signup
+// committers that need all-or-nothing account creation instead call
+// RedeemInTransaction from their already-open store transaction.
+func (s *DurableService) Redeem(ctx context.Context, code, audience string, now time.Time) (DurableEvidence, error) {
+	if s == nil || s.store == nil {
+		return DurableEvidence{}, errors.New("durable invitation service is unavailable")
+	}
+	var evidence DurableEvidence
+	err := s.store.Update(ctx, func(tx idpstore.TxStore) error {
+		var err error
+		evidence, err = s.RedeemInTransaction(ctx, tx, code, audience, now)
+		return err
+	})
+	return evidence, err
+}
+
+// Revoke invalidates an unconsumed invitation by its browser-visible code
+// without exposing the derived lookup hash to callers.
+func (s *DurableService) Revoke(ctx context.Context, code string, now time.Time) error {
+	if s == nil || s.store == nil || !validText(code) || now.IsZero() {
+		return errors.New("durable invitation revocation request is invalid")
+	}
+	return s.store.RevokeDurableInvitation(ctx, s.codeHash(code), now.UTC())
+}
+
+// RedeemInTransaction is the only durable-invitation operation a native
+// signup committer needs. It accepts the caller-owned transaction, which
+// makes invitation consumption atomic with the rest of that caller's commit.
+func (s *DurableService) RedeemInTransaction(ctx context.Context, store idpstore.DurableInvitationStore, code, audience string, now time.Time) (DurableEvidence, error) {
+	if s == nil || store == nil || !validText(code) || !validText(audience) || now.IsZero() {
+		return DurableEvidence{}, errors.New("durable invitation redemption request is invalid")
+	}
+	invitation, err := store.RedeemDurableInvitation(ctx, s.codeHash(code), audience, now.UTC())
+	if err != nil {
+		return DurableEvidence{}, err
+	}
+	return DurableEvidence{InvitationID: invitation.ID, Audience: invitation.Audience, PolicyVersion: invitation.PolicyVersion, ExpiresAt: invitation.ExpiresAt.UTC(), RedeemedAt: *invitation.RedeemedAt}, nil
+}
+
+func (s *DurableService) codeHash(code string) []byte {
+	mac := hmac.New(sha256.New, s.lookupKey)
+	_, _ = mac.Write([]byte(durableCodeDomain))
+	_, _ = mac.Write([]byte(code))
+	return mac.Sum(nil)
+}
+
+func validateIssue(issue DurableIssue) error {
+	if !validText(issue.Code) || len(issue.Code) > 512 || !validText(issue.ID) || !validText(issue.Audience) || !validText(issue.PolicyVersion) || issue.ExpiresAt.IsZero() {
+		return errors.New("durable invitation issue is invalid")
+	}
+	return nil
+}

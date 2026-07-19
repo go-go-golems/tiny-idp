@@ -80,6 +80,21 @@ type PasswordCredential struct {
 	Disabled          bool
 }
 
+// DurableInvitation is a one-time invitation whose browser-visible code is
+// represented only by CodeHash. The state transition to RedeemedAt is made by
+// the store, never by JavaScript, so a signup transaction can consume it
+// without a check-then-write race.
+type DurableInvitation struct {
+	CodeHash         []byte
+	ID               string
+	Audience         string
+	PolicyVersion    string
+	ExpiresAt        time.Time
+	RevokedAt        *time.Time
+	RedeemedAt       *time.Time
+	RedeemedEvidence string
+}
+
 // PasswordHashParams records the parameters used to derive PasswordHash. The
 // encoded hash is authoritative for verification; these fields make admin and
 // diagnostics output possible without parsing hashes everywhere.

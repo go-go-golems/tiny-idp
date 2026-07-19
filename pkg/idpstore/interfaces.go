@@ -21,6 +21,7 @@ var (
 	ErrInvalidDeviceDecision     = errors.New("invalid device grant decision")
 	ErrDeviceGrantNotPending     = errors.New("device grant is not pending")
 	ErrDeviceGrantNotApproved    = errors.New("device grant is not approved")
+	ErrInvitationRevoked         = errors.New("invitation is revoked")
 )
 
 type ClientStore interface {
@@ -122,6 +123,15 @@ type DeviceGrantStore interface {
 	ConsumeDeviceGrant(ctx context.Context, request DeviceConsumeRequest) (DeviceGrant, error)
 }
 
+// DurableInvitationStore owns one-time invitation lifecycle transitions. Raw
+// invitation codes never enter this interface; callers use a keyed hash.
+type DurableInvitationStore interface {
+	CreateDurableInvitation(ctx context.Context, invitation DurableInvitation) error
+	GetDurableInvitation(ctx context.Context, codeHash []byte) (DurableInvitation, error)
+	RedeemDurableInvitation(ctx context.Context, codeHash []byte, audience string, now time.Time) (DurableInvitation, error)
+	RevokeDurableInvitation(ctx context.Context, codeHash []byte, now time.Time) error
+}
+
 type KeyStore interface {
 	ActiveSigningKey(ctx context.Context) (SigningKey, error)
 	VerificationKeys(ctx context.Context) ([]SigningKey, error)
@@ -145,6 +155,7 @@ type StoreOperations interface {
 	BrowserContextStore
 	InteractionStore
 	DeviceGrantStore
+	DurableInvitationStore
 	KeyStore
 }
 
@@ -170,6 +181,7 @@ type ReadStore interface {
 	GetInteraction(ctx context.Context, idHash []byte) (InteractionRecord, error)
 	GetDeviceGrantByUserCodeHash(ctx context.Context, userCodeHash []byte) (DeviceGrant, error)
 	InspectDeviceGrantByDeviceCodeHash(ctx context.Context, deviceCodeHash []byte, clientID string) (DeviceGrant, error)
+	GetDurableInvitation(ctx context.Context, codeHash []byte) (DurableInvitation, error)
 	ActiveSigningKey(ctx context.Context) (SigningKey, error)
 	VerificationKeys(ctx context.Context) ([]SigningKey, error)
 }
