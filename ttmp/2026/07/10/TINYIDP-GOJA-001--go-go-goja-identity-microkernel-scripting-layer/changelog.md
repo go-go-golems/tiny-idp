@@ -417,3 +417,14 @@ Completed the bounded Phase 6 metric matrix: continuation lifecycle counters now
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service_test.go — Lifecycle metric regression tests
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Bounded interruption metrics
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor_test.go — Timeout metric regression test
+
+## 2026-07-19 - Step 47: redacted scripted-signup runtime audit
+
+Completed Phase 6 runtime audit records: generation-manager audit configuration now reaches active executors, which emit fixed outcome/failure diagnostic IDs plus compiled source/program fingerprints and no browser, identity, handler, or raw-error data.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Invocation audit boundary and redaction
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor_test.go — Accepted and rejected audit tests
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Audit propagation into generations
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager_test.go — Manager propagation regression test

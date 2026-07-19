@@ -423,7 +423,7 @@ manager, operational health/metrics/audit surfaces, and rollback behavior.
 - [x] Retain a bounded set of old generations required by compatible continuations, route resumes by generation, drain unused workers, and close generations without goroutine or runtime leaks <!-- t:lf73 -->
 - [x] Expose readiness failure when the active generation or required native bindings are unavailable, without reporting a merely compiled artifact as ready <!-- t:lf74 -->
 - [x] Add bounded-cardinality metrics for pool saturation, invocation outcome/latency, interruption/discard, continuation create/resume/replay/expiry, activation, retained generations, and cleanup <!-- t:lf75 -->
-- [ ] Add redacted activation and runtime audit records containing stable program/source hashes and diagnostic IDs but no subjects, emails, invite codes, passwords, raw exceptions, or unbounded callback labels <!-- t:lf76 -->
+- [x] Add redacted activation and runtime audit records containing stable program/source hashes and diagnostic IDs but no subjects, emails, invite codes, passwords, raw exceptions, or unbounded callback labels <!-- t:lf76 -->
 - [ ] Add failure-matrix and repeated-reload tests covering every pre-activation failure, atomic swap, in-flight request consistency, continuation generation routing, rollback, draining, resource cleanup, and goroutine/runtime leaks <!-- t:lf77 -->
 
 **Phase 6 gate:** Every activation prerequisite succeeds before swap; any failure

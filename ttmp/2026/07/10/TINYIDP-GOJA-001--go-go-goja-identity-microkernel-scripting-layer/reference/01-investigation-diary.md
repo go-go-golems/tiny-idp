@@ -5073,3 +5073,120 @@ InvokeSubmission -> outcome/failure/latency counters
                  -> timeout|cancellation -> interrupted counter
                  -> unsafe worker delta -> discarded counter
 ```
+
+## Step 47: Add redacted scripted-signup runtime audit records
+
+Script activation was already auditable, but an operator could not correlate a
+running generation with its browser-facing execution outcomes. This step adds
+one redacted invocation event at the native executor boundary and propagates
+the generation manager's audit configuration to every warmed generation.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the remaining Phase 6 tasks in order,
+preserving security boundaries, test evidence, commits, and diary detail.
+
+**Inferred user intent:** Audit production runtime behavior with stable,
+useful identifiers while guaranteeing that JavaScript, identity, browser, and
+exception data do not leak into durable audit output.
+
+**Commit (code):** `e130900` — "Feat: audit scripted signup invocations"
+
+### What I did
+
+- Added `ExecutorOptions` for an audit sink and clock; the existing `New`
+  constructor remains the no-op-audit convenience entry point.
+- Made `GenerationManager` pass its normalized audit options to both its
+  initial warm generation and every activation candidate.
+- Emitted `script.signup.invocation` after the native pool invocation returns
+  for start and submit/resume paths.
+- Recorded only `source_fingerprint`, `program_fingerprint`, a fixed result,
+  and a fixed reason: `outcome_*`, `deadline_exceeded`, `canceled`,
+  `pool_saturated`, `pool_closed`, or `invocation_failed`.
+- Added a bounded audit-delivery-failure counter, matching activation audit
+  behavior without changing a completed script outcome because an audit sink
+  was unavailable.
+- Added tests for accepted challenge and rejected timeout events, explicit
+  absence of client/subject/request/error/handler fields, and manager-to-active
+  executor sink propagation. Embedded script tests produce no production
+  invocation records.
+
+### Why
+
+The worker pool is the only safe place where native code knows that a script
+invocation completed, failed, or was interrupted. Logging at HTTP handlers
+would duplicate paths and tempt future code to include browser fields; logging
+inside JavaScript would give scripts observability authority. The executor is
+therefore the narrow seam for the runtime event.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup -count=1
+make lint
+git commit -m 'Feat: audit scripted signup invocations'
+```
+
+The final commit hook passed repository-wide `GOWORK=off go test ./...`,
+golangci-lint, and project vet checks.
+
+### What didn't work
+
+The first audit test tried to obtain source/program hashes from the public
+`Program`. That type intentionally exposes the declared contract, not the
+compiled artifact identity. The test was corrected to require exactly the two
+allowed field keys with non-empty opaque values. A later hook also reported a
+staticcheck warning because the corrected manager option conversion had not
+been staged; staging the exact working-tree fix resolved it.
+
+### What I learned
+
+The audit event's `Reason` is a diagnostic ID, not an error string. This keeps
+event aggregation stable across Goja, Go, and capability-library versions and
+prevents an exception message from becoming a secret-bearing audit payload.
+
+### What was tricky to build
+
+Warm activation executes embedded test programs. Those runs use the same
+executor but are not production browser invocations, so `RunTests` continues
+to invoke workers directly and emit no `script.signup.invocation` event. The
+manager propagation test protects that distinction.
+
+### What warrants a second pair of eyes
+
+- Verify any production `idp.Sink` exporter preserves the event's bounded
+  fields and does not enrich it with request objects or raw errors.
+- Confirm the chosen policy—record an audit-delivery failure counter but do
+  not retry a completed script transition—is compatible with the deployment's
+  audit durability/reconciliation requirements.
+
+### What should be done in the future
+
+Complete `lf77`, the Phase 6 failure-matrix/repeated-reload test gate. It must
+prove each rejected pre-activation path preserves the prior executor, and that
+draining/close leaves neither Goja workers nor goroutines behind.
+
+### Code review instructions
+
+- Review `Executor.auditInvocation` and `invocationAuditResult` for all
+  possible data fields and reason strings.
+- Confirm `GenerationManager` uses `ExecutorOptions(options)` for the initial
+  generation and carries the manager's sink/clock into replacements.
+- Run `go test ./pkg/idpsignup -count=1`.
+- Inspect the timeout test: it checks only bounded audit metadata after a real
+  Promise timeout and discard.
+
+### Technical details
+
+```text
+browser path -> Executor -> owned pool -> Goja lambda
+                    |                  |
+                    |                  +-- success/failure only
+                    v
+      script.signup.invocation {
+        source fingerprint, program fingerprint,
+        accepted|rejected, bounded diagnostic ID
+      }
+```
