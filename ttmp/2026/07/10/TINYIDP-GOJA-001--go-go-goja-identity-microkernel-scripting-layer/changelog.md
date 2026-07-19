@@ -288,3 +288,11 @@ Step 27: completed lf52 with hashed durable invitation lookup, revocation/expiry
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpinvite/durable.go — Durable invitation service
+
+## 2026-07-19
+
+Step 28: completed lf53 by routing an optional declared invitation effect through the existing native signup transaction without duplicating account/session logic (commit 84a9995).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Atomic invitation + signup commit

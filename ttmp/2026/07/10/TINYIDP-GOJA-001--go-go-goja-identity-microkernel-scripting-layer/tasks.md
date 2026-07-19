@@ -340,7 +340,7 @@ implementations.
 - [x] Implement signed stateless invitation verification with audience, issuer, expiry, policy-version, and subject/email constraints expressed as native validated output <!-- t:lf50 -->
 - [x] Implement a capability-backed computed invitation example whose eligibility decision is bounded and whose result contains no ambient database or network authority <!-- t:lf51 -->
 - [x] Implement a durable one-time invitation provider with hashed lookup, expiry, revocation, atomic redemption, and replay-safe evidence <!-- t:lf52 -->
-- [ ] Integrate provider results into the Phase 3 signup workflow without changing the native signup commit authority or duplicating account/session logic <!-- t:lf53 -->
+- [x] Integrate provider results into the Phase 3 signup workflow without changing the native signup commit authority or duplicating account/session logic <!-- t:lf53 -->
 - [ ] Add checked-in examples for open signup, allowed email domain, signed invitation, computed eligibility, durable one-time invitation, virtual identity, and local stored identity <!-- t:lf54 -->
 - [ ] Extend explain output to state for each provider whether state exists, where replay is prevented, how revocation works, what identity is materialized, and which native effects may occur <!-- t:lf55 -->
 - [ ] Add a table-driven provider matrix covering success, denial, malformed data, expiry, revocation, replay, capability failure, timeout, virtual subject stability, claim protection, and atomic one-time redemption <!-- t:lf56 -->

@@ -16,6 +16,10 @@ Owners: []
 RelatedFiles:
     - Path: repo://go.mod
       Note: Phase 0 baseline source for the Go 1.26 toolchain and pinned go-go-goja dependency recorded in Step 10.
+    - Path: repo://internal/fositeadapter/scripted_signup.go
+      Note: Native signup commit revalidates optional invitation effect and redeems it inside its transaction (commit 84a9995)
+    - Path: repo://internal/gojamodules/tinyidp/module.go
+      Note: Optional invite code can only become declared consumeInvitation plan (commit 84a9995)
     - Path: repo://lefthook.yml
       Note: Step 17 exact pre-commit test and lint policy whose runner orphaned children
     - Path: repo://pkg/idpcontinuation/idpcontinuationtest/suite.go
@@ -40,6 +44,8 @@ RelatedFiles:
       Note: Step 15 sensitive-carry and bounded JSON regression tests
     - Path: repo://pkg/idpscript/codec.go
       Note: Step 15 runtime now shares the core schema validator
+    - Path: repo://pkg/idpsignup/executor_test.go
+      Note: Invitation workflow output regression (commit 84a9995)
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Durable invitation lifecycle operations available on the caller-owned transaction (commit 21c7c4c)
     - Path: repo://pkg/idpui/templates/workflow.html
@@ -86,6 +92,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -3520,4 +3527,96 @@ browser code --HMAC(lookup key, domain || code)--> code_hash
 code_hash + audience --single store transaction--> active -> redeemed
                                            \--> DurableEvidence (no raw code/hash)
 signup transaction --RedeemInTransaction--> same transition + account/session
+```
+
+## Step 28: Compose durable invitation redemption with scripted signup
+
+The provider now accepts an optional, declared invitation-consumption effect
+from a signup script but remains the sole authority that creates users,
+credentials, browser sessions, continuations, and authorization results. It
+redeems the invitation through the transaction it already owns.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 26)
+
+**Assistant interpretation:** Continue the current Phase 4 work to completion
+in scoped, tested increments.
+
+**Inferred user intent:** Let a policy require an invitation without creating a
+second, less-safe registration path.
+
+**Commit (code):** `84a9995` — "Feat: commit durable invitations with signup"
+
+### What I did
+
+- Added `inviteCode` to the bounded submitted signup input vocabulary.
+- Extended `ctx.commit.signup` so a nonempty `inviteCode` produces one
+  declared `consumeInvitation` effect; it still cannot execute the effect.
+- Added an optional durable-invitation service to the provider options.
+- Revalidated the exact two-or-three-effect sequence in
+  `commitScriptedSignup`, then called `RedeemInTransaction` beside the
+  prepared account, session, workflow continuation, and interaction updates.
+- Added an invitation workflow regression and ran the focused signup/module/
+  provider test groups.
+
+### Why
+
+A JavaScript program decides whether to request the capability, not how to
+consume it. The native committer applies the same transaction and rollback
+boundary to invitation state as it already applies to account and OAuth state.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup ./internal/fositeadapter ./internal/gojamodules/tinyidp -count=1
+```
+
+All passed.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+The existing two-effect sequence was a narrow native protocol, not an
+arbitrary list. Accepting exactly one final `consumeInvitation` effect keeps
+the expansion explicit and prevents scripts from reordering account/session
+side effects.
+
+### What was tricky to build
+
+The invite code is public form data, but its conversion to a durable lookup
+hash must remain native. The effect contains the selected value only long
+enough for the native committer to give it to `DurableService`; JavaScript
+never observes a hash, redemption record, or store transaction.
+
+### What warrants a second pair of eyes
+
+- Confirm `record.ClientID` is the desired invitation audience binding for all
+  planned relying-party deployments.
+- Add a browser-level durable-invitation acceptance/replay test when the
+  checked-in durable signup example is introduced in `lf54`.
+
+### What should be done in the future
+
+Implement `lf54`: checked-in policy examples for the Phase 4 signup modes.
+
+### Code review instructions
+
+- Start in `internal/fositeadapter/scripted_signup.go` at
+  `commitScriptedSignup`.
+- Review `internal/gojamodules/tinyidp/module.go` `signupEffects` to see that
+  JavaScript only returns a plan.
+- Validate with the focused command above.
+
+### Technical details
+
+```text
+script ctx.commit.signup({ inviteCode }) -> [identity, credential, consumeInvite]
+provider validates plan -> store.Update {
+  consume continuation; commit account; redeem durable invite; create session;
+  consume interaction
+}
 ```
