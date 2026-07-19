@@ -1,11 +1,21 @@
 package idpprogram
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 )
+
+func containsCapability(requirements []CapabilityRequirement, candidate string) bool {
+	for _, requirement := range requirements {
+		if requirement.ID == candidate {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	APIVersionV1        = "tinyidp/v1"
@@ -137,6 +147,14 @@ func Validate(program Program) Diagnostics {
 		}
 		if err := ValidateJSON(program.Schemas, lambda.InputSchema, test.Input); err != nil {
 			add("test.input", path+".input", err.Error())
+		}
+		for capabilityID, output := range test.Fakes {
+			if !containsCapability(lambda.RequiredCapabilities, capabilityID) {
+				add("test.fake_capability", path+".fakes."+capabilityID, "must name a capability required by the test lambda")
+			}
+			if len(output) == 0 || !json.Valid(output) || len(output) > maxCarrySchemaBytes {
+				add("test.fake_output", path+".fakes."+capabilityID, "must be valid bounded JSON")
+			}
 		}
 	}
 

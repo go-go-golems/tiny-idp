@@ -41,6 +41,15 @@ type TestResult struct {
 	Err      error
 }
 
+var deterministicTestFakeOutputs = map[string]json.RawMessage{
+	"clock.now":         json.RawMessage(`{"unixMillis":0}`),
+	"random.bytes":      json.RawMessage(`{"base64":""}`),
+	"mailer.send":       json.RawMessage(`{"accepted":true}`),
+	"identity.lookup":   json.RawMessage(`{"found":false}`),
+	"invitation.lookup": json.RawMessage(`{"valid":false}`),
+	"store.get":         json.RawMessage(`{"found":false}`),
+}
+
 // StartInput is the immutable, redacted view of a validated authorization
 // interaction available to the signup-start lambda. It deliberately contains
 // no Fosite request, HTTP request, cookie, browser handle, session identifier,
@@ -140,22 +149,53 @@ func (e *Executor) ResolveProgram(_ context.Context, fingerprint string) (idppro
 	return e.Program(), nil
 }
 
-// RunTests executes the declarative embedded test cases with no capabilities
-// or secrets. A production test runner can add only explicit deterministic
-// native fakes later; this baseline fails closed for capability-dependent
-// lambdas instead of granting ambient authority.
+// RunTests executes declarative tests with no secrets and only six fixed,
+// deterministic test fakes. Fakes are test data, never production capability
+// bindings: a lambda must declare the matching capability and an invocation
+// outside this runner never receives them.
 func (e *Executor) RunTests(ctx context.Context) []TestResult {
 	if e == nil || e.pool == nil {
 		return []TestResult{{ID: "runner", Err: errors.New("signup executor is unavailable")}}
 	}
 	results := make([]TestResult, 0, len(e.Program().Tests))
 	for _, test := range e.Program().Tests {
-		outcome, err := e.pool.Invoke(ctx, test.LambdaID, test.Input, nil)
+		capabilities, err := e.testCapabilities(test)
+		if err != nil {
+			results = append(results, TestResult{ID: test.ID, Expected: test.ExpectedKind, Err: err})
+			continue
+		}
+		outcome, err := e.pool.Invoke(ctx, test.LambdaID, test.Input, capabilities)
 		result := TestResult{ID: test.ID, Expected: test.ExpectedKind, Actual: outcome.Kind, Err: err}
 		result.Passed = err == nil && outcome.Kind == test.ExpectedKind
 		results = append(results, result)
 	}
 	return results
+}
+
+func (e *Executor) testCapabilities(test idpprogram.ProgramTest) (map[string]idpscript.CapabilityBinding, error) {
+	lambda, ok := e.Program().Lambdas[test.LambdaID]
+	if !ok {
+		return nil, errors.Errorf("test lambda %q is unavailable", test.LambdaID)
+	}
+	bindings := map[string]idpscript.CapabilityBinding{}
+	for _, requirement := range lambda.RequiredCapabilities {
+		defaultOutput, known := deterministicTestFakeOutputs[requirement.ID]
+		if !known {
+			return nil, errors.Errorf("test capability %q has no deterministic fake", requirement.ID)
+		}
+		output := defaultOutput
+		if configured, ok := test.Fakes[requirement.ID]; ok {
+			output = configured
+		}
+		output = append(json.RawMessage(nil), output...)
+		bindings[requirement.ID] = idpscript.CapabilityBinding{
+			Requirement: requirement,
+			Invoke: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+				return append(json.RawMessage(nil), output...), nil
+			},
+		}
+	}
+	return bindings, nil
 }
 
 func (e *Executor) Start(ctx context.Context, input StartInput) (idpworkflow.ValidatedPresentation, error) {

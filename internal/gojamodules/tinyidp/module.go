@@ -208,7 +208,19 @@ func newProgramTestFunction(vm *goja.Runtime, program *idpprogram.Program) func(
 		if err != nil {
 			panic(vm.NewTypeError("test %q input is not serializable", id))
 		}
-		program.Tests = append(program.Tests, idpprogram.ProgramTest{ID: id, LambdaID: requireString(vm, spec.Get("lambda"), "test lambda"), Input: input, ExpectedKind: idpprogram.OutcomeKind(requireString(vm, spec.Get("expectedKind"), "test expected outcome kind"))})
+		fakes := map[string]json.RawMessage{}
+		fakesValue := spec.Get("fakes")
+		if fakesValue != nil && !goja.IsUndefined(fakesValue) && !goja.IsNull(fakesValue) {
+			fakesObject := requireObject(vm, fakesValue, "test fakes")
+			for _, capabilityID := range fakesObject.Keys() {
+				output, err := json.Marshal(fakesObject.Get(capabilityID).Export())
+				if err != nil {
+					panic(vm.NewTypeError("test %q fake %q is not serializable", id, capabilityID))
+				}
+				fakes[capabilityID] = output
+			}
+		}
+		program.Tests = append(program.Tests, idpprogram.ProgramTest{ID: id, LambdaID: requireString(vm, spec.Get("lambda"), "test lambda"), Input: input, ExpectedKind: idpprogram.OutcomeKind(requireString(vm, spec.Get("expectedKind"), "test expected outcome kind")), Fakes: fakes})
 		return goja.Undefined()
 	}
 }

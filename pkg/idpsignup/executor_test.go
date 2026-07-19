@@ -102,3 +102,20 @@ module.exports = A.program("embedded-tests", p => {
 	require.Len(t, results, 1)
 	assert.True(t, results[0].Passed, "%+v", results[0])
 }
+
+func TestExecutorRunsDeclarativeTestsWithConfiguredDeterministicFake(t *testing.T) {
+	source := `const A = require("tinyidp").v1;
+module.exports = A.program("fake-tests", p => {
+  p.capabilities({"clock.now": {version:1}});
+  const start = A.lambda("signup.start", { input:"signupStartInput", output:"signupResult", outcomes:["complete","deny"], effects:[], capabilities:["clock.now"], timeoutMs:250, maxCapabilityCalls:1, maxOutputBytes:1024, run: async ctx => { const now = await ctx.cap.clock.now({}); return now.unixMillis === 42 ? A.result.complete() : A.result.deny(); } });
+  p.workflow("signup", { version:1, entry:"start", handlers:{start}, edges:[] });
+  p.test("configured-clock", { lambda:"signup.start", input:{ clientId:"client", redirectUri:"https://client.example.test/callback", requestedScope:"openid", interactionId:"interaction", hasBrowserSession:false }, expectedKind:"complete", fakes:{"clock.now": {unixMillis:42}} });
+});`
+	executor, err := idpsignup.New(context.Background(), source, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+
+	results := executor.RunTests(context.Background())
+	require.Len(t, results, 1)
+	assert.True(t, results[0].Passed, "%+v", results[0])
+}

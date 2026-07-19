@@ -22,10 +22,11 @@ type Program struct {
 // callback, capability implementation, browser object, or host authority;
 // the Go runner creates those deterministic native test bindings.
 type ProgramTest struct {
-	ID           string          `json:"id"`
-	LambdaID     string          `json:"lambdaId"`
-	Input        json.RawMessage `json:"input"`
-	ExpectedKind OutcomeKind     `json:"expectedKind"`
+	ID           string                     `json:"id"`
+	LambdaID     string                     `json:"lambdaId"`
+	Input        json.RawMessage            `json:"input"`
+	ExpectedKind OutcomeKind                `json:"expectedKind"`
+	Fakes        map[string]json.RawMessage `json:"fakes,omitempty"`
 }
 
 // Workflow is a named set of handlers with one native entry point.
