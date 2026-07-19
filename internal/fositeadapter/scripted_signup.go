@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ory/fosite"
 	"github.com/pkg/errors"
@@ -13,6 +14,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
+	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
@@ -99,7 +101,18 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	outcome, err := p.scriptedSignup.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, map[string]idpworkflow.SecretHandle{
 		"password": submission.Secrets[idpworkflow.FieldPassword], "passwordConfirmation": submission.Secrets[idpworkflow.FieldPasswordConfirmation],
 	}, nil)
-	if err != nil || outcome.Kind != idpprogram.OutcomeCommit {
+	if err != nil {
+		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+		return
+	}
+	if outcome.Kind == idpprogram.OutcomeChallenge {
+		if err := p.beginEmailChallenge(w, r, outcome, continuationHandle, continuation, record, interactionHandle); err != nil {
+			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+			return
+		}
+		return
+	}
+	if outcome.Kind != idpprogram.OutcomeCommit {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
@@ -110,6 +123,46 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	p.completeScriptedSignup(w, r, ar, client, record, registered)
+}
+
+func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string) error {
+	if p.emailChallenges == nil || outcome.Continuation == nil {
+		return errors.New("email challenge is unavailable")
+	}
+	var request struct {
+		Kind, Email, Template           string
+		MaximumAttempts, MaximumResends int
+	}
+	if err := json.Unmarshal(outcome.Challenge, &request); err != nil || request.Kind != "email_code" || request.Email == "" || request.MaximumAttempts <= 0 || request.MaximumResends <= 0 {
+		return errors.New("email challenge request is invalid")
+	}
+	workflow := p.scriptedSignup.Program().Workflows[idpsignup.WorkflowID]
+	currentHandler := workflow.Handlers[current.ResumeHandlerID]
+	inputSchema := ""
+	for _, edge := range currentHandler.ContinuationEdges {
+		if edge.OutcomeKind == idpprogram.OutcomeChallenge && edge.HandlerID == outcome.Continuation.HandlerID {
+			inputSchema = edge.InputSchema
+			break
+		}
+	}
+	if inputSchema == "" {
+		return errors.New("email challenge edge is not declared")
+	}
+	registry := idpworkflow.DefaultRegistry()
+	code, _ := registry.Field(idpworkflow.FieldEmailCode)
+	submit, _ := registry.Action(idpworkflow.ActionSubmit)
+	deny, _ := registry.Action(idpworkflow.ActionDeny)
+	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: outcome.Continuation.HandlerID, InputSchema: inputSchema, Carry: outcome.Continuation.Carry, Presentation: idpcontinuation.PresentationState{ID: "email-code", Fields: []string{string(idpworkflow.FieldEmailCode)}, AllowedActions: []string{string(idpworkflow.ActionSubmit), string(idpworkflow.ActionDeny)}, PublicValues: json.RawMessage(`{}`)}, ExpiresAt: p.now().Add(time.Duration(outcome.Continuation.ExpiresIn) * time.Second)}
+	nextHandle, stored, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindings(record, r), next)
+	if err != nil {
+		return err
+	}
+	_, err = p.emailChallenges.CreateAndSend(r.Context(), idpemailchallenge.CreateRequest{ID: nextHandle, Email: request.Email, Template: request.Template, Bindings: idpemailchallenge.BindingsFromContinuation(stored), ExpiresAt: stored.ExpiresAt, MaximumAttempts: uint32(request.MaximumAttempts), MaximumResends: uint32(request.MaximumResends)})
+	if err != nil {
+		return err
+	}
+	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, []idpworkflow.FieldDescriptor{code}, []idpworkflow.ActionDescriptor{submit, deny}, map[idpworkflow.FieldID]string{}, nil))
+	return nil
 }
 
 func signupCommitFailureReason(err error) string {
