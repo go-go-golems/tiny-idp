@@ -223,3 +223,21 @@ open.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/open_signup.js — Checked-in open-signup workflow.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/submission.go — Closed-set form parser and opaque secret handles.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Explicit activated executor/continuation configuration.
+
+## 2026-07-19
+
+Step 22: completed the remaining Phase 3 implementation work (`lf36`, `lf41`,
+`lf42`, and `lf45`): immutable start DTO, prepared password-verifier account
+creation, transaction-scoped continuation consumption in memory and SQLite,
+one native signup commit boundary for continuation/account/credential/session/
+interaction state, stable redacted failures, and removal of the hardcoded
+registration branch. Focused direct tests pass; the complete phase gate is in
+progress before `lf46` is checked off.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Immutable input, effect validation, atomic native signup commit, and redacted result mapping.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpaccounts/accounts.go — Prepared verifier-bearing account creation and caller-owned transaction commit.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service.go — Binding-checked transaction-scoped terminal continuation operation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/memory/continuation.go — Copy-on-write memory continuation implementation co-located with domain state.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation.go — SQLite transaction-aware continuation consumption.

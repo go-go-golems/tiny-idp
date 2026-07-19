@@ -292,16 +292,16 @@ named atomic commit operation, and a checked-in open-signup JavaScript program.
 
 #### Phase 3 tasks
 
-- [ ] Add immutable workflow input projection for the validated client, authorization request, browser session, interaction, presentation, carry, and existing native evidence views needed by signup <!-- t:lf36 -->
+- [x] Add immutable workflow input projection for the validated client, authorization request, browser session, interaction, presentation, carry, and existing native evidence views needed by signup <!-- t:lf36 -->
 - [x] Route only natively validated `tinyidp_signup=1` authorization interactions into the configured `signup.start` handler <!-- t:lf37 -->
 - [x] Persist the `signup.start` presentation as a continuation and route a natively validated POST into the declared `signup.submitted` handler <!-- t:lf38 -->
 - [x] Implement invocation-scoped password secret handles and prevent their serialization into carry, continuation rows, logs, traces, metrics, or JavaScript strings <!-- t:lf39 -->
 - [x] Define and validate the native password-credential and local-identity effect plans emitted by `signup.submitted` <!-- t:lf40 -->
-- [ ] Add `SignupCommitter` as the single named atomic operation for identity creation, credential creation, continuation consumption, interaction update, and session effects <!-- t:lf41 -->
-- [ ] Map duplicate login, password-policy rejection, invalid input, store conflict, and internal failure to stable non-enumerating workflow outcomes and audit events <!-- t:lf42 -->
+- [x] Add `SignupCommitter` as the single named atomic operation for identity creation, credential creation, continuation consumption, interaction update, and session effects <!-- t:lf41 -->
+- [x] Map duplicate login, password-policy rejection, invalid input, store conflict, and internal failure to stable non-enumerating workflow outcomes and audit events <!-- t:lf42 -->
 - [x] Express the current open-signup behavior entirely in a checked-in JavaScript program using `signup.start`, `signup.submitted`, `ctx.present.form`, and `ctx.commit.signup` <!-- t:lf43 -->
 - [x] Thread the activated program/executor through `pkg/embeddedidp/options.go`, the Fosite adapter, and production serving without transferring listener, TLS, OAuth, key, cookie, or store ownership to JavaScript <!-- t:lf44 -->
-- [ ] Differential-test the hardcoded and scripted paths for equivalent successful and failing behavior, then delete the hardcoded registration branch instead of retaining an adapter or fallback <!-- t:lf45 -->
+- [x] Differential-test the hardcoded and scripted paths for equivalent successful and failing behavior, then delete the hardcoded registration branch instead of retaining an adapter or fallback <!-- t:lf45 -->
 - [ ] Run the existing PKCE registration, replay, CSRF, origin, duplicate-login, password-policy, consent, session, audit, callback, and SQLite test suites through the scripted path <!-- t:lf46 -->
 
 **Phase 3 gate:** Open signup is implemented by the checked-in JavaScript

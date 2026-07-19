@@ -3050,3 +3050,103 @@ native authority: HTTP, CSRF, CSP, cookies, account service, sessions, OAuth
 validation: focused direct package suite passes
 next tasks: lf36, lf41-lf42, lf45-lf46
 ```
+
+## Step 22: Make scripted signup the only commit path
+
+This step finishes the semantic Phase 3 work that was intentionally left open
+in Step 21. The main design constraint is that a browser continuation must not
+be consumed separately from the identity it authorizes: otherwise a retry can
+create an account twice, or a storage failure can leave an account without its
+terminal workflow state.
+
+### What I did
+
+- Added `idpsignup.StartInput`, a copied, schema-validated DTO for the
+  signup-start lambda. It includes only client ID, registered redirect URI,
+  requested scope text, a hashed interaction identity, and whether a browser
+  session was bound. It excludes Fosite objects, raw requests, cookies,
+  session handles, raw OAuth parameters, and store access.
+- Added `idpaccounts.PreparedCreate`, `PrepareCreate`, and `CommitPrepared`.
+  Password normalization and Argon2 work happen before the store transaction;
+  the transaction receives a password verifier rather than a plaintext
+  password. Existing `Create` retains its duplicate-ID/subject behavior.
+- Made the internal memory domain store implement the continuation store on
+  its copy-on-write transaction snapshot. SQLite continuation consumption now
+  detects an existing transaction and uses its scoped SQL runner instead of
+  opening a nested transaction. A SQLite regression test proves a loaded
+  continuation can be consumed inside `Store.Update`.
+- Added `Service.ConsumeLoaded`, which revalidates an already loaded,
+  binding-checked continuation against a caller-supplied transaction-scoped
+  store. It accepts no raw browser handle.
+- Refactored `commitScriptedSignup` into the single named native commit
+  boundary. Its one transaction consumes the workflow continuation, persists
+  the prepared local identity and credential, creates the browser session, and
+  consumes the authorization interaction. Only after commit does the provider
+  set the session cookie and resume consent/OAuth handling.
+- Added bounded audit reasons for duplicate login, password rejection,
+  continuation/interation conflict, and generic rejection. The browser always
+  gets the same redacted workflow rerender rather than an account-enumerating
+  distinction.
+- Removed the hardcoded registration POST execution and its legacy generic
+  renderer path. A required registration interaction now either runs the
+  configured scripted workflow or fails closed as unavailable; it never falls
+  back to the old form/account code.
+
+### What worked
+
+Before the complete phase gate, the following direct integration command
+passed:
+
+```bash
+go test ./internal/fositeadapter ./pkg/embeddedidp ./pkg/idpaccounts \
+  ./pkg/idpcontinuation ./pkg/idpsignup ./pkg/idpui ./pkg/idpworkflow \
+  ./internal/store/memory ./pkg/memorystore ./pkg/sqlitestore -count=1
+```
+
+The targeted SQLite transaction regression and all relevant account,
+continuation, memory, SQLite, executor, UI, workflow, and Fosite tests passed.
+The race/full/lint phase checkpoint is recorded separately once all of its
+long-running commands finish.
+
+### What was tricky to build
+
+`idpstore.Update` deliberately gives callers an interface rather than a
+concrete storage type. The committer therefore checks that its transaction
+also implements the narrow continuation-store interface. This is not an
+adapter or a second persistence path: both supplied production and test stores
+own their continuation rows/maps in the same native transaction. A store that
+cannot provide that invariant fails closed before writing an account.
+
+The session cookie itself cannot be written transactionally—it is an HTTP
+header. The committer instead creates the durable server-side session in the
+transaction and emits the cookie only after successful commit. A failure before
+commit emits no authentication cookie; a failure after commit is safe because
+the next authorization request can use the durable session only with its
+unpredictable cookie handle.
+
+### Code review instructions
+
+- Review `pkg/idpaccounts/accounts.go` first: a prepared account contains an
+  Argon2 verifier, never a plaintext password, and the final write uses a
+  supplied `TxStore`.
+- Read `pkg/idpcontinuation/service.go` and the SQLite transaction regression
+  test together. Confirm `ConsumeLoaded` preserves the normal generation,
+  schema, expiry, binding, and compare-and-consume checks.
+- Read `commitScriptedSignup` in
+  `internal/fositeadapter/scripted_signup.go` as one transaction. The sequence
+  must remain continuation → identity/credential → session → interaction;
+  any error rolls the whole transaction back.
+- Confirm `beginAuthorize` and `resumeAuthorize` have no generic registration
+  fallback. The only registration page is the host-rendered `WorkflowPage`
+  selected by the checked-in JavaScript program.
+
+### Technical details
+
+```text
+tasks completed: lf36, lf41, lf42, lf45
+atomic native records: continuation, user, password verifier, session, interaction
+HTTP effect after commit: Set-Cookie only
+browser error policy: stable generic rerender; no duplicate-login enumeration
+store requirement: transaction must also implement idpcontinuation.Store
+next task: lf46 (complete direct/race/full/lint evidence)
+```
