@@ -5190,3 +5190,109 @@ browser path -> Executor -> owned pool -> Goja lambda
         accepted|rejected, bounded diagnostic ID
       }
 ```
+
+## Step 48: Complete the Phase 6 reload and failure-matrix gate
+
+The final Phase 6 task is now explicit test evidence, not an assertion based
+only on manager implementation. The suite combines existing failure, routing,
+draining, and browser-resume coverage with a new concurrent activation case
+that exercises the retained old executor while a replacement becomes active.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Finish the remaining Phase 6 test gate with
+focused, non-duplicative evidence and continue task/diary bookkeeping.
+
+**Inferred user intent:** A reload must be operationally boring: unsafe
+candidates never replace a working generation, compatible browser work keeps
+its executable generation, and cleanup does not race active callers.
+
+**Commit (code):** `39bf84d` — "Test: cover concurrent generation activation"
+
+### What I did
+
+- Crosswalked the existing manager and registration tests against `lf77`.
+- Kept the existing independent tests for invalid-source rejection,
+  embedded-test failure rollback, atomic replacement, bounded retention,
+  retained-generation lookup, eviction/draining, close, and browser flow
+  continuation routing after reload.
+- Added `TestGenerationManagerRetainedExecutorServesConcurrentCallsDuringActivation`.
+  Sixteen callers use the initial executor while the manager warms and swaps a
+  replacement; every call succeeds and the retained pool remains open.
+- Ran that new test under the race detector, then allowed the complete commit
+  hook to run the repository test, lint, and vet gates.
+
+### Why
+
+Atomic publication alone is insufficient if the old executor is closed while
+an interaction or its continuation still needs it. The retention policy is
+the native ownership boundary that makes that safe. The test demonstrates the
+observable promise: a caller holding the old native executor remains served
+through an activation, while newly resolved active work sees the new
+fingerprint.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup -run 'TestGenerationManager(RetainedExecutorServesConcurrentCallsDuringActivation|SwapsOnlyWarmedCandidatesAndRetainsPriorGeneration|KeepsActiveGenerationWhenEmbeddedTestFails|DrainsEvictedAndRemainingWorkerPools|RepeatedReloadsKeepRetentionBounded)' -count=1
+go test -race ./pkg/idpsignup -run TestGenerationManagerRetainedExecutorServesConcurrentCallsDuringActivation -count=1
+git commit -m 'Test: cover concurrent generation activation'
+```
+
+Both focused commands passed. The commit hook also passed repository-wide
+tests, lint, and vet.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+The useful concurrency assertion is not a timing-sensitive claim that every
+call began before publication. It is an ownership claim: after one swap with
+one retained predecessor, the old executor cannot be closed, so any caller
+that obtained it before the swap can finish safely. The test uses enough
+concurrent work to exercise pool scheduling without relying on sleeps.
+
+### What was tricky to build
+
+The production signup executor intentionally binds no arbitrary test
+capability in browser paths, so a controllable JavaScript barrier would widen
+the runtime surface just to test timing. The test instead coordinates caller
+start in Go and validates the stronger retained-pool invariant directly.
+
+### What warrants a second pair of eyes
+
+- Review the retention policy independently: this test proves one retained
+  predecessor stays usable. Capacity/expiry policy still determines how many
+  historical continuation generations a deployment must retain.
+- Review Phase 6's manager tests together with the registration reload test;
+  the latter proves actual browser continuation routing, while this test
+  proves concurrent native executor usability.
+
+### What should be done in the future
+
+Phase 6 is complete. Begin Phase 7 only after preserving its typed challenge
+graph scope: refactor behavior behind native blocks rather than letting this
+scripted signup slice grow unstructured protocol authority.
+
+### Code review instructions
+
+- Read the new manager test and compare it with the retention/eviction tests.
+- Run the normal and race commands above.
+- Trace `GenerationManager.Activate`: candidate warmup happens before the
+  publication lock; the old generation remains in the bounded registry after
+  the first swap.
+
+### Technical details
+
+```text
+old executor -- sixteen concurrent Start calls --> worker pool
+       |                                             |
+       | retained through first swap                 v
+manager -- warm candidate -- atomic active swap --> all calls complete
+       |
+       +-- active fingerprint now identifies replacement
+```

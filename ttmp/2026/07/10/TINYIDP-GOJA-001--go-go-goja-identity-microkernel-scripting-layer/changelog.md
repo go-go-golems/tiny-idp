@@ -428,3 +428,12 @@ Completed Phase 6 runtime audit records: generation-manager audit configuration 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor_test.go — Accepted and rejected audit tests
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Audit propagation into generations
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager_test.go — Manager propagation regression test
+
+## 2026-07-19 - Step 48: Phase 6 reload and failure-matrix gate
+
+Completed the Phase 6 generation lifecycle gate by adding concurrent retained-executor activation coverage and validating it with the existing rollback, routing, retention, drain, close, and browser continuation reload tests.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Browser continuation generation-routing regression evidence
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager_test.go — Concurrent activation and retained executor test
