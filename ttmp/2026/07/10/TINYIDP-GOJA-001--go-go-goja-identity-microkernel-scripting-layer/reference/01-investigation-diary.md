@@ -3150,3 +3150,80 @@ browser error policy: stable generic rerender; no duplicate-login enumeration
 store requirement: transaction must also implement idpcontinuation.Store
 next task: lf46 (complete direct/race/full/lint evidence)
 ```
+
+## Step 23: Complete the Phase 2/3 regression gate
+
+The expensive suite was intentionally run once for the completed vertical
+slice, rather than after every small implementation edit. This keeps the
+feedback loop fast while still requiring the whole provider and its production
+shaped stores to agree before Phase 3 is marked complete.
+
+### What I did
+
+- Ran the direct Phase 2/3 integration set across Fosite, embedded IDP,
+  accounts, continuations, signup executor, UI, workflow parser, memory, and
+  SQLite stores.
+- Ran the required race suite:
+
+  ```bash
+  go test -race ./internal/fositeadapter ./pkg/idpworkflow ./pkg/idpscript -count=1
+  ```
+
+  Its passing rerun took 78 seconds in the Fosite package.
+- Ran the complete repository suite and lint gate:
+
+  ```bash
+  go test ./... -count=1
+  make lint
+  ```
+
+- Fixed one test fixture in `pkg/idpscript/invoke_test.go` to include the new
+  required `workflow_continuation` control. This was a direct contract change:
+  the test exercises `ParseSubmission`, so its synthetic form must have the
+  same complete closed vocabulary as a browser form.
+- The first race attempt also reported an unrelated SQLite refresh-rotation
+  linearizability assertion. It did not reproduce on the complete rerun; the
+  succeeding race run covers the same Fosite package. No refresh-token code
+  was changed or hidden to make the result pass.
+
+### What worked
+
+All Phase 2/3 gates passed:
+
+```text
+focused direct integration suite: pass
+workflow/Fosite/idpscript race suite: pass
+go test ./... -count=1: pass
+make lint: pass (golangci-lint: 0 issues; custom analyzers pass)
+```
+
+The full suite includes the existing PKCE registration callback/replay and
+cross-origin regression, account/password policy coverage, consent/session/
+audit behavior, and memory/SQLite continuation and storage suites. The
+registration browser integration test now takes the scripted page path, so
+these existing checks exercise the replacement implementation rather than a
+compatibility fallback.
+
+### Code review instructions
+
+- Run the three commands above from repository root.
+- Read `internal/fositeadapter/registration_test.go` to see the real PKCE
+  signup authorization request, hostile-origin rejection, successful callback,
+  replay rejection, and audit redaction assertion.
+- Read `pkg/sqlitestore/continuation_test.go` to see transaction-scoped
+  continuation consumption tested independently of the browser flow.
+- Confirm `tasks.md` has every Phase 2 and Phase 3 task checked and that the
+  Phase 3 gate statement matches the implementation: checked-in JavaScript,
+  no old POST branch, native atomic commit, and complete regression evidence.
+
+### Technical details
+
+```text
+task completed: lf46
+fixture-only commit: d65eff0
+Phase 2 gate: passed
+Phase 3 gate: passed
+full suite: passed
+lint: passed, zero issues
+next normative work: Phase 4 virtual identity and invitation providers
+```

@@ -302,7 +302,7 @@ named atomic commit operation, and a checked-in open-signup JavaScript program.
 - [x] Express the current open-signup behavior entirely in a checked-in JavaScript program using `signup.start`, `signup.submitted`, `ctx.present.form`, and `ctx.commit.signup` <!-- t:lf43 -->
 - [x] Thread the activated program/executor through `pkg/embeddedidp/options.go`, the Fosite adapter, and production serving without transferring listener, TLS, OAuth, key, cookie, or store ownership to JavaScript <!-- t:lf44 -->
 - [x] Differential-test the hardcoded and scripted paths for equivalent successful and failing behavior, then delete the hardcoded registration branch instead of retaining an adapter or fallback <!-- t:lf45 -->
-- [ ] Run the existing PKCE registration, replay, CSRF, origin, duplicate-login, password-policy, consent, session, audit, callback, and SQLite test suites through the scripted path <!-- t:lf46 -->
+- [x] Run the existing PKCE registration, replay, CSRF, origin, duplicate-login, password-policy, consent, session, audit, callback, and SQLite test suites through the scripted path <!-- t:lf46 -->
 
 **Phase 3 gate:** Open signup is implemented by the checked-in JavaScript
 workflow, the former hardcoded registration branch is gone, and all existing

@@ -241,3 +241,16 @@ progress before `lf46` is checked off.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service.go — Binding-checked transaction-scoped terminal continuation operation.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/memory/continuation.go — Copy-on-write memory continuation implementation co-located with domain state.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation.go — SQLite transaction-aware continuation consumption.
+
+## 2026-07-19
+
+Step 23: completed `lf46` and passed the Phase 2/3 gates: focused direct
+integration suite, Fosite/workflow/idpscript race suite, complete repository
+suite, and lint/custom analyzers. The sole final code delta was a test fixture
+updated to include the mandatory workflow continuation field (commit d65eff0).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — Secret-projection fixture using the complete workflow form contract.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Scripted signup PKCE/cross-origin/replay/audit browser regression.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation_test.go — SQLite transaction-scoped continuation regression.
