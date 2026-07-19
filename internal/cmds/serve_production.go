@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ type ServeProductionCommand struct {
 
 type serveProductionSettings struct {
 	Addr                string   `glazed:"addr"`
+	ListenerMode        string   `glazed:"listener-mode"`
 	Issuer              string   `glazed:"issuer"`
 	DBPath              string   `glazed:"db"`
 	AuditPath           string   `glazed:"audit-path"`
@@ -57,7 +59,7 @@ func NewServeProductionCommand() (*ServeProductionCommand, error) {
 		"serve-production",
 		cmds.WithShort("Run the durable production embedding host"),
 		cmds.WithLong(`Run tiny-idp with the public embedded API, durable SQLite and audit stores,
-bounded requests, explicit proxy trust, TLS, maintenance, and graceful shutdown.
+bounded requests, an explicit listener mode, maintenance, and graceful shutdown.
 
 This command intentionally reads no token secret from an environment variable
 or command-line value. Put at least 32 random bytes in an owner-only file and
@@ -71,14 +73,15 @@ Example:
     --tls-cert /run/tls/tls.crt --tls-key /run/tls/tls.key
 `),
 		cmds.WithFlags(
-			fields.New("addr", fields.TypeString, fields.WithDefault(":8443"), fields.WithHelp("HTTPS listen address")),
+			fields.New("addr", fields.TypeString, fields.WithDefault(":8443"), fields.WithHelp("Listener address")),
+			fields.New("listener-mode", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Required listener mode: direct-tls or trusted-proxy-http")),
 			fields.New("issuer", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Canonical HTTPS issuer URL")),
 			fields.New("db", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Provisioned SQLite database path")),
 			fields.New("audit-path", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Synchronous JSONL audit path")),
 			fields.New("token-secret-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Owner-only file containing at least 32 random bytes")),
-			fields.New("tls-cert", fields.TypeString, fields.WithRequired(true), fields.WithHelp("TLS certificate PEM path")),
-			fields.New("tls-key", fields.TypeString, fields.WithRequired(true), fields.WithHelp("TLS private-key PEM path")),
-			fields.New("trusted-proxy-cidrs", fields.TypeStringList, fields.WithHelp("CIDRs allowed to supply X-Forwarded-For")),
+			fields.New("tls-cert", fields.TypeString, fields.WithHelp("TLS certificate PEM path; required only for direct-tls")),
+			fields.New("tls-key", fields.TypeString, fields.WithHelp("TLS private-key PEM path; required only for direct-tls")),
+			fields.New("trusted-proxy-cidrs", fields.TypeStringList, fields.WithHelp("Required only for trusted-proxy-http; narrow CIDRs allowed to supply forwarded metadata")),
 			fields.New("max-proxy-hops", fields.TypeInteger, fields.WithDefault(8), fields.WithHelp("Maximum accepted forwarded-address hops")),
 			fields.New("rate-limit", fields.TypeInteger, fields.WithDefault(30), fields.WithHelp("Login attempts per account/client/address bucket and window")),
 			fields.New("rate-window", fields.TypeString, fields.WithDefault("1m"), fields.WithHelp("Login rate-limit window")),
@@ -114,6 +117,13 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	if settings.RateLimit <= 0 || settings.MaxRequestBytes <= 0 {
 		return fmt.Errorf("rate-limit and max-request-bytes must be positive")
 	}
+	listenerMode, err := parseProductionListenerMode(settings.ListenerMode)
+	if err != nil {
+		return err
+	}
+	if err := validateProductionListenerSettings(listenerMode, settings); err != nil {
+		return err
+	}
 	secret, err := readOwnerOnlySecret(settings.TokenSecretFile)
 	if err != nil {
 		return err
@@ -128,13 +138,15 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		return err
 	}
 	addressResolver := idp.ClientAddressResolver(idp.DirectClientAddressResolver{})
-	if len(settings.TrustedProxyCIDRs) > 0 {
-		addressResolver, err = idp.NewTrustedProxyResolver(idp.TrustedProxyConfig{TrustedCIDRs: settings.TrustedProxyCIDRs, MaxHops: settings.MaxProxyHops})
+	var proxyResolver *idp.TrustedProxyResolver
+	if listenerMode == productionListenerTrustedProxyHTTP {
+		proxyResolver, err = idp.NewTrustedProxyResolver(idp.TrustedProxyConfig{TrustedCIDRs: settings.TrustedProxyCIDRs, MaxHops: settings.MaxProxyHops})
 		if err != nil {
 			_ = audit.Close()
 			_ = store.Close()
 			return err
 		}
+		addressResolver = proxyResolver
 	}
 	provider, err := embeddedidp.New(ctx, embeddedidp.Options{
 		Issuer:        settings.Issuer,
@@ -161,7 +173,23 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		_ = store.Close()
 		return fmt.Errorf("initial maintenance: %w", err)
 	}
-	handler := http.MaxBytesHandler(provider.Handler(), int64(settings.MaxRequestBytes))
+	handler := http.Handler(http.MaxBytesHandler(provider.Handler(), int64(settings.MaxRequestBytes)))
+	if listenerMode == productionListenerTrustedProxyHTTP {
+		publicOrigin, originErr := issuerOrigin(settings.Issuer)
+		if originErr != nil {
+			_ = provider.Close(context.Background())
+			_ = audit.Close()
+			_ = store.Close()
+			return originErr
+		}
+		handler, originErr = idp.NewTrustedProxyHTTPHandler(idp.TrustedProxyHTTPConfig{PublicOrigin: publicOrigin, Resolver: proxyResolver}, handler)
+		if originErr != nil {
+			_ = provider.Close(context.Background())
+			_ = audit.Close()
+			_ = store.Close()
+			return originErr
+		}
+	}
 	httpServer := &http.Server{
 		Addr:              settings.Addr,
 		Handler:           handler,
@@ -174,9 +202,15 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	}
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
-		log.Info().Str("addr", settings.Addr).Str("issuer", settings.Issuer).Msg("tinyidp production host listening")
-		if err := httpServer.ListenAndServeTLS(settings.TLSCertFile, settings.TLSKeyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("serve production HTTPS: %w", err)
+		log.Info().Str("addr", settings.Addr).Str("issuer", settings.Issuer).Str("listener_mode", string(listenerMode)).Msg("tinyidp production host listening")
+		var serveErr error
+		if listenerMode == productionListenerDirectTLS {
+			serveErr = httpServer.ListenAndServeTLS(settings.TLSCertFile, settings.TLSKeyFile)
+		} else {
+			serveErr = httpServer.ListenAndServe()
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			return fmt.Errorf("serve production listener: %w", serveErr)
 		}
 		return nil
 	})
@@ -203,6 +237,43 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	runErr := group.Wait()
 	closeErr := errors.Join(provider.Close(context.Background()), audit.Close(), store.Close())
 	return errors.Join(runErr, closeErr)
+}
+
+type productionListenerMode string
+
+const (
+	productionListenerDirectTLS        productionListenerMode = "direct-tls"
+	productionListenerTrustedProxyHTTP productionListenerMode = "trusted-proxy-http"
+)
+
+func parseProductionListenerMode(raw string) (productionListenerMode, error) {
+	mode := productionListenerMode(strings.TrimSpace(raw))
+	if mode != productionListenerDirectTLS && mode != productionListenerTrustedProxyHTTP {
+		return "", fmt.Errorf("--listener-mode must be direct-tls or trusted-proxy-http")
+	}
+	return mode, nil
+}
+
+func validateProductionListenerSettings(mode productionListenerMode, settings *serveProductionSettings) error {
+	if mode == productionListenerDirectTLS {
+		if settings.TLSCertFile == "" || settings.TLSKeyFile == "" || len(settings.TrustedProxyCIDRs) != 0 {
+			return fmt.Errorf("direct-tls requires --tls-cert and --tls-key and forbids --trusted-proxy-cidrs")
+		}
+		return nil
+	}
+	issuer, err := url.Parse(settings.Issuer)
+	if err != nil || issuer.Scheme != "https" || issuer.Host == "" || len(settings.TrustedProxyCIDRs) == 0 || settings.TLSCertFile != "" || settings.TLSKeyFile != "" {
+		return fmt.Errorf("trusted-proxy-http requires an HTTPS issuer and --trusted-proxy-cidrs and forbids TLS certificate flags")
+	}
+	return nil
+}
+
+func issuerOrigin(raw string) (string, error) {
+	issuer, err := url.Parse(raw)
+	if err != nil || issuer.Scheme != "https" || issuer.Host == "" {
+		return "", fmt.Errorf("issuer must have an HTTPS origin")
+	}
+	return issuer.Scheme + "://" + issuer.Host, nil
 }
 
 func parseProductionDurations(settings *serveProductionSettings) (time.Duration, time.Duration, time.Duration, time.Duration, time.Duration, time.Duration, time.Duration, error) {

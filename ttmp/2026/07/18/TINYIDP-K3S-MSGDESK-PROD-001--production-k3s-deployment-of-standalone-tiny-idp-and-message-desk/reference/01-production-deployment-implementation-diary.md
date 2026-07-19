@@ -545,3 +545,17 @@ trusted-proxy-http  => certificate/key forbidden, wrapped ListenAndServe
 Keeping that choice in command construction prevents a Deployment from
 silently changing security semantics merely because an optional certificate
 file is absent.
+
+## Step 7 — Wire Tiny-IDP’s production command to explicit listener modes
+
+**Status:** Tiny-IDP complete; Message Desk equivalent next
+
+`tinyidp serve-production` now requires `--listener-mode`. `direct-tls` uses
+`ListenAndServeTLS`, requires both certificate paths, and rejects proxy CIDRs.
+`trusted-proxy-http` uses plain internal `ListenAndServe`, requires an HTTPS
+issuer and narrow trusted-proxy CIDRs, rejects certificate paths, and wraps the
+provider with the verified forwarding contract. The trusted resolver is also
+the rate-limit client-address resolver in that mode.
+
+Focused command tests cover absent/unknown modes and the mutually exclusive
+direct-TLS and trusted-proxy configurations.

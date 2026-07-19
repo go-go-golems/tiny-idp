@@ -32,3 +32,32 @@ func TestParseProductionDurationsRejectsNonPositive(t *testing.T) {
 		t.Fatal("expected zero shutdown timeout rejection")
 	}
 }
+
+func TestProductionListenerModesAreExplicitAndMutuallyExclusive(t *testing.T) {
+	if _, err := parseProductionListenerMode(""); err == nil {
+		t.Fatal("empty listener mode accepted")
+	}
+	if _, err := parseProductionListenerMode("plaintext"); err == nil {
+		t.Fatal("unknown listener mode accepted")
+	}
+	direct, err := parseProductionListenerMode("direct-tls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProductionListenerSettings(direct, &serveProductionSettings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem"}); err != nil {
+		t.Fatalf("valid direct TLS settings rejected: %v", err)
+	}
+	if err := validateProductionListenerSettings(direct, &serveProductionSettings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
+		t.Fatal("direct TLS accepted proxy CIDRs")
+	}
+	proxy, err := parseProductionListenerMode("trusted-proxy-http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProductionListenerSettings(proxy, &serveProductionSettings{Issuer: "https://idp.example.test/idp", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err != nil {
+		t.Fatalf("valid trusted proxy settings rejected: %v", err)
+	}
+	if err := validateProductionListenerSettings(proxy, &serveProductionSettings{Issuer: "http://idp.example.test", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
+		t.Fatal("trusted proxy accepted HTTP issuer")
+	}
+}
