@@ -5791,3 +5791,42 @@ The focused test passed; the commit hook passed lint and vet.
 - Trace the device token handler into `newOIDCSession`, then UserInfo.
 - Confirm the Goja source neither sees nor writes device/user codes, tokens,
   sessions, or protocol response objects.
+
+## Step 55: Run the policy-handler Phase 7 regression gate
+
+After adding the actual Goja authorization and claims providers, the focused
+Phase 7 integration and race gate passed. This validates the parts now enabled
+by policy executors; it is deliberately not recorded as the final Phase 7
+gate because protocol-presentation continuations remain open work.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+### What I did
+
+```bash
+go test ./internal/fositeadapter ./internal/server ./pkg/embeddedidp ./pkg/idpui -count=1
+go test -race ./internal/fositeadapter ./pkg/idpscript ./pkg/idpworkflow ./pkg/idppolicy -count=1
+```
+
+Both commands passed. The second command explicitly covered the new policy
+executor alongside the existing Fosite, Goja worker-pool, and workflow
+contracts.
+
+### Why
+
+An isolated policy executor test is insufficient: authorization and claims
+callbacks run beside browser interactions and runtime worker pools. The normal
+and race gate checks that the newly wired policy behavior did not regress those
+existing integration boundaries.
+
+### What remains deliberately open
+
+- Account selection and consent are still fixed provider pages, not script
+  workflow handlers. Their opaque entries and protocol actions do not fit the
+  generic signup form descriptor.
+- Device verification remains a fixed provider page for the same reason.
+- The final Phase 7 production gate must include the typed protocol
+  presentation/continuation implementation, then rerun the broader conformance
+  and SQLite/browser suite.
