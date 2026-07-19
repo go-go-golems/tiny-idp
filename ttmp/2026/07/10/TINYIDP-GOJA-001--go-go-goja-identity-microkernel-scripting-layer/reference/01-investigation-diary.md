@@ -3284,3 +3284,36 @@ artifact addition: Program.Providers
 provider callback kind: LambdaKindProvider only
 next task: lf48
 ```
+
+## Step 25: Register provider callbacks and add virtual/signed primitives
+
+The Phase 4 provider boundary is now executable without granting JavaScript
+ambient host access. The remaining computed and durable invitation work will
+reuse this exact invocation path.
+
+- Added `program.provider(kind, name, spec)` and TypeScript declarations. It
+  accepts only module-created lambda handles and materializes fingerprinted
+  provider handlers.
+- Added `idpscript.ProviderInvoker`, which selects only a compiled
+  provider/handler pair and delegates all schema, capability, budget, Promise,
+  and owned-worker enforcement to the existing pool.
+- Added `idpidentity.SubjectDeriver` and virtual candidates. Subjects are
+  HMAC-derived from host key + namespace + verified seed; profile projection
+  omits protocol claims and a virtual candidate creates no local user row.
+- Added `idpinvite.KeyRing` signed-invitation verification. It verifies native
+  issuer/audience/policy/expiry/not-before/subject/email expectations. Key
+  removal revokes a stateless token family; one-time use is deliberately not
+  claimed.
+
+Focused validation passed:
+
+```bash
+go test ./internal/gojamodules/tinyidp ./pkg/idpscript ./pkg/idpprogram -count=1
+go test ./pkg/idpidentity ./pkg/idpinvite ./pkg/idpscript -count=1
+```
+
+Code checkpoints: `95dc662` (provider callbacks), `c544a5f` (virtual
+identity), and `2555f0b` (signed invitations).
+
+Next: `lf51` and `lf52`, the bounded computed and durable one-time invitation
+providers; neither may expose database/network authority to JavaScript.

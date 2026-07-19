@@ -265,3 +265,10 @@ pinning, and deterministic invalid-contract diagnostics (commit 414cfb4).
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/providers.go — Provider state, replay, revocation, and handler contracts.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/validate.go — Compile-time provider invariant validation.
+
+## 2026-07-19
+
+Step 25: completed `lf48-lf50`: isolated JavaScript provider registration and
+pool invocation, keyed pairwise virtual identity derivation with protected
+profile projection, and native signed stateless invitation verification
+(commits 95dc662, c544a5f, 2555f0b).
