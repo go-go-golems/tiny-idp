@@ -32,12 +32,16 @@ RelatedFiles:
       Note: Bounded host eligibility capability and validation seam (commit 40e7747)
     - Path: repo://pkg/idpinvite/computed_test.go
       Note: Provider invocation proves JavaScript receives a decision rather than authority (commit 40e7747)
+    - Path: repo://pkg/idpinvite/durable.go
+      Note: Keyed code hashing and transaction-scoped one-time invitation redemption (commit 21c7c4c)
     - Path: repo://pkg/idpprogram/value.go
       Note: Step 14 shared runtime-independent JSON and public-carry validation
     - Path: repo://pkg/idpprogram/value_test.go
       Note: Step 15 sensitive-carry and bounded JSON regression tests
     - Path: repo://pkg/idpscript/codec.go
       Note: Step 15 runtime now shares the core schema validator
+    - Path: repo://pkg/idpstore/interfaces.go
+      Note: Durable invitation lifecycle operations available on the caller-owned transaction (commit 21c7c4c)
     - Path: repo://pkg/idpui/templates/workflow.html
       Note: Step 18 escaped generic workflow renderer
     - Path: repo://pkg/idpui/workflow.go
@@ -62,6 +66,8 @@ RelatedFiles:
       Note: Step 15 SQLite conformance and restart-resume proof
     - Path: repo://pkg/sqlitestore/migrations/011_workflow_continuations.sql
       Note: Step 14 durable schema and expiry index
+    - Path: repo://pkg/sqlitestore/migrations/012_durable_invitations.sql
+      Note: Persistent durable invitation state (commit 21c7c4c)
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md
       Note: Primary design produced by the investigation
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
@@ -80,6 +86,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -3414,4 +3421,103 @@ JS -> ctx.cap.invitation.eligibility({email, inviteCode?, audience})
    -> host EligibilityEvaluator
    -> native bounded {accepted, reason?, evidenceId?}
    -> Promise decision in the owned Goja worker
+```
+
+## Step 27: Add durable one-time invitation storage and redemption
+
+Durable invitations now protect their browser-visible code at rest and expose
+only named lifecycle transitions. The service can redeem by code in its own
+transaction or use the caller-owned transaction needed by the signup commit
+path; neither route has a check-then-write redemption race.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 26)
+
+**Assistant interpretation:** Continue Phase 4 implementation without
+expanding beyond the ticket.
+
+**Inferred user intent:** Make real one-time invitation registration possible
+with production persistence and an atomic integration seam.
+
+**Commit (code):** `21c7c4c` — "Feat: add durable one-time invitations"
+
+### What I did
+
+- Added `idpstore.DurableInvitation` and named create/get/redeem/revoke store
+  operations to the normal and transaction-scoped store contracts.
+- Added memory copy-on-write state and SQLite migration `012`, storing the
+  keyed code hash as the primary key and serialized non-secret metadata.
+- Added `idpinvite.DurableService`; it HMACs a code with a domain-separated
+  lookup key before persistence and returns redacted `DurableEvidence`.
+- Added `RedeemInTransaction`, the exact dependency needed to consume an
+  invite in the signup committer's existing transaction.
+- Tested replay, audience mismatch, expiry, revocation, concurrent one-winner
+  redemption, and SQLite restart persistence.
+
+### Why
+
+Signed invitations provide expiry and key-family revocation but cannot provide
+per-token one-time redemption. Durable invitations make that stronger promise
+only because native persistent state and a conditional state transition exist.
+
+### What worked
+
+```bash
+gofmt -w pkg/idpinvite/durable.go pkg/idpinvite/durable_test.go
+go test ./pkg/idpinvite ./internal/store/memory ./pkg/sqlitestore ./pkg/idpstore -count=1
+```
+
+All focused suites passed.
+
+### What didn't work
+
+The initial revocation test incorrectly attempted a raw, non-derived hash
+lookup and received `not found`. The service intentionally does not expose its
+derived hash, so I added the correctly bounded `DurableService.Revoke(code)`
+operation and exercised revocation through that public seam.
+
+### What I learned
+
+The existing `idpstore.Update` transaction model already supports the required
+composition. Extending `TxStore` with a narrow redemption operation is safer
+than creating a separate invitation database transaction beside account and
+continuation writes.
+
+### What was tricky to build
+
+The durable service must not accidentally make the HMAC lookup hash a new
+browser-visible capability. `Issue`, `Redeem`, and `Revoke` accept raw codes,
+but all store methods receive only the derived hash. `RedeemInTransaction`
+keeps the hash derivation inside the service while accepting only the caller's
+transaction surface, preserving atomic composition for the next task.
+
+### What warrants a second pair of eyes
+
+- Review the product semantics for revoking an already-redeemed invitation;
+  this implementation reports `ErrAlreadyConsumed` rather than silently
+  changing historical evidence.
+- Review retention/maintenance policy for expired invitation rows before a
+  production rollout; deletion is intentionally not added outside this task.
+
+### What should be done in the future
+
+Implement `lf53`: validate a durable-invitation effect in the scripted signup
+outcome and call `RedeemInTransaction` beside account, browser-session, and
+continuation operations.
+
+### Code review instructions
+
+- Start with `pkg/idpinvite/durable.go` for secrecy and transaction semantics.
+- Review `pkg/idpstore/interfaces.go` and
+  `pkg/sqlitestore/invitation.go` for native atomic state transitions.
+- Run `go test ./pkg/idpinvite ./internal/store/memory ./pkg/sqlitestore -count=1`.
+
+### Technical details
+
+```text
+browser code --HMAC(lookup key, domain || code)--> code_hash
+code_hash + audience --single store transaction--> active -> redeemed
+                                           \--> DurableEvidence (no raw code/hash)
+signup transaction --RedeemInTransaction--> same transition + account/session
 ```

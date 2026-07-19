@@ -280,3 +280,11 @@ Step 26: completed lf51 with an explicitly bounded computed-invitation eligibili
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpinvite/computed.go — Host-owned eligibility seam
+
+## 2026-07-19
+
+Step 27: completed lf52 with hashed durable invitation lookup, revocation/expiry checks, one-time transactional redemption, SQLite persistence, and replay-safe evidence (commit 21c7c4c).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpinvite/durable.go — Durable invitation service
