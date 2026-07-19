@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 	"github.com/go-go-golems/tiny-idp/pkg/idpworkflow"
@@ -131,4 +132,26 @@ func TestExecutorReportsBoundedInvocationMetrics(t *testing.T) {
 	assert.Equal(t, uint64(1), metrics.Challenge)
 	assert.Zero(t, metrics.Failures)
 	assert.Greater(t, metrics.LatencyNanos, uint64(0))
+}
+
+func TestExecutorCountsInterruptedInvocationWithoutRecordingErrorText(t *testing.T) {
+	source := `const A = require("tinyidp").v1;
+module.exports = A.program("interrupted-metrics", p => {
+  const submitted = A.lambda("signup.submitted", {
+    input:"signupSubmittedInput", output:"signupResult", outcomes:["commit"], effects:[], capabilities:[], timeoutMs:1, maxCapabilityCalls:0, maxOutputBytes:1024,
+    run: async _ctx => await new Promise(() => {}),
+  });
+  p.workflow("signup", {version:1, entry:"submitted", handlers:{submitted}, edges:[]});
+});`
+	executor, err := idpsignup.New(context.Background(), source, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+
+	_, err = executor.Submit(context.Background(), map[idpworkflow.FieldID]string{idpworkflow.FieldEmail: "ada@example.test"}, nil)
+	require.ErrorIs(t, err, idpscript.ErrInvocationTimeout)
+	metrics := executor.Metrics()
+	assert.Equal(t, uint64(1), metrics.Invocations)
+	assert.Equal(t, uint64(1), metrics.Failures)
+	assert.Equal(t, uint64(1), metrics.Interrupted)
+	assert.Equal(t, uint64(1), metrics.Discarded)
 }

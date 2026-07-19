@@ -36,8 +36,8 @@ type Executor struct {
 	metrics  executorMetrics
 }
 
-type executorMetrics struct{ invocations, failures, present, challenge, commit, other, latencyNanos, discarded atomic.Uint64 }
-type ExecutorMetrics struct{ Invocations, Failures, Present, Challenge, Commit, Other, LatencyNanos, Discarded uint64 }
+type executorMetrics struct{ invocations, failures, interrupted, present, challenge, commit, other, latencyNanos, discarded atomic.Uint64 }
+type ExecutorMetrics struct{ Invocations, Failures, Interrupted, Present, Challenge, Commit, Other, LatencyNanos, Discarded uint64 }
 
 type TestResult struct {
 	ID       string
@@ -138,7 +138,7 @@ func (e *Executor) Metrics() ExecutorMetrics {
 	if e == nil {
 		return ExecutorMetrics{}
 	}
-	return ExecutorMetrics{Invocations: e.metrics.invocations.Load(), Failures: e.metrics.failures.Load(), Present: e.metrics.present.Load(), Challenge: e.metrics.challenge.Load(), Commit: e.metrics.commit.Load(), Other: e.metrics.other.Load(), LatencyNanos: e.metrics.latencyNanos.Load(), Discarded: e.metrics.discarded.Load()}
+	return ExecutorMetrics{Invocations: e.metrics.invocations.Load(), Failures: e.metrics.failures.Load(), Interrupted: e.metrics.interrupted.Load(), Present: e.metrics.present.Load(), Challenge: e.metrics.challenge.Load(), Commit: e.metrics.commit.Load(), Other: e.metrics.other.Load(), LatencyNanos: e.metrics.latencyNanos.Load(), Discarded: e.metrics.discarded.Load()}
 }
 
 func (e *Executor) Program() idpprogram.Program { return e.artifact.Program() }
@@ -307,6 +307,9 @@ func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input j
 	}
 	if err != nil {
 		e.metrics.failures.Add(1)
+		if errors.Is(err, idpscript.ErrInvocationTimeout) || errors.Is(err, idpscript.ErrInvocationCanceled) {
+			e.metrics.interrupted.Add(1)
+		}
 		return outcome, err
 	}
 	switch outcome.Kind {
