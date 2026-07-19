@@ -77,7 +77,11 @@ RelatedFiles:
     - Path: repo://pkg/idpsignup/executor_test.go
       Note: Invitation workflow output regression (commit 84a9995)
     - Path: repo://pkg/idpsignup/manager.go
-      Note: Activation test gate and active-generation readiness
+      Note: |-
+        Activation test gate and active-generation readiness
+        Atomic activation, retention, draining, and bounded metrics
+    - Path: repo://pkg/idpsignup/manager_test.go
+      Note: Reload, closure, retention, and metrics proof
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Durable invitation lifecycle operations available on the caller-owned transaction (commit 21c7c4c)
     - Path: repo://pkg/idpui/templates/workflow.html
@@ -124,6 +128,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -4699,4 +4704,164 @@ program.test { fakes: { "clock.now": { unixMillis: 42 } } }
      --> ctx.cap.clock.now({}) --> { unixMillis: 42 }
 
 normal browser request --> no test binding --> production host binding only
+```
+
+## Step 43: Prove retained-generation draining under repeated reload
+
+The generation manager’s bounded retention behavior now has direct resource
+lifecycle evidence, not just lookup behavior. Eviction closes the old worker
+pool, surviving pools close at manager shutdown, and repeated reloads never
+grow the retained registry past its configured bound.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 39)
+
+**Assistant interpretation:** Continue Phase 6 operational hardening with
+evidence that reloading does not leak runtime workers.
+
+**Inferred user intent:** Safely support live continuation routing while
+keeping old Goja pools from accumulating indefinitely.
+
+**Commit (code):** `dcfef75` — "Test: prove generation pool draining"
+
+### What I did
+
+- Added a lifecycle test that retains a direct executor reference, activates
+  beyond the retention bound, and proves the evicted executor reports a closed
+  pool.
+- Proved retained and active pools close after `GenerationManager.Close`.
+- Added twelve successive source reloads and asserted the retained registry is
+  always bounded by active plus configured predecessors.
+
+### Why
+
+A removed fingerprint is insufficient proof of draining: a retained Goja pool
+could still hold workers and event-loop resources after lookup removal.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup -run 'TestGenerationManager(Drains|Repeated)' -count=1 -v
+git commit -m 'Test: prove generation pool draining'
+```
+
+Both focused tests and the full commit hook passed.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+The pool’s `Closed` operational state is the useful leak assertion at this
+layer: it proves cancellation and image-close lifecycle ran for the executor
+without exposing VM internals to the manager test.
+
+### What was tricky to build
+
+The test must retain executor pointers before manager eviction; after eviction
+the public resolver correctly refuses the old fingerprint, but that alone
+cannot inspect its pool closure.
+
+### What warrants a second pair of eyes
+
+- Retention remains a count bound, not durable continuation lease accounting;
+  operators must set it consistently with the maximum workflow lifetime.
+
+### What should be done in the future
+
+Add activation audit records and complete the broader in-flight/replay failure
+matrix before Phase 6 completion.
+
+### Code review instructions
+
+- Start at the two added `TestGenerationManager...` lifecycle tests.
+- Follow eviction into `Executor.Close` and `Pool.Close`.
+
+### Technical details
+
+```text
+generation 1 --evict--> remove resolver entry + close worker pool
+generation 2/3 --manager Close--> close every retained worker pool
+```
+
+## Step 44: Expose bounded generation-manager metrics
+
+The manager now exports a race-safe, secret-free metrics snapshot for
+activation outcomes and worker-pool saturation. It contains counts and pool
+sizes only; it does not use fingerprints, source text, user data, or callback
+labels as metric dimensions.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 39)
+
+**Assistant interpretation:** Continue Phase 6 observability using bounded
+operator-visible counters.
+
+**Inferred user intent:** Let an embedding host detect reload failures,
+retention pressure, and pool saturation without introducing PII or cardinality
+risk.
+
+**Commit (code):** `f5b5f87` — "Feat: expose generation manager metrics"
+
+### What I did
+
+- Added activation-success, activation-failure, eviction, and close counters.
+- Added retained-generation count plus active pool capacity/active-worker
+  values to `GenerationMetrics` and `GenerationSnapshot`.
+- Added a test for one failed activation, one successful replacement, one
+  eviction, and a bounded one-worker pool.
+
+### Why
+
+Operational signal needs to distinguish an unavailable generation from a
+healthy but saturated worker pool, while avoiding unbounded labels derived
+from JavaScript functions or user input.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup -run TestGenerationManagerReportsBoundedOperationalMetrics -count=1 -v
+git commit -m 'Feat: expose generation manager metrics'
+```
+
+The focused test and complete hook passed.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+Metrics snapshots can be composed from existing pool statistics; the manager
+does not need a parallel worker-lifecycle implementation to report saturation.
+
+### What was tricky to build
+
+`Snapshot` and `Metrics` both need consistent read locking. Nested read locks
+are safe for `sync.RWMutex`; no writer is acquired while either snapshot is
+being assembled.
+
+### What warrants a second pair of eyes
+
+- Invocation latency/outcome and continuation create/replay/expiry counters
+  still need to be surfaced at their owning boundaries for full `lf75`.
+
+### What should be done in the future
+
+Add redacted audit records and complete the remaining metrics/failure matrix.
+
+### Code review instructions
+
+- Review `GenerationManager.Metrics` and its test.
+- Confirm no metric field contains a fingerprint or request-derived value.
+
+### Technical details
+
+```text
+activation -> {success|failure} counter
+eviction -> evicted counter
+snapshot -> retained count + pool {capacity, active}
 ```

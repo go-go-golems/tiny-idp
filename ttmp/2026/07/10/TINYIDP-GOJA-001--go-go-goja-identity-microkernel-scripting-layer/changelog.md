@@ -398,3 +398,11 @@ Step 42: added bounded deterministic clock/random/mailer/identity/invitation/sto
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Test-only capability binding
+
+## 2026-07-19
+
+Steps 43-44: proved bounded generation draining/repeated reload closure and exposed bounded activation/pool metrics (commits dcfef75, f5b5f87).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Generation lifecycle and metrics

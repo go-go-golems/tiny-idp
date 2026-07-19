@@ -418,9 +418,9 @@ manager, operational health/metrics/audit surfaces, and rollback behavior.
 - [x] Implement collection and execution of embedded program tests with deterministic fake clock, random, mailer, identity, invitation, and store capabilities <!-- t:lf68 -->
 - [x] Implement `tinyidp script test` with stable per-case diagnostics and nonzero exit behavior for compilation, binding, assertion, timeout, or leak failures <!-- t:lf69 -->
 - [x] Implement `tinyidp script explain` for workflows, handler edges, schemas, capabilities, effects, budgets, continuations, providers, state/replay/revocation semantics, and production-profile violations <!-- t:lf70 -->
-- [ ] Implement a generation manager that compiles, validates, binds capabilities, creates workers, verifies fingerprints, runs embedded tests, and warms the pool before activation <!-- t:lf71 -->
-- [ ] Atomically activate only a fully ready generation and leave the previous generation active after compile, validation, binding, test, fingerprint, warmup, or readiness failure <!-- t:lf72 -->
-- [ ] Retain a bounded set of old generations required by compatible continuations, route resumes by generation, drain unused workers, and close generations without goroutine or runtime leaks <!-- t:lf73 -->
+- [x] Implement a generation manager that compiles, validates, binds capabilities, creates workers, verifies fingerprints, runs embedded tests, and warms the pool before activation <!-- t:lf71 -->
+- [x] Atomically activate only a fully ready generation and leave the previous generation active after compile, validation, binding, test, fingerprint, warmup, or readiness failure <!-- t:lf72 -->
+- [x] Retain a bounded set of old generations required by compatible continuations, route resumes by generation, drain unused workers, and close generations without goroutine or runtime leaks <!-- t:lf73 -->
 - [x] Expose readiness failure when the active generation or required native bindings are unavailable, without reporting a merely compiled artifact as ready <!-- t:lf74 -->
 - [ ] Add bounded-cardinality metrics for pool saturation, invocation outcome/latency, interruption/discard, continuation create/resume/replay/expiry, activation, retained generations, and cleanup <!-- t:lf75 -->
 - [ ] Add redacted activation and runtime audit records containing stable program/source hashes and diagnostic IDs but no subjects, emails, invite codes, passwords, raw exceptions, or unbounded callback labels <!-- t:lf76 -->
