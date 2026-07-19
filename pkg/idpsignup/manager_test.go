@@ -125,6 +125,35 @@ func TestGenerationManagerRepeatedReloadsKeepRetentionBounded(t *testing.T) {
 	}
 }
 
+func TestGenerationManagerRetainedExecutorServesConcurrentCallsDuringActivation(t *testing.T) {
+	ctx := context.Background()
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.DefaultSource, 2, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, manager.Close(context.Background())) })
+	first, err := manager.Active()
+	require.NoError(t, err)
+
+	const calls = 16
+	start := make(chan struct{})
+	errs := make(chan error, calls)
+	for range calls {
+		go func() {
+			<-start
+			_, invokeErr := first.Start(ctx, idpsignup.StartInput{ClientID: "message-app", RedirectURI: "https://client.example.test/callback", RequestedScope: "openid", InteractionID: "interaction", HasBrowserSession: false})
+			errs <- invokeErr
+		}()
+	}
+	close(start)
+	second, err := manager.Activate(ctx, strings.Replace(idpsignup.DefaultSource, "Create an account", "Create your account", 1))
+	require.NoError(t, err)
+
+	for range calls {
+		require.NoError(t, <-errs)
+	}
+	assert.False(t, first.PoolStats().Closed, "one retained generation must keep pre-swap callers usable")
+	assert.Equal(t, second, manager.Snapshot().ActiveFingerprint)
+}
+
 func TestGenerationManagerReportsBoundedOperationalMetrics(t *testing.T) {
 	ctx := context.Background()
 	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.DefaultSource, 1, 0)
