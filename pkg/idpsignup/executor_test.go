@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
@@ -122,7 +123,8 @@ module.exports = A.program("fake-tests", p => {
 }
 
 func TestExecutorReportsBoundedInvocationMetrics(t *testing.T) {
-	executor, err := idpsignup.New(context.Background(), idpsignup.EmailVerifiedSource, 1)
+	sink := idp.NewMemorySink()
+	executor, err := idpsignup.NewWithOptions(context.Background(), idpsignup.EmailVerifiedSource, 1, idpsignup.ExecutorOptions{Audit: sink})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
 	_, err = executor.Submit(context.Background(), map[idpworkflow.FieldID]string{idpworkflow.FieldDisplayName: "Ada", idpworkflow.FieldEmail: "ada@example.test"}, nil)
@@ -132,6 +134,11 @@ func TestExecutorReportsBoundedInvocationMetrics(t *testing.T) {
 	assert.Equal(t, uint64(1), metrics.Challenge)
 	assert.Zero(t, metrics.Failures)
 	assert.Greater(t, metrics.LatencyNanos, uint64(0))
+	events := sink.Events()
+	require.Len(t, events, 1)
+	assert.Equal(t, "script.signup.invocation", events[0].Name)
+	assert.Equal(t, "accepted", events[0].Result)
+	assert.Equal(t, "outcome_challenge", events[0].Reason)
 }
 
 func TestExecutorCountsInterruptedInvocationWithoutRecordingErrorText(t *testing.T) {
@@ -143,7 +150,8 @@ module.exports = A.program("interrupted-metrics", p => {
   });
   p.workflow("signup", {version:1, entry:"submitted", handlers:{submitted}, edges:[]});
 });`
-	executor, err := idpsignup.New(context.Background(), source, 1)
+	sink := idp.NewMemorySink()
+	executor, err := idpsignup.NewWithOptions(context.Background(), source, 1, idpsignup.ExecutorOptions{Audit: sink})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
 
@@ -154,4 +162,19 @@ module.exports = A.program("interrupted-metrics", p => {
 	assert.Equal(t, uint64(1), metrics.Failures)
 	assert.Equal(t, uint64(1), metrics.Interrupted)
 	assert.Equal(t, uint64(1), metrics.Discarded)
+	events := sink.Events()
+	require.Len(t, events, 1)
+	event := events[0]
+	assert.Equal(t, "script.signup.invocation", event.Name)
+	assert.Equal(t, "rejected", event.Result)
+	assert.Equal(t, "deadline_exceeded", event.Reason)
+	assert.Empty(t, event.ClientID)
+	assert.Empty(t, event.Subject)
+	assert.Empty(t, event.RequestID)
+	assert.Len(t, event.Fields, 2)
+	assert.NotEmpty(t, event.Fields["source_fingerprint"])
+	assert.NotEmpty(t, event.Fields["program_fingerprint"])
+	assert.NotContains(t, event.Fields, "email")
+	assert.NotContains(t, event.Fields, "error")
+	assert.NotContains(t, event.Fields, "handler")
 }

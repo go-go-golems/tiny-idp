@@ -62,17 +62,17 @@ func NewGenerationManagerWithOptions(ctx context.Context, source string, workers
 	if retained < 0 {
 		return nil, errors.New("generation manager retained generation count must not be negative")
 	}
-	candidate, err := warmGeneration(ctx, source, workers)
-	if err != nil {
-		return nil, errors.Wrap(err, "warm initial signup generation")
-	}
-	fingerprint := candidate.Fingerprint()
 	if options.Audit == nil {
 		options.Audit = idp.NoopSink{}
 	}
 	if options.Clock == nil {
 		options.Clock = time.Now
 	}
+	candidate, err := warmGeneration(ctx, source, workers, ExecutorOptions(options))
+	if err != nil {
+		return nil, errors.Wrap(err, "warm initial signup generation")
+	}
+	fingerprint := candidate.Fingerprint()
 	return &GenerationManager{workers: workers, retained: retained, active: candidate, byHash: map[string]*Executor{fingerprint: candidate}, order: []string{fingerprint}, audit: options.Audit, clock: options.Clock}, nil
 }
 
@@ -82,7 +82,7 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 	if m == nil {
 		return "", errors.New("generation manager is unavailable")
 	}
-	candidate, err := warmGeneration(ctx, source, m.workers)
+	candidate, err := warmGeneration(ctx, source, m.workers, ExecutorOptions{Audit: m.audit, Clock: m.clock})
 	if err != nil {
 		m.metrics.activationFailures.Add(1)
 		m.auditActivation(ctx, "rejected", "warm_failed", nil)
@@ -121,8 +121,8 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 	return fingerprint, nil
 }
 
-func warmGeneration(ctx context.Context, source string, workers int) (*Executor, error) {
-	candidate, err := New(ctx, source, workers)
+func warmGeneration(ctx context.Context, source string, workers int, options ExecutorOptions) (*Executor, error) {
+	candidate, err := NewWithOptions(ctx, source, workers, options)
 	if err != nil {
 		return nil, err
 	}

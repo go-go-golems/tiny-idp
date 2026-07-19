@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
+	"github.com/go-go-golems/tiny-idp/pkg/idpworkflow"
 )
 
 func TestGenerationManagerSwapsOnlyWarmedCandidatesAndRetainsPriorGeneration(t *testing.T) {
@@ -160,4 +161,26 @@ func TestGenerationManagerActivationAuditIsRedacted(t *testing.T) {
 	assert.NotEmpty(t, event.Fields["source_fingerprint"])
 	assert.NotEmpty(t, event.Fields["program_fingerprint"])
 	assert.NotContains(t, event.Fields["source_fingerprint"], "Create your account")
+}
+
+func TestGenerationManagerPropagatesRedactedAuditToActiveExecutor(t *testing.T) {
+	ctx := context.Background()
+	sink := idp.NewMemorySink()
+	manager, err := idpsignup.NewGenerationManagerWithOptions(ctx, idpsignup.EmailVerifiedSource, 1, 1, idpsignup.GenerationManagerOptions{Audit: sink})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, manager.Close(context.Background())) })
+
+	executor, err := manager.Active()
+	require.NoError(t, err)
+	_, err = executor.Submit(ctx, map[idpworkflow.FieldID]string{idpworkflow.FieldDisplayName: "Ada", idpworkflow.FieldEmail: "ada@example.test"}, nil)
+	require.NoError(t, err)
+
+	events := sink.Events()
+	require.Len(t, events, 1, "embedded activation tests must not emit production invocation events")
+	assert.Equal(t, "script.signup.invocation", events[0].Name)
+	assert.Equal(t, "accepted", events[0].Result)
+	assert.Equal(t, "outcome_challenge", events[0].Reason)
+	assert.Empty(t, events[0].ClientID)
+	assert.Empty(t, events[0].Subject)
+	assert.Empty(t, events[0].RequestID)
 }

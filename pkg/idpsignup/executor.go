@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
@@ -34,10 +35,19 @@ type Executor struct {
 	artifact *idpscript.Artifact
 	pool     *idpscript.Pool
 	metrics  executorMetrics
+	audit    idp.Sink
+	clock    func() time.Time
 }
 
-type executorMetrics struct{ invocations, failures, interrupted, present, challenge, commit, other, latencyNanos, discarded atomic.Uint64 }
-type ExecutorMetrics struct{ Invocations, Failures, Interrupted, Present, Challenge, Commit, Other, LatencyNanos, Discarded uint64 }
+type executorMetrics struct{ invocations, failures, interrupted, present, challenge, commit, other, latencyNanos, discarded, auditFailures atomic.Uint64 }
+type ExecutorMetrics struct{ Invocations, Failures, Interrupted, Present, Challenge, Commit, Other, LatencyNanos, Discarded, AuditFailures uint64 }
+
+// ExecutorOptions configures secret-free operational boundaries around a
+// compiled signup generation. It deliberately has no request-derived fields.
+type ExecutorOptions struct {
+	Audit idp.Sink
+	Clock func() time.Time
+}
 
 type TestResult struct {
 	ID       string
@@ -71,6 +81,10 @@ type StartInput struct {
 var _ idpcontinuation.GenerationResolver = (*Executor)(nil)
 
 func New(ctx context.Context, source string, workers int) (*Executor, error) {
+	return NewWithOptions(ctx, source, workers, ExecutorOptions{})
+}
+
+func NewWithOptions(ctx context.Context, source string, workers int, options ExecutorOptions) (*Executor, error) {
 	if source == "" {
 		source = DefaultSource
 	}
@@ -89,7 +103,13 @@ func New(ctx context.Context, source string, workers int) (*Executor, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "create signup runtime pool")
 	}
-	return &Executor{artifact: artifact, pool: pool}, nil
+	if options.Audit == nil {
+		options.Audit = idp.NoopSink{}
+	}
+	if options.Clock == nil {
+		options.Clock = time.Now
+	}
+	return &Executor{artifact: artifact, pool: pool, audit: options.Audit, clock: options.Clock}, nil
 }
 
 // Compile compiles a signup program against the host-owned signup input
@@ -138,7 +158,7 @@ func (e *Executor) Metrics() ExecutorMetrics {
 	if e == nil {
 		return ExecutorMetrics{}
 	}
-	return ExecutorMetrics{Invocations: e.metrics.invocations.Load(), Failures: e.metrics.failures.Load(), Interrupted: e.metrics.interrupted.Load(), Present: e.metrics.present.Load(), Challenge: e.metrics.challenge.Load(), Commit: e.metrics.commit.Load(), Other: e.metrics.other.Load(), LatencyNanos: e.metrics.latencyNanos.Load(), Discarded: e.metrics.discarded.Load()}
+	return ExecutorMetrics{Invocations: e.metrics.invocations.Load(), Failures: e.metrics.failures.Load(), Interrupted: e.metrics.interrupted.Load(), Present: e.metrics.present.Load(), Challenge: e.metrics.challenge.Load(), Commit: e.metrics.commit.Load(), Other: e.metrics.other.Load(), LatencyNanos: e.metrics.latencyNanos.Load(), Discarded: e.metrics.discarded.Load(), AuditFailures: e.metrics.auditFailures.Load()}
 }
 
 func (e *Executor) Program() idpprogram.Program { return e.artifact.Program() }
@@ -221,8 +241,10 @@ func (e *Executor) Start(ctx context.Context, input StartInput) (idpworkflow.Val
 	}
 	outcome, err := e.pool.Invoke(ctx, "signup.start", encoded, nil)
 	if err != nil {
+		e.auditInvocation(ctx, outcome, err)
 		return idpworkflow.ValidatedPresentation{}, errors.Wrap(err, "invoke signup start")
 	}
+	e.auditInvocation(ctx, outcome, nil)
 	if outcome.Kind != idpprogram.OutcomePresent || outcome.Continuation == nil {
 		return idpworkflow.ValidatedPresentation{}, errors.New("signup start did not return a presentation")
 	}
@@ -310,6 +332,7 @@ func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input j
 		if errors.Is(err, idpscript.ErrInvocationTimeout) || errors.Is(err, idpscript.ErrInvocationCanceled) {
 			e.metrics.interrupted.Add(1)
 		}
+		e.auditInvocation(ctx, outcome, err)
 		return outcome, err
 	}
 	switch outcome.Kind {
@@ -322,7 +345,47 @@ func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input j
 	case idpprogram.OutcomeContinue, idpprogram.OutcomeComplete, idpprogram.OutcomeDeny, idpprogram.OutcomeSkip, idpprogram.OutcomeError:
 		e.metrics.other.Add(1)
 	}
+	e.auditInvocation(ctx, outcome, nil)
 	return outcome, nil
+}
+
+func (e *Executor) auditInvocation(ctx context.Context, outcome idpprogram.Outcome, invocationErr error) {
+	if e == nil || e.audit == nil || e.artifact == nil {
+		return
+	}
+	hashes := e.artifact.Fingerprints()
+	result, reason := invocationAuditResult(outcome, invocationErr)
+	event := idp.Event{
+		Time:   e.clock().UTC(),
+		Name:   "script.signup.invocation",
+		Result: result,
+		Reason: reason,
+		Fields: map[string]string{
+			"source_fingerprint":  hashes.Source,
+			"program_fingerprint": hashes.Program,
+		},
+	}
+	if err := e.audit.Emit(ctx, event); err != nil {
+		e.metrics.auditFailures.Add(1)
+	}
+}
+
+func invocationAuditResult(outcome idpprogram.Outcome, invocationErr error) (string, string) {
+	if invocationErr == nil {
+		return "accepted", "outcome_" + string(outcome.Kind)
+	}
+	switch {
+	case errors.Is(invocationErr, idpscript.ErrInvocationTimeout):
+		return "rejected", "deadline_exceeded"
+	case errors.Is(invocationErr, idpscript.ErrInvocationCanceled):
+		return "rejected", "canceled"
+	case errors.Is(invocationErr, idpscript.ErrRuntimeSaturated):
+		return "rejected", "pool_saturated"
+	case errors.Is(invocationErr, idpscript.ErrPoolClosed):
+		return "rejected", "pool_closed"
+	default:
+		return "rejected", "invocation_failed"
+	}
 }
 
 // Resume invokes the exact handler named by a validated continuation. The
