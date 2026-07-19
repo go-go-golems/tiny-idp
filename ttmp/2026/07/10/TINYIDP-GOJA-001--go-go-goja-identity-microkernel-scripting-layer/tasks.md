@@ -155,4 +155,4 @@
 - [ ] Lambda API Phase 6: implement program validate, test, explain, activation, generation retention, readiness, metrics, and rollback <!-- t:7xil -->
 - [ ] Lambda API Phase 7: add authorization and claims lambdas after signup semantics stabilize <!-- t:p90i -->
 - [ ] Lambda API assurance: model lambda contracts as constrained nondeterministic transitions and emit secret-free runtime traces <!-- t:77za -->
-- [ ] Lambda API delivery: validate docmgr bookkeeping and upload the superseding design bundle to reMarkable <!-- t:d8yk -->
+- [x] Lambda API delivery: validate docmgr bookkeeping and upload the superseding design bundle to reMarkable <!-- t:d8yk -->

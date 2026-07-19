@@ -918,3 +918,135 @@ browser boundary: persisted named continuation, never a retained Goja Promise
 in-request async: bounded Promise-returning native capability
 irreversible mutation: validated native effect plan and named atomic commit
 ```
+
+## Step 8: Validate, commit, and deliver the superseding design
+
+This step converted the authored design into a validated and traceable ticket
+checkpoint. It added `deprecated` to the ticket vocabulary so the historical
+document can be marked semantically rather than relying only on warning prose,
+ran docmgr and Markdown hygiene checks, committed the complete documentation
+change, and published a new reMarkable bundle without overwriting earlier
+annotated designs.
+
+The uploaded bundle contains the updated ticket index, the normative
+lambda-first design, and the full investigation diary. Its dated name and remote
+directory distinguish it from the earlier graph-first and assurance-core PDFs.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 7)
+
+**Assistant interpretation:** Validate, checkpoint, and publish the completed
+superseding design after the content and ticket bookkeeping are consistent.
+
+**Inferred user intent:** Receive a durable, reviewable design in both Git and
+reMarkable form, with no ambiguity about which JavaScript API is normative.
+
+**Commit (documentation):** `0d5e4fb` — "Docs: design lambda-first Tiny-IDP scripting API"
+
+### What I did
+
+- Added the `deprecated` status vocabulary entry with:
+
+  ```bash
+  docmgr vocab add --category status --slug deprecated \
+    --description "Superseded historical document retained for context and not normative implementation guidance"
+  ```
+
+- Validated the new design, deprecated design, index, and diary frontmatter.
+- Ran `docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30` until it
+  reported all checks passed.
+- Counted Markdown fences in the new design and diary; both counts were even.
+- Ran `git diff --check`, reviewed the staged 2,071-line documentation change,
+  and committed it as `0d5e4fb`.
+- Dry-ran and then uploaded the index, design 03, and diary bundle with:
+
+  ```bash
+  remarquee upload bundle \
+    index.md \
+    design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md \
+    reference/01-investigation-diary.md \
+    --name "TINYIDP GOJA 001 Lambda First JS API Explicit Continuations 2026 07 19" \
+    --remote-dir "/ai/2026/07/19/TINYIDP-GOJA-001" \
+    --toc-depth 2 \
+    --non-interactive
+  ```
+
+### Why
+
+- A vocabulary-backed deprecated status makes docmgr search and validation agree
+  with the visible supersession warning.
+- A new reMarkable name preserves earlier documents and any annotations rather
+  than forcing an overwrite.
+- Committing before upload makes the delivered design traceable to an exact
+  repository checkpoint.
+
+### What worked
+
+- Frontmatter validation reported `Frontmatter OK` for every changed ticket
+  document.
+- `docmgr doctor` reported `✅ All checks passed` after the vocabulary update.
+- The dry run resolved all three input files and the intended remote directory.
+- The real upload reported:
+
+  ```text
+  OK: uploaded TINYIDP GOJA 001 Lambda First JS API Explicit Continuations 2026 07 19.pdf -> /ai/2026/07/19/TINYIDP-GOJA-001
+  ```
+
+### What didn't work
+
+- The first `docmgr doctor` run warned that `Status: deprecated` was not in the
+  vocabulary:
+
+  ```text
+  [WARNING] unknown_status — unknown status value(s): deprecated (1 doc)
+  ```
+
+  Adding the explicit status vocabulary entry resolved the warning.
+- The first `git diff --check` reported a newly added blank line at the end of
+  `changelog.md`. Removing that extra blank line resolved the check.
+
+### What I learned
+
+- Deprecation is a reusable documentation state and belongs in the shared
+  vocabulary when a superseded design must remain searchable.
+- The reMarkable dry run validates path and bundle resolution but the real
+  command remains the render test; this bundle rendered successfully on the
+  first real attempt.
+
+### What was tricky to build
+
+- The deprecated document needed to remain useful historical evidence while
+  being impossible to mistake for current guidance. The solution combines
+  status metadata, title, summary, usage text, related-file link, top-of-document
+  warning, index ordering, and task-ledger notice.
+
+### What warrants a second pair of eyes
+
+- Review the rendered table widths for the outcome, capability, failure, and
+  file-plan tables on the reMarkable device.
+- Confirm the seven-phase implementation plan is appropriately sliced before
+  Phase 0 coding begins.
+
+### What should be done in the future
+
+- Begin Phase 0 from commit `0d5e4fb` and record the contract/runtime spike in
+  this diary.
+
+### Code review instructions
+
+- Run `git show --stat 0d5e4fb` and inspect design 03 first.
+- Run `docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30`.
+- Confirm design 01 has `Status: deprecated` and points to design 03.
+- Confirm the reMarkable bundle is named exactly as recorded above if manual
+  device review is performed.
+
+### Technical details
+
+```text
+design commit: 0d5e4fb
+bundle inputs: index, design 03, investigation diary
+bundle name: TINYIDP GOJA 001 Lambda First JS API Explicit Continuations 2026 07 19.pdf
+remote destination: /ai/2026/07/19/TINYIDP-GOJA-001
+upload result: success
+```

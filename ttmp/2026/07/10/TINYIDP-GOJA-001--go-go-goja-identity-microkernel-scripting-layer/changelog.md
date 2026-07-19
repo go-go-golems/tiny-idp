@@ -78,3 +78,12 @@ Step 7: published the normative 1,821-line lambda-first JavaScript API and expli
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md — Clearly marked deprecated and linked to its replacement
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — New normative intern implementation guide
+
+## 2026-07-19
+
+Step 8: validated and committed the lambda-first explicit-continuation JavaScript API design in commit 0d5e4fb, then uploaded the index, normative design, and investigation diary as 'TINYIDP GOJA 001 Lambda First JS API Explicit Continuations 2026 07 19' to /ai/2026/07/19/TINYIDP-GOJA-001 on reMarkable.
+
+### Related Files
+
+- design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — Normative intern-facing JavaScript API design delivered to reMarkable.
+- reference/01-investigation-diary.md — Step 8 records validation, commit, upload, and resolved documentation issues.
