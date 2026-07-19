@@ -508,3 +508,40 @@ will use before accepting any transport-security header.
 - Build the explicit `direct-tls` and `trusted-proxy-http` listener mode on
   top of this primitive, with canonical configured origins and no use of
   forwarded Host to rewrite OIDC identity.
+
+## Step 6 — Add a reusable trusted-proxy HTTPS request contract
+
+**Status:** complete foundation; command wiring follows
+
+I added `idp.NewTrustedProxyHTTPHandler`, the boundary used by both production
+processes when Traefik performs public TLS termination. It accepts a request
+only when all of these facts agree: the immediate peer is in the configured
+proxy CIDR, exactly one `X-Forwarded-Proto` says `https`, the request Host is
+the configured public host, and any forwarded Host agrees with that value.
+It does not derive identity from either forwarded header.
+
+After verification, the wrapper gives downstream handlers a cloned request
+with a TLS marker and HTTPS URL scheme. This is important for existing secure
+cookie and same-origin behavior: the Go application can honestly operate as a
+public HTTPS service even though its Pod socket is HTTP.
+
+### What worked
+
+- `go test ./pkg/idp -count=1` passed.
+- The contract tests prove rejection for an untrusted immediate peer, an HTTP
+  forwarded transport claim, a mismatched request Host, and a mismatched
+  forwarded Host.
+
+### Why this is not the final listener mode yet
+
+The wrapper deliberately does not bind a port or choose TLS. Each command must
+next make an explicit, mutually exclusive choice:
+
+```text
+direct-tls          => certificate/key required, ListenAndServeTLS
+trusted-proxy-http  => certificate/key forbidden, wrapped ListenAndServe
+```
+
+Keeping that choice in command construction prevents a Deployment from
+silently changing security semantics merely because an optional certificate
+file is absent.
