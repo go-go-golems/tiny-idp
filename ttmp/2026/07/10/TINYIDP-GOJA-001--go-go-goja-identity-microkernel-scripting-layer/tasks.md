@@ -338,7 +338,7 @@ implementations.
 - [x] Add JavaScript provider registration and invocation through the same artifact registry, worker ownership, budgets, and schema validation used by workflow lambdas <!-- t:lf48 -->
 - [x] Implement deterministic virtual subject derivation and protected claim projection without requiring a local user row <!-- t:lf49 -->
 - [x] Implement signed stateless invitation verification with audience, issuer, expiry, policy-version, and subject/email constraints expressed as native validated output <!-- t:lf50 -->
-- [ ] Implement a capability-backed computed invitation example whose eligibility decision is bounded and whose result contains no ambient database or network authority <!-- t:lf51 -->
+- [x] Implement a capability-backed computed invitation example whose eligibility decision is bounded and whose result contains no ambient database or network authority <!-- t:lf51 -->
 - [ ] Implement a durable one-time invitation provider with hashed lookup, expiry, revocation, atomic redemption, and replay-safe evidence <!-- t:lf52 -->
 - [ ] Integrate provider results into the Phase 3 signup workflow without changing the native signup commit authority or duplicating account/session logic <!-- t:lf53 -->
 - [ ] Add checked-in examples for open signup, allowed email domain, signed invitation, computed eligibility, durable one-time invitation, virtual identity, and local stored identity <!-- t:lf54 -->

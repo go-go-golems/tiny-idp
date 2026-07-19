@@ -272,3 +272,11 @@ Step 25: completed `lf48-lf50`: isolated JavaScript provider registration and
 pool invocation, keyed pairwise virtual identity derivation with protected
 profile projection, and native signed stateless invitation verification
 (commits 95dc662, c544a5f, 2555f0b).
+
+## 2026-07-19
+
+Step 26: completed lf51 with an explicitly bounded computed-invitation eligibility capability, including native request/decision validation and an end-to-end provider-pool test (commit 40e7747).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpinvite/computed.go — Host-owned eligibility seam

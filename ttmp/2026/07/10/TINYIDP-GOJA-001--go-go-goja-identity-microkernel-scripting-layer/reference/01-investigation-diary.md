@@ -28,6 +28,10 @@ RelatedFiles:
       Note: Step 14 atomic store and generation-resolution interfaces
     - Path: repo://pkg/idpcontinuation/types.go
       Note: Step 14 versioned VM-independent durable continuation contract
+    - Path: repo://pkg/idpinvite/computed.go
+      Note: Bounded host eligibility capability and validation seam (commit 40e7747)
+    - Path: repo://pkg/idpinvite/computed_test.go
+      Note: Provider invocation proves JavaScript receives a decision rather than authority (commit 40e7747)
     - Path: repo://pkg/idpprogram/value.go
       Note: Step 14 shared runtime-independent JSON and public-carry validation
     - Path: repo://pkg/idpprogram/value_test.go
@@ -76,6 +80,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -3317,3 +3322,96 @@ identity), and `2555f0b` (signed invitations).
 
 Next: `lf51` and `lf52`, the bounded computed and durable one-time invitation
 providers; neither may expose database/network authority to JavaScript.
+
+## Step 26: Add a capability-backed computed invitation provider
+
+Computed invitation eligibility now has a deliberately small native seam. A
+program can await one declared capability and receive a validated decision,
+but it cannot gain a database connection, a network client, or a callback it
+can retain after the invocation.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue, do not stop until youre genunely at a loss."
+
+**Assistant interpretation:** Continue Phase 4 task-by-task and maintain the
+implementation diary and commits.
+
+**Inferred user intent:** Finish the ticket's scripting-provider work with
+reviewable, safe increments rather than stopping at design.
+
+**Commit (code):** `40e7747` — "Feat: add computed invitation capability"
+
+### What I did
+
+- Added `idpinvite.NewEligibilityCapability`, bound to the stable capability
+  ID `invitation.eligibility` version 1.
+- Defined narrow `EligibilityProbe` and `EligibilityDecision` value contracts.
+- Rejected unknown, malformed, oversized, or invalid capability inputs before
+  the host evaluator runs; bounded decision data before it returns to JS.
+- Added a provider-pool test in which JavaScript awaits
+  `ctx.cap.invitation.eligibility(ctx.input)` and receives only the decision.
+
+### Why
+
+The host may consult a directory, database, or remote service, but that is
+host implementation detail. The program must be able to express policy over a
+result without becoming a general-purpose configuration language with ambient
+authority.
+
+### What worked
+
+```bash
+gofmt -w pkg/idpinvite/computed.go pkg/idpinvite/computed_test.go
+go test ./pkg/idpinvite -count=1
+```
+
+Both completed successfully.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+`idpscript.CapabilityBinding` already enforces declaration matching, payload
+limits, per-invocation lifetime, Promise settlement, cancellation, and call
+budgets. The invitation package therefore only needs to own the domain-shaped
+input/output validation at its seam.
+
+### What was tricky to build
+
+The important distinction is between a host *implementation* that may use a
+directory and the script-visible *contract*. The adapter calls the evaluator
+only after decoding an exact probe and serializes only a small decision. The
+end-to-end test confirms that path through `ProviderInvoker`; it does not give
+the JavaScript source an object capable of additional queries.
+
+### What warrants a second pair of eyes
+
+- Confirm the initial product wants `email`, optional `inviteCode`, and
+  `audience` as the complete eligibility input vocabulary.
+- Confirm whether denial reasons should be intentionally coarser before any
+  browser-facing workflow maps them to user-visible text.
+
+### What should be done in the future
+
+Implement `lf52`: durable one-time invitations with hashed lookup, expiry,
+revocation, and transaction-scoped consumption.
+
+### Code review instructions
+
+- Start with `pkg/idpinvite/computed.go`, especially
+  `NewEligibilityCapability` and the exact JSON validation helpers.
+- Review `pkg/idpinvite/computed_test.go` for the end-to-end provider example.
+- Validate with `go test ./pkg/idpinvite -count=1`.
+
+### Technical details
+
+```text
+JS -> ctx.cap.invitation.eligibility({email, inviteCode?, audience})
+   -> native exact decode + bounds
+   -> host EligibilityEvaluator
+   -> native bounded {accepted, reason?, evidenceId?}
+   -> Promise decision in the owned Goja worker
+```
