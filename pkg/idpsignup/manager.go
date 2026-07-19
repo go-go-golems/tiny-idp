@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
 )
 
 // GenerationManager atomically publishes warmed signup executors. It retains
@@ -27,6 +28,7 @@ type GenerationSnapshot struct {
 	ActiveFingerprint string
 	Retained          []string
 	Ready             bool
+	Pool              idpscript.PoolStats
 }
 
 func NewGenerationManager(ctx context.Context, source string, workers, retained int) (*GenerationManager, error) {
@@ -142,11 +144,28 @@ func (m *GenerationManager) Snapshot() GenerationSnapshot {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	snapshot := GenerationSnapshot{Ready: !m.closed && m.active != nil, Retained: append([]string(nil), m.order...)}
+	snapshot := GenerationSnapshot{Retained: append([]string(nil), m.order...)}
 	if m.active != nil {
 		snapshot.ActiveFingerprint = m.active.Fingerprint()
+		snapshot.Pool = m.active.PoolStats()
 	}
+	snapshot.Ready = !m.closed && m.active != nil && m.active.Ready()
 	return snapshot
+}
+
+// Ready returns an operator-safe readiness error for hosts that have opted
+// into scripted signup. It distinguishes a missing/closed active generation
+// from pool saturation: saturated but warmed workers can still become
+// available, whereas a closed or empty pool cannot serve a continuation.
+func (m *GenerationManager) Ready() error {
+	if m == nil {
+		return errors.New("signup generation manager is unavailable")
+	}
+	snapshot := m.Snapshot()
+	if !snapshot.Ready {
+		return errors.New("active signup generation is unavailable")
+	}
+	return nil
 }
 
 func (m *GenerationManager) Close(ctx context.Context) error {

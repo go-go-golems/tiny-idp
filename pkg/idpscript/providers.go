@@ -59,9 +59,9 @@ func (i *ProviderInvoker) Provider(providerID string) (idpprogram.Provider, bool
 	if err != nil {
 		return idpprogram.Provider{}, false
 	}
-	var copy idpprogram.Provider
-	if err := json.Unmarshal(encoded, &copy); err != nil {
+	var providerCopy idpprogram.Provider
+	if err := json.Unmarshal(encoded, &providerCopy); err != nil {
 		return idpprogram.Provider{}, false
 	}
-	return copy, true
+	return providerCopy, true
 }

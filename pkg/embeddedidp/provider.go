@@ -13,6 +13,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/fositeadapter"
 	"github.com/go-go-golems/tiny-idp/internal/keys"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
@@ -25,6 +26,8 @@ type Provider struct {
 	mode                   idpstore.Mode
 	audit                  idp.Sink
 	limiter                idp.RateLimiter
+	scriptedSignup         *idpsignup.Executor
+	scriptedSignupManager  *idpsignup.GenerationManager
 	tokenSecretReady       bool
 	maintenanceConfig      MaintenanceConfig
 	maintenanceRunMu       sync.Mutex
@@ -71,7 +74,7 @@ func New(ctx context.Context, opts Options) (*Provider, error) {
 		prefix = ""
 	}
 	now := time.Now().UTC()
-	return &Provider{handler: adapter.Handler(), adapter: adapter, store: opts.Store, mode: opts.Mode, audit: opts.Audit, limiter: opts.RateLimiter, tokenSecretReady: len(opts.Token.SecretKey) >= 32, maintenanceConfig: maintenance, createdAt: now, healthPath: prefix + "/healthz", readyPath: prefix + "/readyz"}, nil
+	return &Provider{handler: adapter.Handler(), adapter: adapter, store: opts.Store, mode: opts.Mode, audit: opts.Audit, limiter: opts.RateLimiter, scriptedSignup: opts.ScriptedSignup.Executor, scriptedSignupManager: opts.ScriptedSignup.GenerationManager, tokenSecretReady: len(opts.Token.SecretKey) >= 32, maintenanceConfig: maintenance, createdAt: now, healthPath: prefix + "/healthz", readyPath: prefix + "/readyz"}, nil
 }
 
 func (p *Provider) Handler() http.Handler {
@@ -166,6 +169,13 @@ func (p *Provider) Readiness(ctx context.Context) idp.ReadinessReport {
 		limiterReady = limiter.ProductionReady()
 	}
 	add("rate_limiter", limiterReady || p.mode != idpstore.ProductionMode, !limiterReady && p.mode != idpstore.ProductionMode, reasonIfCondition(limiterReady, "production_limiter_unavailable"))
+	if p.scriptedSignupManager != nil {
+		ready := p.scriptedSignupManager.Ready() == nil
+		add("scripted_signup", ready, false, reasonIfCondition(ready, "active_generation_unavailable"))
+	} else if p.scriptedSignup != nil {
+		ready := p.scriptedSignup.Ready()
+		add("scripted_signup", ready, false, reasonIfCondition(ready, "executor_unavailable"))
+	}
 	p.maintenanceStatusMu.Lock()
 	status := p.maintenanceStatus
 	p.maintenanceStatusMu.Unlock()

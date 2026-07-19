@@ -418,14 +418,6 @@ func (p *Provider) renderScriptedSignupError(w http.ResponseWriter, r *http.Requ
 	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: idpworkflow.ErrorRejected}}))
 }
 
-func (p *Provider) signupBindings(record idpstore.InteractionRecord, r *http.Request) idpcontinuation.Bindings {
-	executor, err := p.activeSignupExecutor()
-	if err != nil {
-		return idpcontinuation.Bindings{}
-	}
-	return p.signupBindingsFor(record, r, executor.Fingerprint())
-}
-
 func (p *Provider) signupBindingsFor(record idpstore.InteractionRecord, r *http.Request, fingerprint string) idpcontinuation.Bindings {
 	bindings := p.signupLoadBindings(record, r)
 	bindings.ProgramFingerprint = fingerprint

@@ -101,6 +101,24 @@ func (e *Executor) Close(ctx context.Context) error {
 	return e.pool.Close(ctx)
 }
 
+// PoolStats returns a bounded, non-secret operational snapshot. Hosts use it
+// for readiness and metrics; it intentionally exposes neither JavaScript
+// source nor any request-specific values.
+func (e *Executor) PoolStats() idpscript.PoolStats {
+	if e == nil || e.pool == nil {
+		return idpscript.PoolStats{Closed: true}
+	}
+	return e.pool.Stats()
+}
+
+// Ready reports whether this executor still owns a warmed worker pool. A pool
+// may have no idle workers while it is serving traffic, so saturation is an
+// operational metric rather than a readiness failure.
+func (e *Executor) Ready() bool {
+	stats := e.PoolStats()
+	return !stats.Closed && stats.Capacity > 0 && stats.WorkersCreated >= uint64(stats.Capacity)
+}
+
 func (e *Executor) Program() idpprogram.Program { return e.artifact.Program() }
 
 // Fingerprint identifies the executable generation, not merely its declared

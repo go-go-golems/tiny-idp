@@ -34,7 +34,7 @@ func (s *Store) VerifyEmailChallenge(ctx context.Context, id string, hash []byte
 	if err != nil {
 		return idpemailchallenge.VerifiedEmailEvidence{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	c, err := s.checked(ctx, tx, id, b, now)
 	if err != nil {
 		return idpemailchallenge.VerifiedEmailEvidence{}, err
@@ -82,7 +82,7 @@ func (s *Store) ResendEmailChallenge(ctx context.Context, id string, hash []byte
 	if err != nil {
 		return idpemailchallenge.PendingChallenge{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	c, err := s.checked(ctx, tx, id, b, now)
 	if err != nil {
 		return idpemailchallenge.PendingChallenge{}, err

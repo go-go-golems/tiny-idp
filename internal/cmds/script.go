@@ -65,56 +65,70 @@ func NewScriptCommand() (*cobra.Command, error) {
 	return root, nil
 }
 
-func newScriptDescription(name, short, long string) (*cmds.CommandDescription, error) {
+func newScriptSections() (schema.Section, schema.Section, error) {
 	glazedSection, err := settings.NewGlazedSchema()
 	if err != nil {
-		return nil, fmt.Errorf("build output settings: %w", err)
+		return nil, nil, fmt.Errorf("build output settings: %w", err)
 	}
 	commandSection, err := cli.NewCommandSettingsSection()
 	if err != nil {
-		return nil, fmt.Errorf("build command settings: %w", err)
+		return nil, nil, fmt.Errorf("build command settings: %w", err)
 	}
-	return cmds.NewCommandDescription(name,
-		cmds.WithShort(short), cmds.WithLong(long),
-		cmds.WithFlags(
-			fields.New("source", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Path to the JavaScript program source")),
-			fields.New("profile", fields.TypeString, fields.WithDefault("signup"), fields.WithHelp("Host-owned production schema profile (currently: signup)")),
-		),
-		cmds.WithSections(glazedSection, commandSection),
-	), nil
+	return glazedSection, commandSection, nil
 }
 
 func NewScriptValidateCommand() (*ScriptValidateCommand, error) {
-	description, err := newScriptDescription("validate", "Compile and validate a Tiny-IDP JavaScript program", `Compile a Tiny-IDP JavaScript source file without starting an HTTP server.
+	glazedSection, commandSection, err := newScriptSections()
+	if err != nil {
+		return nil, err
+	}
+	description := cmds.NewCommandDescription("validate",
+		cmds.WithShort("Compile and validate a Tiny-IDP JavaScript program"), cmds.WithLong(`Compile a Tiny-IDP JavaScript source file without starting an HTTP server.
 
 Validation materializes the program in an isolated runtime, applies the host-owned
 signup schema profile, and prints stable source, program, callback-registry, and
 schema fingerprints. A nonzero exit reports compilation or contract diagnostics.
 
 Example:
-  tinyidp script validate --source ./signup.js --output json`)
-	if err != nil {
-		return nil, err
-	}
+  tinyidp script validate --source ./signup.js --output json`),
+		cmds.WithFlags(
+			fields.New("source", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Path to the JavaScript program source")),
+			fields.New("profile", fields.TypeString, fields.WithDefault("signup"), fields.WithHelp("Host-owned production schema profile (currently: signup)")),
+		),
+		cmds.WithSections(glazedSection, commandSection),
+	)
 	return &ScriptValidateCommand{CommandDescription: description}, nil
 }
 
 func NewScriptExplainCommand() (*ScriptExplainCommand, error) {
-	description, err := newScriptDescription("explain", "Explain workflows and native capabilities in a Tiny-IDP program", `Compile and explain a Tiny-IDP JavaScript source file without executing browser requests.
+	glazedSection, commandSection, err := newScriptSections()
+	if err != nil {
+		return nil, err
+	}
+	description := cmds.NewCommandDescription("explain",
+		cmds.WithShort("Explain workflows and native capabilities in a Tiny-IDP program"), cmds.WithLong(`Compile and explain a Tiny-IDP JavaScript source file without executing browser requests.
 
 The output is a stable, secret-free projection of workflows, handlers, schemas,
 effects, continuation edges, budgets, and provider contracts.
 
 Example:
-  tinyidp script explain --source ./signup.js --output json`)
-	if err != nil {
-		return nil, err
-	}
+  tinyidp script explain --source ./signup.js --output json`),
+		cmds.WithFlags(
+			fields.New("source", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Path to the JavaScript program source")),
+			fields.New("profile", fields.TypeString, fields.WithDefault("signup"), fields.WithHelp("Host-owned production schema profile (currently: signup)")),
+		),
+		cmds.WithSections(glazedSection, commandSection),
+	)
 	return &ScriptExplainCommand{CommandDescription: description}, nil
 }
 
 func NewScriptTestCommand() (*ScriptTestCommand, error) {
-	description, err := newScriptDescription("test", "Run declarative embedded Tiny-IDP program tests", `Compile a Tiny-IDP JavaScript source file and run its declarative embedded tests.
+	glazedSection, commandSection, err := newScriptSections()
+	if err != nil {
+		return nil, err
+	}
+	description := cmds.NewCommandDescription("test",
+		cmds.WithShort("Run declarative embedded Tiny-IDP program tests"), cmds.WithLong(`Compile a Tiny-IDP JavaScript source file and run its declarative embedded tests.
 
 Each test names a registered lambda, supplies bounded JSON input, and expects a
 declared outcome kind. Tests receive no ambient capabilities or secrets; a
@@ -122,10 +136,13 @@ capability-dependent test fails unless a future explicit deterministic fake is
 registered by the host.
 
 Example:
-  tinyidp script test --source ./signup.js --output json`)
-	if err != nil {
-		return nil, err
-	}
+  tinyidp script test --source ./signup.js --output json`),
+		cmds.WithFlags(
+			fields.New("source", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Path to the JavaScript program source")),
+			fields.New("profile", fields.TypeString, fields.WithDefault("signup"), fields.WithHelp("Host-owned production schema profile (currently: signup)")),
+		),
+		cmds.WithSections(glazedSection, commandSection),
+	)
 	return &ScriptTestCommand{CommandDescription: description}, nil
 }
 

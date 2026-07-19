@@ -64,3 +64,17 @@ func TestGenerationManagerKeepsActiveGenerationWhenEmbeddedTestFails(t *testing.
 	require.Error(t, err)
 	assert.Equal(t, active, manager.Snapshot().ActiveFingerprint)
 }
+
+func TestGenerationManagerReadinessTracksClosedActivePool(t *testing.T) {
+	ctx := context.Background()
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.DefaultSource, 1, 1)
+	require.NoError(t, err)
+	require.NoError(t, manager.Ready())
+	snapshot := manager.Snapshot()
+	assert.True(t, snapshot.Ready)
+	assert.Equal(t, 1, snapshot.Pool.Capacity)
+
+	require.NoError(t, manager.Close(ctx))
+	assert.Error(t, manager.Ready())
+	assert.False(t, manager.Snapshot().Ready)
+}
