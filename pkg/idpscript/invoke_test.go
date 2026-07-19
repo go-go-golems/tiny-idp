@@ -76,6 +76,7 @@ func TestPoolProjectsSecretsAsOpaqueCommitHandles(t *testing.T) {
 	submission, err := idpworkflow.ParseSubmission([]idpworkflow.FieldDescriptor{password, confirmation}, []idpworkflow.ActionDescriptor{submit}, url.Values{
 		"interaction":           {"interaction"},
 		"csrf_token":            {"csrf"},
+		"workflow_continuation": {"continuation"},
 		"action":                {"submit"},
 		"password":              {"correct horse battery staple"},
 		"password_confirmation": {"correct horse battery staple"},
