@@ -13,6 +13,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
@@ -47,8 +48,9 @@ type UIConfig struct {
 // its continuation store into the embedded provider. It has no listener,
 // TLS, OAuth, cookie, key, or general storage authority.
 type ScriptedSignupConfig struct {
-	Executor      *idpsignup.Executor
-	Continuations idpcontinuation.Store
+	Executor           *idpsignup.Executor
+	Continuations      idpcontinuation.Store
+	DurableInvitations *idpinvite.DurableService
 }
 
 // RegistrationConfig enables provider-owned self-registration as a continuation
