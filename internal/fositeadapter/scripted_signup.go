@@ -160,7 +160,7 @@ type signupCommitResult struct {
 // cannot call this operation directly; it can only return a declared effect
 // plan that this method revalidates.
 func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress string) (signupCommitResult, error) {
-	if len(outcome.Effects) != 2 || outcome.Effects[0].Kind != idpprogram.EffectCreateLocalIdentity || outcome.Effects[1].Kind != idpprogram.EffectAttachPasswordCredential {
+	if len(outcome.Effects) != 2 && len(outcome.Effects) != 3 || outcome.Effects[0].Kind != idpprogram.EffectCreateLocalIdentity || outcome.Effects[1].Kind != idpprogram.EffectAttachPasswordCredential || len(outcome.Effects) == 3 && outcome.Effects[2].Kind != idpprogram.EffectConsumeInvitation {
 		return signupCommitResult{}, errors.New("signup script emitted an invalid effect sequence")
 	}
 	var identity struct {
@@ -171,11 +171,19 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 		PasswordHandle             string `json:"passwordHandle"`
 		PasswordConfirmationHandle string `json:"passwordConfirmationHandle"`
 	}
+	var invitation struct {
+		Code string `json:"code"`
+	}
 	if err := json.Unmarshal(outcome.Effects[0].Payload, &identity); err != nil {
 		return signupCommitResult{}, errors.Wrap(err, "decode signup identity effect")
 	}
 	if err := json.Unmarshal(outcome.Effects[1].Payload, &credential); err != nil {
 		return signupCommitResult{}, errors.Wrap(err, "decode signup credential effect")
+	}
+	if len(outcome.Effects) == 3 {
+		if p.durableInvitations == nil || json.Unmarshal(outcome.Effects[2].Payload, &invitation) != nil || strings.TrimSpace(invitation.Code) == "" {
+			return signupCommitResult{}, errors.New("signup invitation effect is not acceptable")
+		}
 	}
 	password, confirmation, ok := submissionSecrets(submission, credential.PasswordHandle, credential.PasswordConfirmationHandle)
 	if !ok || len(password) == 0 || !equalBytes(password, confirmation) || !p.allowRegistration(ctx, record.ClientID, clientAddress, identity.Login) {
@@ -204,6 +212,11 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 		}
 		if err := p.registration.CommitPrepared(ctx, tx, prepared); err != nil {
 			return err
+		}
+		if len(outcome.Effects) == 3 {
+			if _, err := p.durableInvitations.RedeemInTransaction(ctx, tx, invitation.Code, record.ClientID, now); err != nil {
+				return err
+			}
 		}
 		if err := tx.CreateSession(ctx, session); err != nil {
 			return err

@@ -118,6 +118,7 @@ func (e *Executor) Submit(ctx context.Context, values map[idpworkflow.FieldID]st
 	input, err := json.Marshal(map[string]string{
 		"displayName": values[idpworkflow.FieldDisplayName],
 		"email":       values[idpworkflow.FieldEmail],
+		"inviteCode":  values[idpworkflow.FieldInviteCode],
 	})
 	if err != nil {
 		return idpprogram.Outcome{}, errors.Wrap(err, "encode signup submission")
@@ -135,7 +136,7 @@ func schemas() map[string]idpprogram.Schema {
 			"hasBrowserSession": {Ref: "signupBool", Required: true},
 		}},
 		"signupSubmittedInput": {ID: "signupSubmittedInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 1024, Additional: false, Fields: map[string]idpprogram.SchemaField{
-			"displayName": {Ref: "signupText"}, "email": {Ref: "signupEmail"},
+			"displayName": {Ref: "signupText"}, "email": {Ref: "signupEmail"}, "inviteCode": {Ref: "signupText"},
 		}},
 		"signupText":   {ID: "signupText", Kind: idpprogram.SchemaKindString, MaxBytes: 512, MaxLength: 120},
 		"signupEmail":  {ID: "signupEmail", Kind: idpprogram.SchemaKindString, MaxBytes: 512, MaxLength: 320},

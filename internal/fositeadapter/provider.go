@@ -37,6 +37,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
@@ -88,6 +89,7 @@ type Options struct {
 	PasswordWork          idp.PasswordWorkConfig
 	Registration          RegistrationConfig
 	ScriptedSignup        *idpsignup.Executor
+	DurableInvitations    *idpinvite.DurableService
 	WorkflowContinuations idpcontinuation.Store
 	// AuthorizePersistenceHook is a test-only failpoint hook for the durable
 	// authorization response lifecycle. Production callers should leave it nil.
@@ -127,6 +129,7 @@ type Provider struct {
 	authenticator         idp.PasswordAuthenticator
 	registration          *idpaccounts.Service
 	scriptedSignup        *idpsignup.Executor
+	durableInvitations    *idpinvite.DurableService
 	workflowContinuations *idpcontinuation.Service
 	auditFailures         atomic.Uint64
 	securityFailures      atomic.Uint64
@@ -381,7 +384,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("create scripted signup continuation service: %w", continuationErr)
 		}
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, durableInvitations: opts.DurableInvitations, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)

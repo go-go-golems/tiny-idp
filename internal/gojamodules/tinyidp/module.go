@@ -483,20 +483,29 @@ func NewCommitContext(vm *goja.Runtime, secrets *InvocationSecrets) *goja.Object
 		password := requireSecretHandle(vm, secrets, spec.Get("password"), "signup password")
 		confirmation := requireSecretHandle(vm, secrets, spec.Get("passwordConfirmation"), "signup password confirmation")
 		return vm.ToValue(map[string]any{
-			"kind": idpprogram.OutcomeCommit,
-			"effects": []map[string]any{
-				{"kind": idpprogram.EffectCreateLocalIdentity, "payload": map[string]any{
-					"login":       requireString(vm, spec.Get("login"), "signup login"),
-					"displayName": requireString(vm, spec.Get("displayName"), "signup display name"),
-				}},
-				{"kind": idpprogram.EffectAttachPasswordCredential, "payload": map[string]any{
-					"passwordHandle":             password.Token(),
-					"passwordConfirmationHandle": confirmation.Token(),
-				}},
-			},
+			"kind":    idpprogram.OutcomeCommit,
+			"effects": signupEffects(vm, spec, password, confirmation),
 		})
 	})
 	return commit
+}
+
+func signupEffects(vm *goja.Runtime, spec *goja.Object, password, confirmation idpworkflow.SecretHandle) []map[string]any {
+	effects := []map[string]any{
+		{"kind": idpprogram.EffectCreateLocalIdentity, "payload": map[string]any{
+			"login":       requireString(vm, spec.Get("login"), "signup login"),
+			"displayName": requireString(vm, spec.Get("displayName"), "signup display name"),
+		}},
+		{"kind": idpprogram.EffectAttachPasswordCredential, "payload": map[string]any{
+			"passwordHandle":             password.Token(),
+			"passwordConfirmationHandle": confirmation.Token(),
+		}},
+	}
+	inviteCode := optionalString(vm, spec.Get("inviteCode"), "signup invite code")
+	if inviteCode != "" {
+		effects = append(effects, map[string]any{"kind": idpprogram.EffectConsumeInvitation, "payload": map[string]any{"code": inviteCode}})
+	}
+	return effects
 }
 
 func requireSecretHandle(vm *goja.Runtime, secrets *InvocationSecrets, value goja.Value, name string) idpworkflow.SecretHandle {
@@ -636,6 +645,17 @@ func requireString(vm *goja.Runtime, value goja.Value, name string) string {
 	ret, ok := value.Export().(string)
 	if !ok || ret == "" {
 		panic(vm.NewTypeError("%s must be a non-empty string", name))
+	}
+	return ret
+}
+
+func optionalString(vm *goja.Runtime, value goja.Value, name string) string {
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
+		return ""
+	}
+	ret, ok := value.Export().(string)
+	if !ok {
+		panic(vm.NewTypeError("%s must be a string", name))
 	}
 	return ret
 }
