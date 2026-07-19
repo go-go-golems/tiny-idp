@@ -74,20 +74,32 @@ func (s *Store) RecordEmailChallengeAttempt(ctx context.Context, id string, b id
 	}
 	return idpemailchallenge.AttemptResult{RemainingAttempts: c.MaximumAttempts - c.Attempts, Terminal: c.Attempts >= c.MaximumAttempts}, nil
 }
-func (s *Store) ReserveEmailChallengeResend(ctx context.Context, id string, b idpemailchallenge.VerificationBindings, now time.Time) (idpemailchallenge.ResendResult, error) {
-	c, err := s.checked(ctx, s.db, id, b, now)
+func (s *Store) ResendEmailChallenge(ctx context.Context, id string, hash []byte, b idpemailchallenge.VerificationBindings, now time.Time) (idpemailchallenge.PendingChallenge, error) {
+	if len(hash) < 32 {
+		return idpemailchallenge.PendingChallenge{}, idpemailchallenge.ErrConflict
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return idpemailchallenge.ResendResult{}, err
+		return idpemailchallenge.PendingChallenge{}, err
+	}
+	defer tx.Rollback()
+	c, err := s.checked(ctx, tx, id, b, now)
+	if err != nil {
+		return idpemailchallenge.PendingChallenge{}, err
 	}
 	if c.Resends >= c.MaximumResends || now.Before(c.ResendNotBefore) {
-		return idpemailchallenge.ResendResult{}, idpemailchallenge.ErrResendLimited
+		return idpemailchallenge.PendingChallenge{}, idpemailchallenge.ErrResendLimited
 	}
+	c.CodeHash = append([]byte(nil), hash...)
 	c.Resends++
 	c.LastSentAt = now.UTC()
-	if err = s.save(ctx, s.db, c); err != nil {
-		return idpemailchallenge.ResendResult{}, err
+	if err = s.save(ctx, tx, c); err != nil {
+		return idpemailchallenge.PendingChallenge{}, err
 	}
-	return idpemailchallenge.ResendResult{Allowed: true, RemainingResends: c.MaximumResends - c.Resends, NotBefore: c.ResendNotBefore}, nil
+	if err = tx.Commit(); err != nil {
+		return idpemailchallenge.PendingChallenge{}, err
+	}
+	return c, nil
 }
 func (s *Store) ListExpiredEmailChallenges(ctx context.Context, now time.Time, limit int) ([]idpemailchallenge.PendingChallenge, error) {
 	if limit <= 0 {

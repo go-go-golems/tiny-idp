@@ -37,3 +37,20 @@ func TestServiceCreatesMailAndNativeEvidence(t *testing.T) {
 	_, err = s.Evidence(context.Background(), ref, idpemailchallenge.VerificationBindings{WorkflowID: "other"})
 	assert.ErrorIs(t, err, idpemailchallenge.ErrBinding)
 }
+
+func TestServiceResendRotatesCodeAndEnforcesPolicy(t *testing.T) {
+	now := time.Now().UTC()
+	m := &mailer{}
+	s, err := idpemailchallenge.NewService(idpemailchallenge.NewMemoryStore(), m, []byte("0123456789abcdef0123456789abcdef"))
+	require.NoError(t, err)
+	ref, err := s.CreateAndSend(context.Background(), idpemailchallenge.CreateRequest{ID: "resend-challenge", Email: "ada@example.test", Template: "signup", Bindings: testBindings(), ExpiresAt: now.Add(time.Hour), MaximumAttempts: 3, MaximumResends: 1})
+	require.NoError(t, err)
+	firstCode := m.requests[0].Code
+	require.NoError(t, s.Resend(context.Background(), ref, testBindings()))
+	require.Len(t, m.requests, 2)
+	assert.NotEqual(t, firstCode, m.requests[1].Code)
+	_, err = s.Verify(context.Background(), ref, firstCode, testBindings())
+	assert.ErrorIs(t, err, idpemailchallenge.ErrConflict)
+	_, err = s.Verify(context.Background(), ref, m.requests[1].Code, testBindings())
+	require.NoError(t, err)
+}

@@ -12,7 +12,7 @@ type Store interface {
 	LoadEmailChallenge(context.Context, string, time.Time) (PendingChallenge, error)
 	VerifyEmailChallenge(context.Context, string, []byte, VerificationBindings, time.Time) (VerifiedEmailEvidence, error)
 	RecordEmailChallengeAttempt(context.Context, string, VerificationBindings, time.Time) (AttemptResult, error)
-	ReserveEmailChallengeResend(context.Context, string, VerificationBindings, time.Time) (ResendResult, error)
+	ResendEmailChallenge(context.Context, string, []byte, VerificationBindings, time.Time) (PendingChallenge, error)
 	ListExpiredEmailChallenges(context.Context, time.Time, int) ([]PendingChallenge, error)
 	DeleteExpiredEmailChallenge(context.Context, string, time.Time) error
 }

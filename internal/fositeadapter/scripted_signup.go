@@ -93,6 +93,21 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
 		return
 	}
+	if submission.Action == idpworkflow.ActionResend {
+		challengeID, ok := pendingEmailChallengeReference(continuation)
+		if !ok || p.emailChallenges == nil {
+			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, nil)
+			return
+		}
+		if err := p.emailChallenges.Resend(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, idpemailchallenge.BindingsFromContinuation(continuation)); err != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_resend", ClientID: record.ClientID, Result: "rejected", Reason: emailChallengeFailureReason(err)})
+			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, nil)
+			return
+		}
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_resend", ClientID: record.ClientID, Result: "accepted"})
+		p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, nil, nil))
+		return
+	}
 	input, err := p.scriptedSignup.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
 	if err == nil {
 		input, err = mergeWorkflowCarry(continuation.Carry, input)
@@ -139,6 +154,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	}
 	if outcome.Kind == idpprogram.OutcomeChallenge {
 		if err := p.beginEmailChallenge(w, r, outcome, continuationHandle, continuation, record, interactionHandle); err != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_send", ClientID: record.ClientID, Result: "rejected", Reason: emailChallengeFailureReason(err)})
 			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 			return
 		}
@@ -219,20 +235,24 @@ func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, o
 	code, _ := registry.Field(idpworkflow.FieldEmailCode)
 	submit, _ := registry.Action(idpworkflow.ActionSubmit)
 	deny, _ := registry.Action(idpworkflow.ActionDeny)
+	resend, _ := registry.Action(idpworkflow.ActionResend)
 	challengeID, err := randomB64(24)
 	if err != nil {
 		return errors.Wrap(err, "generate email challenge id")
 	}
-	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: outcome.Continuation.HandlerID, InputSchema: inputSchema, Carry: outcome.Continuation.Carry, EvidenceReferences: []idpcontinuation.EvidenceReference{{Kind: "pendingEmailChallenge", ID: challengeID}}, Presentation: idpcontinuation.PresentationState{ID: "email-code", Fields: []string{string(idpworkflow.FieldEmailCode)}, AllowedActions: []string{string(idpworkflow.ActionSubmit), string(idpworkflow.ActionDeny)}, PublicValues: json.RawMessage(`{}`)}, ExpiresAt: p.now().Add(time.Duration(outcome.Continuation.ExpiresIn) * time.Second)}
-	nextHandle, stored, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindings(record, r), next)
+	expiresAt := p.now().Add(time.Duration(outcome.Continuation.ExpiresIn) * time.Second)
+	challengeBindings := idpemailchallenge.BindingsFromContinuation(current)
+	challengeBindings.ResumeHandlerID = outcome.Continuation.HandlerID
+	if _, err := p.emailChallenges.CreateAndSend(r.Context(), idpemailchallenge.CreateRequest{ID: challengeID, Email: request.Email, Template: request.Template, Bindings: challengeBindings, ExpiresAt: expiresAt, MaximumAttempts: uint32(request.MaximumAttempts), MaximumResends: uint32(request.MaximumResends)}); err != nil {
+		return err
+	}
+	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: outcome.Continuation.HandlerID, InputSchema: inputSchema, Carry: outcome.Continuation.Carry, EvidenceReferences: []idpcontinuation.EvidenceReference{{Kind: "pendingEmailChallenge", ID: challengeID}}, Presentation: idpcontinuation.PresentationState{ID: "email-code", Fields: []string{string(idpworkflow.FieldEmailCode)}, AllowedActions: []string{string(idpworkflow.ActionSubmit), string(idpworkflow.ActionResend), string(idpworkflow.ActionDeny)}, PublicValues: json.RawMessage(`{}`)}, ExpiresAt: expiresAt}
+	nextHandle, _, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindings(record, r), next)
 	if err != nil {
 		return err
 	}
-	_, err = p.emailChallenges.CreateAndSend(r.Context(), idpemailchallenge.CreateRequest{ID: challengeID, Email: request.Email, Template: request.Template, Bindings: idpemailchallenge.BindingsFromContinuation(stored), ExpiresAt: stored.ExpiresAt, MaximumAttempts: uint32(request.MaximumAttempts), MaximumResends: uint32(request.MaximumResends)})
-	if err != nil {
-		return err
-	}
-	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, []idpworkflow.FieldDescriptor{code}, []idpworkflow.ActionDescriptor{submit, deny}, map[idpworkflow.FieldID]string{}, nil))
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_send", ClientID: record.ClientID, Result: "accepted"})
+	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, []idpworkflow.FieldDescriptor{code}, []idpworkflow.ActionDescriptor{submit, resend, deny}, map[idpworkflow.FieldID]string{}, nil))
 	return nil
 }
 
@@ -417,6 +437,23 @@ func verifiedEmailReference(continuation idpcontinuation.WorkflowContinuation) (
 		}
 	}
 	return "", false
+}
+
+func emailChallengeFailureReason(err error) string {
+	switch {
+	case errors.Is(err, idpemailchallenge.ErrExpired):
+		return "expired"
+	case errors.Is(err, idpemailchallenge.ErrAttemptsExceeded):
+		return "attempts_exceeded"
+	case errors.Is(err, idpemailchallenge.ErrResendLimited):
+		return "resend_limited"
+	case errors.Is(err, idpemailchallenge.ErrBinding):
+		return "binding_rejected"
+	case errors.Is(err, idpemailchallenge.ErrAlreadyTerminal), errors.Is(err, idpemailchallenge.ErrConflict):
+		return "already_terminal"
+	default:
+		return "unavailable"
+	}
 }
 
 func mergeWorkflowCarry(carry, input json.RawMessage) (json.RawMessage, error) {

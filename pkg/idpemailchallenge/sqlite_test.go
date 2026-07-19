@@ -38,7 +38,7 @@ func TestChallengeAttemptsExpiryResendAndCleanupFailClosed(t *testing.T) {
 	challenge.MaximumAttempts = 2
 	challenge.ResendNotBefore = now.Add(time.Minute)
 	require.NoError(t, store.CreateEmailChallenge(context.Background(), challenge))
-	_, err := store.ReserveEmailChallengeResend(context.Background(), challenge.ID, testBindings(), now)
+	_, err := store.ResendEmailChallenge(context.Background(), challenge.ID, []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), testBindings(), now)
 	assert.ErrorIs(t, err, idpemailchallenge.ErrResendLimited)
 	_, err = store.VerifyEmailChallenge(context.Background(), challenge.ID, []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), testBindings(), now)
 	assert.ErrorIs(t, err, idpemailchallenge.ErrConflict)

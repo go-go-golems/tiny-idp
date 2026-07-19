@@ -85,6 +85,27 @@ func (s *Service) Verify(ctx context.Context, ref Reference, code string, b Veri
 	return s.store.VerifyEmailChallenge(ctx, ref.ID, s.hash(code), b, s.now())
 }
 
+// Resend rotates the code through one atomic native store transition before
+// delivering it through the typed mailer. The browser supplies only the
+// durable reference; it cannot choose a recipient, message, or code.
+func (s *Service) Resend(ctx context.Context, ref Reference, b VerificationBindings) error {
+	if s == nil || ref.Version != RecordVersionV1 || !valid(ref.ID) {
+		return ErrConflict
+	}
+	code, err := s.newCode()
+	if err != nil {
+		return errors.Wrap(err, "generate email challenge code")
+	}
+	c, err := s.store.ResendEmailChallenge(ctx, ref.ID, s.hash(code), b, s.now())
+	if err != nil {
+		return err
+	}
+	if err := s.mailer.SendEmailChallenge(ctx, MailRequest{Challenge: c.Reference(), Recipient: c.Email, Template: c.Template, Code: code, ExpiresAt: c.ExpiresAt}); err != nil {
+		return errors.Wrap(err, "deliver resent email challenge")
+	}
+	return nil
+}
+
 // Evidence rehydrates evidence that was previously created by Verify. It is
 // deliberately a native operation: a continuation may retain only a typed
 // challenge reference, never a script-created "verified" marker or email

@@ -76,20 +76,21 @@ func (s *MemoryStore) RecordEmailChallengeAttempt(_ context.Context, id string, 
 	s.records[id] = c
 	return AttemptResult{RemainingAttempts: c.MaximumAttempts - c.Attempts, Terminal: c.Attempts >= c.MaximumAttempts}, nil
 }
-func (s *MemoryStore) ReserveEmailChallengeResend(_ context.Context, id string, b VerificationBindings, now time.Time) (ResendResult, error) {
+func (s *MemoryStore) ResendEmailChallenge(_ context.Context, id string, codeHash []byte, b VerificationBindings, now time.Time) (PendingChallenge, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.checked(id, b, now)
 	if err != nil {
-		return ResendResult{}, err
+		return PendingChallenge{}, err
 	}
-	if c.Resends >= c.MaximumResends || now.Before(c.ResendNotBefore) {
-		return ResendResult{}, ErrResendLimited
+	if len(codeHash) < 32 || c.Resends >= c.MaximumResends || now.Before(c.ResendNotBefore) {
+		return PendingChallenge{}, ErrResendLimited
 	}
+	c.CodeHash = append([]byte(nil), codeHash...)
 	c.Resends++
 	c.LastSentAt = now.UTC()
 	s.records[id] = c
-	return ResendResult{Allowed: true, RemainingResends: c.MaximumResends - c.Resends, NotBefore: c.ResendNotBefore}, nil
+	return clone(c), nil
 }
 func (s *MemoryStore) ListExpiredEmailChallenges(_ context.Context, now time.Time, limit int) ([]PendingChallenge, error) {
 	if limit <= 0 {

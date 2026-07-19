@@ -87,6 +87,7 @@ type ActionID string
 const (
 	ActionSubmit ActionID = "submit"
 	ActionDeny   ActionID = "deny"
+	ActionResend ActionID = "resend"
 )
 
 type ActionDescriptor struct {
@@ -96,13 +97,13 @@ type ActionDescriptor struct {
 }
 
 func (d ActionDescriptor) Validate() error {
-	if d.ID != ActionSubmit && d.ID != ActionDeny {
+	if d.ID != ActionSubmit && d.ID != ActionDeny && d.ID != ActionResend {
 		return errors.Errorf("invalid workflow action %q", d.ID)
 	}
 	if d.Label == "" {
 		return errors.Errorf("workflow action %q label is required", d.ID)
 	}
-	if d.SkipFormValidation != (d.ID == ActionDeny) {
+	if d.SkipFormValidation != (d.ID == ActionDeny || d.ID == ActionResend) {
 		return errors.Errorf("workflow action %q has invalid form-validation policy", d.ID)
 	}
 	return nil
@@ -152,6 +153,7 @@ func DefaultRegistry() *Registry {
 	}, []ActionDescriptor{
 		{ID: ActionSubmit, Label: "Create account"},
 		{ID: ActionDeny, Label: "Cancel", SkipFormValidation: true},
+		{ID: ActionResend, Label: "Send another code", SkipFormValidation: true},
 	})
 	if err != nil {
 		panic(err)

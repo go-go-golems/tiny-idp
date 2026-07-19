@@ -2,6 +2,7 @@ package fositeadapter_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -20,6 +21,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/idpworkflow"
 )
 
 func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
@@ -144,11 +146,12 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 
 type signupEmailCapture struct {
 	requests []idpemailchallenge.MailRequest
+	err      error
 }
 
 func (m *signupEmailCapture) SendEmailChallenge(_ context.Context, request idpemailchallenge.MailRequest) error {
 	m.requests = append(m.requests, request)
-	return nil
+	return m.err
 }
 
 func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *testing.T) {
@@ -222,18 +225,40 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 	identityForm.Set("email", "verified-user@example.test")
 	identityForm.Set(idpui.DisplayNameFieldName, "Verified User")
 
+	mail.err = errors.New("test delivery failure")
+	response = submitRegistration(t, client, server.URL, identityForm)
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("mail failure signup status=%d", response.StatusCode)
+	}
+	if _, err := store.GetUserByLogin(ctx, "verified-user@example.test"); err == nil {
+		t.Fatal("mailer failure created an account")
+	}
+	mail.err = nil
 	response = submitRegistration(t, client, server.URL, identityForm)
 	body, err = io.ReadAll(response.Body)
 	response.Body.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="email_code"`) || len(mail.requests) != 1 {
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="email_code"`) || len(mail.requests) != 2 {
 		t.Fatalf("email-code page status=%d mail=%d body=%s", response.StatusCode, len(mail.requests), body)
+	}
+	resendForm := parseInteractionInputs(string(body))
+	resendForm.Set(idpui.ActionFieldName, string(idpworkflow.ActionResend))
+	resendForm.Set("email_code", "")
+	response = submitRegistration(t, client, server.URL, resendForm)
+	body, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || len(mail.requests) != 3 || mail.requests[1].Code == mail.requests[2].Code {
+		t.Fatalf("email resend status=%d mail=%d body=%s", response.StatusCode, len(mail.requests), body)
 	}
 	codeForm := parseInteractionInputs(string(body))
 	codeForm.Set(idpui.ActionFieldName, "submit")
-	codeForm.Set("email_code", mail.requests[0].Code)
+	codeForm.Set("email_code", mail.requests[2].Code)
 
 	response = submitRegistration(t, client, server.URL, codeForm)
 	body, err = io.ReadAll(response.Body)

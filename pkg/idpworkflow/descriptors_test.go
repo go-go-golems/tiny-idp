@@ -28,10 +28,13 @@ func TestDefaultRegistryFreezesSignupFieldAndActionPolicies(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, idpworkflow.NormalizeTrimLower, email.Normalize)
 	assert.Equal(t, 320, email.MaxLength)
-	assert.Equal(t, []idpworkflow.ActionID{idpworkflow.ActionDeny, idpworkflow.ActionSubmit}, registry.ActionIDs())
+	assert.Equal(t, []idpworkflow.ActionID{idpworkflow.ActionDeny, idpworkflow.ActionResend, idpworkflow.ActionSubmit}, registry.ActionIDs())
 	deny, ok := registry.Action(idpworkflow.ActionDeny)
 	require.True(t, ok)
 	assert.True(t, deny.SkipFormValidation)
+	resend, ok := registry.Action(idpworkflow.ActionResend)
+	require.True(t, ok)
+	assert.True(t, resend.SkipFormValidation)
 }
 
 func TestRegistryRejectsAuthorityChangingDescriptors(t *testing.T) {
