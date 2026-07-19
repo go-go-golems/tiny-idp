@@ -36,8 +36,11 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/memorystore"
 )
 
 var ProductionHandlerFactories = []string{
@@ -69,21 +72,23 @@ type Options struct {
 	// ClientSecrets optionally supplies plaintext client secrets for callers that
 	// are converting legacy/dev config into Fosite's BCrypt client store. The
 	// production embedded API should prefer BCrypt hashes in idpstore.Client.SecretHash.
-	ClientSecrets     map[string]string
-	CookieSecure      bool
-	CookieSameSite    http.SameSite
-	SessionCookieName string
-	CSRFCookieName    string
-	CookiePath        string
-	AccountChooser    AccountChooserConfig
-	Audit             idp.Sink
-	Consent           idp.ConsentPolicy
-	RateLimiter       idp.RateLimiter
-	ClientAddress     idp.ClientAddressResolver
-	Authenticator     idp.PasswordAuthenticator
-	PasswordPolicy    idp.PasswordAcceptancePolicy
-	PasswordWork      idp.PasswordWorkConfig
-	Registration      RegistrationConfig
+	ClientSecrets         map[string]string
+	CookieSecure          bool
+	CookieSameSite        http.SameSite
+	SessionCookieName     string
+	CSRFCookieName        string
+	CookiePath            string
+	AccountChooser        AccountChooserConfig
+	Audit                 idp.Sink
+	Consent               idp.ConsentPolicy
+	RateLimiter           idp.RateLimiter
+	ClientAddress         idp.ClientAddressResolver
+	Authenticator         idp.PasswordAuthenticator
+	PasswordPolicy        idp.PasswordAcceptancePolicy
+	PasswordWork          idp.PasswordWorkConfig
+	Registration          RegistrationConfig
+	ScriptedSignup        *idpsignup.Executor
+	WorkflowContinuations idpcontinuation.Store
 	// AuthorizePersistenceHook is a test-only failpoint hook for the durable
 	// authorization response lifecycle. Production callers should leave it nil.
 	AuthorizePersistenceHook func(point string) error
@@ -100,37 +105,39 @@ type Options struct {
 }
 
 type Provider struct {
-	issuer               oidcmeta.Issuer
-	store                idpstore.Store
-	fositeStore          *fositememory.MemoryStore
-	sqlStore             *sqlFositeStore
-	oauth2               fosite.OAuth2Provider
-	config               *fosite.Config
-	mode                 idpstore.Mode
-	csrfKey              []byte
-	cookieSecure         bool
-	cookieSameSite       http.SameSite
-	sessionCookieName    string
-	csrfCookieName       string
-	chooser              AccountChooserConfig
-	cookiePathValue      string
-	audit                idp.Sink
-	securityEvents       securitytrace.Sink
-	consent              idp.ConsentPolicy
-	rateLimiter          idp.RateLimiter
-	clientAddress        idp.ClientAddressResolver
-	authenticator        idp.PasswordAuthenticator
-	registration         *idpaccounts.Service
-	auditFailures        atomic.Uint64
-	securityFailures     atomic.Uint64
-	sessionTTL           time.Duration
-	interactionTTL       time.Duration
-	clock                func() time.Time
-	interactionUI        idpui.InteractionRenderer
-	workflowUI           idpui.WorkflowRenderer
-	deviceVerificationUI idpui.DeviceVerificationRenderer
-	deviceCodeGenerator  func() (deviceCode, userCode string, err error)
-	renderMetrics        interactionRenderMetrics
+	issuer                oidcmeta.Issuer
+	store                 idpstore.Store
+	fositeStore           *fositememory.MemoryStore
+	sqlStore              *sqlFositeStore
+	oauth2                fosite.OAuth2Provider
+	config                *fosite.Config
+	mode                  idpstore.Mode
+	csrfKey               []byte
+	cookieSecure          bool
+	cookieSameSite        http.SameSite
+	sessionCookieName     string
+	csrfCookieName        string
+	chooser               AccountChooserConfig
+	cookiePathValue       string
+	audit                 idp.Sink
+	securityEvents        securitytrace.Sink
+	consent               idp.ConsentPolicy
+	rateLimiter           idp.RateLimiter
+	clientAddress         idp.ClientAddressResolver
+	authenticator         idp.PasswordAuthenticator
+	registration          *idpaccounts.Service
+	scriptedSignup        *idpsignup.Executor
+	workflowContinuations *idpcontinuation.Service
+	auditFailures         atomic.Uint64
+	securityFailures      atomic.Uint64
+	sessionTTL            time.Duration
+	interactionTTL        time.Duration
+	clock                 func() time.Time
+	interactionUI         idpui.InteractionRenderer
+	workflowUI            idpui.WorkflowRenderer
+	deviceVerificationUI  idpui.DeviceVerificationRenderer
+	deviceCodeGenerator   func() (deviceCode, userCode string, err error)
+	renderMetrics         interactionRenderMetrics
 }
 
 // RegistrationConfig enables provider-owned account creation during a
@@ -347,7 +354,34 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if !opts.Registration.Enabled {
 		registration = nil
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	if opts.ScriptedSignup == nil && registration != nil {
+		executor, executorErr := idpsignup.New(ctx, "", 1)
+		if executorErr != nil {
+			return nil, fmt.Errorf("create default scripted signup executor: %w", executorErr)
+		}
+		opts.ScriptedSignup = executor
+	}
+	var workflowContinuations *idpcontinuation.Service
+	if opts.ScriptedSignup != nil {
+		continuationStore := opts.WorkflowContinuations
+		if continuationStore == nil {
+			if durableStore, ok := opts.Store.(idpcontinuation.Store); ok {
+				continuationStore = durableStore
+			} else if opts.Mode != idpstore.ProductionMode {
+				continuationStore = memorystore.NewContinuationStore()
+			} else {
+				return nil, fmt.Errorf("production scripted signup requires a durable workflow continuation store")
+			}
+		}
+		var continuationErr error
+		workflowContinuations, continuationErr = idpcontinuation.NewService(continuationStore, idpcontinuation.Config{
+			HashKey: opts.SecretKey, Clock: opts.Clock, Resolver: opts.ScriptedSignup,
+		})
+		if continuationErr != nil {
+			return nil, fmt.Errorf("create scripted signup continuation service: %w", continuationErr)
+		}
+	}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -764,6 +798,13 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create authorization interaction failed", http.StatusInternalServerError)
 		return
 	}
+	if actions.Has(idpstore.InteractionRequireRegistration) && p.scriptedSignup != nil {
+		if err := p.beginScriptedSignup(w, r, ar, client, handle, csrfToken); err != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.start_failed", ClientID: client.ID, Result: "rejected", Reason: "workflow_unavailable"})
+			http.Error(w, "registration request was not accepted", http.StatusServiceUnavailable)
+		}
+		return
+	}
 	page := p.newInteractionPage(handle, csrfToken, actions, ar.GetRequestForm(), !actions.Has(idpstore.InteractionRequireAccountSelection) && !actions.Has(idpstore.InteractionRequireRegistration), client.ID, []string(ar.GetRequestedScopes()), strings.TrimSpace(ar.GetRequestForm().Get("login_hint")), nil)
 	if actions.Has(idpstore.InteractionRequireAccountSelection) {
 		page.DocumentTitle = "Choose an account"
@@ -844,6 +885,10 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	if registrationRequired && !sameOriginBrowserPost(r) {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: "origin_rejected"})
 		http.Error(w, "registration request was not accepted", http.StatusForbidden)
+		return
+	}
+	if registrationRequired && p.scriptedSignup != nil {
+		p.resumeScriptedSignup(w, r, ar, client, record, handle, clientAddress)
 		return
 	}
 	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionRemoveAccount && action != idpui.ActionDeny) || (registrationRequired && action != idpui.ActionRegister && action != idpui.ActionDeny) || (!selectionRequired && !registrationRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {

@@ -25,13 +25,14 @@ func TestDefaultProgramPresentsAndRequestsNativeSignupCommit(t *testing.T) {
 	require.Len(t, presentation.Fields, 4)
 
 	submission, err := idpworkflow.ParseSubmission(presentation.Fields, presentation.Actions, url.Values{
-		idpui.InteractionFieldName: {"interaction"},
-		idpui.CSRFFieldName:        {"csrf"},
-		idpui.ActionFieldName:      {"submit"},
-		"display_name":             {"Ada"},
-		"email":                    {"ada@example.test"},
-		"password":                 {"correct horse battery staple"},
-		"password_confirmation":    {"correct horse battery staple"},
+		idpui.InteractionFieldName:          {"interaction"},
+		idpui.WorkflowContinuationFieldName: {"continuation"},
+		idpui.CSRFFieldName:                 {"csrf"},
+		idpui.ActionFieldName:               {"submit"},
+		"display_name":                      {"Ada"},
+		"email":                             {"ada@example.test"},
+		"password":                          {"correct horse battery staple"},
+		"password_confirmation":             {"correct horse battery staple"},
 	})
 	require.NoError(t, err)
 	defer submission.DestroySecrets()

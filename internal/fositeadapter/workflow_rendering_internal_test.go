@@ -31,6 +31,7 @@ func TestRenderWorkflowPreservesInteractionSecurityEnvelope(t *testing.T) {
 	body := response.Body.String()
 	require.Contains(t, body, `action="https://idp.example/authorize"`)
 	require.Contains(t, body, `name="interaction"`)
+	require.Contains(t, body, `name="workflow_continuation"`)
 	require.Contains(t, body, `name="csrf_token"`)
 }
 
@@ -47,13 +48,15 @@ func workflowRenderingPage(t *testing.T) idpui.WorkflowPage {
 	return idpui.WorkflowPage{
 		DocumentTitle: "Create an account",
 		Form: idpui.WorkflowForm{
-			ActionURL:        "https://idp.example/authorize",
-			RedirectOrigin:   "https://app.example",
-			InteractionField: idpui.InteractionFieldName,
-			Interaction:      strings.Repeat("a", 32),
-			CSRFField:        idpui.CSRFFieldName,
-			CSRFToken:        strings.Repeat("b", 32),
-			ActionField:      idpui.ActionFieldName,
+			ActionURL:         "https://idp.example/authorize",
+			RedirectOrigin:    "https://app.example",
+			InteractionField:  idpui.InteractionFieldName,
+			Interaction:       strings.Repeat("a", 32),
+			ContinuationField: idpui.WorkflowContinuationFieldName,
+			Continuation:      strings.Repeat("c", 32),
+			CSRFField:         idpui.CSRFFieldName,
+			CSRFToken:         strings.Repeat("b", 32),
+			ActionField:       idpui.ActionFieldName,
 		},
 		Fields:  []idpui.WorkflowField{{Descriptor: email, Value: "ada@example.test"}, {Descriptor: password}},
 		Actions: []idpui.WorkflowAction{{Descriptor: submit}},

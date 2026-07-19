@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	interactionFieldName = "interaction"
-	csrfFieldName        = "csrf_token"
-	actionFieldName      = "action"
+	interactionFieldName  = "interaction"
+	csrfFieldName         = "csrf_token"
+	actionFieldName       = "action"
+	continuationFieldName = "workflow_continuation"
 )
 
 // Submission is the native projection of one workflow form POST. PublicValues
@@ -20,6 +21,7 @@ const (
 // callers cannot accidentally mix them with normal JavaScript input strings.
 type Submission struct {
 	Interaction  string
+	Continuation string
 	CSRFToken    string
 	Action       ActionID
 	PublicValues map[FieldID]string
@@ -57,7 +59,7 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 	}
 
 	for name := range form {
-		if name == interactionFieldName || name == csrfFieldName || name == actionFieldName {
+		if name == interactionFieldName || name == csrfFieldName || name == actionFieldName || name == continuationFieldName {
 			continue
 		}
 		if _, ok := expected[name]; !ok {
@@ -72,6 +74,10 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 	if err != nil {
 		return Submission{}, err
 	}
+	continuation, err := singleton(form, continuationFieldName, true)
+	if err != nil {
+		return Submission{}, err
+	}
 	actionValue, err := singleton(form, actionFieldName, true)
 	if err != nil {
 		return Submission{}, err
@@ -81,7 +87,7 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 		return Submission{}, errors.Errorf("workflow submission has unsupported action %q", actionValue)
 	}
 
-	result := Submission{Interaction: interaction, CSRFToken: csrfToken, Action: action.ID, PublicValues: map[FieldID]string{}}
+	result := Submission{Interaction: interaction, Continuation: continuation, CSRFToken: csrfToken, Action: action.ID, PublicValues: map[FieldID]string{}}
 	secretValues := map[FieldID][]byte{}
 	defer func() {
 		for field, value := range secretValues {

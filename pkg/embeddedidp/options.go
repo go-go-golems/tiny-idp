@@ -12,6 +12,8 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
@@ -37,7 +39,16 @@ type TokenConfig struct {
 
 type UIConfig struct {
 	Renderer                   idpui.InteractionRenderer
+	WorkflowRenderer           idpui.WorkflowRenderer
 	DeviceVerificationRenderer idpui.DeviceVerificationRenderer
+}
+
+// ScriptedSignupConfig threads an activated, bounded signup generation and
+// its continuation store into the embedded provider. It has no listener,
+// TLS, OAuth, cookie, key, or general storage authority.
+type ScriptedSignupConfig struct {
+	Executor      *idpsignup.Executor
+	Continuations idpcontinuation.Store
 }
 
 // RegistrationConfig enables provider-owned self-registration as a continuation
@@ -87,6 +98,7 @@ type Options struct {
 	UI             UIConfig
 	AccountChooser AccountChooserConfig
 	Registration   RegistrationConfig
+	ScriptedSignup ScriptedSignupConfig
 }
 
 func (o Options) Validate(ctx context.Context) error {

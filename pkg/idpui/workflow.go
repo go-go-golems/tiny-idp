@@ -23,13 +23,15 @@ type WorkflowPage struct {
 }
 
 type WorkflowForm struct {
-	ActionURL        string
-	RedirectOrigin   string
-	InteractionField string
-	Interaction      string
-	CSRFField        string
-	CSRFToken        string
-	ActionField      string
+	ActionURL         string
+	RedirectOrigin    string
+	InteractionField  string
+	Interaction       string
+	CSRFField         string
+	CSRFToken         string
+	ActionField       string
+	ContinuationField string
+	Continuation      string
 }
 
 type WorkflowField struct {
@@ -62,11 +64,11 @@ func (p WorkflowPage) Validate() error {
 			return fmt.Errorf("workflow redirect origin must be an absolute HTTP(S) origin")
 		}
 	}
-	if p.Form.InteractionField != InteractionFieldName || p.Form.CSRFField != CSRFFieldName || p.Form.ActionField != ActionFieldName {
+	if p.Form.InteractionField != InteractionFieldName || p.Form.CSRFField != CSRFFieldName || p.Form.ActionField != ActionFieldName || p.Form.ContinuationField != WorkflowContinuationFieldName {
 		return fmt.Errorf("workflow form fields must use the provider contract")
 	}
-	if p.Form.Interaction == "" || p.Form.CSRFToken == "" {
-		return fmt.Errorf("workflow interaction and CSRF values are required")
+	if p.Form.Interaction == "" || p.Form.CSRFToken == "" || p.Form.Continuation == "" {
+		return fmt.Errorf("workflow interaction, continuation, and CSRF values are required")
 	}
 	if len(p.Fields) == 0 || len(p.Actions) == 0 {
 		return fmt.Errorf("workflow page requires fields and actions")

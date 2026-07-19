@@ -73,12 +73,13 @@ func TestParseSubmissionDenyStillRequiresExactShapeButSkipsValueValidation(t *te
 
 func validForm() url.Values {
 	return url.Values{
-		idpui.InteractionFieldName: {"interaction"},
-		idpui.CSRFFieldName:        {"csrf"},
-		idpui.ActionFieldName:      {"submit"},
-		"display_name":             {" Ada "},
-		"email":                    {" ADA@EXAMPLE.TEST "},
-		"password":                 {"correct horse battery staple"},
+		idpui.InteractionFieldName:          {"interaction"},
+		idpui.WorkflowContinuationFieldName: {"continuation"},
+		idpui.CSRFFieldName:                 {"csrf"},
+		idpui.ActionFieldName:               {"submit"},
+		"display_name":                      {" Ada "},
+		"email":                             {" ADA@EXAMPLE.TEST "},
+		"password":                          {"correct horse battery staple"},
 	}
 }
 

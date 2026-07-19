@@ -19,6 +19,7 @@
       </div>
       {{end}}
       <input type="hidden" name="{{.Form.InteractionField}}" value="{{.Form.Interaction}}">
+      <input type="hidden" name="{{.Form.ContinuationField}}" value="{{.Form.Continuation}}">
       <input type="hidden" name="{{.Form.CSRFField}}" value="{{.Form.CSRFToken}}">
       <p>{{range .Actions}}<button class="btn btn-primary me-2" type="submit" name="{{$.Form.ActionField}}" value="{{.Descriptor.ID}}"{{if .Descriptor.SkipFormValidation}} formnovalidate{{end}}>{{.Descriptor.Label}}</button>{{end}}</p>
     </form>

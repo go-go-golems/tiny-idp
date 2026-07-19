@@ -10,6 +10,7 @@ const (
 	InteractionFieldName          = "interaction"
 	CSRFFieldName                 = "csrf_token"
 	ActionFieldName               = "action"
+	WorkflowContinuationFieldName = "workflow_continuation"
 	LoginFieldName                = "login"
 	PasswordFieldName             = "password"
 	PasswordConfirmationFieldName = "password_confirmation"

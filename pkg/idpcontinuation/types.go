@@ -46,6 +46,7 @@ type EvidenceReference struct {
 
 type PresentationState struct {
 	ID             string          `json:"id,omitempty"`
+	Fields         []string        `json:"fields,omitempty"`
 	AllowedActions []string        `json:"allowedActions,omitempty"`
 	PublicValues   json.RawMessage `json:"publicValues,omitempty"`
 }

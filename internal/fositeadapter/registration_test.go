@@ -83,8 +83,8 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 		t.Fatalf("registration page status=%d body=%s", response.StatusCode, body)
 	}
 	form := parseInteractionInputs(string(body))
-	form.Set(idpui.ActionFieldName, string(idpui.ActionRegister))
-	form.Set(idpui.LoginFieldName, "new-user")
+	form.Set(idpui.ActionFieldName, "submit")
+	form.Set("email", "new-user@example.test")
 	form.Set(idpui.DisplayNameFieldName, "New User")
 	form.Set(idpui.PasswordFieldName, "correct horse battery staple 2026")
 	form.Set(idpui.PasswordConfirmationFieldName, "correct horse battery staple 2026")
@@ -103,7 +103,7 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 	if crossSiteResponse.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-site registration status=%d", crossSiteResponse.StatusCode)
 	}
-	if _, err := store.GetUserByLogin(ctx, "new-user"); err == nil {
+	if _, err := store.GetUserByLogin(ctx, "new-user@example.test"); err == nil {
 		t.Fatal("cross-site registration created an account")
 	}
 
@@ -120,7 +120,7 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 	if location.Query().Get("code") == "" || location.Query().Get("state") != request.Get("state") {
 		t.Fatalf("registration did not resume authorization: %s", location)
 	}
-	user, err := store.GetUserByLogin(ctx, "new-user")
+	user, err := store.GetUserByLogin(ctx, "new-user@example.test")
 	if err != nil || user.Sub == "" || user.Name != "New User" {
 		t.Fatalf("registered user=%#v err=%v", user, err)
 	}
