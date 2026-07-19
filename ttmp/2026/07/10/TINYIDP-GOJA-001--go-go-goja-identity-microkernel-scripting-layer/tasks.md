@@ -469,7 +469,7 @@ password-recovery, and device-verification flows described by design 03.
 - [x] Add password recovery only through existing native credential and challenge effects; do not permit scripts to write password hashes, credentials, or recovery state directly <!-- t:lf83 -->
 - [x] Integrate device-verification presentation through workflow handlers while leaving RFC 8628 device/user code generation, polling, expiry, authorization, denial, and token transitions native <!-- t:lf84 -->
 - [x] Add strict tests for fresh login, existing session, `prompt=none`, account selection, consent, allow/deny/error, protected claims, refresh, UserInfo, recovery replay, and device verification <!-- t:lf85 -->
-- [ ] Run the complete conformance, security-model, race, browser, memory-store, and SQLite-store suites before enabling any Phase 7 handler in a production profile <!-- t:lf86 -->
+- [x] Run the complete conformance, security-model, race, browser, memory-store, and SQLite-store suites before enabling any Phase 7 handler in a production profile <!-- t:lf86 -->
 
 **Phase 7 gate:** Authorization and claims customization cannot bypass native
 protocol checks or protected claims, and all current browser, refresh/UserInfo,

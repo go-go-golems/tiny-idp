@@ -499,3 +499,17 @@ password-recovery replay prevention, and native device verification.
 - internal/fositeadapter/hardening_test.go — Authorization deny/error behavior
 - internal/fositeadapter/device_authorization_test.go — Device, claims, UserInfo, and SQLite proof
 - pkg/idprecovery/service_test.go — Recovery one-use evidence behavior
+
+## 2026-07-19 - Step 58: Phase 7 production-profile regression gate
+
+Completed lf86. Normal integration, targeted race, and isolated-workspace full
+test gates passed, covering browser, conformance, security-model, memory,
+SQLite, workflow, Goja worker, and device-flow paths before Phase 7 handlers
+are considered eligible for a production profile.
+
+### Related Files
+
+- internal/fositeadapter — Browser, Fosite, device, SQLite, state-model, and security-trace coverage
+- pkg/idpscript — Owned Goja worker and bounded invocation race coverage
+- pkg/idpworkflow — Typed field/action/presentation contract coverage
+- pkg/idppolicy — Authorization, claims, and presentation provider coverage

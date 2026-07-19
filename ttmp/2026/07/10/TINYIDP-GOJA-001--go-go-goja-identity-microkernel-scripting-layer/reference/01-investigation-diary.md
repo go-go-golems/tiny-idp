@@ -5948,3 +5948,40 @@ The tests exercise the same native protocol endpoints and persistence paths
 that production uses. The additions in Step 56 fill the previously missing
 presentation-handler cases; no test replaces Fosite, a browser continuation,
 or the device-grant store with a test-only shortcut.
+
+## Step 58: Run the complete Phase 7 production-profile gate
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+### What I did
+
+Ran the prescribed Phase 7 integration, race, and isolated-workspace gates:
+
+```bash
+go test ./internal/fositeadapter ./internal/server ./pkg/embeddedidp ./pkg/idpui -count=1
+go test -race ./internal/fositeadapter ./pkg/idpscript ./pkg/idpworkflow ./pkg/idppolicy -count=1
+GOWORK=off go test ./... -count=1
+```
+
+All gates passed. The normal integration command covers the browser,
+Fosite/authorization, device, security-trace, state-model, memory, and SQLite
+tests in `internal/fositeadapter`; the race command covers the owner-safe Goja
+runtime, typed workflow contracts, and new policy executor; the isolated full
+suite verifies that no ambient workspace dependency is needed.
+
+### Operational note
+
+The local test launcher returned control before its child test processes had
+finished streaming output. I confirmed the original sequential shell chain
+advanced through its race stage to the isolated full suite, then waited until
+all child `go test` processes had exited. No source or test files changed
+during this verification step.
+
+### Result
+
+Phase 7 tasks lf78 through lf86 are complete. The Phase 7 API remains
+production-safe by construction: all protocol state machines, durable records,
+credential effects, artifact issuance, and response writing stay native; Goja
+receives only validated copied values and has closed, bounded outcome types.
