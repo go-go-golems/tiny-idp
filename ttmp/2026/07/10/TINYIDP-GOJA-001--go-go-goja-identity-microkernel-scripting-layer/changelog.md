@@ -114,3 +114,13 @@ Step 11: completed lf02-lf05 with runtime-independent program/lambda/schema/outc
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram — Pure-Go Phase 0 contracts and tests.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 11 records contract decisions, validation evidence, risks, and review instructions.
+
+## 2026-07-19
+
+Step 12: completed lf06-lf08 with isolated require("tinyidp").v1 builders, immutable compiled artifacts, per-runtime callback collectors, two-worker fingerprint verification, and schema-drift rejection (commit 1b8cb17); normal, race, GOWORK=off, full tests, and lint pass.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp — Phase 0 JavaScript builder module and identity-branded lambda handles.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript — Isolated compiler, artifact, runtime factory, lifecycle, and integration tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 12 records failures, fixes, invariants, validation, and review guidance.

@@ -1520,3 +1520,177 @@ canonical hashes: source, program, callback registry, schemas
 diagnostic order: path, ID, message
 next task: lf06
 ```
+
+## Step 12: Compile isolated modules into reusable owned-runtime artifacts
+
+This step implemented the compile-time JavaScript boundary. A source file may
+load only `require("tinyidp").v1`, register named lambdas, declare capabilities
+and workflows, and export the value returned by `A.program`. Compilation
+materializes the pure-Go contract from Step 11 while retaining the reusable
+`*goja.Program`; it does not retain the compile runtime or any callback object.
+
+Loading the artifact into a worker reruns that compiled program on the worker's
+runtime owner. Each VM receives a fresh collector and fresh callback functions,
+then compares program, callback-registry, and schema fingerprints with the
+artifact before it becomes usable. Tests prove two independent workers agree
+and that a host schema drift is rejected.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 10)
+
+**Assistant interpretation:** Implement tasks `lf06`–`lf08`: the isolated
+native module, immutable compiled artifact, and deterministic multi-runtime
+callback registration gate.
+
+**Inferred user intent:** Move from design contracts to a real, loadable
+JavaScript program without weakening runtime ownership or ambient-authority
+constraints.
+
+**Commit (code):** `1b8cb17` — "Feat: compile isolated scripting programs"
+
+### What I did
+
+- Added `internal/gojamodules/tinyidp`:
+  - `modules.NativeModule` registration for `tinyidp`;
+  - one collector per runtime;
+  - identity-branded lambda handles that a plain JavaScript object cannot forge;
+  - `program`, `lambda`, `capabilities`, and `workflow` builders;
+  - Phase 0 `continue`, `present`, `challenge`, `commit`, `complete`, `deny`,
+    `skip`, and `error` result builders;
+  - strict option, integer, array, string, duplicate, and callback validation.
+- Added `pkg/idpscript`:
+  - bounded source compilation and stable validation errors;
+  - immutable artifacts with defensive program copies;
+  - a runtime factory with implicit and data-only modules disabled and an
+    ambient loader that rejects all non-Tiny-IDP paths;
+  - owner-executed CommonJS loading with timeout interruption;
+  - exact `module.exports` enforcement;
+  - fresh per-runtime collectors and callback functions;
+  - artifact/runtime fingerprint verification and lifecycle close.
+- Added tests for successful materialization, defensive copies, two independent
+  owned runtimes, schema drift, ambient modules, forged handles, missing program
+  export, source bounds, and unbounded compile interruption.
+- Ran normal, race, vet, and pinned-dependency tests. The pre-commit hook ran the
+  full repository `GOWORK=off` test and lint/vet gates successfully.
+- Checked `lf06`, `lf07`, and `lf08` after commit.
+
+### Why
+
+- A compiled `goja.Program` can be reused across VMs, but callback values cannot.
+  Re-executing the source in each owned runtime creates VM-local functions while
+  deterministic fingerprints prove they describe the same registry.
+- Runtime-scoped collectors avoid global mutable registration state and make
+  simultaneous generations possible later.
+- Object-identity branding prevents a script from supplying `{id: "trusted"}`
+  where a host-created lambda handle is required.
+
+### What worked
+
+- `require("tinyidp")` succeeds and the realistic source materializes the
+  expected workflow and callbacks.
+- `require("fs")` fails through the ambient loader.
+- Two owned runtimes report callbacks `signup.start` and `signup.submitted` and
+  exactly match artifact fingerprints.
+- Loading with a changed host schema fails fingerprint verification.
+- Normal, `-race`, `GOWORK=off`, vet, full tests, and repository lint pass.
+
+### What didn't work
+
+- The first adapter test run treated an absent optional `kind` property as a
+  value because Goja returned nil in this access path. The error was:
+
+  ```text
+  TypeError: lambda kind must be a non-empty string
+  ```
+
+  The optional-property parser now treats nil, `undefined`, and `null` as the
+  workflow default.
+- The initial ambient-module assertion expected `fs`, while goja_nodejs
+  normalized the attempted loader path to `node_modules/fs`. The security
+  behavior was correct; the test now asserts the stable `ambient module` and
+  `disabled` portions.
+- Comparing raw exported JSON with struct JSON rejected an equivalent program
+  representation. The loader now decodes `module.exports` into `Program` and
+  compares canonical program JSON, which preserves exact semantic enforcement.
+- One rerun could not write the shared Go cache:
+
+  ```text
+  open /home/manuel/.cache/go-build/...: read-only file system
+  ```
+
+  Targeted commands used `/tmp/tinyidp-go-cache`; the repository pre-commit
+  hook subsequently passed with its normal cache.
+- The first isolated race build appeared silent for over a minute because the
+  new `/tmp` cache had to compile/link all dependencies with race instrumentation.
+  An isolated 15-second test timeout proved the unbounded-script test completed
+  in 0.01 seconds; the cached full race suite then passed in 1.097 seconds.
+
+### What I learned
+
+- Missing Goja object properties must be handled defensively at the nil boundary
+  as well as with `goja.IsUndefined`.
+- CommonJS loader normalization changes diagnostic path spelling, so negative
+  tests should assert the authority denial rather than a loader-internal path.
+- Artifact equality is a semantic canonical-contract comparison, not a raw
+  comparison of two JSON encoders' intermediate representations.
+
+### What was tricky to build
+
+- The collector must be available to Go after source execution without being a
+  global singleton. A custom `RuntimeModuleRegistrar` creates it for each
+  runtime, stores it in that runtime's values, and registers a loader closure
+  bound to it.
+- Compile timeout cancellation races with owner scheduling. The host uses
+  `context.AfterFunc` for Goja interruption, waits through the owner boundary,
+  and clears an interrupt on the owner before any reuse. Phase 0 pool work will
+  make timeout discard unconditional for invocations.
+- `module.exports` has to prove the program was actually exported while allowing
+  normal JavaScript object representation. Decoding then canonicalizing gives
+  strict semantic equality.
+
+### What warrants a second pair of eyes
+
+- Review the CommonJS interrupt/clear ordering before the same primitive is used
+  for request invocation.
+- Confirm console, buffer, URL, and performance globals installed by the engine
+  are acceptable approved primitives; `lf09` will prove all ambient module
+  imports remain unavailable.
+- Review whether exposing the internal `error` result builder is desirable or
+  whether infrastructure errors should remain host-only before TypeScript is
+  published.
+
+### What should be done in the future
+
+- Implement `lf09`–`lf12`: exhaustive ambient-module tests, a bounded exclusive
+  worker pool, Promise-aware invocation, capability bindings, budgets, and
+  mandatory discard after unsafe termination.
+- Publish declarations and the compile-only example only after the invocation
+  shape passes its race gate.
+
+### Code review instructions
+
+- Start with `internal/gojamodules/tinyidp/module.go`, then follow the collector
+  into `pkg/idpscript/compiler.go`, `artifact.go`, and `runtime_factory.go`.
+- Read `pkg/idpscript/compiler_test.go` as the executable API example and
+  isolation threat model.
+- Run:
+
+  ```bash
+  go test ./pkg/idpprogram ./internal/gojamodules/tinyidp ./pkg/idpscript -count=1
+  go test -race ./internal/gojamodules/tinyidp ./pkg/idpscript -count=1
+  GOWORK=off go test ./internal/gojamodules/tinyidp ./pkg/idpscript -count=1
+  ```
+
+### Technical details
+
+```text
+tasks completed: lf06, lf07, lf08
+code commit: 1b8cb17
+module: require("tinyidp").v1
+collector lifetime: one source execution in one owned runtime
+artifact VM state: reusable *goja.Program only
+worker callback state: fresh VM-local goja.Callable registry
+activation identity: program + callback registry + schema fingerprints
+next task: lf09
+```

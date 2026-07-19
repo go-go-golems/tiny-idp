@@ -173,9 +173,9 @@ browser, persistence, Fosite, or account-creation behavior.
 - [x] Add stable identifiers and typed handler outcomes for `present`, `challenge`, `commit`, `complete`, `deny`, and `skip`, including validation that a handler returns only declared outcomes <!-- t:lf03 -->
 - [x] Implement deterministic program validation for duplicate identifiers, missing handlers, incompatible continuation edges, undeclared capabilities/effects, invalid budgets, unbounded carry schemas, and unreachable workflow entries <!-- t:lf04 -->
 - [x] Implement canonical program serialization plus deterministic source, program, callback-registry, and schema fingerprints <!-- t:lf05 -->
-- [ ] Implement the isolated `require("tinyidp").v1` module with only `program`, `workflow`, `lambda`, and the Phase 0 result builders needed by the spike <!-- t:lf06 -->
-- [ ] Compile source into an immutable artifact containing the canonical program, callback metadata, compiled source, required capabilities, and fingerprints without starting a server or mutating global registries <!-- t:lf07 -->
-- [ ] Load one artifact into at least two separately owned runtimes and reject activation if their callback IDs or fingerprints differ <!-- t:lf08 -->
+- [x] Implement the isolated `require("tinyidp").v1` module with only `program`, `workflow`, `lambda`, and the Phase 0 result builders needed by the spike <!-- t:lf06 -->
+- [x] Compile source into an immutable artifact containing the canonical program, callback metadata, compiled source, required capabilities, and fingerprints without starting a server or mutating global registries <!-- t:lf07 -->
+- [x] Load one artifact into at least two separately owned runtimes and reject activation if their callback IDs or fingerprints differ <!-- t:lf08 -->
 - [ ] Build an explicit runtime factory whose module resolver exposes only the Tiny-IDP module and approved language/runtime primitives; add negative resolution tests for filesystem, process, execution, database, network, OS, and arbitrary loaders <!-- t:lf09 -->
 - [ ] Implement single-owner worker acquisition, invocation, release, discard, and replacement so no request goroutine touches a Goja runtime directly <!-- t:lf10 -->
 - [ ] Implement bounded invocation of synchronous and Promise-returning lambdas, with request cancellation, deadline interruption, `ClearInterrupt` ordering, late-settlement containment, panic recovery, output validation, and mandatory worker discard after unsafe termination <!-- t:lf11 -->
