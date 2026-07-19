@@ -83,6 +83,7 @@ type Options struct {
 	AccountChooser        AccountChooserConfig
 	Audit                 idp.Sink
 	Consent               idp.ConsentPolicy
+	Authorization         idp.AuthorizationPolicy
 	RateLimiter           idp.RateLimiter
 	ClientAddress         idp.ClientAddressResolver
 	Authenticator         idp.PasswordAuthenticator
@@ -127,6 +128,7 @@ type Provider struct {
 	audit                 idp.Sink
 	securityEvents        securitytrace.Sink
 	consent               idp.ConsentPolicy
+	authorization         idp.AuthorizationPolicy
 	rateLimiter           idp.RateLimiter
 	clientAddress         idp.ClientAddressResolver
 	authenticator         idp.PasswordAuthenticator
@@ -393,7 +395,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("create scripted signup continuation service: %w", continuationErr)
 		}
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, authorization: opts.Authorization, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -1642,6 +1644,17 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 		http.Error(w, "unknown client", http.StatusBadRequest)
 		return
 	}
+	decision, err := p.authorizePolicy(r.Context(), u, client, ar, authTime)
+	if err != nil {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "authorization.policy.failed", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "policy_unavailable"})
+		http.Error(w, "authorization policy failed", http.StatusInternalServerError)
+		return
+	}
+	if decision.Kind == idp.AuthorizationDeny {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "authorization.policy.denied", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: decision.DiagnosticID})
+		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
+		return
+	}
 	scopes := []string(ar.GetRequestedScopes())
 	requireConsent, err := p.consent.RequireConsent(r.Context(), u, client, scopes)
 	if err != nil {
@@ -1701,4 +1714,21 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 		responseWriter = seeOtherRedirectWriter{ResponseWriter: w}
 	}
 	p.oauth2.WriteAuthorizeResponse(r.Context(), responseWriter, ar, response)
+}
+
+func (p *Provider) authorizePolicy(ctx context.Context, user idpstore.User, client idpstore.Client, ar fosite.AuthorizeRequester, authTime time.Time) (idp.AuthorizationDecision, error) {
+	if p.authorization == nil {
+		return idp.AuthorizationDecision{Kind: idp.AuthorizationSkip}, nil
+	}
+	input := idp.AuthorizationInput{
+		Subject:        idp.AuthorizationSubject{Subject: user.Sub, Tenant: user.Tenant, Groups: append([]string(nil), user.Groups...), Roles: append([]string(nil), user.Roles...), EmailVerified: user.EmailVerified},
+		Client:         idp.AuthorizationClient{ID: client.ID, Public: client.Public},
+		Request:        idp.AuthorizationRequest{Scopes: []string(ar.GetRequestedScopes()), Audience: []string(ar.GetRequestedAudience()), Prompt: strings.Fields(ar.GetRequestForm().Get("prompt"))},
+		Authentication: idp.AuthenticationView{AuthenticatedAt: authTime.UTC()},
+	}
+	decision, err := p.authorization.Authorize(ctx, input.Clone())
+	if err != nil {
+		return idp.AuthorizationDecision{}, err
+	}
+	return idp.NormalizeAuthorizationDecision(decision)
 }

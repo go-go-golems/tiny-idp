@@ -94,6 +94,7 @@ type Options struct {
 	Token          TokenConfig
 	Audit          idp.Sink
 	Consent        idp.ConsentPolicy
+	Authorization  idp.AuthorizationPolicy
 	RateLimiter    idp.RateLimiter
 	ClientAddress  idp.ClientAddressResolver
 	Authenticator  idp.PasswordAuthenticator

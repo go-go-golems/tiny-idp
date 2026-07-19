@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-go-golems/tiny-idp/internal/fositeadapter"
 	"github.com/go-go-golems/tiny-idp/internal/keys"
 	"github.com/go-go-golems/tiny-idp/internal/store/memory"
@@ -49,6 +52,50 @@ func TestAuthorizeRequiresCSRFAndEmitsAudit(t *testing.T) {
 	if !found {
 		t.Fatalf("csrf audit event not found: %#v", sink.Events())
 	}
+}
+
+func TestAuthorizationPolicyDeniesAfterNativeValidationBeforeCodeIssuance(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	require.NoError(t, st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}))
+	require.NoError(t, st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice", Roles: []string{"member"}}))
+	key, err := keys.GenerateRSA("kid-1", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, st.CreateSigningKey(ctx, key))
+	sink := idp.NewMemorySink()
+	p, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("authorization-policy-secret-key-32-b"), Audit: sink, Authorization: denyAuthorizationPolicy{}})
+	require.NoError(t, err)
+	ts := httptest.NewServer(p.Handler())
+	t.Cleanup(ts.Close)
+
+	form := url.Values{"response_type": {"code"}, "client_id": {"spa"}, "redirect_uri": {"http://localhost/callback"}, "scope": {"openid"}, "state": {"state-1234567890"}, "nonce": {"nonce-1234567890"}, "code_challenge": {s256("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")}, "code_challenge_method": {"S256"}, "login": {"alice"}}
+	csrfToken, csrfCookie := fetchCSRF(t, ts.URL, form)
+	form.Set("csrf_token", csrfToken)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(csrfCookie)
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Do(req)
+	require.NoError(t, err)
+	response.Body.Close()
+	require.Contains(t, []int{http.StatusFound, http.StatusSeeOther}, response.StatusCode)
+	redirect, err := url.Parse(response.Header.Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, "access_denied", redirect.Query().Get("error"))
+	assert.Empty(t, redirect.Query().Get("code"))
+
+	events := sink.Events()
+	require.NotEmpty(t, events)
+	last := events[len(events)-1]
+	assert.Equal(t, "authorization.policy.denied", last.Name)
+	assert.Equal(t, "policy.member_required", last.Reason)
+}
+
+type denyAuthorizationPolicy struct{}
+
+func (denyAuthorizationPolicy) Authorize(context.Context, idp.AuthorizationInput) (idp.AuthorizationDecision, error) {
+	return idp.AuthorizationDecision{Kind: idp.AuthorizationDeny, DiagnosticID: "policy.member_required"}, nil
 }
 
 func TestAuditReasonsUseStableCodes(t *testing.T) {
