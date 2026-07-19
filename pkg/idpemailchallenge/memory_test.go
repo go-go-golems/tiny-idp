@@ -5,6 +5,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sync"
 	"testing"
 	"time"
 )
@@ -19,6 +20,34 @@ func TestMemoryStoreConsumesCorrectCodeOnce(t *testing.T) {
 	assert.Equal(t, c.Email, e.Address)
 	_, err = s.VerifyEmailChallenge(context.Background(), c.ID, c.CodeHash, testBindings(), now)
 	assert.ErrorIs(t, err, idpemailchallenge.ErrAlreadyTerminal)
+}
+
+func TestMemoryStoreAllowsExactlyOneConcurrentCorrectVerification(t *testing.T) {
+	now := time.Now().UTC()
+	s := idpemailchallenge.NewMemoryStore()
+	c := testChallenge(now)
+	require.NoError(t, s.CreateEmailChallenge(context.Background(), c))
+	var wait sync.WaitGroup
+	results := make(chan error, 2)
+	for range 2 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			_, err := s.VerifyEmailChallenge(context.Background(), c.ID, c.CodeHash, testBindings(), now)
+			results <- err
+		}()
+	}
+	wait.Wait()
+	close(results)
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+			continue
+		}
+		assert.ErrorIs(t, err, idpemailchallenge.ErrAlreadyTerminal)
+	}
+	assert.Equal(t, 1, successes)
 }
 func TestMemoryStoreRejectsWrongCodeAndBindings(t *testing.T) {
 	now := time.Now().UTC()
