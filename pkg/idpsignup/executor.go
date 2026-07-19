@@ -119,18 +119,59 @@ func (e *Executor) Submit(ctx context.Context, values map[idpworkflow.FieldID]st
 // verified evidence into a terminal signup handler. Callers supply JSON made
 // by a native verifier; scripts cannot construct this invocation context.
 func (e *Executor) SubmitWithEvidence(ctx context.Context, values map[idpworkflow.FieldID]string, secrets map[string]idpworkflow.SecretHandle, evidence map[string]json.RawMessage) (idpprogram.Outcome, error) {
+	input, err := e.SubmissionInput(SubmittedHandler, values)
+	if err != nil {
+		return idpprogram.Outcome{}, err
+	}
+	return e.InvokeSubmission(ctx, SubmittedHandler, input, secrets, evidence)
+}
+
+// SubmissionInput projects only fields named by the selected handler's pinned
+// object schema. A form can never smuggle a later-step password or code into
+// a handler that did not declare it.
+func (e *Executor) SubmissionInput(handler string, values map[idpworkflow.FieldID]string) (json.RawMessage, error) {
+	if e == nil || e.artifact == nil {
+		return nil, errors.New("signup executor is unavailable")
+	}
+	program := e.Program()
+	workflow, ok := program.Workflows[WorkflowID]
+	if !ok {
+		return nil, errors.New("signup workflow is unavailable")
+	}
+	handlerSpec, ok := workflow.Handlers[handler]
+	if !ok {
+		return nil, errors.New("signup handler is unavailable")
+	}
+	lambda, ok := program.Lambdas[handlerSpec.LambdaID]
+	if !ok {
+		return nil, errors.New("signup handler lambda is unavailable")
+	}
+	schema, ok := program.Schemas[lambda.InputSchema]
+	if !ok || schema.Kind != idpprogram.SchemaKindObject {
+		return nil, errors.New("signup handler input schema is unavailable")
+	}
+	input := map[string]string{}
+	for field := range schema.Fields {
+		if value, ok := values[idpworkflow.FieldID(field)]; ok {
+			input[field] = value
+		}
+	}
+	return json.Marshal(input)
+}
+
+func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input json.RawMessage, secrets map[string]idpworkflow.SecretHandle, evidence map[string]json.RawMessage) (idpprogram.Outcome, error) {
 	if e == nil || e.pool == nil {
 		return idpprogram.Outcome{}, errors.New("signup executor is unavailable")
 	}
-	input, err := json.Marshal(map[string]string{
-		"displayName": values[idpworkflow.FieldDisplayName],
-		"email":       values[idpworkflow.FieldEmail],
-		"inviteCode":  values[idpworkflow.FieldInviteCode],
-	})
-	if err != nil {
-		return idpprogram.Outcome{}, errors.Wrap(err, "encode signup submission")
+	workflow, ok := e.Program().Workflows[WorkflowID]
+	if !ok {
+		return idpprogram.Outcome{}, errors.New("signup workflow is unavailable")
 	}
-	return e.pool.InvokeWithSecretsAndEvidence(ctx, "signup.submitted", input, nil, secrets, evidence)
+	handlerSpec, ok := workflow.Handlers[handler]
+	if !ok {
+		return idpprogram.Outcome{}, errors.New("signup handler is unavailable")
+	}
+	return e.pool.InvokeWithSecretsAndEvidence(ctx, handlerSpec.LambdaID, input, nil, secrets, evidence)
 }
 
 // Resume invokes the exact handler named by a validated continuation. The
@@ -139,7 +180,7 @@ func (e *Executor) Resume(ctx context.Context, handler string, input json.RawMes
 	if e == nil || e.pool == nil || handler == "" {
 		return idpprogram.Outcome{}, errors.New("signup resume is unavailable")
 	}
-	return e.pool.InvokeWithSecretsAndEvidence(ctx, handler, input, nil, nil, evidence)
+	return e.InvokeSubmission(ctx, handler, input, nil, evidence)
 }
 
 func schemas() map[string]idpprogram.Schema {
