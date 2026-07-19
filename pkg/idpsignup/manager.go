@@ -4,9 +4,11 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/pkg/errors"
 
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
 )
@@ -24,14 +26,21 @@ type GenerationManager struct {
 	order    []string
 	closed   bool
 	metrics  generationMetrics
+	audit    idp.Sink
+	clock    func() time.Time
 }
 
-type generationMetrics struct{ activations, activationFailures, evicted, closed atomic.Uint64 }
+type generationMetrics struct{ activations, activationFailures, evicted, closed, auditFailures atomic.Uint64 }
 
 // GenerationMetrics contains bounded, secret-free operational counters.
 type GenerationMetrics struct {
-	Activations, ActivationFailures, Evicted, Closed uint64
-	Retained, PoolCapacity, PoolActive               int
+	Activations, ActivationFailures, Evicted, Closed, AuditFailures uint64
+	Retained, PoolCapacity, PoolActive                              int
+}
+
+type GenerationManagerOptions struct {
+	Audit idp.Sink
+	Clock func() time.Time
 }
 
 type GenerationSnapshot struct {
@@ -43,6 +52,10 @@ type GenerationSnapshot struct {
 }
 
 func NewGenerationManager(ctx context.Context, source string, workers, retained int) (*GenerationManager, error) {
+	return NewGenerationManagerWithOptions(ctx, source, workers, retained, GenerationManagerOptions{})
+}
+
+func NewGenerationManagerWithOptions(ctx context.Context, source string, workers, retained int, options GenerationManagerOptions) (*GenerationManager, error) {
 	if workers <= 0 {
 		return nil, errors.New("generation manager worker count must be positive")
 	}
@@ -54,7 +67,13 @@ func NewGenerationManager(ctx context.Context, source string, workers, retained 
 		return nil, errors.Wrap(err, "warm initial signup generation")
 	}
 	fingerprint := candidate.Fingerprint()
-	return &GenerationManager{workers: workers, retained: retained, active: candidate, byHash: map[string]*Executor{fingerprint: candidate}, order: []string{fingerprint}}, nil
+	if options.Audit == nil {
+		options.Audit = idp.NoopSink{}
+	}
+	if options.Clock == nil {
+		options.Clock = time.Now
+	}
+	return &GenerationManager{workers: workers, retained: retained, active: candidate, byHash: map[string]*Executor{fingerprint: candidate}, order: []string{fingerprint}, audit: options.Audit, clock: options.Clock}, nil
 }
 
 // Activate compiles and warms a candidate before taking the publication lock.
@@ -66,6 +85,7 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 	candidate, err := warmGeneration(ctx, source, m.workers)
 	if err != nil {
 		m.metrics.activationFailures.Add(1)
+		m.auditActivation(ctx, "rejected", "warm_failed", nil)
 		return "", errors.Wrap(err, "warm candidate signup generation")
 	}
 	fingerprint := candidate.Fingerprint()
@@ -74,17 +94,20 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 		m.mu.Unlock()
 		_ = candidate.Close(context.Background())
 		m.metrics.activationFailures.Add(1)
+		m.auditActivation(ctx, "rejected", "manager_closed", candidate)
 		return "", errors.New("generation manager is closed")
 	}
 	if existing := m.byHash[fingerprint]; existing != nil {
 		m.active = existing
 		m.metrics.activations.Add(1)
+		m.auditActivation(ctx, "accepted", "already_active", existing)
 		m.mu.Unlock()
 		_ = candidate.Close(context.Background())
 		return fingerprint, nil
 	}
 	m.active = candidate
 	m.metrics.activations.Add(1)
+	m.auditActivation(ctx, "accepted", "", candidate)
 	m.byHash[fingerprint] = candidate
 	m.order = append(m.order, fingerprint)
 	toClose := m.evictLocked()
@@ -182,7 +205,21 @@ func (m *GenerationManager) Metrics() GenerationMetrics {
 		capacity, active = stats.Capacity, stats.Active
 	}
 	m.mu.RUnlock()
-	return GenerationMetrics{Activations: m.metrics.activations.Load(), ActivationFailures: m.metrics.activationFailures.Load(), Evicted: m.metrics.evicted.Load(), Closed: m.metrics.closed.Load(), Retained: retained, PoolCapacity: capacity, PoolActive: active}
+	return GenerationMetrics{Activations: m.metrics.activations.Load(), ActivationFailures: m.metrics.activationFailures.Load(), Evicted: m.metrics.evicted.Load(), Closed: m.metrics.closed.Load(), AuditFailures: m.metrics.auditFailures.Load(), Retained: retained, PoolCapacity: capacity, PoolActive: active}
+}
+
+func (m *GenerationManager) auditActivation(ctx context.Context, result, reason string, executor *Executor) {
+	if m == nil || m.audit == nil {
+		return
+	}
+	fields := map[string]string{}
+	if executor != nil && executor.artifact != nil {
+		hashes := executor.artifact.Fingerprints()
+		fields["source_fingerprint"], fields["program_fingerprint"] = hashes.Source, hashes.Program
+	}
+	if err := m.audit.Emit(ctx, idp.Event{Time: m.clock().UTC(), Name: "script.signup.activation", Result: result, Reason: reason, Fields: fields}); err != nil {
+		m.metrics.auditFailures.Add(1)
+	}
 }
 
 // Ready returns an operator-safe readiness error for hosts that have opted

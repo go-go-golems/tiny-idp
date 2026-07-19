@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 )
 
@@ -139,4 +140,24 @@ func TestGenerationManagerReportsBoundedOperationalMetrics(t *testing.T) {
 	assert.Equal(t, 1, metrics.Retained)
 	assert.Equal(t, 1, metrics.PoolCapacity)
 	assert.Equal(t, 0, metrics.PoolActive)
+}
+
+func TestGenerationManagerActivationAuditIsRedacted(t *testing.T) {
+	ctx := context.Background()
+	sink := idp.NewMemorySink()
+	manager, err := idpsignup.NewGenerationManagerWithOptions(ctx, idpsignup.DefaultSource, 1, 1, idpsignup.GenerationManagerOptions{Audit: sink})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, manager.Close(context.Background())) })
+	_, err = manager.Activate(ctx, strings.Replace(idpsignup.DefaultSource, "Create an account", "Create your account", 1))
+	require.NoError(t, err)
+	events := sink.Events()
+	require.Len(t, events, 1)
+	event := events[0]
+	assert.Equal(t, "script.signup.activation", event.Name)
+	assert.Equal(t, "accepted", event.Result)
+	assert.Empty(t, event.Subject)
+	assert.Empty(t, event.ClientID)
+	assert.NotEmpty(t, event.Fields["source_fingerprint"])
+	assert.NotEmpty(t, event.Fields["program_fingerprint"])
+	assert.NotContains(t, event.Fields["source_fingerprint"], "Create your account")
 }
