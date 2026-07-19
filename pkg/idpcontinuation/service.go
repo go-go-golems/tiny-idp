@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -84,6 +85,17 @@ type Service struct {
 	random   io.Reader
 	resolver GenerationResolver
 	cleaner  AttachmentCleaner
+	metrics  metrics
+}
+
+type metrics struct{ created, loaded, loadFailures, replayed, expired, cleaned atomic.Uint64 }
+type Metrics struct{ Created, Loaded, LoadFailures, Replayed, Expired, Cleaned uint64 }
+
+func (s *Service) Metrics() Metrics {
+	if s == nil {
+		return Metrics{}
+	}
+	return Metrics{Created: s.metrics.created.Load(), Loaded: s.metrics.loaded.Load(), LoadFailures: s.metrics.loadFailures.Load(), Replayed: s.metrics.replayed.Load(), Expired: s.metrics.expired.Load(), Cleaned: s.metrics.cleaned.Load()}
 }
 
 func NewService(store Store, config Config) (*Service, error) {
@@ -130,15 +142,18 @@ func (s *Service) Create(ctx context.Context, continuation WorkflowContinuation)
 	if err := s.store.Create(ctx, continuation); err != nil {
 		return "", WorkflowContinuation{}, errors.Wrap(err, "create workflow continuation")
 	}
+	s.metrics.created.Add(1)
 	return handle, clone(continuation), nil
 }
 
 func (s *Service) Load(ctx context.Context, handle string, bindings Bindings) (WorkflowContinuation, error) {
 	if err := validateExpectedBindings(bindings); err != nil {
+		s.metrics.loadFailures.Add(1)
 		return WorkflowContinuation{}, &Failure{Class: FailureInvalid, Err: err}
 	}
 	hash, err := s.hashHandle(handle)
 	if err != nil {
+		s.recordLoadFailure(err)
 		return WorkflowContinuation{}, &Failure{Class: FailureMissing, Err: ErrNotFound}
 	}
 	now := s.clock().UTC()
@@ -147,15 +162,31 @@ func (s *Service) Load(ctx context.Context, handle string, bindings Bindings) (W
 		return WorkflowContinuation{}, classifyStoreFailure(err)
 	}
 	if err := validateBindings(continuation, bindings); err != nil {
+		s.recordLoadFailure(err)
 		return WorkflowContinuation{}, err
 	}
 	if err := s.validate(ctx, continuation, now); err != nil {
+		s.recordLoadFailure(err)
 		if errors.Is(err, ErrGenerationUnavailable) {
 			return WorkflowContinuation{}, &Failure{Class: FailureGenerationUnavailable, Err: err}
 		}
 		return WorkflowContinuation{}, &Failure{Class: FailureInvalid, Err: err}
 	}
+	s.metrics.loaded.Add(1)
 	return clone(continuation), nil
+}
+
+func (s *Service) recordLoadFailure(err error) {
+	s.metrics.loadFailures.Add(1)
+	var failure *Failure
+	if errors.As(err, &failure) {
+		if failure.Class == FailureExpired {
+			s.metrics.expired.Add(1)
+		}
+		if failure.Class == FailureReplayed {
+			s.metrics.replayed.Add(1)
+		}
+	}
 }
 
 // ValidateResumeInput validates the provider-projected browser submission
@@ -191,6 +222,7 @@ func (s *Service) Advance(ctx context.Context, handle string, expectedRevision u
 		return "", WorkflowContinuation{}, err
 	}
 	if current.Revision != expectedRevision {
+		s.metrics.replayed.Add(1)
 		return "", WorkflowContinuation{}, &Failure{Class: FailureReplayed, Err: ErrConflict}
 	}
 	nextHandle, nextHash, err := s.newHandle()
@@ -222,6 +254,7 @@ func (s *Service) Consume(ctx context.Context, handle string, expectedRevision u
 		return WorkflowContinuation{}, err
 	}
 	if current.Revision != expectedRevision {
+		s.metrics.replayed.Add(1)
 		return WorkflowContinuation{}, &Failure{Class: FailureReplayed, Err: ErrConflict}
 	}
 	if outcome.Kind != TerminalComplete && outcome.Kind != TerminalDeny && outcome.Kind != TerminalError {
