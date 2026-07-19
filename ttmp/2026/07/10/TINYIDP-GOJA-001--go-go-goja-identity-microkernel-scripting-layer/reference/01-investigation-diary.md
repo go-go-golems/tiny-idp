@@ -5985,3 +5985,45 @@ Phase 7 tasks lf78 through lf86 are complete. The Phase 7 API remains
 production-safe by construction: all protocol state machines, durable records,
 credential effects, artifact issuance, and response writing stay native; Goja
 receives only validated copied values and has closed, bounded outcome types.
+
+## Step 59: Establish the dependency-free assurance vocabulary
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Commit:** `8faf130` — "Feat: add assurance vocabulary identifiers"
+
+### What I did
+
+Added `internal/assurance`, a deliberately dependency-free package containing:
+
+- a version marker (`tinyidp.assurance/v1`);
+- distinct Go types for handler, schema, capability, effect, evidence,
+  diagnostic, observation, outcome, transition-step, and property IDs;
+- the closed existing lambda outcome vocabulary; and
+- initial secret-free observation and authorization-property identifiers.
+
+`ValidStableID` accepts only bounded ASCII identifiers and allows `@` only for
+a terminal version suffix such as `@v1`. The first unit test caught that a looser
+grammar would have accepted an email-shaped string; the final grammar rejects
+it while preserving versioned IDs.
+
+### Why
+
+Before this step, related contracts used independent `string` fields:
+`idpprogram` has lambda/schema/effect identifiers, `idpcontinuation` has
+evidence references, `verifyplan` has step and observation kinds, and
+`securitytrace` has event kinds. A common vocabulary is a prerequisite for
+lossless codecs, catalog descriptors, trace monitors, and model replay. It is
+not yet wired into those packages; marking lf87 complete before that binding
+would hide the remaining drift risk.
+
+### What worked
+
+```bash
+go test ./internal/assurance -count=1
+```
+
+The focused test passed. Commit `8faf130` also passed the full `GOWORK=off go
+test ./...`, lint, custom UI analysis, and vet hook gate.

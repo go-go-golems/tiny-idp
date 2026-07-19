@@ -513,3 +513,15 @@ are considered eligible for a production profile.
 - pkg/idpscript — Owned Goja worker and bounded invocation race coverage
 - pkg/idpworkflow — Typed field/action/presentation contract coverage
 - pkg/idppolicy — Authorization, claims, and presentation provider coverage
+
+## 2026-07-19 - Step 59: dependency-free assurance vocabulary foundation
+
+Started lf87 with a versioned internal assurance vocabulary for bounded handler,
+schema, capability, effect, evidence, diagnostic, observation, outcome, step,
+and property identifiers. The package has no HTTP, Fosite, persistence, or Goja
+dependencies, so subsequent catalogs and codecs can share it safely.
+
+### Related Files
+
+- internal/assurance/vocabulary.go — Versioned stable-ID types and closed initial IDs
+- internal/assurance/vocabulary_test.go — Identifier grammar and secret-free shape tests
