@@ -2,6 +2,7 @@ package idpscript_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,62 @@ func TestCompileMaterializesImmutableProgram(t *testing.T) {
 
 	delete(program.Lambdas, "signup.start")
 	assert.Contains(t, artifact.Program().Lambdas, "signup.start", "Program must return a defensive copy")
+}
+
+func TestCompileMaterializesProviderCallback(t *testing.T) {
+	source := `
+const A = require("tinyidp").v1;
+module.exports = A.program("providers", program => {
+  const validate = A.lambda("community.validate", {
+    kind: "provider", input: "signupInput", output: "terminalValue",
+    outcomes: ["complete", "deny"], effects: [], capabilities: [],
+    timeoutMs: 250, maxCapabilityCalls: 0, maxOutputBytes: 1024,
+    run: ctx => A.result.complete("accepted"),
+  });
+  program.provider("invitation", "community", {
+    version: 1, state: "virtual", replayProtection: "expiry", revocation: "key_rollover",
+    handlers: {validate},
+  });
+});`
+	artifact, err := idpscript.Compile(context.Background(), source, compileOptions())
+	require.NoError(t, err)
+	provider, ok := artifact.Program().Providers["invitation.community"]
+	require.True(t, ok)
+	assert.Equal(t, idpprogram.ProviderKindInvitation, provider.Kind)
+	assert.Equal(t, "community.validate", provider.Handlers[idpprogram.InvitationValidateHandler].LambdaID)
+	assert.Equal(t, idpprogram.LambdaKindProvider, artifact.Program().Lambdas["community.validate"].Kind)
+}
+
+func TestProviderInvokerUsesCompiledHandlerContract(t *testing.T) {
+	source := `
+const A = require("tinyidp").v1;
+module.exports = A.program("providers", program => {
+  const validate = A.lambda("community.validate", {
+    kind: "provider", input: "signupInput", output: "terminalValue",
+    outcomes: ["complete"], effects: [], capabilities: [],
+    timeoutMs: 250, maxCapabilityCalls: 0, maxOutputBytes: 1024,
+    run: ctx => A.result.complete("accepted"),
+  });
+  program.provider("invitation", "community", {
+    version: 1, state: "virtual", replayProtection: "expiry", revocation: "key_rollover",
+    handlers: {validate},
+  });
+});`
+	options := compileOptions()
+	artifact, err := idpscript.Compile(context.Background(), source, options)
+	require.NoError(t, err)
+	factory, err := idpscript.NewRuntimeFactory(options.Schemas)
+	require.NoError(t, err)
+	pool, err := idpscript.NewPool(context.Background(), artifact, factory, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pool.Close(context.Background())) })
+	invoker, err := idpscript.NewProviderInvoker(pool)
+	require.NoError(t, err)
+	outcome, err := invoker.Invoke(context.Background(), "invitation.community", idpprogram.InvitationValidateHandler, json.RawMessage(`{}`), nil)
+	require.NoError(t, err)
+	assert.Equal(t, idpprogram.OutcomeComplete, outcome.Kind)
+	_, err = invoker.Invoke(context.Background(), "invitation.community", "forged", json.RawMessage(`{}`), nil)
+	require.Error(t, err)
 }
 
 func TestArtifactLoadsIntoIndependentOwnedRuntimes(t *testing.T) {

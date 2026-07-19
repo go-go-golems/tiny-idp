@@ -169,6 +169,7 @@ func newProgramFunction(vm *goja.Runtime, collector *Collector, lambdaFunction f
 			APIVersion:   idpprogram.APIVersionV1,
 			Name:         name,
 			Workflows:    map[string]idpprogram.Workflow{},
+			Providers:    map[string]idpprogram.Provider{},
 			Lambdas:      map[string]idpprogram.LambdaSpec{},
 			Schemas:      cloneSchemas(collector.schemas),
 			Capabilities: map[string]idpprogram.CapabilityRequirement{},
@@ -177,6 +178,7 @@ func newProgramFunction(vm *goja.Runtime, collector *Collector, lambdaFunction f
 		mustSet(vm, builder, "lambda", lambdaFunction)
 		mustSet(vm, builder, "capabilities", newCapabilitiesFunction(vm, program))
 		mustSet(vm, builder, "workflow", newWorkflowFunction(vm, collector, program))
+		mustSet(vm, builder, "provider", newProviderFunction(vm, collector, program))
 		if _, err := define(goja.Undefined(), builder); err != nil {
 			panic(err)
 		}
@@ -193,6 +195,46 @@ func newProgramFunction(vm *goja.Runtime, collector *Collector, lambdaFunction f
 		}
 		collector.program = program
 		return normalizedValue(vm, program)
+	}
+}
+
+func newProviderFunction(vm *goja.Runtime, collector *Collector, program *idpprogram.Program) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		requireArgumentCount(vm, call, 3, "provider(kind, name, spec)")
+		kind := idpprogram.ProviderKind(requireString(vm, call.Argument(0), "provider kind"))
+		name := requireString(vm, call.Argument(1), "provider name")
+		if !kind.Valid() {
+			panic(vm.NewTypeError("unsupported provider kind %q", kind))
+		}
+		providerID := string(kind) + "." + name
+		if _, exists := program.Providers[providerID]; exists {
+			panic(vm.NewTypeError("duplicate provider %q", providerID))
+		}
+		spec := requireObject(vm, call.Argument(2), "provider spec")
+		handlers := requireObject(vm, spec.Get("handlers"), "provider handlers")
+		provider := idpprogram.Provider{
+			ID:               providerID,
+			Kind:             kind,
+			Version:          requirePositiveUint32(vm, spec.Get("version"), "provider version"),
+			State:            idpprogram.ProviderState(requireString(vm, spec.Get("state"), "provider state")),
+			ReplayProtection: idpprogram.ReplayProtection(requireString(vm, spec.Get("replayProtection"), "provider replay protection")),
+			Revocation:       idpprogram.RevocationMode(requireString(vm, spec.Get("revocation"), "provider revocation")),
+			Handlers:         map[string]idpprogram.ProviderHandler{},
+		}
+		for _, handlerID := range handlers.Keys() {
+			handle := requireObject(vm, handlers.Get(handlerID), "provider handler")
+			lambdaID, ok := collector.handles[handle]
+			if !ok {
+				panic(vm.NewTypeError("provider handler %q is not a lambda returned by this module", handlerID))
+			}
+			draft, ok := collector.lambdas[lambdaID]
+			if !ok {
+				panic(vm.NewTypeError("provider handler %q has no registered lambda", handlerID))
+			}
+			provider.Handlers[handlerID] = idpprogram.ProviderHandler{ID: handlerID, LambdaID: lambdaID, InputSchema: draft.spec.InputSchema, OutputSchema: draft.spec.OutputSchema}
+		}
+		program.Providers[providerID] = provider
+		return goja.Undefined()
 	}
 }
 
