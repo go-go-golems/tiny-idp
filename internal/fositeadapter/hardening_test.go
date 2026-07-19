@@ -18,6 +18,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/keys"
 	"github.com/go-go-golems/tiny-idp/internal/store/memory"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idppolicy"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
@@ -91,6 +92,40 @@ func TestAuthorizationPolicyDeniesAfterNativeValidationBeforeCodeIssuance(t *tes
 	last := events[len(events)-1]
 	assert.Equal(t, "authorization.policy.denied", last.Name)
 	assert.Equal(t, "policy.member_required", last.Reason)
+}
+
+func TestGojaAuthorizationProviderDeniesAfterNativeValidationBeforeCodeIssuance(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	require.NoError(t, st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}))
+	require.NoError(t, st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}))
+	key, err := keys.GenerateRSA("kid-1", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, st.CreateSigningKey(ctx, key))
+	policy, err := idppolicy.New(ctx, gojaDenyAuthorizationSource, 1, idppolicy.Config{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, policy.Close(context.Background())) })
+	p, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("goja-authorization-policy-secret-32"), Authorization: policy})
+	require.NoError(t, err)
+	ts := httptest.NewServer(p.Handler())
+	t.Cleanup(ts.Close)
+
+	form := url.Values{"response_type": {"code"}, "client_id": {"spa"}, "redirect_uri": {"http://localhost/callback"}, "scope": {"openid"}, "state": {"state-1234567890"}, "nonce": {"nonce-1234567890"}, "code_challenge": {s256("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")}, "code_challenge_method": {"S256"}, "login": {"alice"}}
+	csrfToken, csrfCookie := fetchCSRF(t, ts.URL, form)
+	form.Set("csrf_token", csrfToken)
+	request, err := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.AddCookie(csrfCookie)
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Do(request)
+	require.NoError(t, err)
+	response.Body.Close()
+	require.Contains(t, []int{http.StatusFound, http.StatusSeeOther}, response.StatusCode)
+	redirect, err := url.Parse(response.Header.Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, "access_denied", redirect.Query().Get("error"))
+	assert.Empty(t, redirect.Query().Get("code"))
 }
 
 func TestAuthorizationPolicyDeniesPromptNoneWithExistingSessionBeforeCodeIssuance(t *testing.T) {
@@ -189,6 +224,17 @@ type denyAuthorizationPolicy struct{}
 func (denyAuthorizationPolicy) Authorize(context.Context, idp.AuthorizationInput) (idp.AuthorizationDecision, error) {
 	return idp.AuthorizationDecision{Kind: idp.AuthorizationDeny, DiagnosticID: "policy.member_required"}, nil
 }
+
+const gojaDenyAuthorizationSource = `
+const A = require("tinyidp").v1;
+module.exports = A.program("authorization-policy", p => {
+  const decide = A.lambda("authorization.decide", {
+    kind:"provider", input:"authorizationInput", output:"authorizationOutput",
+    outcomes:["complete"], effects:[], capabilities:[], timeoutMs:100, maxCapabilityCalls:0, maxOutputBytes:8192,
+    run: ctx => A.result.complete({Kind:"deny", DiagnosticID:"policy.member_required"})
+  });
+  p.provider("authorization", "default", {version:1, state:"virtual", replayProtection:"none", revocation:"none", handlers:{decide}});
+});`
 
 type denyPromptNoneAuthorizationPolicy struct{}
 
