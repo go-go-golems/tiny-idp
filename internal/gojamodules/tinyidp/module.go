@@ -367,6 +367,7 @@ func newFieldBuilders(vm *goja.Runtime, collector *Collector) *goja.Object {
 		idpworkflow.FieldPassword,
 		idpworkflow.FieldPasswordConfirmation,
 		idpworkflow.FieldInviteCode,
+		idpworkflow.FieldEmailCode,
 	} {
 		fieldID := id
 		mustSet(vm, builders, string(fieldID), func(call goja.FunctionCall) goja.Value {

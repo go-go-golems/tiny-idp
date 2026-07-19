@@ -29,7 +29,7 @@ func (*module) TypeScriptModule() *spec.Module {
 			`export interface LambdaHandle { readonly __tinyIdpLambda?: never; }`,
 			`export interface FieldHandle { readonly __tinyIdpField?: never; }`,
 			`export interface ActionHandle { readonly __tinyIdpAction?: never; }`,
-			`export interface FieldBuilders { displayName(): FieldHandle; email(): FieldHandle; password(): FieldHandle; passwordConfirmation(): FieldHandle; inviteCode(): FieldHandle; }`,
+			`export interface FieldBuilders { displayName(): FieldHandle; email(): FieldHandle; password(): FieldHandle; passwordConfirmation(): FieldHandle; inviteCode(): FieldHandle; emailCode(): FieldHandle; }`,
 			`export interface ActionBuilders { submit(): ActionHandle; deny(): ActionHandle; }`,
 			`export interface CapabilityRequirement { version: number; }`,
 			`export interface WorkflowSpec { version: number; entry: string; handlers: Record<string, LambdaHandle>; edges?: Array<{ from: string; outcome: "continue" | "present" | "challenge"; to: string; input: string }>; }`,

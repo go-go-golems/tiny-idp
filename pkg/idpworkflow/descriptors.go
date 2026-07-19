@@ -17,6 +17,7 @@ const (
 	FieldPassword             FieldID = "password"
 	FieldPasswordConfirmation FieldID = "passwordConfirmation"
 	FieldInviteCode           FieldID = "inviteCode"
+	FieldEmailCode            FieldID = "emailCode"
 )
 
 type ValueKind string
@@ -147,6 +148,7 @@ func DefaultRegistry() *Registry {
 		{ID: FieldPassword, InputName: "password", Label: "Password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 12, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
 		{ID: FieldPasswordConfirmation, InputName: "password_confirmation", Label: "Confirm password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 12, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
 		{ID: FieldInviteCode, InputName: "invite_code", Label: "Invite code", Kind: ValueText, Normalize: NormalizeTrim, Required: false, MinLength: 0, MaxLength: 128, Autocomplete: "off", Redisplay: RedisplayPublic},
+		{ID: FieldEmailCode, InputName: "email_code", Label: "Email verification code", Kind: ValueText, Normalize: NormalizeTrim, Required: true, MinLength: 6, MaxLength: 32, Autocomplete: "one-time-code", Redisplay: RedisplayPublic},
 	}, []ActionDescriptor{
 		{ID: ActionSubmit, Label: "Create account"},
 		{ID: ActionDeny, Label: "Cancel", SkipFormValidation: true},

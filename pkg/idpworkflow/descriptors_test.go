@@ -14,6 +14,7 @@ func TestDefaultRegistryFreezesSignupFieldAndActionPolicies(t *testing.T) {
 	assert.Equal(t, []idpworkflow.FieldID{
 		idpworkflow.FieldDisplayName,
 		idpworkflow.FieldEmail,
+		idpworkflow.FieldEmailCode,
 		idpworkflow.FieldInviteCode,
 		idpworkflow.FieldPassword,
 		idpworkflow.FieldPasswordConfirmation,
