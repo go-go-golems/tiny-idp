@@ -22,6 +22,8 @@ RelatedFiles:
       Note: Optional invite code can only become declared consumeInvitation plan (commit 84a9995)
     - Path: repo://lefthook.yml
       Note: Step 17 exact pre-commit test and lint policy whose runner orphaned children
+    - Path: repo://pkg/embeddedidp/options.go
+      Note: Embeds durable invitation service in scripted signup configuration (commit d46ec55)
     - Path: repo://pkg/idpcontinuation/idpcontinuationtest/suite.go
       Note: Step 14 reusable memory and SQLite concurrency contract
     - Path: repo://pkg/idpcontinuation/service.go
@@ -92,6 +94,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 

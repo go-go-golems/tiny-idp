@@ -296,3 +296,11 @@ Step 28: completed lf53 by routing an optional declared invitation effect throug
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Atomic invitation + signup commit
+
+## 2026-07-19
+
+Step 29: threaded durable invitation configuration through embeddedidp to the Fosite adapter (commit d46ec55).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Provider configuration propagation
