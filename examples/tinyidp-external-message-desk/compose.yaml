@@ -25,7 +25,7 @@ services:
         if [ ! -f /state/state.json ]; then
           tinyidp-message-desk init --state-root /state --public-base-url http://localhost:8080
         fi
-        exec tinyidp-message-desk serve --state-root /state --addr :8080 --external-issuer http://localhost:8081 --external-backchannel-url http://idp:8081
+        exec tinyidp-message-desk serve --state-root /state --addr :8080 --listener-mode development-http --external-issuer http://localhost:8081 --external-backchannel-url http://idp:8081
     ports: ["8080:8080"]
     volumes:
       - message-desk-state:/state

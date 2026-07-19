@@ -92,7 +92,7 @@ func NewServeCommand() (cmds.BareCommand, error) {
 		cmds.WithFlags(
 			fields.New("state-root", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Initialized state directory")),
 			fields.New("addr", fields.TypeString, fields.WithDefault("127.0.0.1:8090"), fields.WithHelp("HTTP listen address")),
-			fields.New("listener-mode", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Required listener mode: direct-tls or trusted-proxy-http")),
+			fields.New("listener-mode", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Required listener mode: development-http, direct-tls, or trusted-proxy-http")),
 			fields.New("tls-cert", fields.TypeString, fields.WithHelp("TLS certificate PEM; required only for direct-tls")),
 			fields.New("tls-key", fields.TypeString, fields.WithHelp("TLS private key PEM; required only for direct-tls")),
 			fields.New("trusted-proxy-cidrs", fields.TypeStringList, fields.WithHelp("Required only for trusted-proxy-http")),
@@ -377,19 +377,26 @@ func runMessageApplication(ctx context.Context, settings serveSettings) error {
 type messageListenerMode string
 
 const (
+	messageListenerDevelopmentHTTP  messageListenerMode = "development-http"
 	messageListenerDirectTLS        messageListenerMode = "direct-tls"
 	messageListenerTrustedProxyHTTP messageListenerMode = "trusted-proxy-http"
 )
 
 func parseMessageListenerMode(raw string) (messageListenerMode, error) {
 	mode := messageListenerMode(strings.TrimSpace(raw))
-	if mode != messageListenerDirectTLS && mode != messageListenerTrustedProxyHTTP {
-		return "", errors.New("--listener-mode must be direct-tls or trusted-proxy-http")
+	if mode != messageListenerDevelopmentHTTP && mode != messageListenerDirectTLS && mode != messageListenerTrustedProxyHTTP {
+		return "", errors.New("--listener-mode must be development-http, direct-tls, or trusted-proxy-http")
 	}
 	return mode, nil
 }
 func validateMessageListenerSettings(mode messageListenerMode, settings serveSettings, origin string) error {
 	secure := strings.HasPrefix(origin, "https://")
+	if mode == messageListenerDevelopmentHTTP {
+		if secure || settings.TLSCertificate != "" || settings.TLSKey != "" || len(settings.TrustedProxyCIDRs) != 0 {
+			return errors.New("development-http requires a loopback HTTP public origin and forbids TLS and trusted proxy flags")
+		}
+		return nil
+	}
 	if mode == messageListenerDirectTLS {
 		if !secure || settings.TLSCertificate == "" || settings.TLSKey == "" || len(settings.TrustedProxyCIDRs) != 0 {
 			return errors.New("direct-tls requires an HTTPS public origin, certificate/key, and no trusted proxy CIDRs")
