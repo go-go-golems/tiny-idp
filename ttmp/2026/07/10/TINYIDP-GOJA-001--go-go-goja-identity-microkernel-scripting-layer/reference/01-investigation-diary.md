@@ -16,6 +16,8 @@ Owners: []
 RelatedFiles:
     - Path: repo://go.mod
       Note: Phase 0 baseline source for the Go 1.26 toolchain and pinned go-go-goja dependency recorded in Step 10.
+    - Path: repo://internal/cmds/script.go
+      Note: Operator test command and Glazed row command construction
     - Path: repo://internal/fositeadapter/registration_test.go
       Note: Browser proof and delivery lifecycle evidence
     - Path: repo://internal/fositeadapter/scripted_signup.go
@@ -30,6 +32,8 @@ RelatedFiles:
       Note: Step 17 exact pre-commit test and lint policy whose runner orphaned children
     - Path: repo://pkg/embeddedidp/options.go
       Note: Embeds durable invitation service in scripted signup configuration (commit d46ec55)
+    - Path: repo://pkg/embeddedidp/provider.go
+      Note: Aggregate scripted-signup readiness
     - Path: repo://pkg/idpcontinuation/idpcontinuationtest/suite.go
       Note: Step 14 reusable memory and SQLite concurrency contract
     - Path: repo://pkg/idpcontinuation/service.go
@@ -50,6 +54,8 @@ RelatedFiles:
       Note: Provider invocation proves JavaScript receives a decision rather than authority (commit 40e7747)
     - Path: repo://pkg/idpinvite/durable.go
       Note: Keyed code hashing and transaction-scoped one-time invitation redemption (commit 21c7c4c)
+    - Path: repo://pkg/idpprogram/program.go
+      Note: Declarative embedded test contract
     - Path: repo://pkg/idpprogram/value.go
       Note: Step 14 shared runtime-independent JSON and public-carry validation
     - Path: repo://pkg/idpprogram/value_test.go
@@ -60,6 +66,8 @@ RelatedFiles:
       Note: Invocation-scoped evidence projection (commit c14d70f)
     - Path: repo://pkg/idpsignup/executor_test.go
       Note: Invitation workflow output regression (commit 84a9995)
+    - Path: repo://pkg/idpsignup/manager.go
+      Note: Activation test gate and active-generation readiness
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Durable invitation lifecycle operations available on the caller-owned transaction (commit 21c7c4c)
     - Path: repo://pkg/idpui/templates/workflow.html
@@ -106,6 +114,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -4285,4 +4294,211 @@ ready candidate --atomic publication--> active generation for new forms
 stored continuation { sourceHash:programHash }
   --retained resolver--> exact old executor
   --invoke/advance/consume--> bindings with that same stored fingerprint
+```
+
+## Step 39: Gate activation on declarative embedded program tests
+
+The program artifact now carries bounded declarative test cases, and activation
+refuses to publish a candidate unless every case succeeds in a warmed executor.
+This turns the script’s own contract examples into an activation prerequisite,
+rather than an operator convention that can be forgotten during reload.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the Phase 6 implementation without
+stopping after the generation-routing milestone.
+
+**Inferred user intent:** Ensure a candidate is tested before it can replace a
+live generation, and make that verification available from the CLI.
+
+**Commit (code):** `eff4573` — "Feat: add declarative script test runner";
+`7e089e8` — "Feat: gate generation activation on embedded tests"
+
+### What I did
+
+- Added `Program.Tests` and validation for unique test IDs, existing lambdas,
+  declared expected outcomes, and schema-valid bounded JSON input.
+- Added `program.test(id, spec)` to the `tinyidp` JavaScript module and its
+  TypeScript declaration.
+- Added `Executor.RunTests`, and `tinyidp script test`, which emits a stable
+  per-case ID/expected/actual/passed row and returns an error for the first
+  failed case.
+- Changed `warmGeneration` to execute every embedded test before publication;
+  any failure closes the candidate and leaves the existing active generation
+  untouched.
+- Added executor and manager tests for success and failed expected outcome.
+
+### Why
+
+Compilation and worker warmup prove that a program can load; they do not prove
+that its declared workflow examples still produce the intended transition.
+Running tests in the candidate’s actual worker pool catches that distinction
+before any new browser continuation receives the new fingerprint.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup -count=1 -v
+go run ./cmd/tinyidp script test --source pkg/idpsignup/email_verified_signup.js --output json
+```
+
+The example test emitted a deterministic `signup-start-presents-identity`
+row with expected and actual `present`. A candidate whose test expectation was
+intentionally changed to `deny` failed activation and preserved the old active
+fingerprint.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+Embedded tests must run with no ambient authority. The first runner therefore
+supplies no capabilities or secrets; a test that needs a native dependency
+fails closed instead of accidentally gaining production mailer, identity, or
+store access.
+
+### What was tricky to build
+
+The generation identity must include source as well as the canonical program
+contract. A changed lambda body can keep the same declared schemas and edges;
+testing alone does not make that body interchangeable with a continuation
+issued by the old executable generation.
+
+### What warrants a second pair of eyes
+
+- The current no-capability baseline is intentionally safe but does not yet
+  satisfy the deterministic fake-capability portion of `lf68`.
+- CLI failure diagnostics should gain direct command-level tests before `lf69`
+  is checked off.
+
+### What should be done in the future
+
+Add explicit deterministic test-only host capability bindings and failure
+diagnostic tests; then complete retained-generation draining and observability.
+
+### Code review instructions
+
+- Start with `pkg/idpprogram/validate.go` and `Program.Tests`.
+- Follow `Executor.RunTests` into the worker pool, then `warmGeneration`.
+- Run the two commands in **What worked**.
+
+### Technical details
+
+```text
+source --> compile --> warm isolated worker pool --> embedded tests
+                                                 | failure
+                                                 v
+                                      close candidate; keep active
+                                                 |
+                                               success
+                                                 v
+                                        atomic publication
+```
+
+## Step 40: Surface active scripted-generation readiness
+
+The embedded provider’s established readiness endpoint now includes the
+configured scripted-signup executor or generation manager. A closed manager
+cannot leave `/readyz` green merely because the HTTP server, database, and
+signing key are otherwise healthy.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 39)
+
+**Assistant interpretation:** Continue Phase 6 operational hardening and
+commit the work only after the repository gate passes.
+
+**Inferred user intent:** Make a failed or missing active script generation
+visible to orchestration before it accepts browser traffic.
+
+**Commit (code):** `759962f` — "Feat: expose scripted signup readiness"
+
+### What I did
+
+- Added non-secret `Executor.PoolStats` and `Executor.Ready` methods.
+- Extended `GenerationSnapshot` with the active pool snapshot and added
+  `GenerationManager.Ready`.
+- Added the `scripted_signup` readiness check to `embeddedidp.Provider` for a
+  configured manager or direct executor.
+- Added a provider test which closes its configured manager and proves the
+  readiness report becomes false with the stable
+  `active_generation_unavailable` reason.
+- Repaired pre-existing lint findings exposed by the commit gate and refactored
+  the script command constructors so each output-enabled command is visibly a
+  Glazed row producer to the static analyzer.
+
+### Why
+
+A merely compiled artifact is not a serving generation. K3s and other
+orchestrators need a dependency signal that reflects warmed live workers, while
+metrics can distinguish temporary pool saturation from an unavailable pool.
+
+### What worked
+
+```bash
+go test ./internal/cmds ./pkg/idpsignup ./pkg/embeddedidp ./pkg/sqlitestore ./pkg/idpscript ./internal/fositeadapter -count=1
+go run ./cmd/tinyidp script test --source pkg/idpsignup/email_verified_signup.js --output json
+git commit -m 'Feat: expose scripted signup readiness'
+```
+
+The focused tests and real CLI command passed. The final commit hook passed
+`GOWORK=off go test ./...`, GolangCI-Lint, Glazed CLI lint, and the IDP UI
+analyzer.
+
+### What didn't work
+
+The first commit attempt exposed a stale unused helper and three existing
+static-analysis findings. After those were corrected, Glazed CLI lint reported
+that the generic command-description helper appeared to expose output flags
+without implementing `RunIntoGlazeProcessor`; the commands themselves did
+implement it, but the analyzer could not infer that through the helper’s
+`*cmds.CommandDescription` return type. Moving `WithSections` into each typed
+constructor resolved the analyzer limitation without changing command behavior.
+
+### What I learned
+
+Readiness should report an unavailable script generation, not saturation. A
+saturated warmed pool may make progress when an in-flight invocation releases;
+a closed/empty pool cannot serve any new workflow transition.
+
+### What was tricky to build
+
+The embedded provider intentionally owns the existing `/readyz` aggregation.
+Adding a parallel script endpoint would make orchestration choose between
+conflicting signals. The implementation instead adds one stable check to that
+single report and leaves liveness independent of dependency availability.
+
+### What warrants a second pair of eyes
+
+- `Executor.Ready` defines warmth as a non-closed pool with its full initial
+  worker capacity. If future replacement-worker behavior changes, verify the
+  invariant remains appropriate.
+- This is readiness only; bounded metrics, audit events, deterministic fake
+  capabilities, and repeat-reload leak tests remain required Phase 6 work.
+
+### What should be done in the future
+
+Implement `lf68–lf69`, `lf71–lf73`, and `lf75–lf77` fully before declaring
+Phase 6 complete; do not begin Phase 7 production enablement early.
+
+### Code review instructions
+
+- Review `Executor.Ready`, `GenerationManager.Snapshot`, and the
+  `scripted_signup` branch in `embeddedidp.Provider.Readiness`.
+- Run `go test ./pkg/idpsignup ./pkg/embeddedidp -count=1`.
+- Close a manager in the test and inspect the named readiness check.
+
+### Technical details
+
+```text
+active manager --> active executor --> warmed, non-closed worker pool
+       |                       |                  |
+       +-----------------------+------------------+--> /readyz scripted_signup=true
+
+closed/missing active generation ---------------------> /readyz false
+                                                     reason=active_generation_unavailable
 ```

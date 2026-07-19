@@ -373,3 +373,12 @@ Step 38: added a warmed, atomic retained signup generation manager and routed co
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Continuation fingerprint routing at every native transition
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Atomic candidate activation and bounded retained generation registry
+
+## 2026-07-19
+
+Steps 39-40: added declarative embedded script tests, candidate activation gating, and aggregate scripted-signup readiness (commits eff4573, 7e089e8, 759962f).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Readiness aggregation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Activation gate and readiness
