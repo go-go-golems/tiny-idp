@@ -64,3 +64,5 @@ status:
       description: Work completed
     - slug: archived
       description: Archived/completed work
+    - slug: deprecated
+      description: Superseded historical document retained for context and not normative implementation guidance

@@ -69,3 +69,12 @@ Rendered and uploaded TINYIDP-GOJA-001 Assurance Core Grammar 3267560.pdf to /ai
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 6 records the render failure, correction, and successful upload
+
+## 2026-07-19
+
+Step 7: published the normative 1,821-line lambda-first JavaScript API and explicit browser continuation design, deprecated design-doc/01, and replaced the implementation sequence
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md — Clearly marked deprecated and linked to its replacement
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — New normative intern implementation guide

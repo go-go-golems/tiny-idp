@@ -16,6 +16,8 @@ Owners: []
 RelatedFiles:
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md
       Note: Primary design produced by the investigation
+    - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
+      Note: Normative design produced and recorded in Step 7
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/02-security-verification-scripting-plane-assessment.md
       Note: Step 4 focused verification-plane design
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/sources/01-colleague-identity-microkernel-research.md
@@ -26,6 +28,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -751,4 +754,167 @@ bundle inputs: 7 Markdown documents
 bundle name: TINYIDP-GOJA-001 Assurance Core Grammar 3267560.pdf
 remote destination: /ai/2026/07/10/TINYIDP-GOJA-001
 upload result: success after one render fix
+```
+
+## Step 7: Replace the graph-first API with a lambda-first explicit-continuation design
+
+This step revised the production scripting direction after working through
+signup, virtual users, virtual invitation codes, email verification, and the
+boundary between JavaScript Promises and browser HTTP requests. The resulting
+design makes named JavaScript lambdas the primary application behavior while
+retaining the program graph as an enforceable contract for schemas,
+capabilities, effects, budgets, outcomes, and continuation edges.
+
+The new normative document uses explicit browser continuations. A handler may
+await bounded capability calls within one HTTP request, but forms and native
+challenges return outcomes naming a later handler. Go persists the versioned
+continuation, validates the later browser request, and invokes the handler in a
+fresh runtime call. This preserves restartability and makes the state visible to
+the assurance grammar without reducing JavaScript to a richer configuration
+file.
+
+### Prompt Context
+
+**User prompt (verbatim):**
+
+```text
+ok, i like the explicit continuation approach.
+
+Let's write a new detailed design document for the JS API that supersedes the existing one (mark it as deprecated clearly). Create  a detailed analysis / design / implementation guide that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and the nupload to remarkable.
+```
+
+**Assistant interpretation:** Author a new normative intern implementation
+guide for the lambda-first Tiny-IDP JavaScript API, use explicit durable browser
+continuations, deprecate the graph-first API document unmistakably, update all
+ticket bookkeeping, and publish the resulting design to reMarkable.
+
+**Inferred user intent:** Make Tiny-IDP programmable through real lambdas and
+composable native identity primitives, including virtual resources and
+multi-request signup, without proliferating Go modes or configuration files and
+without weakening protocol, secret, transaction, or replay invariants.
+
+### What I did
+
+- Read the complete local `TINYIDP-GOJA-001` diary and the selected ticket,
+  textbook, diary, docmgr, and reMarkable workflow instructions.
+- Kept discovery and all edits under
+  `/home/manuel/workspaces/2026-07-07/prod-tiny-idp`.
+- Inspected the current authorization and registration request flow,
+  interaction creation/reconstruction, interaction store contract, UI model and
+  renderer, account creation transaction, isolated verification compiler,
+  go-go-goja runtime factory, runtime owner, and native Promise guidance.
+- Created
+  `design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md`.
+- Wrote the normative design with system orientation, API examples, exact
+  browser/OAuth sequences, handler and outcome contracts, runtime invocation,
+  virtual identities and invites, secret handles, capability binding, effect
+  plans, native atomic commit, generation semantics, package/file guidance,
+  seven implementation phases, tests, decisions, alternatives, risks, and
+  review instructions.
+- Marked `design-doc/01` deprecated in its title, status, metadata, and a
+  prominent document-opening warning linked to design 03.
+- Updated the ticket index so design 03 is the normative entry point and the
+  current status and key decisions describe lambda-first workflows.
+- Added a task-ledger deprecation note and a new lambda-first implementation
+  task group.
+
+### Why
+
+- The old API correctly protected Go-owned protocol and secret authority, but
+  its first production scope made JavaScript primarily graph syntax plus narrow
+  authorization/claims callbacks.
+- The desired product needs lambdas to implement application-specific flow,
+  virtual resource behavior, routing, and identity projection.
+- Explicit continuations reuse the existing durable interaction pattern and do
+  not require retaining or serializing a Goja heap across browser requests.
+- Typed effect plans let lambdas choose mutations without executing JavaScript
+  while a store transaction is open.
+
+### What worked
+
+- The current code provides strong direct foundations: Fosite validation before
+  interaction creation, hashed and browser-bound interaction records, OAuth
+  request reconstruction and digest checks, provider-owned presentation models,
+  atomic store operations, an isolated Goja compiler, and owner-serialized
+  runtime calls.
+- The explicit continuation model supports the requested lambda-first behavior
+  while remaining compatible with restart, reload, static analysis, model
+  checking, and secret-free tracing.
+- The new document is 1,821 lines and is structured as a textbook-style
+  intern implementation guide rather than an API sketch.
+
+### What didn't work
+
+- N/A. Document creation and local patching completed without command or render
+  failures in this step before validation and upload.
+
+### What I learned
+
+- The most useful boundary is not declarative versus imperative JavaScript. It
+  is bounded in-request execution versus explicit cross-request continuation.
+- A graph remains valuable when it constrains executable lambdas rather than
+  attempting to replace their behavior.
+- Virtual identity and invitation providers need explicit state semantics so an
+  operator can see the replay and revocation consequences of a stateless
+  implementation.
+- The current hardcoded provider-owned registration path is a better first
+  vertical slice than authorization/claims because it exercises UI,
+  continuations, secrets, effects, and OAuth resumption together.
+
+### What was tricky to build
+
+- The design had to preserve real JavaScript behavior without giving lambdas
+  ambient authority. The solution was to make lambda contracts declare schemas,
+  capabilities, effects, outcomes, budgets, and continuation edges, then keep
+  irreversible operations behind native effect committers.
+- Browser-spanning `await` is attractive syntax, but an ordinary Promise is a VM
+  heap object. The design explicitly distinguishes bounded Promise calls within
+  one request from browser presentation/challenge outcomes persisted by Go.
+- Secret fields cannot become ordinary JS strings if virtual providers are
+  programmable. The design uses invocation-scoped opaque handles passed to
+  typed native capabilities and avoids carrying passwords across long waits.
+
+### What warrants a second pair of eyes
+
+- Review whether `WorkflowContinuation` should extend the existing interaction
+  storage or use a separate store and migration.
+- Review Promise timeout, interruption, late-settlement, and worker-replacement
+  semantics against the current go-go-goja owner implementation.
+- Review the proposed secret-handle and pending-credential lifetime rules.
+- Review the generation-retention bound for continuations during script reload.
+- Review whether the generic workflow presentation model can remain strongly
+  typed without duplicating the existing `idpui` models.
+
+### What should be done in the future
+
+1. Execute Phase 0 as a contract/runtime spike before stabilizing the public
+   TypeScript surface.
+2. Resolve continuation schema placement with memory and SQLite conformance
+   tests before changing the Fosite adapter.
+3. Migrate the current signup behavior differentially before adding email or
+   invite providers.
+4. Keep the assurance vocabulary work aligned with handler, outcome, effect,
+   evidence, and observation identifiers from design 03.
+
+### Code review instructions
+
+- Start at the supersession notice and executive summary in design 03.
+- Review sections 5–7 for handler invocation and exact browser/OAuth behavior.
+- Review sections 9–14 for secrets, virtual resources, effects, transactions,
+  continuations, and generation pinning.
+- Review sections 18–21 for file-level implementation work, phase gates, tests,
+  and accepted decisions.
+- Confirm design 01 is unmistakably deprecated and the ticket index points to
+  design 03 first.
+- Run `docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30`.
+
+### Technical details
+
+```text
+normative design: design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
+deprecated design: design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md
+primary migration target: internal/fositeadapter/provider.go registration branch
+browser boundary: persisted named continuation, never a retained Goja Promise
+in-request async: bounded Promise-returning native capability
+irreversible mutation: validated native effect plan and named atomic commit
 ```

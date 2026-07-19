@@ -1,7 +1,7 @@
 ---
-Title: Go go goja scripting layer analysis design and implementation guide
+Title: Deprecated Go go goja scripting layer analysis design and implementation guide
 Ticket: TINYIDP-GOJA-001
-Status: active
+Status: deprecated
 Topics:
     - architecture
     - auth
@@ -28,14 +28,16 @@ RelatedFiles:
       Note: Serialized runtime call behavior and context-cancellation semantics that shape policy execution
     - Path: ws://go-go-goja/pkg/xgoja/providerapi/module.go
       Note: Current xgoja provider module, host service, runtime owner, and closer contract
+    - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
+      Note: Normative replacement for the JavaScript API, runtime seams, signup workflow, virtual resources, and browser continuation design
 ExternalSources:
     - https://github.com/dop251/goja
     - https://openid.net/specs/openid-connect-core-1_0-final.html
     - https://www.rfc-editor.org/rfc/rfc9700.txt
-Summary: Intern-oriented design for compiling JavaScript into a validated tiny-idp identity graph while keeping protocols, secrets, persistence, and process ownership in Go.
-LastUpdated: 2026-07-10T11:11:55.352987794-04:00
-WhatFor: Implementing a safe go-go-goja configuration and request-policy layer on top of tiny-idp without moving OAuth, OIDC, cryptography, or durable security state into JavaScript.
-WhenToUse: Read before implementing the scripting module, graph compiler, policy runtime pool, xgoja provider, hot reload, or any script-visible identity primitive.
+Summary: Deprecated historical design for compiling JavaScript into a validated tiny-idp identity graph; superseded by design-doc/03's lambda-first workflow and explicit-continuation API.
+LastUpdated: 2026-07-19T12:00:00-04:00
+WhatFor: Historical context for the original graph-first and authorization-claims-first design; do not use as the normative JavaScript API implementation plan.
+WhenToUse: Read only when tracing the evolution of TINYIDP-GOJA-001 or comparing the deprecated graph-first API with the normative lambda-first design in design-doc/03.
 ---
 
 
@@ -45,7 +47,15 @@ WhenToUse: Read before implementing the scripting module, graph compiler, policy
 
 
 
-# Go-go-goja scripting layer analysis, design, and implementation guide
+# Deprecated: Go-go-goja scripting layer analysis, design, and implementation guide
+
+> **DEPRECATED — DO NOT IMPLEMENT THIS API AS THE CURRENT DESIGN.** This
+> document has been superseded by
+> [Lambda-first Tiny-IDP JavaScript API with explicit browser continuations](03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md).
+> It remains in the ticket as historical research. Its security boundary,
+> isolated compiler, runtime ownership, typed outcomes, capability discipline,
+> and assurance analysis remain relevant, but its graph-first API emphasis and
+> authorization/claims-first implementation order are no longer normative.
 
 ## Executive summary
 

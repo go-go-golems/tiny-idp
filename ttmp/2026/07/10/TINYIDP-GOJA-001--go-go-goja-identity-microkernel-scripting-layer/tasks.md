@@ -1,5 +1,12 @@
 # Tasks
 
+> **Planning status:** The implementation tasks in Phases 0–8 below belong to
+> the deprecated graph-first design in `design-doc/01`. They are retained as
+> historical planning evidence and must not be treated as the normative API
+> sequence. The current implementation sequence is the lambda-first plan in
+> `design-doc/03` and the `Lambda-first superseding design` tasks appended to
+> this file. Phase 9's assurance-vocabulary work remains complementary.
+
 ## Research and design deliverable
 
 - [x] Create `TINYIDP-GOJA-001` with architecture/auth/Go/OIDC/research/testing/xgoja topics <!-- t:d3bd -->
@@ -133,3 +140,19 @@
 - [ ] Materialize the local-web Goja configuration graph solely from registered native block and policy descriptors. <!-- t:t0q3 -->
 - [ ] Evaluate selective pure transition kernels only after the vocabulary, tracing, proof boundary, analyzers, and model replay are stable. <!-- t:qh8f -->
 - [ ] Run differential provider, persistence, trace, monitor, conformance, race, fuzz, failpoint, and performance gates after each refactoring phase. <!-- t:kjlg -->
+
+## Lambda-first superseding design
+
+- [x] Lambda-first design: publish the normative intern implementation guide and clearly deprecate design-doc/01 <!-- t:vnp5 -->
+- [ ] Lambda API Phase 0: define pure-Go program, workflow, lambda, outcome, effect, capability, schema, and validation contracts <!-- t:6h0x -->
+- [ ] Lambda API Phase 0: implement isolated require("tinyidp").v1 compiler and deterministic callback fingerprints <!-- t:6hu5 -->
+- [ ] Lambda API Phase 0: implement owner-safe Promise-aware worker invocation, interruption, discard, and negative ambient-module tests <!-- t:nj6d -->
+- [ ] Lambda API Phase 1: implement versioned explicit workflow continuations with memory and SQLite conformance tests <!-- t:v4n3 -->
+- [ ] Lambda API Phase 2: implement generic provider-owned presentation fields, actions, native rendering, and exact POST validation <!-- t:ctai -->
+- [ ] Lambda API Phase 3: replace hardcoded provider registration with the scripted signup workflow and named native commit operation <!-- t:xv3m -->
+- [ ] Lambda API Phase 4: implement virtual identity, signed virtual invite, computed invite, and durable one-time invite providers <!-- t:2gvn -->
+- [ ] Lambda API Phase 5: implement native email-code challenges and restartable verified-email signup continuation <!-- t:lre3 -->
+- [ ] Lambda API Phase 6: implement program validate, test, explain, activation, generation retention, readiness, metrics, and rollback <!-- t:7xil -->
+- [ ] Lambda API Phase 7: add authorization and claims lambdas after signup semantics stabilize <!-- t:p90i -->
+- [ ] Lambda API assurance: model lambda contracts as constrained nondeterministic transitions and emit secret-free runtime traces <!-- t:77za -->
+- [ ] Lambda API delivery: validate docmgr bookkeeping and upload the superseding design bundle to reMarkable <!-- t:d8yk -->
