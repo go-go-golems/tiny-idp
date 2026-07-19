@@ -3,6 +3,7 @@ package fositeadapter_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -146,6 +147,43 @@ func TestAuthorizationPolicyDeniesPromptNoneWithExistingSessionBeforeCodeIssuanc
 	assert.Empty(t, redirect.Query().Get("code"))
 }
 
+func TestAuthorizationAndClaimsPolicyFailuresDoNotIssueCode(t *testing.T) {
+	for name, options := range map[string]fositeadapter.Options{
+		"authorization": {Authorization: failingAuthorizationPolicy{}},
+		"claims":        {Claims: failingClaimsPolicy{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			st := memory.New()
+			require.NoError(t, st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}))
+			require.NoError(t, st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}))
+			key, err := keys.GenerateRSA("kid-1", time.Now())
+			require.NoError(t, err)
+			require.NoError(t, st.CreateSigningKey(ctx, key))
+			options.Issuer = "http://127.0.0.1:5556"
+			options.Store = st
+			options.SecretKey = []byte("authorization-claims-failure-key-32")
+			p, err := fositeadapter.NewProvider(ctx, options)
+			require.NoError(t, err)
+			ts := httptest.NewServer(p.Handler())
+			t.Cleanup(ts.Close)
+
+			form := url.Values{"response_type": {"code"}, "client_id": {"spa"}, "redirect_uri": {"http://localhost/callback"}, "scope": {"openid"}, "state": {"state-1234567890"}, "nonce": {"nonce-1234567890"}, "code_challenge": {s256("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")}, "code_challenge_method": {"S256"}, "login": {"alice"}}
+			csrfToken, csrfCookie := fetchCSRF(t, ts.URL, form)
+			form.Set("csrf_token", csrfToken)
+			request, err := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
+			require.NoError(t, err)
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.AddCookie(csrfCookie)
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+			defer response.Body.Close()
+			assert.Equal(t, http.StatusInternalServerError, response.StatusCode)
+			assert.Empty(t, response.Header.Get("Location"))
+		})
+	}
+}
+
 type denyAuthorizationPolicy struct{}
 
 func (denyAuthorizationPolicy) Authorize(context.Context, idp.AuthorizationInput) (idp.AuthorizationDecision, error) {
@@ -161,6 +199,18 @@ func (denyPromptNoneAuthorizationPolicy) Authorize(_ context.Context, input idp.
 		}
 	}
 	return idp.AuthorizationDecision{Kind: idp.AuthorizationAllow}, nil
+}
+
+type failingAuthorizationPolicy struct{}
+
+func (failingAuthorizationPolicy) Authorize(context.Context, idp.AuthorizationInput) (idp.AuthorizationDecision, error) {
+	return idp.AuthorizationDecision{}, errors.New("synthetic authorization policy failure")
+}
+
+type failingClaimsPolicy struct{}
+
+func (failingClaimsPolicy) Claims(context.Context, idp.ClaimsInput) (idp.ClaimsOutput, error) {
+	return idp.ClaimsOutput{}, errors.New("synthetic claims policy failure")
 }
 
 func TestAuditReasonsUseStableCodes(t *testing.T) {
