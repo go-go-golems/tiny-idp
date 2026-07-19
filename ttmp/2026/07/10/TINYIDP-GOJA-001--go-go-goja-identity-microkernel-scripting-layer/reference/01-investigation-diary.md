@@ -5296,3 +5296,63 @@ manager -- warm candidate -- atomic active swap --> all calls complete
        |
        +-- active fingerprint now identifies replacement
 ```
+
+## Step 49: Begin Phase 7 authorization policy seam
+
+Phase 7 now has a native, fail-closed authorization extension point. The
+policy receives a copied data-only view only after OAuth/OIDC validation and
+may allow, deny with a stable diagnostic, or abstain; it cannot manipulate
+Fosite, consent persistence, token claims, redirects, or credentials.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Proceed from the completed Phase 6 gate into the
+next ordered Phase 7 contracts and integration work.
+
+**Commit (code):** `45e8eff` — "Feat: define authorization policy contracts";
+`ff1f29a` — "Feat: apply authorization policies before issuance"
+
+### What I did
+
+- Added immutable `AuthorizationInput` views, closed allow/deny/skip decisions,
+  bounded evidence declarations, and validated stable denial diagnostics.
+- Threaded an optional `AuthorizationPolicy` through embedded and Fosite
+  provider options.
+- Invoked it in `finishAuthorize` after client/session/authentication validation
+  and before consent recording, session persistence, or Fosite code issuance.
+- Mapped a denial to standard `access_denied`; mapped a policy error to a
+  fail-closed server response with a bounded audit reason.
+- Added a valid PKCE/browser-flow test proving denial returns no code and the
+  audit event contains only `policy.member_required`.
+
+### Why
+
+This placement lets product policy constrain an otherwise valid authorization
+request without allowing JavaScript or Go policy code to bypass protocol
+validation or construct an OAuth response.
+
+### What worked
+
+```bash
+go test ./pkg/idp -count=1
+go test ./internal/fositeadapter ./pkg/embeddedidp ./pkg/idp -count=1
+git commit -m 'Feat: apply authorization policies before issuance'
+```
+
+Focused tests passed; both commits passed full repository test, lint, and vet
+hooks.
+
+### What didn't work
+
+The helper name initially collided with the existing HTTP `authorize` method;
+renaming it to `authorizePolicy` retained the required boundary. The browser
+POST uses the provider's `303` redirect wrapper, so the regression test accepts
+the existing `302`/`303` redirect behavior rather than asserting a new status.
+
+### Code review instructions
+
+- Review `AuthorizationInput.Clone` and `AuthorizationDecision.Validate`.
+- Trace `Provider.finishAuthorize` to verify policy precedes consent/code.
+- Run the focused Fosite adapter test and inspect the redirect for no `code`.

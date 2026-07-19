@@ -461,8 +461,8 @@ password-recovery, and device-verification flows described by design 03.
 
 #### Phase 7 tasks
 
-- [ ] Define immutable authorization input, allowed allow/deny/skip outcomes, declared evidence, and stable denial diagnostics without exposing Fosite or token mutation authority <!-- t:lf78 -->
-- [ ] Invoke authorization lambdas only after native client, redirect URI, scope, PKCE, prompt, session, authentication, and request validation and before native consent/code issuance <!-- t:lf79 -->
+- [x] Define immutable authorization input, allowed allow/deny/skip outcomes, declared evidence, and stable denial diagnostics without exposing Fosite or token mutation authority <!-- t:lf78 -->
+- [x] Invoke authorization lambdas only after native client, redirect URI, scope, PKCE, prompt, session, authentication, and request validation and before native consent/code issuance <!-- t:lf79 -->
 - [ ] Define immutable claims input and bounded claims output with native protection for issuer, subject, audience, expiry, nonce, authentication time, and other protocol-owned claims <!-- t:lf80 -->
 - [ ] Invoke claims lambdas before native OIDC session persistence and preserve refresh-token and UserInfo consistency <!-- t:lf81 -->
 - [ ] Express account selection and consent as workflow handlers only where the Phase 0–6 presentation/continuation contracts fit without moving OAuth decisions or response writing into JavaScript <!-- t:lf82 -->
