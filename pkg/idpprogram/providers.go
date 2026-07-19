@@ -8,10 +8,17 @@ type ProviderKind string
 const (
 	ProviderKindIdentity   ProviderKind = "identity"
 	ProviderKindInvitation ProviderKind = "invitation"
+	// ProviderKindAuthorization is a post-native-validation policy callback.
+	// It is not an OAuth endpoint, a token writer, or an authentication
+	// provider; native code alone owns all of those transitions.
+	ProviderKindAuthorization ProviderKind = "authorization"
+	// ProviderKindClaims is a bounded additional-claims callback evaluated
+	// while the provider constructs its native OIDC session.
+	ProviderKindClaims ProviderKind = "claims"
 )
 
 func (k ProviderKind) Valid() bool {
-	return k == ProviderKindIdentity || k == ProviderKindInvitation
+	return k == ProviderKindIdentity || k == ProviderKindInvitation || k == ProviderKindAuthorization || k == ProviderKindClaims
 }
 
 // ProviderState explains whether the provider has native durable state. It is
@@ -58,14 +65,16 @@ func (r RevocationMode) Valid() bool {
 }
 
 const (
-	IdentityEstablishHandler  = "establish"
-	InvitationValidateHandler = "validate"
+	IdentityEstablishHandler   = "establish"
+	InvitationValidateHandler  = "validate"
+	AuthorizationDecideHandler = "decide"
+	ClaimsAdditionalHandler    = "additional"
 )
 
-// Provider is the immutable artifact contract for one identity or invitation
-// resource. ID is a stable operator-selected identifier, normally
-// "kind.name". Handlers reference named provider lambdas rather than storing
-// Goja functions or host service handles.
+// Provider is the immutable artifact contract for one typed resource or
+// policy. ID is a stable operator-selected identifier, normally "kind.name".
+// Handlers reference named provider lambdas rather than storing Goja functions
+// or host service handles.
 type Provider struct {
 	ID               string                     `json:"id"`
 	Kind             ProviderKind               `json:"kind"`

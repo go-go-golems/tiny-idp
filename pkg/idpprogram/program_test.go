@@ -173,6 +173,32 @@ func TestValidateProviderContracts(t *testing.T) {
 	}
 }
 
+func TestValidateRequiresTypedAuthorizationAndClaimsHandlers(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		kind    idpprogram.ProviderKind
+		handler string
+	}{
+		{name: "authorization", kind: idpprogram.ProviderKindAuthorization, handler: idpprogram.AuthorizationDecideHandler},
+		{name: "claims", kind: idpprogram.ProviderKindClaims, handler: idpprogram.ClaimsAdditionalHandler},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			program := validProgram()
+			program.Schemas["providerInput"] = idpprogram.Schema{ID: "providerInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 1024}
+			program.Schemas["providerOutput"] = idpprogram.Schema{ID: "providerOutput", Kind: idpprogram.SchemaKindObject, MaxBytes: 1024, Additional: true}
+			program.Lambdas["policy."+tc.handler] = idpprogram.LambdaSpec{ID: "policy." + tc.handler, Kind: idpprogram.LambdaKindProvider, InputSchema: "providerInput", OutputSchema: "providerOutput", AllowedOutcomes: []idpprogram.OutcomeKind{idpprogram.OutcomeComplete}, Budget: idpprogram.InvocationBudget{Timeout: time.Second, MaxOutputBytes: 1024}}
+			providerID := string(tc.kind) + ".default"
+			program.Providers = map[string]idpprogram.Provider{providerID: {ID: providerID, Kind: tc.kind, Version: 1, State: idpprogram.ProviderStateVirtual, ReplayProtection: idpprogram.ReplayProtectionNone, Revocation: idpprogram.RevocationNone, Handlers: map[string]idpprogram.ProviderHandler{tc.handler: {ID: tc.handler, LambdaID: "policy." + tc.handler, InputSchema: "providerInput", OutputSchema: "providerOutput"}}}}
+			assert.Empty(t, idpprogram.Validate(program))
+
+			provider := program.Providers[providerID]
+			provider.Handlers = map[string]idpprogram.ProviderHandler{}
+			program.Providers[providerID] = provider
+			assert.Contains(t, diagnosticIDs(idpprogram.Validate(program)), "provider.required_handler")
+		})
+	}
+}
+
 func TestValidateOutcomeRequiresExplicitBrowserContinuation(t *testing.T) {
 	spec := validProgram().Lambdas["signup.start"]
 

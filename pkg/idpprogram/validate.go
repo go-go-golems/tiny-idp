@@ -259,10 +259,18 @@ func Validate(program Program) Diagnostics {
 }
 
 func requiredProviderHandler(kind ProviderKind) string {
-	if kind == ProviderKindIdentity {
+	switch kind {
+	case ProviderKindIdentity:
 		return IdentityEstablishHandler
+	case ProviderKindAuthorization:
+		return AuthorizationDecideHandler
+	case ProviderKindClaims:
+		return ClaimsAdditionalHandler
+	case ProviderKindInvitation:
+		return InvitationValidateHandler
+	default:
+		return ""
 	}
-	return InvitationValidateHandler
 }
 
 func validateSchemaCycles(diagnostics *Diagnostics, schemas map[string]Schema) {
