@@ -2,6 +2,7 @@ package idpsignup_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -77,4 +78,47 @@ func TestGenerationManagerReadinessTracksClosedActivePool(t *testing.T) {
 	require.NoError(t, manager.Close(ctx))
 	assert.Error(t, manager.Ready())
 	assert.False(t, manager.Snapshot().Ready)
+}
+
+func TestGenerationManagerDrainsEvictedAndRemainingWorkerPools(t *testing.T) {
+	ctx := context.Background()
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.DefaultSource, 1, 1)
+	require.NoError(t, err)
+	first, err := manager.Active()
+	require.NoError(t, err)
+
+	secondSource := strings.Replace(idpsignup.DefaultSource, "Create an account", "Create your account", 1)
+	_, err = manager.Activate(ctx, secondSource)
+	require.NoError(t, err)
+	second, err := manager.Active()
+	require.NoError(t, err)
+	thirdSource := strings.Replace(idpsignup.DefaultSource, "Create an account", "Create another account", 1)
+	_, err = manager.Activate(ctx, thirdSource)
+	require.NoError(t, err)
+	third, err := manager.Active()
+	require.NoError(t, err)
+
+	assert.True(t, first.PoolStats().Closed, "evicted generation must drain its worker pool")
+	assert.False(t, second.PoolStats().Closed)
+	assert.False(t, third.PoolStats().Closed)
+	assert.Len(t, manager.Snapshot().Retained, 2)
+	require.NoError(t, manager.Close(ctx))
+	assert.True(t, second.PoolStats().Closed)
+	assert.True(t, third.PoolStats().Closed)
+}
+
+func TestGenerationManagerRepeatedReloadsKeepRetentionBounded(t *testing.T) {
+	ctx := context.Background()
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.DefaultSource, 1, 2)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, manager.Close(context.Background())) })
+
+	for index := 0; index < 12; index++ {
+		source := strings.Replace(idpsignup.DefaultSource, "Create an account", fmt.Sprintf("Create account %d", index), 1)
+		_, err := manager.Activate(ctx, source)
+		require.NoError(t, err)
+		snapshot := manager.Snapshot()
+		assert.True(t, snapshot.Ready)
+		assert.LessOrEqual(t, len(snapshot.Retained), 3)
+	}
 }
