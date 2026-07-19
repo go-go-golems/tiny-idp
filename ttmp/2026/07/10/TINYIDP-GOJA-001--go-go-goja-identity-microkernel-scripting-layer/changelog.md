@@ -355,3 +355,12 @@ Step 36: completed Phase 5 lifecycle enforcement, post-verification password col
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Browser and SQLite restart Phase 5 evidence
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/memory_test.go — Atomic correct-code concurrency evidence
+
+## 2026-07-19
+
+Step 37: completed Phase 6 compile-time script validation and secret-free explanation commands for the host-owned signup production profile (commit c390379).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/script.go — Glazed script validate/explain command surface
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Compile-only signup profile seam

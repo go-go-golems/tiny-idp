@@ -4067,3 +4067,109 @@ browser B + copied form --binding check--> generic rejection
 old/rotated/replayed code --native state transition--> generic rejection
 two correct submissions --atomic Verify--> exactly one VerifiedEmailEvidence
 ```
+
+## Step 37: Add production-profile script validation and explanation commands
+
+Phase 6 now has an operator-facing, compile-only entry point for the exact
+signup program profile used by the provider. It does not start a listener or
+execute a browser request; it compiles in the isolated runtime and reports the
+immutable contract identity that a later activation manager must accept.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 34)
+
+**Assistant interpretation:** Continue directly into the operational Phase 6
+work after the Phase 5 gate, with deliberate commits and diary evidence.
+
+**Inferred user intent:** Give an implementer and operator a safe way to
+inspect script artifacts before any runtime activation or production routing.
+
+**Commit (code):** `c390379` — "Feat: add script validation and explanation commands"
+
+### What I did
+
+- Added `idpsignup.Compile`, a compile-only seam sharing the same host-owned
+  signup schemas as `idpsignup.New` without starting worker pools.
+- Added Glazed `tinyidp script validate --source FILE --profile signup`, which
+  prints source/program/callback-registry/schema fingerprints.
+- Added Glazed `tinyidp script explain`, which prints sorted workflow/lambda/
+  schema inventories, provider projections, and the canonical full program
+  contract as secret-free data.
+- Wired the `script` command group into `cmd/tinyidp` and verified help plus
+  real validation/explanation against `email_verified_signup.js`.
+- Checked off `lf67` and `lf70`.
+
+### Why
+
+Activation cannot safely be treated as “the file parsed.” Operators need the
+same isolated materialization, host schema bindings, and deterministic hashes
+that the executor uses, while review tooling needs a structural explanation
+without a Goja callback, browser session, or secret value.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup ./internal/cmds ./cmd/tinyidp -count=1
+go run ./cmd/tinyidp script validate --help
+go run ./cmd/tinyidp script explain --help
+go run ./cmd/tinyidp script validate --source pkg/idpsignup/email_verified_signup.js --output json
+go run ./cmd/tinyidp script explain --source pkg/idpsignup/email_verified_signup.js --output json
+```
+
+All commands passed. The validation output included four independent stable
+fingerprints; explanation listed the four signup handlers and emitted the full
+canonical program contract.
+
+### What didn't work
+
+N/A.
+
+### What I learned
+
+The existing artifact already contained the necessary operational identity.
+The missing part was not another compiler path but a narrow compile-only
+signup-profile export and a command layer that refuses an unknown profile
+instead of silently treating it as production-compatible.
+
+### What was tricky to build
+
+The command’s profile flag is intentionally restrictive. A generic JavaScript
+file cannot be validated meaningfully without knowing which host-owned schemas
+and native effect catalog apply. Accepting arbitrary profile names would make
+the word “valid” misleading, so the command currently fails closed unless the
+explicit `signup` profile is selected.
+
+### What warrants a second pair of eyes
+
+- The full `program_contract` output is intentionally structural and
+  secret-free; confirm its size remains acceptable as more workflow types are
+  added, or switch large contracts to a dedicated JSON file output mode.
+- Activation/reload must route each continuation by its persisted program
+  fingerprint. Do not install a manager that simply swaps the active executor
+  and breaks old continuations.
+
+### What should be done in the future
+
+Implement `lf68–lf69` embedded deterministic program tests, then `lf71–lf77`
+with a fingerprint-routed retained-generation manager, readiness, audit,
+metrics, and repeated-reload failure matrix.
+
+### Code review instructions
+
+- Start in `internal/cmds/script.go`; follow `loadScriptArtifact` into
+  `idpsignup.Compile`.
+- Compare `Compile` and `New` in `pkg/idpsignup/executor.go` to confirm they
+  share the schema catalog.
+- Run the five commands in **What worked**.
+
+### Technical details
+
+```text
+source file --isolated compile/materialize--> Artifact
+Artifact --> source/program/callback/schema fingerprints
+Artifact.Program() --> canonical contract --> script explain
+
+No listener, HTTP request, browser cookie, secret, or mutable global registry
+is created by either command.
+```
