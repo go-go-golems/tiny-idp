@@ -2855,3 +2855,113 @@ transport: copied JSON in Outcome.Presentation
 validation: targeted direct tests, targeted race tests, make lint all pass
 next task: lf31
 ```
+
+## Step 20: Add the native workflow-page rendering boundary
+
+This step completes `lf31` without prematurely adding a public scripting route.
+The Fosite adapter now has a native `renderWorkflow` path for a validated
+`WorkflowPage`; Phase 3 will call it only after Fosite has accepted the
+authorization request and the workflow executor has returned a presentation.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Continue"
+
+**Assistant interpretation:** Advance the next checked task while retaining
+the provider's existing browser security envelope.
+
+**Inferred user intent:** Prepare the actual production rendering seam, not a
+mock UI or a JavaScript-controlled endpoint.
+
+### What I did
+
+- Added `WorkflowRenderer` to Fosite adapter options and provider state. It
+  defaults to the supplied interaction renderer only when it implements the
+  workflow contract; otherwise it constructs the established default renderer.
+- Added `Provider.renderWorkflow`, an unexported native boundary parallel to
+  `renderInteraction`. It preserves no-store/no-cache headers, a CSP restricted
+  to self plus the validated redirect origin, bounded buffered output, HTML
+  content type, render metrics, and bounded audit failure reasons.
+- Extended `WorkflowForm` with a validated absolute redirect origin. This is
+  provider-projected data used solely to construct CSP; scripts still cannot
+  select a form action or header.
+- Added a provider-internal regression test that renders a validated workflow
+  page and asserts CSP, cache headers, HTML content type, form action, and the
+  established interaction/CSRF hidden controls. Added a page-model test that
+  rejects a redirect URL rather than a bare origin.
+- Marked `lf31` complete in the task ledger.
+
+### Why
+
+The renderer is not an HTTP authority. The adapter must therefore own the
+security headers and buffer before any response bytes are committed. A public
+route would be unsafe and incomplete here: no activated generation, Fosite
+validated request, workflow continuation, or native POST projection exists yet.
+This seam makes the later routing task compose with the already hardened
+provider controls instead of recreating a weaker form endpoint.
+
+### What worked
+
+- `go test ./pkg/idpui ./internal/fositeadapter -count=1` passed.
+- `go test -race ./pkg/idpui ./internal/fositeadapter -count=1` completed with
+  no race failure after the normal long-running Fosite browser/OIDC suite.
+- `make lint` passed with zero golangci-lint issues and successful custom
+  Glazed and IDP UI analyzer checks.
+
+### What didn't work
+
+- The first new test asserted invented hidden-control names. The actual,
+  established provider contract is `interaction` and `csrf_token`; the test
+  was corrected to assert that existing contract. No production code changed
+  in response to the failure.
+
+### What I learned
+
+- `WorkflowPage` needs the redirect *origin* as a distinct provider-projected
+  field: the full redirect URI must never be given to the renderer merely to
+  construct CSP.
+- Keeping `renderWorkflow` unexported prevents callers from treating it as an
+  alternate OAuth entry point. It is a composition primitive for the validated
+  authorization path, not a generic web endpoint.
+
+### What was tricky to build
+
+- The native renderer must make headers authoritative before validating/rendering
+  the page, matching the existing interaction path exactly enough that failed
+  renderers cannot accidentally weaken cache or CSP behavior.
+- The generic rendering seam has to exist before Phase 3, while actual routing
+  must wait for a Fosite-validated signup interaction. The boundary is therefore
+  implemented and tested without exposing an incomplete public route.
+
+### What warrants a second pair of eyes
+
+- Compare `renderWorkflow` line by line with `renderInteraction` when later
+  refactoring shared rendering mechanics; their failure accounting must remain
+  equivalent.
+- Review the Phase 3 caller to ensure its `RedirectOrigin` comes from the
+  already validated registered redirect URI, never raw browser input.
+
+### What should be done in the future
+
+- Implement `lf32`: exact native POST projection. It must accept only the
+  selected descriptors and actions, reject duplicate singleton values and
+  malformed/oversized forms, and run before JavaScript.
+
+### Code review instructions
+
+- Read `internal/fositeadapter/rendering.go` beside its existing
+  `renderInteraction` implementation.
+- Confirm `pkg/idpui/workflow.go` accepts only a bare HTTPS/HTTP origin.
+- Run the direct/race package commands and `make lint` above.
+
+### Technical details
+
+```text
+task completed: lf31
+code commit: 87db6ba — Feat: add native workflow page renderer
+new boundary: Provider.renderWorkflow (unexported)
+headers: Cache-Control no-store, Pragma no-cache, provider-owned CSP
+HTML: bounded buffer, validated WorkflowPage, renderer gets io.Writer only
+public route: intentionally absent until Fosite-validated Phase 3 routing
+next task: lf32
+```

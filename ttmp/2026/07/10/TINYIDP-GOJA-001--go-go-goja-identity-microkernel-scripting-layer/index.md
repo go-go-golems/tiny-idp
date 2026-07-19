@@ -14,6 +14,12 @@ DocType: index
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://internal/fositeadapter/provider.go
+      Note: Provider-owned workflow renderer dependency.
+    - Path: repo://internal/fositeadapter/rendering.go
+      Note: Native workflow page response security boundary.
+    - Path: repo://internal/fositeadapter/workflow_rendering_internal_test.go
+      Note: Workflow CSP, cache, and hidden-control regression test.
     - Path: repo://internal/gojamodules/tinyidp/module.go
       Note: Branded field/action builders and data-only ctx.present.form bridge.
     - Path: repo://internal/gojamodules/tinyidp/typescript.go
@@ -24,6 +30,8 @@ RelatedFiles:
       Note: Frozen per-invocation presentation context binding.
     - Path: repo://pkg/idpscript/invoke_test.go
       Note: End-to-end presentation outcome serialization coverage.
+    - Path: repo://pkg/idpui/workflow.go
+      Note: Validated redirect-origin workflow form contract.
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md
       Note: Deprecated historical graph-first analysis and implementation guide
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
@@ -36,6 +44,7 @@ LastUpdated: 2026-07-19T12:00:00-04:00
 WhatFor: Planning and implementing the tiny-idp identity-microkernel scripting layer.
 WhenToUse: Start here when reviewing, implementing, or resuming TINYIDP-GOJA-001.
 ---
+
 
 
 

@@ -258,7 +258,7 @@ presentation outcome builders, and exact POST projection.
 - [x] Generalize `pkg/idpui` with a `WorkflowPage` or compatible `InteractionPage` extension that renders only host-validated descriptors and never script-supplied HTML <!-- t:lf28 -->
 - [x] Implement `ctx.present.form` and the Phase 2 field/action builders so an outcome names the resume handler, allowed edge, fields, actions, public values, errors, carry, and expiry <!-- t:lf29 -->
 - [x] Validate presentation outcomes against the compiled handler graph, field/action registries, schema bounds, capability declarations, and continuation expiry limit before persistence or rendering <!-- t:lf30 -->
-- [ ] Implement native GET rendering with the current CSP, security headers, CSRF token, origin policy, browser binding, body limit, and cache behavior unchanged <!-- t:lf31 -->
+- [x] Implement native GET rendering with the current CSP, security headers, CSRF token, origin policy, browser binding, body limit, and cache behavior unchanged <!-- t:lf31 -->
 - [ ] Implement native POST parsing that rejects duplicate singleton fields, missing or extra fields, unknown actions, invalid encodings, oversized values, and normalization failures before invoking JavaScript <!-- t:lf32 -->
 - [ ] Project sensitive inputs as invocation-scoped opaque handles and project only explicitly public normalized values as ordinary JavaScript data <!-- t:lf33 -->
 - [ ] Implement rerender behavior using stable public error codes and field errors without reflecting secrets, raw exceptions, or attacker-controlled HTML <!-- t:lf34 -->

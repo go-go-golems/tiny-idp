@@ -192,3 +192,17 @@ pass (code commit `7f1497e`).
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/outcomes.go — VM-independent presentation JSON envelope with outcome-family validation.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke.go — Per-invocation frozen `ctx.present` binding.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — End-to-end presentation serialization regression test.
+
+## 2026-07-19
+
+Step 20: completed lf31 with an unexported native workflow rendering boundary
+in the Fosite adapter. It preserves the interaction CSP/cache/buffer envelope
+for validated WorkflowPage data, but deliberately exposes no incomplete public
+workflow route before Phase 3 routing (code commit `87db6ba`).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/rendering.go — Native bounded workflow renderer with provider-owned headers and failure recording.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Workflow renderer dependency wiring.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/workflow.go — Redirect-origin contract used for provider CSP construction.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/workflow_rendering_internal_test.go — Security-envelope regression test.
