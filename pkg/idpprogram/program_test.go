@@ -136,6 +136,43 @@ func TestValidateOutcomeEnforcesDeclaredOutcomeAndEffects(t *testing.T) {
 	assert.Contains(t, err.Error(), "undeclared outcome")
 }
 
+func TestValidateProviderContracts(t *testing.T) {
+	program := validProgram()
+	program.Schemas["providerInput"] = idpprogram.Schema{ID: "providerInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 1024}
+	program.Schemas["providerOutput"] = idpprogram.Schema{ID: "providerOutput", Kind: idpprogram.SchemaKindObject, MaxBytes: 1024}
+	program.Lambdas["invite.validate"] = idpprogram.LambdaSpec{
+		ID: "invite.validate", Kind: idpprogram.LambdaKindProvider, InputSchema: "providerInput", OutputSchema: "providerOutput",
+		AllowedOutcomes: []idpprogram.OutcomeKind{idpprogram.OutcomeComplete, idpprogram.OutcomeDeny}, Budget: idpprogram.InvocationBudget{Timeout: time.Second, MaxOutputBytes: 1024},
+	}
+	program.Providers = map[string]idpprogram.Provider{
+		"invitation.community": {
+			ID: "invitation.community", Kind: idpprogram.ProviderKindInvitation, Version: 1, State: idpprogram.ProviderStateDurable,
+			ReplayProtection: idpprogram.ReplayProtectionOneTime, Revocation: idpprogram.RevocationDurable,
+			Handlers: map[string]idpprogram.ProviderHandler{idpprogram.InvitationValidateHandler: {ID: idpprogram.InvitationValidateHandler, LambdaID: "invite.validate", InputSchema: "providerInput", OutputSchema: "providerOutput"}},
+		},
+	}
+	if diagnostics := idpprogram.Validate(program); diagnostics.HasErrors() {
+		t.Fatalf("valid provider diagnostics = %#v", diagnostics)
+	}
+
+	provider := program.Providers["invitation.community"]
+	provider.State = idpprogram.ProviderStateVirtual
+	program.Providers[provider.ID] = provider
+	diagnostics := idpprogram.Validate(program)
+	if !assert.Contains(t, diagnosticIDs(diagnostics), "provider.one_time_state") {
+		t.Fatalf("missing durable replay diagnostic: %#v", diagnostics)
+	}
+
+	provider = program.Providers["invitation.community"]
+	provider.State = idpprogram.ProviderStateDurable
+	provider.Handlers[idpprogram.InvitationValidateHandler] = idpprogram.ProviderHandler{ID: idpprogram.InvitationValidateHandler, LambdaID: "signup.start", InputSchema: "providerInput", OutputSchema: "providerOutput"}
+	program.Providers[provider.ID] = provider
+	diagnostics = idpprogram.Validate(program)
+	if !assert.Contains(t, diagnosticIDs(diagnostics), "provider.handler_lambda_kind") {
+		t.Fatalf("missing provider lambda-kind diagnostic: %#v", diagnostics)
+	}
+}
+
 func TestValidateOutcomeRequiresExplicitBrowserContinuation(t *testing.T) {
 	spec := validProgram().Lambdas["signup.start"]
 

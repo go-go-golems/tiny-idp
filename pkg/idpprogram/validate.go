@@ -163,7 +163,68 @@ func Validate(program Program) Diagnostics {
 		validateReachability(&diagnostics, path, workflow)
 	}
 
+	for key, provider := range program.Providers {
+		path := "providers." + key
+		validateMapIdentity(&diagnostics, "provider.id_mismatch", path, key, provider.ID)
+		if !provider.Kind.Valid() {
+			add("provider.kind", path+".kind", fmt.Sprintf("unsupported provider kind %q", provider.Kind))
+		}
+		if provider.Version == 0 {
+			add("provider.version", path+".version", "must be greater than zero")
+		}
+		if !provider.State.Valid() {
+			add("provider.state", path+".state", fmt.Sprintf("unsupported provider state %q", provider.State))
+		}
+		if !provider.ReplayProtection.Valid() {
+			add("provider.replay", path+".replayProtection", fmt.Sprintf("unsupported replay protection %q", provider.ReplayProtection))
+		}
+		if !provider.Revocation.Valid() {
+			add("provider.revocation", path+".revocation", fmt.Sprintf("unsupported revocation mode %q", provider.Revocation))
+		}
+		if provider.State == ProviderStateVirtual && provider.ReplayProtection == ReplayProtectionOneTime {
+			add("provider.one_time_state", path+".replayProtection", "one-time replay protection requires durable provider state")
+		}
+		if provider.Revocation == RevocationDurable && provider.State != ProviderStateDurable {
+			add("provider.durable_revocation_state", path+".revocation", "durable revocation requires durable provider state")
+		}
+		requiredHandler := requiredProviderHandler(provider.Kind)
+		if _, ok := provider.Handlers[requiredHandler]; !ok {
+			add("provider.required_handler", path+".handlers", fmt.Sprintf("%s provider requires handler %q", provider.Kind, requiredHandler))
+		}
+		for handlerID, handler := range provider.Handlers {
+			handlerPath := path + ".handlers." + handlerID
+			validateMapIdentity(&diagnostics, "provider.handler_id_mismatch", handlerPath, handlerID, handler.ID)
+			lambda, ok := program.Lambdas[handler.LambdaID]
+			if !ok {
+				add("provider.handler_lambda", handlerPath+".lambdaId", fmt.Sprintf("unknown lambda %q", handler.LambdaID))
+				continue
+			}
+			if lambda.Kind != LambdaKindProvider {
+				add("provider.handler_lambda_kind", handlerPath+".lambdaId", fmt.Sprintf("lambda %q is not a provider lambda", lambda.ID))
+			}
+			if lambda.InputSchema != handler.InputSchema {
+				add("provider.handler_input_schema", handlerPath+".inputSchema", fmt.Sprintf("lambda %q requires %q, provider declares %q", lambda.ID, lambda.InputSchema, handler.InputSchema))
+			}
+			if lambda.OutputSchema != handler.OutputSchema {
+				add("provider.handler_output_schema", handlerPath+".outputSchema", fmt.Sprintf("lambda %q returns %q, provider declares %q", lambda.ID, lambda.OutputSchema, handler.OutputSchema))
+			}
+			if _, ok := program.Schemas[handler.InputSchema]; !ok {
+				add("provider.handler_input_schema_unknown", handlerPath+".inputSchema", fmt.Sprintf("unknown schema %q", handler.InputSchema))
+			}
+			if _, ok := program.Schemas[handler.OutputSchema]; !ok {
+				add("provider.handler_output_schema_unknown", handlerPath+".outputSchema", fmt.Sprintf("unknown schema %q", handler.OutputSchema))
+			}
+		}
+	}
+
 	return diagnostics.sorted()
+}
+
+func requiredProviderHandler(kind ProviderKind) string {
+	if kind == ProviderKindIdentity {
+		return IdentityEstablishHandler
+	}
+	return InvitationValidateHandler
 }
 
 func validateSchemaCycles(diagnostics *Diagnostics, schemas map[string]Schema) {

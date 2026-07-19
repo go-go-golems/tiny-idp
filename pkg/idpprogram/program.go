@@ -9,6 +9,7 @@ type Program struct {
 	APIVersion   string                           `json:"apiVersion"`
 	Name         string                           `json:"name"`
 	Workflows    map[string]Workflow              `json:"workflows"`
+	Providers    map[string]Provider              `json:"providers,omitempty"`
 	Lambdas      map[string]LambdaSpec            `json:"lambdas"`
 	Schemas      map[string]Schema                `json:"schemas"`
 	Capabilities map[string]CapabilityRequirement `json:"capabilities,omitempty"`
