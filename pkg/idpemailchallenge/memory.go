@@ -63,7 +63,7 @@ func (s *MemoryStore) VerifyEmailChallenge(_ context.Context, id string, codeHas
 	at := now.UTC()
 	c.VerifiedAt = &at
 	s.records[id] = c
-	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Method: "email_code", VerifiedAt: at}, nil
+	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Template: c.Template, Method: "email_code", VerifiedAt: at}, nil
 }
 func (s *MemoryStore) RecordEmailChallengeAttempt(_ context.Context, id string, b VerificationBindings, now time.Time) (AttemptResult, error) {
 	s.mu.Lock()

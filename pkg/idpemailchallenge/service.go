@@ -124,7 +124,7 @@ func (s *Service) Evidence(ctx context.Context, ref Reference, b VerificationBin
 	if c.Status != StatusVerified || c.VerifiedAt == nil {
 		return VerifiedEmailEvidence{}, ErrAlreadyTerminal
 	}
-	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Method: "email_code", VerifiedAt: c.VerifiedAt.UTC()}, nil
+	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Template: c.Template, Method: "email_code", VerifiedAt: c.VerifiedAt.UTC()}, nil
 }
 func (s *Service) hash(code string) []byte {
 	m := hmac.New(sha256.New, s.key)

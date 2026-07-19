@@ -66,6 +66,7 @@ type VerifiedEmailEvidence struct {
 	Version     uint32
 	ChallengeID string
 	Address     string
+	Template    string
 	Method      string
 	VerifiedAt  time.Time
 }

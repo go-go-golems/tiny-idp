@@ -61,7 +61,7 @@ func (s *Store) VerifyEmailChallenge(ctx context.Context, id string, hash []byte
 	if err := tx.Commit(); err != nil {
 		return idpemailchallenge.VerifiedEmailEvidence{}, err
 	}
-	return idpemailchallenge.VerifiedEmailEvidence{Version: 1, ChallengeID: c.ID, Address: c.Email, Method: "email_code", VerifiedAt: at}, nil
+	return idpemailchallenge.VerifiedEmailEvidence{Version: 1, ChallengeID: c.ID, Address: c.Email, Template: c.Template, Method: "email_code", VerifiedAt: at}, nil
 }
 func (s *Store) RecordEmailChallengeAttempt(ctx context.Context, id string, b idpemailchallenge.VerificationBindings, now time.Time) (idpemailchallenge.AttemptResult, error) {
 	c, err := s.checked(ctx, s.db, id, b, now)
