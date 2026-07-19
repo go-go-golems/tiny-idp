@@ -84,6 +84,27 @@ func (s *Service) Verify(ctx context.Context, ref Reference, code string, b Veri
 	}
 	return s.store.VerifyEmailChallenge(ctx, ref.ID, s.hash(code), b, s.now())
 }
+
+// Evidence rehydrates evidence that was previously created by Verify. It is
+// deliberately a native operation: a continuation may retain only a typed
+// challenge reference, never a script-created "verified" marker or email
+// address. The original binding and expiry are checked again on every use.
+func (s *Service) Evidence(ctx context.Context, ref Reference, b VerificationBindings) (VerifiedEmailEvidence, error) {
+	if s == nil || ref.Version != RecordVersionV1 || !valid(ref.ID) {
+		return VerifiedEmailEvidence{}, ErrConflict
+	}
+	c, err := s.store.LoadEmailChallenge(ctx, ref.ID, s.now())
+	if err != nil {
+		return VerifiedEmailEvidence{}, err
+	}
+	if err := c.VerifyBindings(b); err != nil {
+		return VerifiedEmailEvidence{}, err
+	}
+	if c.Status != StatusVerified || c.VerifiedAt == nil {
+		return VerifiedEmailEvidence{}, ErrAlreadyTerminal
+	}
+	return VerifiedEmailEvidence{Version: RecordVersionV1, ChallengeID: c.ID, Address: c.Email, Method: "email_code", VerifiedAt: c.VerifiedAt.UTC()}, nil
+}
 func (s *Service) hash(code string) []byte {
 	m := hmac.New(sha256.New, s.key)
 	_, _ = m.Write([]byte(codeDomain))

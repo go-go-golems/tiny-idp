@@ -31,4 +31,9 @@ func TestServiceCreatesMailAndNativeEvidence(t *testing.T) {
 	e, err := s.Verify(context.Background(), ref, m.requests[0].Code, b)
 	require.NoError(t, err)
 	assert.Equal(t, "ada@example.test", e.Address)
+	rehydrated, err := s.Evidence(context.Background(), ref, b)
+	require.NoError(t, err)
+	assert.Equal(t, e, rehydrated)
+	_, err = s.Evidence(context.Background(), ref, idpemailchallenge.VerificationBindings{WorkflowID: "other"})
+	assert.ErrorIs(t, err, idpemailchallenge.ErrBinding)
 }
