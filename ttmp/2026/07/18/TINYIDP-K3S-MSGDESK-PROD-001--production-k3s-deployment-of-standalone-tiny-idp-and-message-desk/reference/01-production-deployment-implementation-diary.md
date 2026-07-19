@@ -476,3 +476,35 @@ unchanged.
 - Decide whether legacy browsers without an `Origin` header must be supported.
   The first production scope rejects them for registration; Fetch Metadata is
   optional because not every browser sends it.
+
+## Step 5 — Establish the trusted-proxy primitive for listener modes
+
+**Status:** in progress
+
+The cluster terminates public TLS at Traefik and reaches the application Pods
+over HTTP. The processes therefore need an explicit mode that accepts
+forwarding metadata only from Traefik, not a switch that simply disables TLS.
+The shared `idp.TrustedProxyResolver` is the foundation for that mode: it now
+can answer whether the immediate TCP peer is trusted, which listener middleware
+will use before accepting any transport-security header.
+
+### What I did
+
+- Added `TrustsRequestPeer` to the resolver. It intentionally examines only
+  the immediate socket peer and does not turn an `X-Forwarded-For` value into a
+  proxy-trust decision.
+- Rejected `0.0.0.0/0` and `::/0` trusted-proxy CIDRs at construction time.
+  The deployment will use the observed k3s Pod CIDR contract, not a broad
+  internet-wide trust declaration.
+- Added focused tests for catch-all rejection and trusted/untrusted immediate
+  peer classification.
+
+### What worked
+
+- `go test ./pkg/idp -count=1` passed.
+
+### Next
+
+- Build the explicit `direct-tls` and `trusted-proxy-http` listener mode on
+  top of this primitive, with canonical configured origins and no use of
+  forwarded Host to rewrite OIDC identity.
