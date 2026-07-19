@@ -5632,3 +5632,115 @@ additional claim naturally appears at UserInfo for a device grant.
 - Trace `finishAuthorize` and the device token handler into `newOIDCSession`.
 - Confirm failures return before `NewAuthorizeResponse` or any token/code
   persistence call.
+
+## Step 53: Connect Phase 7 authorization and claims contracts to Goja
+
+The earlier Phase 7 contracts correctly constrained native policy inputs and
+outputs, but the initially available executor was hard-wired to the signup
+workflow. This step makes the two policy contracts genuinely scriptable using
+the same bounded owned-runtime model, without allowing a policy script to
+obtain a browser request, Fosite object, store, token writer, or credential.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the full Phase 7 objective rather than
+mistaking a Go interface seam for the requested Goja lambda implementation.
+
+**Commits:** `85e09d3` — "Test: cover provider invoker schema boundary";
+`07900d1` — "Feat: add policy provider callback kinds";
+`c112bf5` — "Feat: execute Goja authorization and claims policies";
+`2c7e093` — "Test: invoke Goja authorization policy at issuance"
+
+### What I did
+
+- Confirmed the existing `idpscript.ProviderInvoker` already routes a compiled
+  provider handler through a bounded pool and its pinned lambda schema.
+- Added a focused regression for input-schema enforcement at that boundary.
+- Extended the fingerprinted program vocabulary with `authorization` and
+  `claims` provider kinds plus their required `decide` and `additional`
+  handlers. The TypeScript declaration now exposes those kinds.
+- Added `pkg/idppolicy.Executor`. It compiles a policy source against a
+  bounded policy schema catalog, owns a fixed runtime pool, and implements
+  both `idp.AuthorizationPolicy` and `idp.ClaimsPolicy`.
+- Mapped only complete/deny/skip/error outcomes to native policy results. It
+  rejects workflow presentation, challenge, continuation, and commit outcomes.
+- Retained native `AuthorizationDecision` and `ClaimsOutput` validation after
+  decoding script output, including protected-claim checks.
+- Added a browser `/authorize` integration test that runs a Goja authorization
+  provider and verifies a native `access_denied` redirect contains no code.
+
+### Why
+
+The safe seam is:
+
+```text
+native validated request / native claims view
+                 |
+                 v
+       copied bounded JSON -> owned Goja provider lambda
+                 |
+                 v
+  copied outcome -> native decision/claim validation
+                 |
+                 v
+native consent, session persistence, Fosite issuance, or OAuth error response
+```
+
+This gives JavaScript useful business-policy control without giving it protocol
+transition authority. The provider still determines when the lambda runs and
+what a result can mean.
+
+### What worked
+
+```bash
+go test ./pkg/idpscript \\
+  -run 'TestProviderInvoker(UsesCompiledHandlerContract|UsesPinnedHandlerSchema)' \\
+  -count=1
+go test ./pkg/idpprogram ./internal/gojamodules/tinyidp -count=1
+go test ./pkg/idppolicy -count=1
+go test ./internal/fositeadapter \\
+  -run 'Test(AuthorizationPolicyDeniesAfterNativeValidationBeforeCodeIssuance|GojaAuthorizationProviderDeniesAfterNativeValidationBeforeCodeIssuance)' \\
+  -count=1
+```
+
+All focused commands passed. The policy executor commit also ran and passed
+the repository-wide `go test ./...` hook plus lint and vet.
+
+### What didn't work
+
+The first new provider-invoker fixture omitted `module.exports`, which the
+runtime correctly rejected. After correcting the fixture, its expected
+diagnostic was also updated to the actual pinned lambda-schema validation
+message. Neither issue changed production code.
+
+The policy-provider vocabulary initially left the existing invitation case
+implicit in an exhaustive switch. The lint hook caught it; the mapping is now
+explicit, so every provider kind has a reviewable required-handler rule.
+
+### What I learned
+
+The architecture already contained the right generic primitive below signup:
+`ProviderInvoker`. The missing work was to define policy provider kinds,
+provide a policy-specific schema catalog/executor, and bind native policy
+interfaces to it. This is narrower and safer than generalizing browser
+workflow execution prematurely.
+
+### What warrants a second pair of eyes
+
+- Review `idppolicy.Executor.Authorize` and `.Claims` for the closed outcome
+  mapping. In particular, `present`, `challenge`, `continue`, and `commit`
+  must never become meaningful policy results.
+- Review the output-size limits versus `ClaimsOutput`'s per-claim limit; both
+  controls deliberately apply.
+- Confirm host ownership/lifecycle: hosts that construct an executor must call
+  `Close` during shutdown, as they already do for signup executors.
+
+### Code review instructions
+
+- Read `pkg/idppolicy/executor.go` with `pkg/idp/authorization.go` and
+  `pkg/idp/claims.go` open beside it.
+- Run the four focused commands above.
+- Trace the Goja browser integration test through `Provider.finishAuthorize`;
+  Fosite writes the redirect, not the JavaScript source.

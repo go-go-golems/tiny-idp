@@ -457,3 +457,13 @@ Added public-path regressions for prompt=none existing-session authorization den
 
 - internal/fositeadapter/device_authorization_test.go — Device claims to UserInfo coverage
 - internal/fositeadapter/hardening_test.go — Browser policy denial and error fail-closed coverage
+
+## 2026-07-19 - Step 53: real Goja authorization and claims providers
+
+Extended the compiled provider vocabulary and added a bounded idppolicy executor. Goja policy callbacks now implement the native authorization/claims interfaces through copied JSON and closed outcomes; browser authorization denial is covered end to end.
+
+### Related Files
+
+- internal/fositeadapter/hardening_test.go — Browser Goja authorization integration evidence
+- pkg/idppolicy/executor.go — Bounded Goja policy executor and native outcome validation
+- pkg/idpprogram/providers.go — Authorization and claims provider contracts
