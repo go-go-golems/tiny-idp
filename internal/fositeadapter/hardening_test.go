@@ -92,10 +92,75 @@ func TestAuthorizationPolicyDeniesAfterNativeValidationBeforeCodeIssuance(t *tes
 	assert.Equal(t, "policy.member_required", last.Reason)
 }
 
+func TestAuthorizationPolicyDeniesPromptNoneWithExistingSessionBeforeCodeIssuance(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	require.NoError(t, st.PutClient(ctx, idpstore.Client{ID: "spa", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}))
+	require.NoError(t, st.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "user-alice"}))
+	key, err := keys.GenerateRSA("kid-1", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, st.CreateSigningKey(ctx, key))
+	p, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: st, SecretKey: []byte("authorization-policy-prompt-none-32"), Authorization: denyPromptNoneAuthorizationPolicy{}})
+	require.NoError(t, err)
+	ts := httptest.NewServer(p.Handler())
+	t.Cleanup(ts.Close)
+
+	form := url.Values{"response_type": {"code"}, "client_id": {"spa"}, "redirect_uri": {"http://localhost/callback"}, "scope": {"openid"}, "state": {"state-1234567890"}, "nonce": {"nonce-1234567890"}, "code_challenge": {s256("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")}, "code_challenge_method": {"S256"}, "login": {"alice"}}
+	csrfToken, csrfCookie := fetchCSRF(t, ts.URL, form)
+	form.Set("csrf_token", csrfToken)
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	request, err := http.NewRequest(http.MethodPost, ts.URL+"/authorize", strings.NewReader(form.Encode()))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.AddCookie(csrfCookie)
+	response, err := noRedirect.Do(request)
+	require.NoError(t, err)
+	response.Body.Close()
+	require.Contains(t, []int{http.StatusFound, http.StatusSeeOther}, response.StatusCode)
+	var sessionCookie *http.Cookie
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == "tinyidp_session" {
+			sessionCookie = cookie
+		}
+	}
+	require.NotNil(t, sessionCookie)
+
+	silent := url.Values{}
+	for key, values := range form {
+		silent[key] = append([]string(nil), values...)
+	}
+	silent.Del("login")
+	silent.Del("csrf_token")
+	silent.Set("prompt", "none")
+	silent.Set("state", "state-prompt-none-policy")
+	request, err = http.NewRequest(http.MethodGet, ts.URL+"/authorize?"+silent.Encode(), nil)
+	require.NoError(t, err)
+	request.AddCookie(sessionCookie)
+	response, err = noRedirect.Do(request)
+	require.NoError(t, err)
+	response.Body.Close()
+	require.Contains(t, []int{http.StatusFound, http.StatusSeeOther}, response.StatusCode)
+	redirect, err := url.Parse(response.Header.Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, "access_denied", redirect.Query().Get("error"))
+	assert.Empty(t, redirect.Query().Get("code"))
+}
+
 type denyAuthorizationPolicy struct{}
 
 func (denyAuthorizationPolicy) Authorize(context.Context, idp.AuthorizationInput) (idp.AuthorizationDecision, error) {
 	return idp.AuthorizationDecision{Kind: idp.AuthorizationDeny, DiagnosticID: "policy.member_required"}, nil
+}
+
+type denyPromptNoneAuthorizationPolicy struct{}
+
+func (denyPromptNoneAuthorizationPolicy) Authorize(_ context.Context, input idp.AuthorizationInput) (idp.AuthorizationDecision, error) {
+	for _, prompt := range input.Request.Prompt {
+		if prompt == "none" {
+			return idp.AuthorizationDecision{Kind: idp.AuthorizationDeny, DiagnosticID: "policy.silent_access_denied"}, nil
+		}
+	}
+	return idp.AuthorizationDecision{Kind: idp.AuthorizationAllow}, nil
 }
 
 func TestAuditReasonsUseStableCodes(t *testing.T) {
