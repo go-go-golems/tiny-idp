@@ -120,6 +120,26 @@ func Validate(program Program) Diagnostics {
 		}
 	}
 
+	seenTests := map[string]bool{}
+	for index, test := range program.Tests {
+		path := fmt.Sprintf("tests.%d", index)
+		if test.ID == "" || seenTests[test.ID] {
+			add("test.id", path+".id", "must be nonempty and unique")
+		}
+		seenTests[test.ID] = true
+		lambda, ok := program.Lambdas[test.LambdaID]
+		if !ok {
+			add("test.lambda", path+".lambdaId", fmt.Sprintf("unknown lambda %q", test.LambdaID))
+			continue
+		}
+		if !test.ExpectedKind.Valid() || !containsOutcome(lambda.AllowedOutcomes, test.ExpectedKind) {
+			add("test.expected_outcome", path+".expectedKind", "must be a declared lambda outcome")
+		}
+		if err := ValidateJSON(program.Schemas, lambda.InputSchema, test.Input); err != nil {
+			add("test.input", path+".input", err.Error())
+		}
+	}
+
 	for key, workflow := range program.Workflows {
 		path := "workflows." + key
 		validateMapIdentity(&diagnostics, "workflow.id_mismatch", path, key, workflow.ID)

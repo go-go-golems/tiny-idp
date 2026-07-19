@@ -22,4 +22,5 @@ module.exports = A.program("email-verified-signup", program => {
     {from:"submitted",outcome:"challenge",to:"emailVerified",input:"signupSubmittedInput"},
     {from:"emailVerified",outcome:"present",to:"passwordSubmitted",input:"signupSubmittedInput"},
   ]});
+  program.test("signup-start-presents-identity", {lambda:"signup.start", input:{clientId:"test-client",redirectUri:"https://client.example.test/callback",requestedScope:"openid profile",interactionId:"test-interaction",hasBrowserSession:false}, expectedKind:"present"});
 });

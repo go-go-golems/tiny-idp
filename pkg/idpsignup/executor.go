@@ -33,6 +33,14 @@ type Executor struct {
 	pool     *idpscript.Pool
 }
 
+type TestResult struct {
+	ID       string
+	Passed   bool
+	Expected idpprogram.OutcomeKind
+	Actual   idpprogram.OutcomeKind
+	Err      error
+}
+
 // StartInput is the immutable, redacted view of a validated authorization
 // interaction available to the signup-start lambda. It deliberately contains
 // no Fosite request, HTTP request, cookie, browser handle, session identifier,
@@ -112,6 +120,24 @@ func (e *Executor) ResolveProgram(_ context.Context, fingerprint string) (idppro
 		return idpprogram.Program{}, errors.New("signup program generation is unavailable")
 	}
 	return e.Program(), nil
+}
+
+// RunTests executes the declarative embedded test cases with no capabilities
+// or secrets. A production test runner can add only explicit deterministic
+// native fakes later; this baseline fails closed for capability-dependent
+// lambdas instead of granting ambient authority.
+func (e *Executor) RunTests(ctx context.Context) []TestResult {
+	if e == nil || e.pool == nil {
+		return []TestResult{{ID: "runner", Err: errors.New("signup executor is unavailable")}}
+	}
+	results := make([]TestResult, 0, len(e.Program().Tests))
+	for _, test := range e.Program().Tests {
+		outcome, err := e.pool.Invoke(ctx, test.LambdaID, test.Input, nil)
+		result := TestResult{ID: test.ID, Expected: test.ExpectedKind, Actual: outcome.Kind, Err: err}
+		result.Passed = err == nil && outcome.Kind == test.ExpectedKind
+		results = append(results, result)
+	}
+	return results
 }
 
 func (e *Executor) Start(ctx context.Context, input StartInput) (idpworkflow.ValidatedPresentation, error) {

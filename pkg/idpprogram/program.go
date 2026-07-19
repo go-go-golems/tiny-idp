@@ -2,6 +2,8 @@
 // Tiny-IDP JavaScript program. It deliberately contains no Goja dependency.
 package idpprogram
 
+import "encoding/json"
+
 // Program is the complete serializable contract for one compiled scripting
 // generation. JavaScript callbacks are registered separately by Lambda.ID;
 // functions and other VM-owned values never enter this structure.
@@ -13,6 +15,17 @@ type Program struct {
 	Lambdas      map[string]LambdaSpec            `json:"lambdas"`
 	Schemas      map[string]Schema                `json:"schemas"`
 	Capabilities map[string]CapabilityRequirement `json:"capabilities,omitempty"`
+	Tests        []ProgramTest                    `json:"tests,omitempty"`
+}
+
+// ProgramTest is a bounded, declarative lambda test. It never contains a
+// callback, capability implementation, browser object, or host authority;
+// the Go runner creates those deterministic native test bindings.
+type ProgramTest struct {
+	ID           string          `json:"id"`
+	LambdaID     string          `json:"lambdaId"`
+	Input        json.RawMessage `json:"input"`
+	ExpectedKind OutcomeKind     `json:"expectedKind"`
 }
 
 // Workflow is a named set of handlers with one native entry point.

@@ -179,6 +179,7 @@ func newProgramFunction(vm *goja.Runtime, collector *Collector, lambdaFunction f
 		mustSet(vm, builder, "capabilities", newCapabilitiesFunction(vm, program))
 		mustSet(vm, builder, "workflow", newWorkflowFunction(vm, collector, program))
 		mustSet(vm, builder, "provider", newProviderFunction(vm, collector, program))
+		mustSet(vm, builder, "test", newProgramTestFunction(vm, program))
 		if _, err := define(goja.Undefined(), builder); err != nil {
 			panic(err)
 		}
@@ -195,6 +196,20 @@ func newProgramFunction(vm *goja.Runtime, collector *Collector, lambdaFunction f
 		}
 		collector.program = program
 		return normalizedValue(vm, program)
+	}
+}
+
+func newProgramTestFunction(vm *goja.Runtime, program *idpprogram.Program) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		requireArgumentCount(vm, call, 2, "test(name, spec)")
+		id := requireString(vm, call.Argument(0), "test name")
+		spec := requireObject(vm, call.Argument(1), "test spec")
+		input, err := json.Marshal(spec.Get("input").Export())
+		if err != nil {
+			panic(vm.NewTypeError("test %q input is not serializable", id))
+		}
+		program.Tests = append(program.Tests, idpprogram.ProgramTest{ID: id, LambdaID: requireString(vm, spec.Get("lambda"), "test lambda"), Input: input, ExpectedKind: idpprogram.OutcomeKind(requireString(vm, spec.Get("expectedKind"), "test expected outcome kind"))})
+		return goja.Undefined()
 	}
 }
 

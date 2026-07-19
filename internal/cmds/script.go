@@ -33,6 +33,7 @@ type ScriptSettings struct {
 
 type ScriptValidateCommand struct{ *cmds.CommandDescription }
 type ScriptExplainCommand struct{ *cmds.CommandDescription }
+type ScriptTestCommand struct{ *cmds.CommandDescription }
 
 func NewScriptCommand() (*cobra.Command, error) {
 	root := &cobra.Command{Use: "script", Short: "Validate and explain bounded Tiny-IDP JavaScript programs"}
@@ -52,7 +53,15 @@ func NewScriptCommand() (*cobra.Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	root.AddCommand(validateCobra, explainCobra)
+	testCommand, err := NewScriptTestCommand()
+	if err != nil {
+		return nil, err
+	}
+	testCobra, err := cli.BuildCobraCommand(testCommand)
+	if err != nil {
+		return nil, err
+	}
+	root.AddCommand(validateCobra, explainCobra, testCobra)
 	return root, nil
 }
 
@@ -104,6 +113,22 @@ Example:
 	return &ScriptExplainCommand{CommandDescription: description}, nil
 }
 
+func NewScriptTestCommand() (*ScriptTestCommand, error) {
+	description, err := newScriptDescription("test", "Run declarative embedded Tiny-IDP program tests", `Compile a Tiny-IDP JavaScript source file and run its declarative embedded tests.
+
+Each test names a registered lambda, supplies bounded JSON input, and expects a
+declared outcome kind. Tests receive no ambient capabilities or secrets; a
+capability-dependent test fails unless a future explicit deterministic fake is
+registered by the host.
+
+Example:
+  tinyidp script test --source ./signup.js --output json`)
+	if err != nil {
+		return nil, err
+	}
+	return &ScriptTestCommand{CommandDescription: description}, nil
+}
+
 func (c *ScriptValidateCommand) RunIntoGlazeProcessor(ctx context.Context, vals *values.Values, gp middlewares.Processor) error {
 	settings, artifact, err := loadScriptArtifact(ctx, vals)
 	if err != nil {
@@ -150,6 +175,38 @@ func (c *ScriptExplainCommand) RunIntoGlazeProcessor(ctx context.Context, vals *
 		types.MRP("providers", string(encodedProviders)),
 		types.MRP("program_contract", string(contract)),
 	))
+}
+
+func (c *ScriptTestCommand) RunIntoGlazeProcessor(ctx context.Context, vals *values.Values, gp middlewares.Processor) error {
+	settings := &ScriptSettings{}
+	if err := vals.DecodeSectionInto(schema.DefaultSlug, settings); err != nil {
+		return err
+	}
+	if settings.Profile != "signup" {
+		return fmt.Errorf("unsupported production script profile %q (want signup)", settings.Profile)
+	}
+	source, err := os.ReadFile(settings.Source)
+	if err != nil {
+		return fmt.Errorf("read script source: %w", err)
+	}
+	executor, err := idpsignup.New(ctx, string(source), 1)
+	if err != nil {
+		return err
+	}
+	defer executor.Close(context.Background()) //nolint:errcheck // outcome below is authoritative.
+	results := executor.RunTests(ctx)
+	for _, result := range results {
+		if err := gp.AddRow(ctx, types.NewRow(types.MRP("id", result.ID), types.MRP("passed", result.Passed), types.MRP("expected_kind", result.Expected), types.MRP("actual_kind", result.Actual))); err != nil {
+			return err
+		}
+		if !result.Passed {
+			if result.Err != nil {
+				return fmt.Errorf("script test %q failed: %w", result.ID, result.Err)
+			}
+			return fmt.Errorf("script test %q failed: expected outcome %q, got %q", result.ID, result.Expected, result.Actual)
+		}
+	}
+	return nil
 }
 
 func loadScriptArtifact(ctx context.Context, vals *values.Values) (*ScriptSettings, *idpscript.Artifact, error) {

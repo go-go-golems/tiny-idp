@@ -22,6 +22,7 @@ func TestTypeScriptDeclarationsCoverPhase0Surface(t *testing.T) {
 		"interface CommitBuilders",
 		"Promise<Outcome>",
 		"interface ProgramBuilder",
+		"interface ProgramTestSpec",
 		"readonly result: ResultBuilders",
 	} {
 		require.True(t, strings.Contains(declarations, fragment), "declarations missing %q:\n%s", fragment, declarations)

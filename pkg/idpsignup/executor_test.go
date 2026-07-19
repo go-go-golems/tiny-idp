@@ -87,3 +87,18 @@ func TestEmailVerifiedProgramDeclaresChallengeThenPasswordWorkflow(t *testing.T)
 	assert.Equal(t, idpprogram.OutcomeChallenge, outcome.Kind)
 	assert.NotEmpty(t, outcome.Challenge)
 }
+
+func TestExecutorRunsDeclarativeEmbeddedTests(t *testing.T) {
+	source := `const A = require("tinyidp").v1;
+module.exports = A.program("embedded-tests", p => {
+  const start = A.lambda("signup.start", { input:"signupStartInput", output:"signupResult", outcomes:["complete"], effects:[], capabilities:[], timeoutMs:250, maxCapabilityCalls:0, maxOutputBytes:1024, run: ctx => A.result.complete() });
+  p.workflow("signup", { version:1, entry:"start", handlers:{start}, edges:[] });
+  p.test("start-completes", { lambda:"signup.start", input:{ clientId:"client", redirectUri:"https://client.example.test/callback", requestedScope:"openid", interactionId:"interaction", hasBrowserSession:false }, expectedKind:"complete" });
+});`
+	executor, err := idpsignup.New(context.Background(), source, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+	results := executor.RunTests(context.Background())
+	require.Len(t, results, 1)
+	assert.True(t, results[0].Passed, "%+v", results[0])
+}
