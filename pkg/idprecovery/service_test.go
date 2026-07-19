@@ -44,3 +44,25 @@ func TestResetPasswordRequiresVerifiedRecoveryTemplate(t *testing.T) {
 	_, err = accounts.AuthenticatePassword(ctx, "ada@example.test", "replacement password phrase", idp.LoginMetadata{})
 	require.NoError(t, err)
 }
+
+func TestResetPasswordRejectsVerifiedNonRecoveryChallenge(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{PasswordPolicy: idp.DevelopmentPasswordAcceptancePolicy()})
+	require.NoError(t, err)
+	_, err = accounts.Create(ctx, idpaccounts.CreateRequest{Login: "ada@example.test", Email: "ada@example.test", Password: []byte("original password phrase")})
+	require.NoError(t, err)
+	mailer := &captureMailer{}
+	challenges, err := idpemailchallenge.NewService(idpemailchallenge.NewMemoryStore(), mailer, []byte("0123456789abcdef0123456789abcdef"))
+	require.NoError(t, err)
+	recovery, err := idprecovery.NewService(challenges, accounts)
+	require.NoError(t, err)
+	bindings := idpemailchallenge.VerificationBindings{WorkflowID: "signup", ResumeHandlerID: "verified", ProgramFingerprint: "signup-v1", ClientID: "spa", ClientGeneration: "client-v1", BrowserBindingHash: []byte("browser")}
+	ref, err := challenges.CreateAndSend(ctx, idpemailchallenge.CreateRequest{ID: "signup-code", Email: "ada@example.test", Template: "signup", Bindings: bindings, ExpiresAt: time.Now().Add(time.Hour), MaximumAttempts: 3, MaximumResends: 1})
+	require.NoError(t, err)
+	_, err = challenges.Verify(ctx, ref, mailer.requests[0].Code, bindings)
+	require.NoError(t, err)
+	require.Error(t, recovery.ResetPassword(ctx, ref, bindings, []byte("replacement password phrase")))
+	_, err = accounts.AuthenticatePassword(ctx, "ada@example.test", "original password phrase", idp.LoginMetadata{})
+	require.NoError(t, err)
+}
