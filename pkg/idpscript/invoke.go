@@ -108,6 +108,9 @@ func (w *worker) invokeWithSecrets(ctx context.Context, lambdaID string, input j
 		if err := ctxObject.Set("present", tinyidpmodule.NewPresentationContext(vm, w.image.collector)); err != nil {
 			return nil, errors.Wrap(err, "set lambda presentation context")
 		}
+		if err := ctxObject.Set("challenge", tinyidpmodule.NewChallengeContext(vm)); err != nil {
+			return nil, errors.Wrap(err, "set lambda challenge context")
+		}
 		invocationSecrets := tinyidpmodule.NewInvocationSecrets(vm, secrets)
 		if err := ctxObject.Set("secret", invocationSecrets.Context()); err != nil {
 			return nil, errors.Wrap(err, "set lambda secrets")

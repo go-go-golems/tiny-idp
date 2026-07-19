@@ -56,8 +56,10 @@ type Outcome struct {
 	// ctx.present.* and decoded by the native workflow boundary before a
 	// continuation is persisted or a page is rendered.
 	Presentation json.RawMessage `json:"presentation,omitempty"`
-	Effects      []EffectPlan    `json:"effects,omitempty"`
-	Value        json.RawMessage `json:"value,omitempty"`
+	// Challenge is a typed native challenge request emitted only by ctx.challenge.
+	Challenge json.RawMessage `json:"challenge,omitempty"`
+	Effects   []EffectPlan    `json:"effects,omitempty"`
+	Value     json.RawMessage `json:"value,omitempty"`
 }
 
 // ValidateOutcome checks the dynamic parts of an outcome against a lambda's
@@ -79,6 +81,12 @@ func ValidateOutcome(spec LambdaSpec, outcome Outcome) error {
 	}
 	if len(outcome.Presentation) != 0 && outcome.Kind != OutcomePresent {
 		return errors.Errorf("outcome %q must not contain a presentation", outcome.Kind)
+	}
+	if len(outcome.Challenge) != 0 && outcome.Kind != OutcomeChallenge {
+		return errors.Errorf("outcome %q must not contain a challenge request", outcome.Kind)
+	}
+	if outcome.Kind == OutcomeChallenge && len(outcome.Challenge) == 0 {
+		return errors.New("challenge outcome requires a challenge request")
 	}
 
 	if outcome.Kind == OutcomeContinue && outcome.NextHandler == "" {

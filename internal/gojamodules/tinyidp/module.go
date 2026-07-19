@@ -491,6 +491,28 @@ func NewCommitContext(vm *goja.Runtime, secrets *InvocationSecrets) *goja.Object
 	return commit
 }
 
+// NewChallengeContext creates data-only native challenge requests. A script
+// can choose the declared resume handler and approved template identifier, but
+// it cannot generate a code, send mail, or mark email verified.
+func NewChallengeContext(vm *goja.Runtime) *goja.Object {
+	challenge := vm.NewObject()
+	mustSet(vm, challenge, "emailCode", func(call goja.FunctionCall) goja.Value {
+		requireArgumentCount(vm, call, 1, "ctx.challenge.emailCode(spec)")
+		spec := requireObject(vm, call.Argument(0), "email challenge spec")
+		return vm.ToValue(map[string]any{"kind": idpprogram.OutcomeChallenge,
+			"continuation": map[string]any{"handlerId": requireString(vm, spec.Get("resume"), "email challenge resume"), "expiresInSeconds": requirePositiveInteger(vm, spec.Get("expiresInSeconds"), "email challenge expiry"), "carry": optionalValue(spec.Get("carry"))},
+			"challenge":    map[string]any{"kind": "email_code", "email": requireString(vm, spec.Get("email"), "email challenge email"), "template": requireString(vm, spec.Get("template"), "email challenge template"), "maximumAttempts": requirePositiveInteger(vm, spec.Get("maximumAttempts"), "email challenge maximum attempts"), "maximumResends": requirePositiveInteger(vm, spec.Get("maximumResends"), "email challenge maximum resends")}})
+	})
+	return challenge
+}
+
+func optionalValue(value goja.Value) any {
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
+		return map[string]any{}
+	}
+	return value.Export()
+}
+
 func signupEffects(vm *goja.Runtime, spec *goja.Object, password, confirmation idpworkflow.SecretHandle) []map[string]any {
 	effects := []map[string]any{
 		{"kind": idpprogram.EffectCreateLocalIdentity, "payload": map[string]any{
