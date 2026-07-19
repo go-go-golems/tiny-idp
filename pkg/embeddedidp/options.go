@@ -50,6 +50,7 @@ type UIConfig struct {
 // TLS, OAuth, cookie, key, or general storage authority.
 type ScriptedSignupConfig struct {
 	Executor           *idpsignup.Executor
+	GenerationManager  *idpsignup.GenerationManager
 	Continuations      idpcontinuation.Store
 	DurableInvitations *idpinvite.DurableService
 	EmailChallenges    *idpemailchallenge.Service
