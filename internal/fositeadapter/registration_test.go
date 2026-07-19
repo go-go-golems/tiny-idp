@@ -173,11 +173,11 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	executor, err := idpsignup.New(ctx, idpsignup.EmailVerifiedSource, 1)
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.EmailVerifiedSource, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer executor.Close(context.Background())
+	defer manager.Close(context.Background())
 	mail := &signupEmailCapture{}
 	emailChallenges, err := idpemailchallenge.NewService(idpemailchallenge.NewMemoryStore(), mail, []byte("email-verified-registration-test-key"))
 	if err != nil {
@@ -191,7 +191,7 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 		Authenticator:         accounts,
 		Consent:               fositeadapter.AlwaysSkipConsent{},
 		Registration:          fositeadapter.RegistrationConfig{Enabled: true, Accounts: accounts},
-		ScriptedSignup:        executor,
+		ScriptedSignupManager: manager,
 		WorkflowContinuations: store,
 		EmailChallenges:       emailChallenges,
 	})
@@ -246,6 +246,9 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 	}
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="email_code"`) || len(mail.requests) != 2 {
 		t.Fatalf("email-code page status=%d mail=%d body=%s", response.StatusCode, len(mail.requests), body)
+	}
+	if _, err := manager.Activate(ctx, strings.Replace(idpsignup.EmailVerifiedSource, "Choose a password", "Choose your password", 1)); err != nil {
+		t.Fatal(err)
 	}
 	resendForm := parseInteractionInputs(string(body))
 	resendForm.Set(idpui.ActionFieldName, string(idpworkflow.ActionResend))

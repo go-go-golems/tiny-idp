@@ -208,7 +208,7 @@ func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Requ
 		return err
 	}
 	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: validated.Presentation.ResumeHandler, InputSchema: validated.InputSchema, Carry: validated.Presentation.Carry, EvidenceReferences: evidenceReferences, Presentation: idpcontinuation.PresentationState{ID: "signup", Fields: fieldIDs(validated.Fields), AllowedActions: actionIDs(validated.Actions), PublicValues: publicValues}, ExpiresAt: p.now().Add(validated.Presentation.ExpiresIn)}
-	nextHandle, _, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindings(record, r), next)
+	nextHandle, _, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindingsFor(record, r, current.ProgramFingerprint), next)
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, e
 		return err
 	}
 	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: outcome.Continuation.HandlerID, InputSchema: inputSchema, Carry: outcome.Continuation.Carry, EvidenceReferences: []idpcontinuation.EvidenceReference{{Kind: "pendingEmailChallenge", ID: challengeID}}, Presentation: idpcontinuation.PresentationState{ID: "email-code", Fields: []string{string(idpworkflow.FieldEmailCode)}, AllowedActions: []string{string(idpworkflow.ActionSubmit), string(idpworkflow.ActionResend), string(idpworkflow.ActionDeny)}, PublicValues: json.RawMessage(`{}`)}, ExpiresAt: expiresAt}
-	nextHandle, _, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindings(record, r), next)
+	nextHandle, _, err := p.workflowContinuations.Advance(r.Context(), handle, current.Revision, p.signupBindingsFor(record, r, current.ProgramFingerprint), next)
 	if err != nil {
 		return err
 	}
