@@ -3,6 +3,7 @@ package idpsignup
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/pkg/errors"
 
@@ -22,6 +23,15 @@ type GenerationManager struct {
 	byHash   map[string]*Executor
 	order    []string
 	closed   bool
+	metrics  generationMetrics
+}
+
+type generationMetrics struct{ activations, activationFailures, evicted, closed atomic.Uint64 }
+
+// GenerationMetrics contains bounded, secret-free operational counters.
+type GenerationMetrics struct {
+	Activations, ActivationFailures, Evicted, Closed uint64
+	Retained, PoolCapacity, PoolActive               int
 }
 
 type GenerationSnapshot struct {
@@ -29,6 +39,7 @@ type GenerationSnapshot struct {
 	Retained          []string
 	Ready             bool
 	Pool              idpscript.PoolStats
+	Metrics           GenerationMetrics
 }
 
 func NewGenerationManager(ctx context.Context, source string, workers, retained int) (*GenerationManager, error) {
@@ -54,6 +65,7 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 	}
 	candidate, err := warmGeneration(ctx, source, m.workers)
 	if err != nil {
+		m.metrics.activationFailures.Add(1)
 		return "", errors.Wrap(err, "warm candidate signup generation")
 	}
 	fingerprint := candidate.Fingerprint()
@@ -61,15 +73,18 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 	if m.closed {
 		m.mu.Unlock()
 		_ = candidate.Close(context.Background())
+		m.metrics.activationFailures.Add(1)
 		return "", errors.New("generation manager is closed")
 	}
 	if existing := m.byHash[fingerprint]; existing != nil {
 		m.active = existing
+		m.metrics.activations.Add(1)
 		m.mu.Unlock()
 		_ = candidate.Close(context.Background())
 		return fingerprint, nil
 	}
 	m.active = candidate
+	m.metrics.activations.Add(1)
 	m.byHash[fingerprint] = candidate
 	m.order = append(m.order, fingerprint)
 	toClose := m.evictLocked()
@@ -79,6 +94,7 @@ func (m *GenerationManager) Activate(ctx context.Context, source string) (string
 			return "", errors.Wrap(closeErr, "close drained signup generation")
 		}
 	}
+	m.metrics.evicted.Add(uint64(len(toClose)))
 	return fingerprint, nil
 }
 
@@ -150,7 +166,23 @@ func (m *GenerationManager) Snapshot() GenerationSnapshot {
 		snapshot.Pool = m.active.PoolStats()
 	}
 	snapshot.Ready = !m.closed && m.active != nil && m.active.Ready()
+	snapshot.Metrics = m.Metrics()
 	return snapshot
+}
+
+func (m *GenerationManager) Metrics() GenerationMetrics {
+	if m == nil {
+		return GenerationMetrics{}
+	}
+	m.mu.RLock()
+	retained := len(m.order)
+	var capacity, active int
+	if m.active != nil {
+		stats := m.active.PoolStats()
+		capacity, active = stats.Capacity, stats.Active
+	}
+	m.mu.RUnlock()
+	return GenerationMetrics{Activations: m.metrics.activations.Load(), ActivationFailures: m.metrics.activationFailures.Load(), Evicted: m.metrics.evicted.Load(), Closed: m.metrics.closed.Load(), Retained: retained, PoolCapacity: capacity, PoolActive: active}
 }
 
 // Ready returns an operator-safe readiness error for hosts that have opted
@@ -178,6 +210,7 @@ func (m *GenerationManager) Close(ctx context.Context) error {
 		return nil
 	}
 	m.closed = true
+	m.metrics.closed.Add(1)
 	executors := make([]*Executor, 0, len(m.byHash))
 	for _, executor := range m.byHash {
 		executors = append(executors, executor)

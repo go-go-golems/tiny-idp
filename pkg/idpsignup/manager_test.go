@@ -122,3 +122,21 @@ func TestGenerationManagerRepeatedReloadsKeepRetentionBounded(t *testing.T) {
 		assert.LessOrEqual(t, len(snapshot.Retained), 3)
 	}
 }
+
+func TestGenerationManagerReportsBoundedOperationalMetrics(t *testing.T) {
+	ctx := context.Background()
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.DefaultSource, 1, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, manager.Close(context.Background())) })
+	_, err = manager.Activate(ctx, "not valid JavaScript")
+	require.Error(t, err)
+	_, err = manager.Activate(ctx, strings.Replace(idpsignup.DefaultSource, "Create an account", "Create your account", 1))
+	require.NoError(t, err)
+	metrics := manager.Metrics()
+	assert.Equal(t, uint64(1), metrics.Activations)
+	assert.Equal(t, uint64(1), metrics.ActivationFailures)
+	assert.Equal(t, uint64(1), metrics.Evicted)
+	assert.Equal(t, 1, metrics.Retained)
+	assert.Equal(t, 1, metrics.PoolCapacity)
+	assert.Equal(t, 0, metrics.PoolActive)
+}
