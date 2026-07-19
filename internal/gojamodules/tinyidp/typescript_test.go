@@ -15,6 +15,9 @@ func TestTypeScriptDeclarationsCoverPhase0Surface(t *testing.T) {
 	for _, fragment := range []string{
 		`declare module "tinyidp"`,
 		"interface InvocationContext",
+		"interface PresentationBuilders",
+		"interface FieldBuilders",
+		"interface ActionBuilders",
 		"Promise<Outcome>",
 		"interface ProgramBuilder",
 		"readonly result: ResultBuilders",

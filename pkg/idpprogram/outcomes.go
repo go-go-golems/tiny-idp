@@ -52,8 +52,12 @@ type Outcome struct {
 	Code         string               `json:"code,omitempty"`
 	NextHandler  string               `json:"nextHandler,omitempty"`
 	Continuation *BrowserContinuation `json:"continuation,omitempty"`
-	Effects      []EffectPlan         `json:"effects,omitempty"`
-	Value        json.RawMessage      `json:"value,omitempty"`
+	// Presentation is a data-only browser page descriptor. It is populated by
+	// ctx.present.* and decoded by the native workflow boundary before a
+	// continuation is persisted or a page is rendered.
+	Presentation json.RawMessage `json:"presentation,omitempty"`
+	Effects      []EffectPlan    `json:"effects,omitempty"`
+	Value        json.RawMessage `json:"value,omitempty"`
 }
 
 // ValidateOutcome checks the dynamic parts of an outcome against a lambda's
@@ -72,6 +76,9 @@ func ValidateOutcome(spec LambdaSpec, outcome Outcome) error {
 		}
 	} else if outcome.Continuation != nil {
 		return errors.Errorf("outcome %q must not contain a browser continuation", outcome.Kind)
+	}
+	if len(outcome.Presentation) != 0 && outcome.Kind != OutcomePresent {
+		return errors.Errorf("outcome %q must not contain a presentation", outcome.Kind)
 	}
 
 	if outcome.Kind == OutcomeContinue && outcome.NextHandler == "" {

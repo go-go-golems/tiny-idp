@@ -41,6 +41,27 @@ func TestPoolAwaitsPromiseCapability(t *testing.T) {
 	assert.Equal(t, "cap:Ada", outcomeValue(t, outcome))
 }
 
+func TestPoolBuildsDataOnlyPresentationOutcome(t *testing.T) {
+	pool := newInvocationPool(t, 1)
+
+	outcome, err := pool.Invoke(context.Background(), "test.present", input("Ada"), nil)
+	require.NoError(t, err)
+	require.Equal(t, idpprogram.OutcomePresent, outcome.Kind)
+	require.NotNil(t, outcome.Continuation)
+	assert.Equal(t, "submitted", outcome.Continuation.HandlerID)
+	assert.JSONEq(t, `{"value":"Ada"}`, string(outcome.Continuation.Carry))
+	assert.JSONEq(t, `{
+		"title":"Create account",
+		"resumeHandler":"submitted",
+		"fields":["displayName","email"],
+		"actions":["submit","deny"],
+		"publicValues":{"displayName":"Ada"},
+		"errors":[{"field":"email","code":"invalid"}],
+		"carry":{"value":"Ada"},
+		"expiresInSeconds":300
+	}`, string(outcome.Presentation))
+}
+
 func TestInvocationCapabilityBudgetAndExpiredBindingFailClosed(t *testing.T) {
 	pool := newInvocationPool(t, 1)
 	capability := lookupCapability(func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
@@ -375,6 +396,29 @@ module.exports = A.program("invocation-tests", program => {
     return A.result.complete(value);
   }, {capabilities: ["test.slow"], maxCapabilityCalls: 1, timeoutMs: 500}));
   workflow("safe", lambda("test.safe", _ => A.result.complete({value: "safe"})));
+  const present = A.lambda("test.present", {
+    input: "input", output: "result", outcomes: ["present"], effects: [], capabilities: [],
+    timeoutMs: 200, maxCapabilityCalls: 0, maxOutputBytes: 1024,
+    run: ctx => ctx.present.form({
+      title: "Create account",
+      resume: "submitted",
+      fields: [A.field.displayName(), A.field.email()],
+      actions: [A.action.submit(), A.action.deny()],
+      values: {displayName: ctx.input.value},
+      errors: [{field: A.field.email(), code: "invalid"}],
+      carry: ctx.input,
+      expiresInSeconds: 300,
+    }),
+  });
+  const submitted = A.lambda("test.present.submitted", {
+    input: "input", output: "result", outcomes: ["complete"], effects: [], capabilities: [],
+    timeoutMs: 200, maxCapabilityCalls: 0, maxOutputBytes: 1024,
+    run: ctx => A.result.complete(ctx.input),
+  });
+  program.workflow("present", {
+    version: 1, entry: "start", handlers: {start: present, submitted},
+    edges: [{from: "start", outcome: "present", to: "submitted", input: "input"}],
+  });
   workflow("spin", lambda("test.spin", _ => { for (;;) {} }, {timeoutMs: 15}));
   workflow("throw", lambda("test.throw", _ => { throw new Error("secret exception text"); }));
   workflow("invalid", lambda("test.invalid", _ => undefined));

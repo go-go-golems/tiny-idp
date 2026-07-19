@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	"github.com/go-go-golems/tiny-idp/pkg/idpworkflow"
 )
 
 // Name is the only native module exposed by the production policy compiler.
@@ -43,6 +44,8 @@ type Collector struct {
 	lambdas   map[string]lambdaDraft
 	callbacks map[string]goja.Callable
 	handles   map[*goja.Object]string
+	fields    map[*goja.Object]idpworkflow.FieldID
+	actions   map[*goja.Object]idpworkflow.ActionID
 }
 
 type lambdaDraft struct {
@@ -58,6 +61,8 @@ func NewCollector(schemas map[string]idpprogram.Schema) *Collector {
 		lambdas:   map[string]lambdaDraft{},
 		callbacks: map[string]goja.Callable{},
 		handles:   map[*goja.Object]string{},
+		fields:    map[*goja.Object]idpworkflow.FieldID{},
+		actions:   map[*goja.Object]idpworkflow.ActionID{},
 	}
 }
 
@@ -106,6 +111,8 @@ func NewLoader(collector *Collector) func(*goja.Runtime, *goja.Object) {
 		mustSet(vm, v1, "lambda", lambdaFunction)
 		mustSet(vm, v1, "program", newProgramFunction(vm, collector, lambdaFunction))
 		mustSet(vm, v1, "result", newResultBuilders(vm))
+		mustSet(vm, v1, "field", newFieldBuilders(vm, collector))
+		mustSet(vm, v1, "action", newActionBuilders(vm, collector))
 		mustSet(vm, exports, "v1", v1)
 	}
 }
@@ -305,6 +312,155 @@ func newResultBuilders(vm *goja.Runtime) *goja.Object {
 	mustSet(vm, result, "skip", code(idpprogram.OutcomeSkip, true))
 	mustSet(vm, result, "error", code(idpprogram.OutcomeError, false))
 	return result
+}
+
+// newFieldBuilders exposes only host-defined descriptor identities. A script
+// may select a field for a presentation but cannot define an input name, HTML,
+// sensitive-data policy, or normalizer.
+func newFieldBuilders(vm *goja.Runtime, collector *Collector) *goja.Object {
+	builders := vm.NewObject()
+	for _, id := range []idpworkflow.FieldID{
+		idpworkflow.FieldDisplayName,
+		idpworkflow.FieldEmail,
+		idpworkflow.FieldPassword,
+		idpworkflow.FieldPasswordConfirmation,
+		idpworkflow.FieldInviteCode,
+	} {
+		fieldID := id
+		mustSet(vm, builders, string(fieldID), func(call goja.FunctionCall) goja.Value {
+			requireArgumentCount(vm, call, 0, "field."+string(fieldID)+"()")
+			handle := vm.NewObject()
+			collector.fields[handle] = fieldID
+			return handle
+		})
+	}
+	return builders
+}
+
+// newActionBuilders exposes only host-defined action identities. The host
+// retains the action label and its form-validation policy.
+func newActionBuilders(vm *goja.Runtime, collector *Collector) *goja.Object {
+	builders := vm.NewObject()
+	for _, id := range []idpworkflow.ActionID{idpworkflow.ActionSubmit, idpworkflow.ActionDeny} {
+		actionID := id
+		mustSet(vm, builders, string(actionID), func(call goja.FunctionCall) goja.Value {
+			requireArgumentCount(vm, call, 0, "action."+string(actionID)+"()")
+			handle := vm.NewObject()
+			collector.actions[handle] = actionID
+			return handle
+		})
+	}
+	return builders
+}
+
+// NewPresentationContext creates the invocation-scoped browser boundary. It
+// deliberately returns data, not a response writer, request, template, or
+// redirect mutator. Native HTTP code validates and projects the result later.
+func NewPresentationContext(vm *goja.Runtime, collector *Collector) *goja.Object {
+	if collector == nil {
+		panic("tinyidp presentation collector is nil")
+	}
+	present := vm.NewObject()
+	mustSet(vm, present, "form", func(call goja.FunctionCall) goja.Value {
+		requireArgumentCount(vm, call, 1, "ctx.present.form(spec)")
+		spec := requireObject(vm, call.Argument(0), "presentation spec")
+		carry := spec.Get("carry")
+		if goja.IsUndefined(carry) {
+			panic(vm.NewTypeError("presentation carry is required"))
+		}
+		fields := presentationFieldIDs(vm, collector, spec.Get("fields"))
+		actions := presentationActionIDs(vm, collector, spec.Get("actions"))
+		publicValues := presentationPublicValues(vm, spec.Get("values"))
+		errors := presentationErrors(vm, collector, spec.Get("errors"))
+		expiresInSeconds := requirePositiveInteger(vm, spec.Get("expiresInSeconds"), "presentation expiry")
+		resumeHandler := requireString(vm, spec.Get("resume"), "presentation resume handler")
+		title := requireString(vm, spec.Get("title"), "presentation title")
+		presentation := map[string]any{
+			"title":            title,
+			"resumeHandler":    resumeHandler,
+			"fields":           fields,
+			"actions":          actions,
+			"carry":            carry.Export(),
+			"expiresInSeconds": expiresInSeconds,
+		}
+		if len(publicValues) != 0 {
+			presentation["publicValues"] = publicValues
+		}
+		if len(errors) != 0 {
+			presentation["errors"] = errors
+		}
+		return vm.ToValue(map[string]any{
+			"kind": idpprogram.OutcomePresent,
+			"continuation": map[string]any{
+				"handlerId":        resumeHandler,
+				"carry":            carry.Export(),
+				"expiresInSeconds": expiresInSeconds,
+			},
+			"presentation": presentation,
+		})
+	})
+	return present
+}
+
+func presentationFieldIDs(vm *goja.Runtime, collector *Collector, value goja.Value) []string {
+	array := requireArray(vm, value, "presentation fields")
+	ret := make([]string, 0, array.Get("length").ToInteger())
+	for i := int64(0); i < array.Get("length").ToInteger(); i++ {
+		handle := requireObject(vm, array.Get(fmt.Sprintf("%d", i)), "presentation field")
+		id, ok := collector.fields[handle]
+		if !ok {
+			panic(vm.NewTypeError("presentation field is not a field returned by this module"))
+		}
+		ret = append(ret, string(id))
+	}
+	return ret
+}
+
+func presentationActionIDs(vm *goja.Runtime, collector *Collector, value goja.Value) []string {
+	array := requireArray(vm, value, "presentation actions")
+	ret := make([]string, 0, array.Get("length").ToInteger())
+	for i := int64(0); i < array.Get("length").ToInteger(); i++ {
+		handle := requireObject(vm, array.Get(fmt.Sprintf("%d", i)), "presentation action")
+		id, ok := collector.actions[handle]
+		if !ok {
+			panic(vm.NewTypeError("presentation action is not an action returned by this module"))
+		}
+		ret = append(ret, string(id))
+	}
+	return ret
+}
+
+func presentationPublicValues(vm *goja.Runtime, value goja.Value) map[string]string {
+	if goja.IsUndefined(value) || goja.IsNull(value) {
+		return nil
+	}
+	object := requireObject(vm, value, "presentation values")
+	ret := make(map[string]string, len(object.Keys()))
+	for _, key := range object.Keys() {
+		ret[key] = requireString(vm, object.Get(key), "presentation public value")
+	}
+	return ret
+}
+
+func presentationErrors(vm *goja.Runtime, collector *Collector, value goja.Value) []map[string]string {
+	if goja.IsUndefined(value) || goja.IsNull(value) {
+		return nil
+	}
+	array := requireArray(vm, value, "presentation errors")
+	ret := make([]map[string]string, 0, array.Get("length").ToInteger())
+	for i := int64(0); i < array.Get("length").ToInteger(); i++ {
+		errorObject := requireObject(vm, array.Get(fmt.Sprintf("%d", i)), "presentation error")
+		field := requireObject(vm, errorObject.Get("field"), "presentation error field")
+		fieldID, ok := collector.fields[field]
+		if !ok {
+			panic(vm.NewTypeError("presentation error field is not a field returned by this module"))
+		}
+		ret = append(ret, map[string]string{
+			"field": string(fieldID),
+			"code":  requireString(vm, errorObject.Get("code"), "presentation error code"),
+		})
+	}
+	return ret
 }
 
 func parseLambdaKind(vm *goja.Runtime, value goja.Value) idpprogram.LambdaKind {

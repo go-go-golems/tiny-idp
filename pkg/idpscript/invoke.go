@@ -9,6 +9,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/pkg/errors"
 
+	tinyidpmodule "github.com/go-go-golems/tiny-idp/internal/gojamodules/tinyidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 )
 
@@ -102,6 +103,9 @@ func (w *worker) invoke(ctx context.Context, lambdaID string, input json.RawMess
 		}
 		if err := ctxObject.Set("cap", capabilityObject); err != nil {
 			return nil, errors.Wrap(err, "set lambda capabilities")
+		}
+		if err := ctxObject.Set("present", tinyidpmodule.NewPresentationContext(vm, w.image.collector)); err != nil {
+			return nil, errors.Wrap(err, "set lambda presentation context")
 		}
 		if err := deepFreeze(vm, ctxObject); err != nil {
 			return nil, errors.Wrap(err, "freeze lambda context")
