@@ -213,7 +213,7 @@ func (c *ScriptTestCommand) RunIntoGlazeProcessor(ctx context.Context, vals *val
 	defer executor.Close(context.Background()) //nolint:errcheck // outcome below is authoritative.
 	results := executor.RunTests(ctx)
 	for _, result := range results {
-		if err := gp.AddRow(ctx, types.NewRow(types.MRP("id", result.ID), types.MRP("passed", result.Passed), types.MRP("expected_kind", result.Expected), types.MRP("actual_kind", result.Actual))); err != nil {
+		if err := gp.AddRow(ctx, types.NewRow(types.MRP("id", result.ID), types.MRP("passed", result.Passed), types.MRP("expected_kind", string(result.Expected)), types.MRP("actual_kind", string(result.Actual)))); err != nil {
 			return err
 		}
 		if !result.Passed {
