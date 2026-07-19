@@ -17,7 +17,11 @@ RelatedFiles:
     - Path: repo://go.mod
       Note: Phase 0 baseline source for the Go 1.26 toolchain and pinned go-go-goja dependency recorded in Step 10.
     - Path: repo://internal/cmds/script.go
-      Note: Operator test command and Glazed row command construction
+      Note: |-
+        Operator test command and Glazed row command construction
+        Stable per-case CLI output and failure contract
+    - Path: repo://internal/cmds/script_test.go
+      Note: Success and nonzero assertion-failure diagnostics
     - Path: repo://internal/fositeadapter/registration_test.go
       Note: Browser proof and delivery lifecycle evidence
     - Path: repo://internal/fositeadapter/scripted_signup.go
@@ -114,6 +118,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -4501,4 +4506,96 @@ active manager --> active executor --> warmed, non-closed worker pool
 
 closed/missing active generation ---------------------> /readyz false
                                                      reason=active_generation_unavailable
+```
+
+## Step 41: Prove script-test result and failure diagnostics
+
+The script test command now has direct command-level coverage instead of being
+validated only through a manual invocation. Its output contract deliberately
+uses primitive strings for outcome fields, so table, JSON, YAML, and test
+processors all see the same representation.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 39)
+
+**Assistant interpretation:** Continue closing the Phase 6 operational command
+requirements with executable evidence.
+
+**Inferred user intent:** Make a failed embedded script test actionable and
+machine-readable in CI or an activation run.
+
+**Commit (code):** `115b7d4` — "Test: cover script test command diagnostics"
+
+### What I did
+
+- Added direct `ScriptTestCommand.RunIntoGlazeProcessor` tests using temporary
+  source files and a capture processor.
+- Pinned the success row’s test ID, boolean result, expected kind, and actual
+  kind.
+- Pinned the failure behavior: emit the failed row first, then return a stable
+  error naming the test and expected/actual outcomes.
+- Converted the emitted `OutcomeKind` aliases to strings at the command
+  boundary so consumers do not receive Go named values.
+- Checked off `lf69`.
+
+### Why
+
+Operators need both structured data for a failing case and a nonzero command
+result. Returning early before the row loses useful diagnostic context; emitting
+arbitrary Go values makes formatter behavior an accidental API.
+
+### What worked
+
+```bash
+go test ./internal/cmds -run TestScriptTestCommand -count=1 -v
+git commit -m 'Test: cover script test command diagnostics'
+```
+
+Both the success and deliberate assertion-failure tests passed. The commit hook
+then passed the complete `GOWORK=off go test ./...` and lint suites.
+
+### What didn't work
+
+Changing only `expectedKind:"present"` to `deny` produced a compilation
+diagnostic because validation correctly requires test expectations to be
+declared by the selected lambda. The fixture now declares `deny` as allowed
+while the implementation still returns `present`, exercising the intended
+runtime assertion rather than weakening program validation.
+
+### What I learned
+
+An embedded test has two distinct failure classes: malformed contract tests
+fail during compilation; a valid assertion mismatch fails during execution.
+Both must be nonzero, but only the latter has a per-case execution row.
+
+### What was tricky to build
+
+The program validator protects workflow edge consistency, so a fixture cannot
+arbitrarily invent an expected outcome. The test added an unused but declared
+terminal outcome to the lambda, preserving a valid program graph while making
+the runner’s actual/expected comparison meaningful.
+
+### What warrants a second pair of eyes
+
+- Compile, bind, timeout, and leak diagnostics still need their own test cases
+  when deterministic fake capabilities are introduced for `lf68`.
+
+### What should be done in the future
+
+Implement explicit deterministic fake host capabilities and extend this command
+test suite to bind/timeout/leak failures before Phase 6 is declared complete.
+
+### Code review instructions
+
+- Read `internal/cmds/script_test.go` beside `ScriptTestCommand`.
+- Confirm outcome kinds are converted at the row boundary only.
+- Run the command test shown above.
+
+### Technical details
+
+```text
+valid test + matching outcome --> row { passed: true } --> exit 0
+valid test + mismatched outcome --> row { passed: false } --> stable error --> nonzero
+invalid test declaration --> compile diagnostic --> nonzero
 ```

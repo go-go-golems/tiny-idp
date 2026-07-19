@@ -382,3 +382,11 @@ Steps 39-40: added declarative embedded script tests, candidate activation gatin
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Readiness aggregation
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Activation gate and readiness
+
+## 2026-07-19
+
+Step 41: proved script-test structured success output and stable failing-case diagnostic/nonzero behavior (commit 115b7d4).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/script_test.go — CLI operational test evidence
