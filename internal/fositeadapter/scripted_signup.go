@@ -95,6 +95,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	}
 	input, err := p.scriptedSignup.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
 	var evidence map[string]json.RawMessage
+	verifiedEmail := ""
 	if challengeID, ok := emailChallengeReference(continuation); ok {
 		if p.emailChallenges == nil {
 			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
@@ -106,6 +107,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 		evidence, err = idpemailchallenge.EvidenceProjection(verified)
+		verifiedEmail = verified.Address
 		input = continuation.Carry
 	}
 	if err != nil || p.workflowContinuations.ValidateResumeInput(r.Context(), continuation, input) != nil {
@@ -130,7 +132,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
-	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, p.signupBindings(record, r), record, clientAddress)
+	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, p.signupBindings(record, r), record, clientAddress, verifiedEmail)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: signupCommitFailureReason(err)})
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
@@ -230,7 +232,7 @@ type signupCommitResult struct {
 // workflow consumption, and authorization interaction together. JavaScript
 // cannot call this operation directly; it can only return a declared effect
 // plan that this method revalidates.
-func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress string) (signupCommitResult, error) {
+func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress, verifiedEmail string) (signupCommitResult, error) {
 	if len(outcome.Effects) != 2 && len(outcome.Effects) != 3 || outcome.Effects[0].Kind != idpprogram.EffectCreateLocalIdentity || outcome.Effects[1].Kind != idpprogram.EffectAttachPasswordCredential || len(outcome.Effects) == 3 && outcome.Effects[2].Kind != idpprogram.EffectConsumeInvitation {
 		return signupCommitResult{}, errors.New("signup script emitted an invalid effect sequence")
 	}
@@ -257,7 +259,7 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 		}
 	}
 	password, confirmation, ok := submissionSecrets(submission, credential.PasswordHandle, credential.PasswordConfirmationHandle)
-	if !ok || len(password) == 0 || !equalBytes(password, confirmation) || !p.allowRegistration(ctx, record.ClientID, clientAddress, identity.Login) {
+	if !ok || len(password) == 0 || !equalBytes(password, confirmation) || verifiedEmail != "" && !strings.EqualFold(identity.Login, verifiedEmail) || !p.allowRegistration(ctx, record.ClientID, clientAddress, identity.Login) {
 		return signupCommitResult{}, errors.New("signup effects are not acceptable")
 	}
 	defer clearBytes(password)
