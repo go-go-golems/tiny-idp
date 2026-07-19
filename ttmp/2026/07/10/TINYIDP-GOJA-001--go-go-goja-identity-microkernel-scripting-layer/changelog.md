@@ -304,3 +304,11 @@ Step 29: threaded durable invitation configuration through embeddedidp to the Fo
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Provider configuration propagation
+
+## 2026-07-19
+
+Step 30: completed lf55 with deterministic provider explanations for materialization, replay, revocation, and native effects (commit 5dc7567).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/explain.go — Operator-facing provider projection
