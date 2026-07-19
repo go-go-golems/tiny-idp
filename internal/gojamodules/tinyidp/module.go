@@ -242,7 +242,7 @@ func newWorkflowFunction(vm *goja.Runtime, collector *Collector, program *idppro
 }
 
 func parseWorkflowEdges(vm *goja.Runtime, value goja.Value, workflow *idpprogram.Workflow) {
-	if goja.IsUndefined(value) || goja.IsNull(value) {
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
 		return
 	}
 	array := requireArray(vm, value, "workflow edges")
@@ -498,7 +498,7 @@ func presentationActionIDs(vm *goja.Runtime, collector *Collector, value goja.Va
 }
 
 func presentationPublicValues(vm *goja.Runtime, value goja.Value) map[string]string {
-	if goja.IsUndefined(value) || goja.IsNull(value) {
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
 		return nil
 	}
 	object := requireObject(vm, value, "presentation values")
@@ -510,7 +510,7 @@ func presentationPublicValues(vm *goja.Runtime, value goja.Value) map[string]str
 }
 
 func presentationErrors(vm *goja.Runtime, collector *Collector, value goja.Value) []map[string]string {
-	if goja.IsUndefined(value) || goja.IsNull(value) {
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
 		return nil
 	}
 	array := requireArray(vm, value, "presentation errors")
