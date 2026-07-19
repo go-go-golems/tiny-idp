@@ -467,3 +467,20 @@ Extended the compiled provider vocabulary and added a bounded idppolicy executor
 - internal/fositeadapter/hardening_test.go — Browser Goja authorization integration evidence
 - pkg/idppolicy/executor.go — Bounded Goja policy executor and native outcome validation
 - pkg/idpprogram/providers.go — Authorization and claims provider contracts
+
+## 2026-07-19 - Step 56: bounded existing-protocol presentation handlers
+
+Completed lf82 and lf84 with a typed `presentation.render` provider callback.
+The callback receives only a copied presentation kind, public client ID,
+requested scopes, and account count; it may return only a bounded document
+title. Existing account-selection, consent, and device-verification forms keep
+their native opaque handles, CSRF protection, validation, OAuth/Fosite response
+ownership, and RFC 8628 state transitions.
+
+### Related Files
+
+- pkg/idp/presentation.go — Closed native presentation-policy contract
+- pkg/idppolicy/executor.go — Bounded Goja provider executor
+- internal/fositeadapter/rendering.go — Native route rendering and fail-closed decoration
+- internal/fositeadapter/select_account_test.go — Account chooser and consent route proof
+- internal/fositeadapter/device_authorization_test.go — Device confirmation route proof

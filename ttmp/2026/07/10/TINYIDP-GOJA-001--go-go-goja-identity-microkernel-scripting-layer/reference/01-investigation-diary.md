@@ -5830,3 +5830,81 @@ existing integration boundaries.
 - The final Phase 7 production gate must include the typed protocol
   presentation/continuation implementation, then rerun the broader conformance
   and SQLite/browser suite.
+
+## Step 56: Add bounded presentation handlers to existing native protocol pages
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Commit:** `6b59dbf` — "Feat: add bounded protocol presentation handlers";
+`68a41cd` — "Test: exercise bounded presentation on native routes"
+
+### What I did
+
+- Added the closed `idp.PresentationPolicy` contract and the three allowed
+  page kinds: account selection, consent, and device verification.
+- Added the compiled `presentation.default` provider kind. Its only handler,
+  `render`, consumes a copied `PresentationInput` and may return only a
+  `PresentationOutput` containing a bounded document title.
+- Wired the policy through `embeddedidp.Options` and `fositeadapter.Options`.
+  The native interaction and device render paths invoke it immediately before
+  their existing host-owned renderers.
+- Preserved the actual public OAuth client ID on `idpui.InteractionPage`, so
+  the account chooser callback receives the same public client identifier as
+  consent rather than a synthetic placeholder.
+- Added browser-route regressions for account selection, the subsequent
+  consent page, and device confirmation. Each test proves a policy-selected
+  title reaches the actual HTML page while the native form is still used.
+
+### Why this is a handler seam, not a second browser-flow engine
+
+The existing account chooser and device confirmation pages are not compatible
+with the generic signup-form descriptors. Their submitted values include
+provider-generated opaque account selectors, interaction handles, CSRF
+bindings, and RFC 8628 state. Reconstructing those forms in JavaScript would
+wrongly grant scripts the ability to select transitions or construct browser
+authority.
+
+Instead, each HTTP request already resumes a durable native continuation:
+
+```text
+browser GET/POST
+  -> native interaction or device continuation validation
+  -> native page choice and native form model
+  -> copied public PresentationInput
+  -> owned Goja presentation.render lambda
+  -> bounded title validation
+  -> native renderer and native protocol transition
+```
+
+This is the maximum useful Phase-0–6-compatible presentation hook for these
+flows. JavaScript cannot receive or modify form actions, hidden fields,
+cookies, headers, account selector values, credentials, device/user codes,
+Fosite requests, response writers, sessions, tokens, storage, or redirects.
+
+### What worked
+
+```bash
+go test ./internal/fositeadapter ./pkg/idp ./pkg/idpui ./pkg/idppolicy ./pkg/idpprogram -count=1
+go test ./internal/fositeadapter -run 'Test(PromptSelectAccountPresentationPolicy|DeviceVerificationPresentationPolicy)' -count=1
+```
+
+Both targeted commands passed. The `68a41cd` commit hook also passed lint,
+custom UI analysis, vet, and `GOWORK=off go test ./...`.
+
+### What did not work
+
+The first commit-hook run rejected an incomplete test-only switch over the
+closed `PresentationKind` enum. Adding the explicit device-verification case
+made the test policy exhaustive. No production protocol behavior was affected.
+
+### Code review instructions
+
+- Read `pkg/idp/presentation.go` before `pkg/idppolicy/executor.go`; verify the
+  input and output omit every protocol-sensitive value.
+- Trace `renderInteraction` and `renderDeviceVerification` in
+  `internal/fositeadapter/rendering.go`; policy errors must fail closed before
+  HTML is produced.
+- Run the two commands above, then inspect the account/device route tests to
+  see that all POST and protocol transitions remain native.

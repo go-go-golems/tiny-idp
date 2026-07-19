@@ -465,9 +465,9 @@ password-recovery, and device-verification flows described by design 03.
 - [x] Invoke authorization lambdas only after native client, redirect URI, scope, PKCE, prompt, session, authentication, and request validation and before native consent/code issuance <!-- t:lf79 -->
 - [x] Define immutable claims input and bounded claims output with native protection for issuer, subject, audience, expiry, nonce, authentication time, and other protocol-owned claims <!-- t:lf80 -->
 - [x] Invoke claims lambdas before native OIDC session persistence and preserve refresh-token and UserInfo consistency <!-- t:lf81 -->
-- [ ] Express account selection and consent as workflow handlers only where the Phase 0–6 presentation/continuation contracts fit without moving OAuth decisions or response writing into JavaScript <!-- t:lf82 -->
+- [x] Express account selection and consent as workflow handlers only where the Phase 0–6 presentation/continuation contracts fit without moving OAuth decisions or response writing into JavaScript <!-- t:lf82 -->
 - [x] Add password recovery only through existing native credential and challenge effects; do not permit scripts to write password hashes, credentials, or recovery state directly <!-- t:lf83 -->
-- [ ] Integrate device-verification presentation through workflow handlers while leaving RFC 8628 device/user code generation, polling, expiry, authorization, denial, and token transitions native <!-- t:lf84 -->
+- [x] Integrate device-verification presentation through workflow handlers while leaving RFC 8628 device/user code generation, polling, expiry, authorization, denial, and token transitions native <!-- t:lf84 -->
 - [ ] Add strict tests for fresh login, existing session, `prompt=none`, account selection, consent, allow/deny/error, protected claims, refresh, UserInfo, recovery replay, and device verification <!-- t:lf85 -->
 - [ ] Run the complete conformance, security-model, race, browser, memory-store, and SQLite-store suites before enabling any Phase 7 handler in a production profile <!-- t:lf86 -->
 
