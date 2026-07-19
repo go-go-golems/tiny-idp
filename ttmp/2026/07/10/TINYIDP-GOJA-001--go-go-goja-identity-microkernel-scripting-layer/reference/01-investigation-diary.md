@@ -5744,3 +5744,50 @@ workflow execution prematurely.
 - Run the four focused commands above.
 - Trace the Goja browser integration test through `Provider.finishAuthorize`;
   Fosite writes the redirect, not the JavaScript source.
+
+## Step 54: Prove Goja claims policy through device UserInfo
+
+The device-grant regression now uses a compiled `claims.default` Goja provider
+instead of the earlier static Go test policy. A browser approves the RFC 8628
+grant, the native token endpoint creates the OIDC session, and UserInfo exposes
+the script-provided `community_role` only because the native claims boundary
+accepted and persisted it.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Commit:** `28ed348` — "Test: invoke Goja claims policy through device userinfo"
+
+### What I did
+
+- Replaced the device UserInfo test's static claims policy with
+  `idppolicy.New` and a compiled `claims.additional` provider callback.
+- Kept the entire RFC 8628 lifecycle unchanged: device/user code generation,
+  browser approval, authentication, polling, token transition, session
+  persistence, and UserInfo response are native.
+- Asserted that UserInfo contains both the native subject and the permitted
+  additional claim.
+
+### Why
+
+This is the public-path counterpart of the executor unit test. It proves the
+claims callback is not merely callable: its bounded result reaches the same
+persisted OIDC session consumed by the device token and UserInfo paths.
+
+### What worked
+
+```bash
+go test ./internal/fositeadapter \\
+  -run 'Test(DeviceClaimsPolicyPersistsAdditionalClaimToUserInfo|DeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo)' \\
+  -count=1
+```
+
+The focused test passed; the commit hook passed lint and vet.
+
+### Code review instructions
+
+- Compare `gojaAdditionalClaimsSource` with `idppolicy.Executor.Claims`.
+- Trace the device token handler into `newOIDCSession`, then UserInfo.
+- Confirm the Goja source neither sees nor writes device/user codes, tokens,
+  sessions, or protocol response objects.
