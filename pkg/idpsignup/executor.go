@@ -7,6 +7,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -31,7 +33,11 @@ const (
 type Executor struct {
 	artifact *idpscript.Artifact
 	pool     *idpscript.Pool
+	metrics  executorMetrics
 }
+
+type executorMetrics struct{ invocations, failures, present, challenge, commit, other, latencyNanos, discarded atomic.Uint64 }
+type ExecutorMetrics struct{ Invocations, Failures, Present, Challenge, Commit, Other, LatencyNanos, Discarded uint64 }
 
 type TestResult struct {
 	ID       string
@@ -126,6 +132,13 @@ func (e *Executor) PoolStats() idpscript.PoolStats {
 func (e *Executor) Ready() bool {
 	stats := e.PoolStats()
 	return !stats.Closed && stats.Capacity > 0 && stats.WorkersCreated >= uint64(stats.Capacity)
+}
+
+func (e *Executor) Metrics() ExecutorMetrics {
+	if e == nil {
+		return ExecutorMetrics{}
+	}
+	return ExecutorMetrics{Invocations: e.metrics.invocations.Load(), Failures: e.metrics.failures.Load(), Present: e.metrics.present.Load(), Challenge: e.metrics.challenge.Load(), Commit: e.metrics.commit.Load(), Other: e.metrics.other.Load(), LatencyNanos: e.metrics.latencyNanos.Load(), Discarded: e.metrics.discarded.Load()}
 }
 
 func (e *Executor) Program() idpprogram.Program { return e.artifact.Program() }
@@ -283,7 +296,30 @@ func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input j
 	if !ok {
 		return idpprogram.Outcome{}, errors.New("signup handler is unavailable")
 	}
-	return e.pool.InvokeWithSecretsAndEvidence(ctx, handlerSpec.LambdaID, input, nil, secrets, evidence)
+	before := e.pool.Stats().Discarded
+	started := time.Now()
+	outcome, err := e.pool.InvokeWithSecretsAndEvidence(ctx, handlerSpec.LambdaID, input, nil, secrets, evidence)
+	e.metrics.invocations.Add(1)
+	e.metrics.latencyNanos.Add(uint64(time.Since(started)))
+	after := e.pool.Stats().Discarded
+	if after > before {
+		e.metrics.discarded.Add(after - before)
+	}
+	if err != nil {
+		e.metrics.failures.Add(1)
+		return outcome, err
+	}
+	switch outcome.Kind {
+	case idpprogram.OutcomePresent:
+		e.metrics.present.Add(1)
+	case idpprogram.OutcomeChallenge:
+		e.metrics.challenge.Add(1)
+	case idpprogram.OutcomeCommit:
+		e.metrics.commit.Add(1)
+	case idpprogram.OutcomeContinue, idpprogram.OutcomeComplete, idpprogram.OutcomeDeny, idpprogram.OutcomeSkip, idpprogram.OutcomeError:
+		e.metrics.other.Add(1)
+	}
+	return outcome, nil
 }
 
 // Resume invokes the exact handler named by a validated continuation. The

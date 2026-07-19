@@ -119,3 +119,16 @@ module.exports = A.program("fake-tests", p => {
 	require.Len(t, results, 1)
 	assert.True(t, results[0].Passed, "%+v", results[0])
 }
+
+func TestExecutorReportsBoundedInvocationMetrics(t *testing.T) {
+	executor, err := idpsignup.New(context.Background(), idpsignup.EmailVerifiedSource, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+	_, err = executor.Submit(context.Background(), map[idpworkflow.FieldID]string{idpworkflow.FieldDisplayName: "Ada", idpworkflow.FieldEmail: "ada@example.test"}, nil)
+	require.NoError(t, err)
+	metrics := executor.Metrics()
+	assert.Equal(t, uint64(1), metrics.Invocations)
+	assert.Equal(t, uint64(1), metrics.Challenge)
+	assert.Zero(t, metrics.Failures)
+	assert.Greater(t, metrics.LatencyNanos, uint64(0))
+}
