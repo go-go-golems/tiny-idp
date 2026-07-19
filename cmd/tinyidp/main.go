@@ -95,6 +95,12 @@ func main() {
 	cobra.CheckErr(err)
 	rootCmd.AddCommand(printConfigCobraCmd)
 
+	// `tinyidp script` — compile-time validation and secret-free explanation
+	// of the bounded JavaScript program that a production signup executor uses.
+	scriptCmd, err := cmds.NewScriptCommand()
+	cobra.CheckErr(err)
+	rootCmd.AddCommand(scriptCmd)
+
 	// `tinyidp admin` — operational user/password administration commands.
 	rootCmd.AddCommand(cmds.NewAdminCommand())
 

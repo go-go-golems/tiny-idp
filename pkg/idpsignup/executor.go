@@ -53,14 +53,11 @@ func New(ctx context.Context, source string, workers int) (*Executor, error) {
 	if workers <= 0 {
 		return nil, errors.New("signup executor worker count must be positive")
 	}
-	options := idpscript.DefaultCompileOptions()
-	options.SourceName = "open_signup.js"
-	options.Schemas = schemas()
-	artifact, err := idpscript.Compile(ctx, source, options)
+	artifact, err := Compile(ctx, source)
 	if err != nil {
 		return nil, errors.Wrap(err, "compile signup program")
 	}
-	factory, err := idpscript.NewRuntimeFactory(options.Schemas)
+	factory, err := idpscript.NewRuntimeFactory(schemas())
 	if err != nil {
 		return nil, errors.Wrap(err, "create signup runtime factory")
 	}
@@ -69,6 +66,23 @@ func New(ctx context.Context, source string, workers int) (*Executor, error) {
 		return nil, errors.Wrap(err, "create signup runtime pool")
 	}
 	return &Executor{artifact: artifact, pool: pool}, nil
+}
+
+// Compile compiles a signup program against the host-owned signup input
+// schemas without creating workers. Operational tools use this seam to
+// validate and explain exactly the artifact a signup executor would activate.
+func Compile(ctx context.Context, source string) (*idpscript.Artifact, error) {
+	if source == "" {
+		source = DefaultSource
+	}
+	options := idpscript.DefaultCompileOptions()
+	options.SourceName = "open_signup.js"
+	options.Schemas = schemas()
+	artifact, err := idpscript.Compile(ctx, source, options)
+	if err != nil {
+		return nil, errors.Wrap(err, "compile signup program")
+	}
+	return artifact, nil
 }
 
 func (e *Executor) Close(ctx context.Context) error {
