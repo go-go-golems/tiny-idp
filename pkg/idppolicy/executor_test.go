@@ -38,6 +38,15 @@ func TestExecutorRetainsNativePolicyValidation(t *testing.T) {
 	assert.Contains(t, err.Error(), "protocol-owned")
 }
 
+func TestExecutorRunsBoundedPresentationProvider(t *testing.T) {
+	executor, err := idppolicy.New(context.Background(), presentationSource, 1, idppolicy.Config{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+	output, err := executor.Present(context.Background(), idp.PresentationInput{Kind: idp.PresentationConsent, ClientID: "message-app", RequestedScope: []string{"openid"}})
+	require.NoError(t, err)
+	assert.Equal(t, "Review message-app access", output.DocumentTitle)
+}
+
 const policySource = `
 const A = require("tinyidp").v1;
 module.exports = A.program("policy", p => {
@@ -64,4 +73,15 @@ module.exports = A.program("claims", p => {
     run: ctx => A.result.complete({Additional:{sub:"other"}})
   });
   p.provider("claims", "default", {version:1, state:"virtual", replayProtection:"none", revocation:"none", handlers:{additional}});
+});`
+
+const presentationSource = `
+const A = require("tinyidp").v1;
+module.exports = A.program("presentation", p => {
+  const render = A.lambda("presentation.render", {
+    kind:"provider", input:"presentationInput", output:"presentationOutput",
+    outcomes:["complete"], effects:[], capabilities:[], timeoutMs:100, maxCapabilityCalls:0, maxOutputBytes:1024,
+    run: ctx => A.result.complete({DocumentTitle:"Review message-app access"})
+  });
+  p.provider("presentation", "default", {version:1, state:"virtual", replayProtection:"none", revocation:"none", handlers:{render}});
 });`

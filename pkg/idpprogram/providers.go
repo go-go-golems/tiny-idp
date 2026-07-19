@@ -15,10 +15,13 @@ const (
 	// ProviderKindClaims is a bounded additional-claims callback evaluated
 	// while the provider constructs its native OIDC session.
 	ProviderKindClaims ProviderKind = "claims"
+	// ProviderKindPresentation decorates an already selected provider-owned
+	// browser page. It cannot create a route, action, or protocol transition.
+	ProviderKindPresentation ProviderKind = "presentation"
 )
 
 func (k ProviderKind) Valid() bool {
-	return k == ProviderKindIdentity || k == ProviderKindInvitation || k == ProviderKindAuthorization || k == ProviderKindClaims
+	return k == ProviderKindIdentity || k == ProviderKindInvitation || k == ProviderKindAuthorization || k == ProviderKindClaims || k == ProviderKindPresentation
 }
 
 // ProviderState explains whether the provider has native durable state. It is
@@ -69,6 +72,7 @@ const (
 	InvitationValidateHandler  = "validate"
 	AuthorizationDecideHandler = "decide"
 	ClaimsAdditionalHandler    = "additional"
+	PresentationRenderHandler  = "render"
 )
 
 // Provider is the immutable artifact contract for one typed resource or

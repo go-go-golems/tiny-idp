@@ -266,6 +266,8 @@ func requiredProviderHandler(kind ProviderKind) string {
 		return AuthorizationDecideHandler
 	case ProviderKindClaims:
 		return ClaimsAdditionalHandler
+	case ProviderKindPresentation:
+		return PresentationRenderHandler
 	case ProviderKindInvitation:
 		return InvitationValidateHandler
 	default:

@@ -96,6 +96,7 @@ type Options struct {
 	Consent        idp.ConsentPolicy
 	Authorization  idp.AuthorizationPolicy
 	Claims         idp.ClaimsPolicy
+	Presentation   idp.PresentationPolicy
 	RateLimiter    idp.RateLimiter
 	ClientAddress  idp.ClientAddressResolver
 	Authenticator  idp.PasswordAuthenticator

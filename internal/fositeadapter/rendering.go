@@ -2,6 +2,7 @@ package fositeadapter
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"math"
 	"net/http"
@@ -107,6 +108,11 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 	w.Header().Set("Pragma", "no-cache")
 	if page.Form.RedirectOrigin != "" {
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' "+page.Form.RedirectOrigin+"; base-uri 'none'")
+	}
+	if err := p.decorateInteractionPage(r.Context(), &page); err != nil {
+		p.recordRenderFailure(r, page, "presentation_policy_failed")
+		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
+		return
 	}
 	if err := page.Validate(); err != nil {
 		p.recordRenderFailure(r, page, "invalid_page")
@@ -226,6 +232,11 @@ func (p *Provider) renderDeviceVerification(w http.ResponseWriter, r *http.Reque
 	defer func() { p.renderMetrics.observe(time.Since(started), succeeded) }()
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
+	if err := p.decorateDeviceVerificationPage(r.Context(), &page); err != nil {
+		p.recordDeviceVerificationRenderFailure(r, page, "presentation_policy_failed")
+		http.Error(w, "device verification page unavailable", http.StatusInternalServerError)
+		return
+	}
 	if err := page.Validate(); err != nil {
 		p.recordDeviceVerificationRenderFailure(r, page, "invalid_page")
 		http.Error(w, "device verification page unavailable", http.StatusInternalServerError)
@@ -265,6 +276,62 @@ func (p *Provider) renderDeviceVerification(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	succeeded = true
+}
+
+// decorateInteractionPage lets a policy choose only a bounded title for a
+// page that the provider has already selected. The stored interaction remains
+// the sole browser continuation; account values, scopes, actions, and OAuth
+// response ownership never cross this boundary.
+func (p *Provider) decorateInteractionPage(ctx context.Context, page *idpui.InteractionPage) error {
+	if p.presentation == nil || page == nil {
+		return nil
+	}
+	var input idp.PresentationInput
+	switch {
+	case page.AccountChooser != nil:
+		input = idp.PresentationInput{Kind: idp.PresentationAccountSelection, ClientID: interactionClientID(page), AccountCount: len(page.AccountChooser.Entries)}
+	case page.Consent != nil:
+		input = idp.PresentationInput{Kind: idp.PresentationConsent, ClientID: page.Consent.ClientID, RequestedScope: scopeNames(page.Consent.Scopes)}
+	default:
+		return nil
+	}
+	output, err := p.presentation.Present(ctx, input)
+	if err != nil {
+		return err
+	}
+	if output.DocumentTitle != "" {
+		page.DocumentTitle = output.DocumentTitle
+	}
+	return nil
+}
+
+func (p *Provider) decorateDeviceVerificationPage(ctx context.Context, page *idpui.DeviceVerificationPage) error {
+	if p.presentation == nil || page == nil || page.Confirmation == nil {
+		return nil
+	}
+	output, err := p.presentation.Present(ctx, idp.PresentationInput{Kind: idp.PresentationDeviceVerify, ClientID: page.Confirmation.ClientID, RequestedScope: scopeNames(page.Confirmation.Scopes)})
+	if err != nil {
+		return err
+	}
+	if output.DocumentTitle != "" {
+		page.DocumentTitle = output.DocumentTitle
+	}
+	return nil
+}
+
+func interactionClientID(page *idpui.InteractionPage) string {
+	if page.Consent != nil {
+		return page.Consent.ClientID
+	}
+	return "account-selection"
+}
+
+func scopeNames(scopes []idpui.Scope) []string {
+	result := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		result = append(result, scope.Name)
+	}
+	return result
 }
 
 func (p *Provider) recordDeviceVerificationRenderFailure(r *http.Request, page idpui.DeviceVerificationPage, reason string) {

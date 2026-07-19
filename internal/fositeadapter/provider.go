@@ -85,6 +85,7 @@ type Options struct {
 	Consent               idp.ConsentPolicy
 	Authorization         idp.AuthorizationPolicy
 	Claims                idp.ClaimsPolicy
+	Presentation          idp.PresentationPolicy
 	RateLimiter           idp.RateLimiter
 	ClientAddress         idp.ClientAddressResolver
 	Authenticator         idp.PasswordAuthenticator
@@ -131,6 +132,7 @@ type Provider struct {
 	consent               idp.ConsentPolicy
 	authorization         idp.AuthorizationPolicy
 	claims                idp.ClaimsPolicy
+	presentation          idp.PresentationPolicy
 	rateLimiter           idp.RateLimiter
 	clientAddress         idp.ClientAddressResolver
 	authenticator         idp.PasswordAuthenticator
@@ -397,7 +399,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("create scripted signup continuation service: %w", continuationErr)
 		}
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, authorization: opts.Authorization, claims: opts.Claims, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, authorization: opts.Authorization, claims: opts.Claims, presentation: opts.Presentation, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)

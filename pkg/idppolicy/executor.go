@@ -18,11 +18,13 @@ import (
 const (
 	defaultAuthorizationProvider = "authorization.default"
 	defaultClaimsProvider        = "claims.default"
+	defaultPresentationProvider  = "presentation.default"
 )
 
 type Config struct {
 	AuthorizationProvider string
 	ClaimsProvider        string
+	PresentationProvider  string
 }
 
 type Executor struct {
@@ -86,6 +88,7 @@ func (e *Executor) PoolStats() idpscript.PoolStats {
 
 var _ idp.AuthorizationPolicy = (*Executor)(nil)
 var _ idp.ClaimsPolicy = (*Executor)(nil)
+var _ idp.PresentationPolicy = (*Executor)(nil)
 
 // Authorize projects a cloned immutable input into the named provider handler.
 // Complete returns a validated allow/deny/skip decision. A JavaScript deny or
@@ -149,6 +152,37 @@ func (e *Executor) Claims(ctx context.Context, input idp.ClaimsInput) (idp.Claim
 	return output, nil
 }
 
+// Present invokes a decoration-only provider callback for a native browser
+// page. The host validates both input and output and applies the title only;
+// the callback cannot alter form controls or any security/protocol state.
+func (e *Executor) Present(ctx context.Context, input idp.PresentationInput) (idp.PresentationOutput, error) {
+	if err := input.Validate(); err != nil {
+		return idp.PresentationOutput{}, errors.Wrap(err, "validate presentation policy input")
+	}
+	raw, err := json.Marshal(input.Clone())
+	if err != nil {
+		return idp.PresentationOutput{}, errors.Wrap(err, "encode presentation policy input")
+	}
+	outcome, err := e.invoke(ctx, e.config.PresentationProvider, idpprogram.PresentationRenderHandler, raw)
+	if err != nil {
+		return idp.PresentationOutput{}, err
+	}
+	if outcome.Kind == idpprogram.OutcomeError {
+		return idp.PresentationOutput{}, errors.Errorf("presentation policy returned error %q", outcome.Code)
+	}
+	if outcome.Kind != idpprogram.OutcomeComplete {
+		return idp.PresentationOutput{}, errors.Errorf("presentation policy returned unsupported outcome %q", outcome.Kind)
+	}
+	var output idp.PresentationOutput
+	if err := json.Unmarshal(outcome.Value, &output); err != nil {
+		return idp.PresentationOutput{}, errors.Wrap(err, "decode presentation policy output")
+	}
+	if err := output.Validate(); err != nil {
+		return idp.PresentationOutput{}, errors.Wrap(err, "validate presentation policy output")
+	}
+	return output, nil
+}
+
 func (e *Executor) invoke(ctx context.Context, provider, handler string, input json.RawMessage) (idpprogram.Outcome, error) {
 	if e == nil || e.invoker == nil {
 		return idpprogram.Outcome{}, errors.New("policy executor is unavailable")
@@ -167,6 +201,9 @@ func normalizeConfig(config Config) Config {
 	if config.ClaimsProvider == "" {
 		config.ClaimsProvider = defaultClaimsProvider
 	}
+	if config.PresentationProvider == "" {
+		config.PresentationProvider = defaultPresentationProvider
+	}
 	return config
 }
 
@@ -179,6 +216,8 @@ func schemas() map[string]idpprogram.Schema {
 		"authorizationOutput": {ID: "authorizationOutput", Kind: idpprogram.SchemaKindObject, MaxBytes: 8 << 10, Additional: true},
 		"claimsInput":         {ID: "claimsInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 32 << 10, Additional: true},
 		"claimsOutput":        {ID: "claimsOutput", Kind: idpprogram.SchemaKindObject, MaxBytes: 64 << 10, Additional: true},
+		"presentationInput":   {ID: "presentationInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 8 << 10, Additional: true},
+		"presentationOutput":  {ID: "presentationOutput", Kind: idpprogram.SchemaKindObject, MaxBytes: 1024, Additional: true},
 	}
 }
 
