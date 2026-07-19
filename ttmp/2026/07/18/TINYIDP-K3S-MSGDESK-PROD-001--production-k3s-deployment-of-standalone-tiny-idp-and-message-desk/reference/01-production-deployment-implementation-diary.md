@@ -559,3 +559,17 @@ the rate-limit client-address resolver in that mode.
 
 Focused command tests cover absent/unknown modes and the mutually exclusive
 direct-TLS and trusted-proxy configurations.
+
+## Step 8 — Wire Message Desk to the same listener contract
+
+**Status:** implementation checkpoint
+
+Message Desk `serve` now requires the same `direct-tls` or
+`trusted-proxy-http` selection. In trusted-proxy mode it requires its HTTPS
+public base URL and narrow proxy CIDRs, forbids certificate flags, and wraps
+the application handler in the shared verified-proxy contract. This means its
+existing Secure cookie and same-origin checks see validated public HTTPS.
+
+The focused Message Desk command test passes. The full hook will run with this
+checkpoint; the next task is to expand listener-mode test cases and wire the
+external audit/bootstrap configuration.
