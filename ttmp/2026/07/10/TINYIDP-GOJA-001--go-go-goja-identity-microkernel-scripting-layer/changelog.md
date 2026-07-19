@@ -96,3 +96,12 @@ Step 9: expanded the normative lambda-first design into 92 ordered implementatio
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 9 records the planning process, correction, validation, and review guidance.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md — Detailed execution ledger derived strictly from design 03.
+
+## 2026-07-19
+
+Step 10: completed lf01 by confirming the Go 1.26.4/toolchain 1.26.5 baseline and pinned go-go-goja c6e464c5bbc6 dependency; direct and GOWORK=off suites pass, with one documented non-reproducing pre-existing race-test failure.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/go.mod — Validated language/toolchain and exact go-go-goja dependency baseline.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 10 records commands, failures, reruns, decisions, and the next task.

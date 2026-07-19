@@ -168,7 +168,7 @@ browser, persistence, Fosite, or account-creation behavior.
 
 #### Phase 0 tasks
 
-- [ ] Record the current Go version, go-go-goja dependency source, and direct/GOWORK-off/race baseline before adding packages; resolve the minimum-Go-version and pinned-dependency decisions without adding a compatibility shim <!-- t:lf01 -->
+- [x] Record the current Go version, go-go-goja dependency source, and direct/GOWORK-off/race baseline before adding packages; resolve the minimum-Go-version and pinned-dependency decisions without adding a compatibility shim <!-- t:lf01 -->
 - [ ] Add runtime-independent `Program`, `Workflow`, `WorkflowHandlers`, `LambdaSpec`, schema, capability-requirement, effect-declaration, budget, and diagnostic types under `pkg/idpprogram` <!-- t:lf02 -->
 - [ ] Add stable identifiers and typed handler outcomes for `present`, `challenge`, `commit`, `complete`, `deny`, and `skip`, including validation that a handler returns only declared outcomes <!-- t:lf03 -->
 - [ ] Implement deterministic program validation for duplicate identifiers, missing handlers, incompatible continuation edges, undeclared capabilities/effects, invalid budgets, unbounded carry schemas, and unreachable workflow entries <!-- t:lf04 -->

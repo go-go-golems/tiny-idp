@@ -14,6 +14,8 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://go.mod
+      Note: Phase 0 baseline source for the Go 1.26 toolchain and pinned go-go-goja dependency recorded in Step 10.
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md
       Note: Primary design produced by the investigation
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
@@ -30,6 +32,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -1216,4 +1219,162 @@ Phase 7 tasks: lf78-lf86
 cross-phase assurance: lf87-lf91
 overall completion gate: lf92
 first implementation task: lf01
+```
+
+## Step 10: Establish the Phase 0 baseline and dependency checkpoint
+
+This step established the clean starting point for implementation before any
+new packages or runtime behavior were added. The repository already contained
+the dependency decisions required by `lf01`: Tiny-IDP targets Go 1.26.4 with the
+Go 1.26.5 toolchain and pins go-go-goja to an exact pseudo-version rather than
+depending on an unresolved workspace revision.
+
+The direct and CI-style test baselines pass. The first sandboxed CI-style run
+could not create loopback listeners, and the targeted race baseline exposed one
+non-reproducing existing linearizability-test failure. Both outcomes are
+preserved here so future implementation failures can be distinguished from the
+starting environment and known baseline behavior.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Implement it task byt ask, commit at appropriate intervals, keep a detailed diary as you work."
+
+**User continuation instruction (verbatim):** "I am going to run errand, just run it to completion so I can validate when I come back."
+
+**User blocking clarification (verbatim):** "don't touch grass unless you are genuinely blocked, btw"
+
+**Assistant interpretation:** Execute the normative `lf01`–`lf92` ledger in
+dependency order, autonomously continue through ordinary implementation and
+test failures, and keep code, task, changelog, and diary commits synchronized.
+
+**Inferred user intent:** Return to a fully implemented and reviewable
+lambda-first scripting API rather than another planning pass or a partially
+executed spike.
+
+### What I did
+
+- Confirmed the working tree was clean on `task/prod-tiny-idp`.
+- Recorded:
+  - `go version go1.26.5 linux/amd64`;
+  - `go 1.26.4` and `toolchain go1.26.5` in `go.mod`;
+  - pinned go-go-goja pseudo-version
+    `v0.10.5-0.20260717152521-c6e464c5bbc6`;
+  - the workspace uses local `./go-go-goja`, while `GOWORK=off` resolves the
+    pinned module version.
+- Ran the direct baseline:
+
+  ```bash
+  go test ./... -count=1
+  ```
+
+- Ran the CI-style baseline outside the socket-restricted sandbox:
+
+  ```bash
+  GOWORK=off go test ./... -count=1
+  ```
+
+- Ran a targeted existing Goja/Fosite/embedding race baseline and isolated the
+  one failed test:
+
+  ```bash
+  go test -race ./internal/gojaverify ./internal/gojamodules/verify \
+    ./internal/fositeadapter ./pkg/embeddedidp -count=1
+  go test -race ./internal/fositeadapter \
+    -run TestSQLiteRefreshRotationHistoryIsLinearizableAndReuseRevokesFamily \
+    -count=1
+  ```
+
+- Checked task `lf01` only after the dependency and baseline evidence existed.
+
+### Why
+
+- Phase 0 needs a trustworthy before-state for attributing compile, race, and
+  isolation failures to the new scripting implementation.
+- The checked-in `go.mod` is the reproducible dependency decision; local
+  workspace resolution is useful during development but cannot be the only
+  validation path.
+- A flaky unrelated race test should be recorded, isolated, and left outside
+  this ticket rather than “fixed” speculatively while implementing scripting.
+
+### What worked
+
+- `go test ./... -count=1` passed.
+- The escalated `GOWORK=off go test ./... -count=1` passed using the pinned
+  go-go-goja version.
+- The isolated race rerun of
+  `TestSQLiteRefreshRotationHistoryIsLinearizableAndReuseRevokesFamily` passed.
+- No dependency or Go-version edit was necessary.
+
+### What didn't work
+
+- The first sandboxed `GOWORK=off go test ./... -count=1` failed in packages
+  using `httptest.NewServer` with:
+
+  ```text
+  panic: httptest: failed to listen on a port: listen tcp6 [::1]:0: socket: operation not permitted
+  ```
+
+  Re-running the same command with the required loopback-listener permission
+  passed.
+- The first targeted race baseline failed once with:
+
+  ```text
+  --- FAIL: TestSQLiteRefreshRotationHistoryIsLinearizableAndReuseRevokesFamily (0.34s)
+      linearizability_test.go:104: query "SELECT COUNT(*) FROM fosite_refresh_tokens WHERE active=1" count=1, want 0
+  ```
+
+  The exact isolated `-race -run` rerun passed. No unrelated source change was
+  made.
+
+### What I learned
+
+- The minimum-Go and dependency-pin decisions were already made by the merged
+  repository state, so `lf01` required validation and documentation rather than
+  a `go.mod` mutation.
+- Full integration suites require loopback-listener permission in this
+  workspace; pure package tests do not.
+
+### What was tricky to build
+
+- Running direct and `GOWORK=off` tests distinguishes local workspace behavior
+  from the pinned dependency, but the sandbox failure initially looked like a
+  test regression. The repeated `operation not permitted` listener panic across
+  unrelated packages identified the environmental cause.
+- The race failure was in pre-existing refresh-token linearizability behavior,
+  outside the scripting scope. Isolating the exact test once was sufficient to
+  classify it as non-reproducing baseline evidence without entering an
+  unrelated debugging branch.
+
+### What warrants a second pair of eyes
+
+- If the refresh-token linearizability failure repeats during later full race
+  gates, review it as a separate existing concurrency issue rather than
+  attributing it automatically to scripting.
+- Confirm future CI runs use the pinned dependency path at least once and do not
+  rely only on `go.work`.
+
+### What should be done in the future
+
+- Begin `lf02` with runtime-independent contracts in `pkg/idpprogram`.
+- Re-run the direct, targeted race, and `GOWORK=off` gates at the end of Phase 0.
+
+### Code review instructions
+
+- Review `go.mod` lines declaring the Go/toolchain and go-go-goja version.
+- Review task `lf01` in `tasks.md` and this diary step; there is intentionally no
+  application-source diff for this checkpoint.
+- Reproduce with `go test ./... -count=1` and, where loopback sockets are
+  allowed, `GOWORK=off go test ./... -count=1`.
+
+### Technical details
+
+```text
+task completed: lf01
+Go language version: 1.26.4
+Go toolchain: 1.26.5
+go-go-goja pin: v0.10.5-0.20260717152521-c6e464c5bbc6
+direct baseline: pass
+GOWORK=off baseline: pass outside socket-restricted sandbox
+targeted race baseline: one non-reproducing pre-existing linearizability failure
+next task: lf02
 ```
