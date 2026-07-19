@@ -312,3 +312,11 @@ Step 30: completed lf55 with deterministic provider explanations for materializa
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/explain.go — Operator-facing provider projection
+
+## 2026-07-19
+
+Step 31: completed lf57 with versioned pending-email challenge, safe reference, workflow bindings, attempt/resend state, and native verified-email evidence contracts (commit 01882e0).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/types.go — Phase 5 native contract boundary

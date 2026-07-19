@@ -374,7 +374,7 @@ workflow.
 
 #### Phase 5 tasks
 
-- [ ] Define versioned pending-email challenge, challenge reference, verified-email evidence, attempt, resend, expiry, and terminal-consumption contracts <!-- t:lf57 -->
+- [x] Define versioned pending-email challenge, challenge reference, verified-email evidence, attempt, resend, expiry, and terminal-consumption contracts <!-- t:lf57 -->
 - [ ] Add memory and SQLite challenge persistence with hashed codes, one-use atomic consumption, continuation binding, cleanup, and conformance tests <!-- t:lf58 -->
 - [ ] Add a narrowly typed mailer capability that accepts a native challenge reference and approved template data rather than arbitrary SMTP, network, or message authority <!-- t:lf59 -->
 - [ ] Implement native challenge creation and bounded email dispatch with redacted audit events and retry classification <!-- t:lf60 -->
