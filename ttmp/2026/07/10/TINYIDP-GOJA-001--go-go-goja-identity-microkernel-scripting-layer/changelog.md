@@ -105,3 +105,12 @@ Step 10: completed lf01 by confirming the Go 1.26.4/toolchain 1.26.5 baseline an
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/go.mod — Validated language/toolchain and exact go-go-goja dependency baseline.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 10 records commands, failures, reruns, decisions, and the next task.
+
+## 2026-07-19
+
+Step 11: completed lf02-lf05 with runtime-independent program/lambda/schema/outcome contracts, deterministic validation, canonical JSON, and source/program/callback/schema fingerprints (commit 0e0a4b0); package, race, full GOWORK=off, and lint gates pass.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram — Pure-Go Phase 0 contracts and tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 11 records contract decisions, validation evidence, risks, and review instructions.

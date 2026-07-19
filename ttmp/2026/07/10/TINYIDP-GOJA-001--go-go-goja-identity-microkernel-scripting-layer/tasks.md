@@ -169,10 +169,10 @@ browser, persistence, Fosite, or account-creation behavior.
 #### Phase 0 tasks
 
 - [x] Record the current Go version, go-go-goja dependency source, and direct/GOWORK-off/race baseline before adding packages; resolve the minimum-Go-version and pinned-dependency decisions without adding a compatibility shim <!-- t:lf01 -->
-- [ ] Add runtime-independent `Program`, `Workflow`, `WorkflowHandlers`, `LambdaSpec`, schema, capability-requirement, effect-declaration, budget, and diagnostic types under `pkg/idpprogram` <!-- t:lf02 -->
-- [ ] Add stable identifiers and typed handler outcomes for `present`, `challenge`, `commit`, `complete`, `deny`, and `skip`, including validation that a handler returns only declared outcomes <!-- t:lf03 -->
-- [ ] Implement deterministic program validation for duplicate identifiers, missing handlers, incompatible continuation edges, undeclared capabilities/effects, invalid budgets, unbounded carry schemas, and unreachable workflow entries <!-- t:lf04 -->
-- [ ] Implement canonical program serialization plus deterministic source, program, callback-registry, and schema fingerprints <!-- t:lf05 -->
+- [x] Add runtime-independent `Program`, `Workflow`, `WorkflowHandlers`, `LambdaSpec`, schema, capability-requirement, effect-declaration, budget, and diagnostic types under `pkg/idpprogram` <!-- t:lf02 -->
+- [x] Add stable identifiers and typed handler outcomes for `present`, `challenge`, `commit`, `complete`, `deny`, and `skip`, including validation that a handler returns only declared outcomes <!-- t:lf03 -->
+- [x] Implement deterministic program validation for duplicate identifiers, missing handlers, incompatible continuation edges, undeclared capabilities/effects, invalid budgets, unbounded carry schemas, and unreachable workflow entries <!-- t:lf04 -->
+- [x] Implement canonical program serialization plus deterministic source, program, callback-registry, and schema fingerprints <!-- t:lf05 -->
 - [ ] Implement the isolated `require("tinyidp").v1` module with only `program`, `workflow`, `lambda`, and the Phase 0 result builders needed by the spike <!-- t:lf06 -->
 - [ ] Compile source into an immutable artifact containing the canonical program, callback metadata, compiled source, required capabilities, and fingerprints without starting a server or mutating global registries <!-- t:lf07 -->
 - [ ] Load one artifact into at least two separately owned runtimes and reject activation if their callback IDs or fingerprints differ <!-- t:lf08 -->

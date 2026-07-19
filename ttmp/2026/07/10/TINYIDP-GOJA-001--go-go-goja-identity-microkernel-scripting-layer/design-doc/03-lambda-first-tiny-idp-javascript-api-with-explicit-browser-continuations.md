@@ -20,6 +20,8 @@ RelatedFiles:
       Note: Current authorization and provider-owned registration request flow that the workflow executor must integrate without bypassing Fosite validation
     - Path: repo://internal/gojaverify/compiler.go
       Note: Existing isolated compile-only Goja implementation and forbidden ambient-module precedent
+    - Path: repo://pkg/idpprogram
+      Note: Phase 0 runtime-independent program, lambda, schema, outcome, validation, and fingerprint implementation (commit 0e0a4b0).
     - Path: repo://pkg/idpstore/types.go
       Note: Existing interaction and security-state vocabulary that motivates the new versioned workflow continuation record
     - Path: repo://pkg/idpui/types.go
@@ -38,6 +40,7 @@ LastUpdated: 2026-07-19T12:00:00-04:00
 WhatFor: Implementing the primary Tiny-IDP scripting API, runtime invocation seams, signup workflows, virtual identities, virtual invitations, browser continuations, capability boundaries, and atomic native effects.
 WhenToUse: Use this document instead of design-doc/01 when designing or implementing the Tiny-IDP JavaScript configuration and runtime API. Read design-doc/02 alongside it for the assurance vocabulary and refactoring sequence.
 ---
+
 
 
 # Lambda-first Tiny-IDP JavaScript API with explicit browser continuations

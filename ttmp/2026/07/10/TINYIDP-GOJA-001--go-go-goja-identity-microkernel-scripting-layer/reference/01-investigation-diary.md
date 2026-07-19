@@ -1378,3 +1378,145 @@ GOWORK=off baseline: pass outside socket-restricted sandbox
 targeted race baseline: one non-reproducing pre-existing linearizability failure
 next task: lf02
 ```
+
+## Step 11: Implement the runtime-independent program contracts
+
+This step created the first implementation boundary: `pkg/idpprogram` is the
+serializable contract shared by the JavaScript compiler, owned runtimes,
+workflow executor, activation tooling, and future continuation service. It has
+no Goja dependency and stores callback identities rather than callback
+functions, which prevents VM objects from leaking into durable or cross-worker
+state.
+
+The package also makes invalid programs deterministic and inspectable. It
+defines closed outcome/effect vocabularies, bounded schemas and budgets,
+workflow edges, sorted diagnostics, dynamic outcome validation, canonical JSON,
+and separate hashes for source, program, callback registry, and schemas.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 10)
+
+**Assistant interpretation:** Implement tasks `lf02`–`lf05` as a pure-Go
+contract checkpoint before adding the Tiny-IDP native module or runtime pool.
+
+**Inferred user intent:** Establish a reviewable, deterministic security
+contract that the scripting runtime cannot redefine implicitly.
+
+**Commit (code):** `0e0a4b0` — "Feat: add scripting program contracts"
+
+### What I did
+
+- Added `pkg/idpprogram` with:
+  - `Program`, `Workflow`, `HandlerSpec`, and declared transition edges;
+  - named bounded schemas and schema fields;
+  - `LambdaSpec`, lambda kinds, budgets, capability requirements, allowed
+    effects, allowed outcomes, and source locations;
+  - typed `Outcome`, `BrowserContinuation`, and native `EffectPlan` values;
+  - deterministic diagnostics and program validation;
+  - canonical JSON and source/program/callback/schema SHA-256 fingerprints.
+- Added validation for map-key/ID consistency, identifier syntax, schema bounds
+  and reference cycles, schema existence, capability versions, duplicate
+  declarations, budgets, workflow entries, handler/lambda kinds, transition
+  targets, transition input compatibility, and reachability.
+- Added dynamic outcome validation so a callback cannot return an undeclared
+  outcome or effect and browser outcomes require an explicit handler.
+- Added tests for valid/malformed programs, stable diagnostic ordering,
+  incompatible edges, insertion-order-independent canonicalization,
+  fingerprint separation, undeclared effects/outcomes, and browser
+  continuation requirements.
+- Ran:
+
+  ```bash
+  go test ./pkg/idpprogram -count=1
+  go test -race ./pkg/idpprogram -count=1
+  go vet ./pkg/idpprogram
+  ```
+
+- The pre-commit hook additionally ran the full `GOWORK=off go test ./...` and
+  repository lint/vet suite successfully.
+- Checked tasks `lf02`, `lf03`, `lf04`, and `lf05` after commit validation.
+
+### Why
+
+- Runtime-independent contracts keep persistence, CLI, testing, and activation
+  code independent of Goja lifecycle details.
+- Closed stable IDs let validation, audit, metrics, and future model checks
+  describe the same operation without reflecting Go type names.
+- Separate fingerprints distinguish a changed source from a changed materialized
+  program or callback registry and support Phase 0 cross-worker verification.
+
+### What worked
+
+- Unit tests, race tests, vet, the full pinned-dependency suite, and repository
+  lint all passed.
+- Canonical JSON remains identical when maps are built in a different insertion
+  order.
+- The package compiles without importing Goja or go-go-goja.
+- The commit contains only the new contract package and its tests.
+
+### What didn't work
+
+- No test command failed in this step.
+- The first code draft described edges as only browser `present`/`challenge`
+  edges. A pre-test contract review found that the design's immediate
+  `continue` outcome also needs a declared typed destination. The edge and
+  validator were corrected to cover `continue`, `present`, and `challenge`
+  before commit.
+
+### What I learned
+
+- Go's `encoding/json` sorts string map keys, so the restricted contract types
+  can use direct marshaling as canonical JSON as long as floats, interfaces,
+  functions, and VM-owned values remain excluded.
+- Schema byte bounds are not enough by themselves for safe recursive
+  validation; explicit reference-cycle rejection keeps Phase 0 schemas finite.
+
+### What was tricky to build
+
+- The serialized contract must be expressive enough to validate handler edges
+  without storing JavaScript functions. The solution is a `LambdaSpec` registry
+  keyed by stable callback ID and workflow handlers that refer to those IDs.
+- Dynamic outcomes and static workflow edges are different checks. Static
+  validation proves the target and input schema are legal; `ValidateOutcome`
+  proves one invocation returned an allowed family and effect set.
+- Errors need stable machine IDs and deterministic ordering while retaining
+  useful paths and prose. Diagnostics sort by path, then ID, then message.
+
+### What warrants a second pair of eyes
+
+- Review whether the initial closed effect vocabulary is exactly the minimum
+  required by design 03 before module builders begin depending on it.
+- Review the `time.Duration` JSON representation (`timeoutNanos`) as a public
+  canonical contract.
+- Review whether schema reference cycles should remain forbidden permanently or
+  only until a bounded recursive codec exists; Phase 0 intentionally forbids
+  them.
+
+### What should be done in the future
+
+- Implement `lf06` and `lf07`: the isolated `require("tinyidp").v1` builder and
+  immutable compiled artifact must materialize these exact contracts.
+- Add runtime output-schema byte/value validation with the Phase 0 invocation
+  codec; this step validates outcome authority and static schema references.
+
+### Code review instructions
+
+- Start in `pkg/idpprogram/program.go`, then read `lambda.go`, `outcomes.go`,
+  `validate.go`, and `canonical.go`.
+- Read `program_test.go` alongside the validator to see accepted and rejected
+  examples.
+- Confirm `rg 'dop251|go-go-goja' pkg/idpprogram` returns no imports.
+- Run the three targeted commands above.
+
+### Technical details
+
+```text
+tasks completed: lf02, lf03, lf04, lf05
+code commit: 0e0a4b0
+new package: pkg/idpprogram
+runtime dependency: none
+canonical hashes: source, program, callback registry, schemas
+diagnostic order: path, ID, message
+next task: lf06
+```
