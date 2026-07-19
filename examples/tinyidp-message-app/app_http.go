@@ -36,22 +36,23 @@ const (
 )
 
 type messageApp struct {
-	store               *appStore
-	oidc                *oidcClient
-	accounts            *idpaccounts.Service
-	registrationEnabled bool
-	provider            http.Handler
-	publicOrigin        string
-	addressResolver     idp.ClientAddressResolver
-	registrationLimiter idp.RateLimiter
-	audit               idp.Sink
-	interactionUI       *loginui.Renderer
-	liveness            func(context.Context) idp.ReadinessReport
-	readiness           func(context.Context) idp.ReadinessReport
-	auditFailures       atomic.Uint64
-	cookieSecure        bool
-	now                 func() time.Time
-	mux                 *http.ServeMux
+	store                       *appStore
+	oidc                        *oidcClient
+	accounts                    *idpaccounts.Service
+	registrationEnabled         bool
+	providerRegistrationEnabled bool
+	provider                    http.Handler
+	publicOrigin                string
+	addressResolver             idp.ClientAddressResolver
+	registrationLimiter         idp.RateLimiter
+	audit                       idp.Sink
+	interactionUI               *loginui.Renderer
+	liveness                    func(context.Context) idp.ReadinessReport
+	readiness                   func(context.Context) idp.ReadinessReport
+	auditFailures               atomic.Uint64
+	cookieSecure                bool
+	now                         func() time.Time
+	mux                         *http.ServeMux
 }
 
 var _ http.Handler = (*messageApp)(nil)
@@ -71,6 +72,7 @@ func newMessageApp(store *appStore, oidcClient *oidcClient, accounts *idpaccount
 		addressResolver: idp.DirectClientAddressResolver{}, registrationEnabled: true, registrationLimiter: idp.NewFixedWindowRateLimiter(5, time.Minute),
 		audit: idp.NoopSink{}, cookieSecure: cookieSecure, now: time.Now, mux: http.NewServeMux()}
 	app.mux.HandleFunc("GET /auth/login", app.handleLogin)
+	app.mux.HandleFunc("GET /auth/register", app.handleRegister)
 	app.mux.HandleFunc("GET /auth/callback", app.handleCallback)
 	app.mux.HandleFunc("GET /api/session", app.handleSession)
 	app.mux.HandleFunc("GET /api/registration", app.handleRegistration)
@@ -186,6 +188,36 @@ func (a *messageApp) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, location, http.StatusSeeOther)
 }
 
+// handleRegister deliberately contains no account fields. In the external
+// deployment the IdP owns account creation and immediately resumes the OIDC
+// transaction after registration, so the application only needs to preserve
+// its opaque state, nonce, PKCE verifier, and local return path.
+func (a *messageApp) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if !a.providerRegistrationEnabled {
+		http.NotFound(w, r)
+		return
+	}
+	if a.oidc == nil {
+		http.Error(w, "identity registration is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if _, authenticated := a.currentSession(r); authenticated {
+		returnTo, err := normalizeReturnTo(r.URL.Query().Get("return_to"))
+		if err != nil {
+			http.Error(w, "invalid registration request", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, returnTo, http.StatusSeeOther)
+		return
+	}
+	location, err := a.oidc.beginRegistration(r.Context(), a.store, r.URL.Query().Get("return_to"))
+	if err != nil {
+		http.Error(w, "invalid registration request", http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, location, http.StatusSeeOther)
+}
+
 func (a *messageApp) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if a.oidc == nil || r.URL.Query().Get("error") != "" {
 		http.Error(w, "identity login was not accepted", http.StatusBadRequest)
@@ -204,12 +236,12 @@ func (a *messageApp) handleSession(w http.ResponseWriter, r *http.Request) {
 	session, ok := a.currentSession(r)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if !ok {
-		_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": false, "registrationEnabled": a.registrationEnabled})
+		_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": false, "registrationEnabled": a.registrationEnabled, "providerRegistrationEnabled": a.providerRegistrationEnabled})
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"authenticated": true, "subject": session.Subject, "displayName": session.DisplayName,
-		"csrfToken": base64.RawURLEncoding.EncodeToString(session.CSRFSecret), "registrationEnabled": a.registrationEnabled,
+		"csrfToken": base64.RawURLEncoding.EncodeToString(session.CSRFSecret), "registrationEnabled": a.registrationEnabled, "providerRegistrationEnabled": a.providerRegistrationEnabled,
 	})
 }
 

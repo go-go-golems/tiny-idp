@@ -52,7 +52,7 @@ export default function App() {
       <div className="layout">
         <aside>
           <Intro />
-          {me.authenticated ? <Composer csrf={me.csrfToken!} /> : <Welcome registrationEnabled={me.registrationEnabled === true} />}
+          {me.authenticated ? <Composer csrf={me.csrfToken!} /> : <Welcome registrationEnabled={me.registrationEnabled === true} providerRegistrationEnabled={me.providerRegistrationEnabled === true} />}
         </aside>
         <section className="feed">
           <div className="feed-heading">
@@ -79,8 +79,16 @@ function Intro() {
   return <section className="intro"><p className="kicker accent">01 / ABOUT</p><h2>Leave a clear record.</h2><p>Messages are stored locally. Sign in to add one; everyone may read the desk.</p></section>;
 }
 
-function Welcome({ registrationEnabled }: { registrationEnabled: boolean }) {
-  if (!registrationEnabled) {
+function Welcome({ registrationEnabled, providerRegistrationEnabled }: { registrationEnabled: boolean; providerRegistrationEnabled: boolean }) {
+	if (providerRegistrationEnabled) {
+		return <section className="composer">
+			<p className="kicker">02 / JOIN</p><h2>Open a desk account</h2>
+			<p className="form-help">Tiny-IDP creates and protects your account. Message Desk receives only the signed-in identity after the secure authorization flow completes.</p>
+			<a className="quiet" href="/auth/register?return_to=/">Create an account with Tiny-IDP</a>
+			<a className="quiet" href="/auth/login?return_to=/">I already have an account</a>
+		</section>;
+	}
+	if (!registrationEnabled) {
     return <section className="composer">
       <p className="kicker">02 / SIGN IN</p><h2>Use a desk account</h2>
       <p className="form-help">This standalone demo keeps accounts in tiny-idp. Use one of the operator-seeded identities to continue.</p>

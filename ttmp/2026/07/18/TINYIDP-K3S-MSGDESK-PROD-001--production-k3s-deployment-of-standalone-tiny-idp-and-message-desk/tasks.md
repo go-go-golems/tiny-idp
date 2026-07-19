@@ -10,8 +10,8 @@
 - [x] Phase 1: Implement durable one-use provider registration attempts with expiry and replay protection <!-- t:bumr -->
 - [x] Phase 1: Implement provider registration GET/POST interactions using idpaccounts.Service.Create <!-- t:g4u2 -->
 - [ ] Phase 1: Add CSRF, Origin/Fetch-Metadata, request bounds, generic errors, rate limits, password clearing, and audit events <!-- t:uo24 -->
-- [ ] Phase 1: Add Message Desk /auth/register initiation without exposing the provider account store or password <!-- t:hpkb -->
-- [ ] Phase 1: Update Message Desk UI for external provider-owned signup <!-- t:0uf8 -->
+- [x] Phase 1: Add Message Desk /auth/register initiation without exposing the provider account store or password <!-- t:hpkb -->
+- [x] Phase 1: Update Message Desk UI for external provider-owned signup <!-- t:0uf8 -->
 - [ ] Phase 1: Add registration success, duplicate, weak-password, CSRF, replay, race, restart, enumeration, and audit-failure tests <!-- t:rlgb -->
 - [ ] Phase 2: Define explicit direct-TLS and trusted-Traefik listener modes without compatibility aliases <!-- t:jabz -->
 - [ ] Phase 2: Implement trusted proxy CIDR/hop validation and canonical HTTPS origin enforcement in tiny-idp <!-- t:cbhq -->

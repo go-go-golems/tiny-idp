@@ -322,3 +322,91 @@ POST /authorize action=register
   -> hashed browser session
   -> original PKCE authorization response
 ```
+
+## Step 3 — Add the Message Desk provider-registration handoff
+
+**Status:** complete
+
+The external Message Desk deployment now gives an unauthenticated visitor a
+clear “Create an account with Tiny-IDP” action. That action is a plain
+top-level browser navigation to `GET /auth/register`; it contains no login,
+display name, password, or account-service API. Message Desk creates its
+ordinary one-use OIDC state/nonce/PKCE continuation and redirects to Tiny-IDP
+with `tinyidp_signup=1`. Tiny-IDP owns the account form and, after successful
+registration, returns to the normal callback, where Message Desk verifies the
+ID token and establishes its own application session.
+
+### What I did
+
+- Refactored the OIDC client’s common authorization setup into
+  `beginAuthorization`; `beginLogin` and the new `beginRegistration` differ
+  only in their deliberate authorization-request parameter.
+- Added `GET /auth/register`, protected by a separate
+  `providerRegistrationEnabled` capability. It is not a replacement for the
+  embedded demo’s local registration endpoints.
+- Enabled that capability only in `openExternalMessageApplication`. External
+  mode therefore keeps `/api/registration` and `/api/accounts` absent while
+  exposing only the safe OIDC handoff.
+- Added the new capability to the session API and updated the React view. The
+  external screen explains that Tiny-IDP owns credentials and offers separate
+  create-account and sign-in links.
+- Rebuilt the checked-in, Go-embedded UI assets with the pinned pnpm project.
+- Added unit coverage for the signup authorization URL and an HTTP-level test
+  that validates the externally visible capability and redirect without
+  providing an application account service.
+
+### Why
+
+An application should never become a second identity provider merely because
+it wants a signup link. The browser needs an OIDC transaction before it can
+end up at the provider registration page; the application is responsible for
+the transaction's state, nonce, verifier, callback URL, and local return path.
+It is *not* responsible for storing or validating the new credential. This
+division leaves Tiny-IDP as the single password and account-record boundary.
+
+```text
+Message Desk browser               Tiny-IDP
+--------------------               -------
+GET /auth/register
+  create {state, nonce, PKCE} ----> GET /authorize?...&tinyidp_signup=1
+  <--- 303 Location ---------------- registration interaction
+                                      POST account form
+  <--- callback?code&state ---------- issue authorization code
+verify ID token + create app session
+```
+
+### What worked
+
+- `go test ./examples/tinyidp-message-app -count=1` passed when allowed to
+  bind the local loopback listener used by the pre-existing browser integration
+  test.
+- `pnpm build` in `examples/tinyidp-message-app/ui` passed and regenerated the
+  embedded static bundle.
+- `git diff --check` passed before the checkpoint commit.
+
+### What didn't work
+
+- The first sandboxed Go test run failed only because `httptest` attempted to
+  bind `[::1]` and the workspace sandbox disallows local sockets. The identical
+  test passed with narrowly approved local-listener access; it did not contact
+  the cluster or an external service.
+
+### What warrants a second pair of eyes
+
+- Confirm the copy distinguishes the standalone deployment from a general
+  multi-application account portal: it intentionally says "desk account" and
+  delegates identity semantics to Tiny-IDP.
+- Review the final production configuration to ensure the new external-mode
+  capability is paired with `tinyidp_signup` being enabled in Tiny-IDP; either
+  side alone is intentionally insufficient.
+
+### Files to review
+
+- `examples/tinyidp-message-app/oidc_client.go` — common PKCE continuation and
+  the provider-registration request parameter.
+- `examples/tinyidp-message-app/app_http.go` — route boundary and exported
+  capability state.
+- `examples/tinyidp-message-app/external_runtime.go` — external-only feature
+  selection.
+- `examples/tinyidp-message-app/ui/src/App.tsx` — credential-boundary copy and
+  navigation.

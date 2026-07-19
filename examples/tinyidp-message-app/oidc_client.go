@@ -104,6 +104,20 @@ func newOIDCClient(ctx context.Context, issuer, publicBaseURL string, client *ht
 }
 
 func (c *oidcClient) beginLogin(ctx context.Context, store *appStore, rawReturnTo string) (string, error) {
+	// Message Desk is deliberately an account-chooser demonstration. A browser
+	// with remembered tiny-idp accounts sees a provider-owned selection prompt;
+	// one without them receives the ordinary password login page.
+	return c.beginAuthorization(ctx, store, rawReturnTo, oauth2.SetAuthURLParam("prompt", "select_account"))
+}
+
+// beginRegistration starts the same PKCE-protected authorization transaction
+// as login, but asks Tiny-IDP to present its provider-owned registration
+// interaction. The application never receives the new user's password.
+func (c *oidcClient) beginRegistration(ctx context.Context, store *appStore, rawReturnTo string) (string, error) {
+	return c.beginAuthorization(ctx, store, rawReturnTo, oauth2.SetAuthURLParam("tinyidp_signup", "1"))
+}
+
+func (c *oidcClient) beginAuthorization(ctx context.Context, store *appStore, rawReturnTo string, options ...oauth2.AuthCodeOption) (string, error) {
 	if c == nil || store == nil {
 		return "", errors.New("OIDC client and application store are required")
 	}
@@ -131,10 +145,9 @@ func (c *oidcClient) beginLogin(ctx context.Context, store *appStore, rawReturnT
 	}); err != nil {
 		return "", err
 	}
-	// Message Desk is deliberately an account-chooser demonstration. A browser
-	// with remembered tiny-idp accounts sees a provider-owned selection prompt;
-	// one without them receives the ordinary password login page.
-	return c.config.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier), oauth2.SetAuthURLParam("prompt", "select_account")), nil
+	authorizationOptions := []oauth2.AuthCodeOption{oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)}
+	authorizationOptions = append(authorizationOptions, options...)
+	return c.config.AuthCodeURL(state, authorizationOptions...), nil
 }
 
 func (c *oidcClient) finishLogin(ctx context.Context, store *appStore, state, code string) (loginCompletion, error) {

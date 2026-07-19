@@ -37,5 +37,8 @@ func openExternalMessageApplication(ctx context.Context, stateRoot, issuer, back
 	// operated identity provider, so it does not expose the embedded app's
 	// self-registration endpoints or registration form.
 	handler.registrationEnabled = false
+	// Account creation is instead initiated through /auth/register and carried
+	// out by Tiny-IDP as part of the authorization transaction.
+	handler.providerRegistrationEnabled = true
 	return &initializedMessageApplication{manifest: manifest, paths: resolveStatePaths(stateRoot), application: store, handler: handler}, nil
 }

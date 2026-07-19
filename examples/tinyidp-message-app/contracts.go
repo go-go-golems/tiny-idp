@@ -12,6 +12,7 @@ const (
 var routeContract = []string{
 	"GET /",
 	"GET /auth/login",
+	"GET /auth/register",
 	"GET /auth/callback",
 	"POST /auth/logout",
 	"GET /api/session",
