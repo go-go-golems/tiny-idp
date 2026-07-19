@@ -22,12 +22,15 @@ RelatedFiles:
       Note: Step 4 focused verification-plane design
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/sources/01-colleague-identity-microkernel-research.md
       Note: Verbatim source moved from /tmp and analyzed in Steps 1 and 2
+    - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md
+      Note: Normative Phase 0-7 lambda-first implementation ledger expanded in Step 9 (commit c84bcaa).
 ExternalSources: []
 Summary: Chronological record of the repository investigation and design work for the tiny-idp go-go-goja scripting layer.
 LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -1049,4 +1052,168 @@ bundle inputs: index, design 03, investigation diary
 bundle name: TINYIDP GOJA 001 Lambda First JS API Explicit Continuations 2026 07 19.pdf
 remote destination: /ai/2026/07/19/TINYIDP-GOJA-001
 upload result: success
+```
+
+## Step 9: Turn the lambda-first design into an executable implementation ledger
+
+This step converted the normative Phase 0–7 roadmap in design 03 from twelve
+coarse ticket entries into an ordered implementation ledger. The new ledger is
+still the same design: it does not introduce another architecture, another
+ticket, or speculative features. It identifies the exact contracts, runtime
+work, persistence work, provider integration, tests, gates, validation commands,
+and commit checkpoints needed to begin implementation without rediscovering the
+plan during each coding session.
+
+The task structure deliberately keeps the no-browser runtime spike first and
+the production request path unchanged until its ownership and isolation rules
+are proven. Each later phase names its dependency and completion gate, so an
+intern can distinguish exploratory work from code that is safe to integrate.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, add detailed phases + tasks for each phase to implement this goja scripting API, and commit at appropriate intervals, and keep a detailed diary as you work."
+
+**User clarification (verbatim):** "Stay within the scope of the ticket, don't add new stuff, we want to get this going."
+
+**Assistant interpretation:** Expand only the lambda-first implementation plan
+already approved in design 03 into detailed, dependency-ordered ticket tasks,
+then checkpoint the plan and record the work chronologically.
+
+**Inferred user intent:** Make the design immediately executable by an
+implementer without reopening architecture scope or losing the intended phase
+boundaries as coding begins.
+
+**Commit (documentation):** `c84bcaa` — "Docs: detail lambda API implementation phases"
+
+### What I did
+
+- Replaced the coarse lambda-first task list in `tasks.md` with:
+  - a normative-scope notice;
+  - explicit purpose, dependencies, and deliverables for each phase;
+  - 86 ordered Phase 0–7 implementation tasks;
+  - five cross-phase assurance tasks already required by design 03;
+  - one overall completion gate;
+  - phase-specific acceptance gates and validation commands;
+  - suggested focused commit boundaries.
+- Preserved the completed design and reMarkable delivery tasks.
+- Preserved the deprecated graph-first tasks as historical evidence, behind the
+  existing warning that they are not prerequisites.
+- Assigned unique docmgr IDs `lf00` through `lf92` to the planning checkpoint
+  and implementation ledger.
+- Ran:
+
+  ```bash
+  docmgr task list --ticket TINYIDP-GOJA-001
+  docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30
+  rg -o 't:[a-z0-9]+' tasks.md | sort | uniq -d
+  git diff --check
+  ```
+
+- Reviewed repository paths used by the proposed validation commands with
+  `rg --files cmd pkg internal` before committing.
+
+### Why
+
+- The old lambda-first entries described phase outcomes but were too coarse to
+  drive daily implementation or code review.
+- Explicit dependencies stop browser/persistence integration from getting
+  ahead of the runtime-ownership and capability-isolation spike.
+- Per-phase gates define what “done” means in observable terms rather than by
+  the presence of new packages alone.
+- Suggested commit boundaries make each architectural seam independently
+  reviewable and give future diary steps stable checkpoints to cite.
+
+### What worked
+
+- Docmgr recognized every new task and reported all task IDs without collision.
+- `docmgr doctor` reported `✅ All checks passed`.
+- `git diff --check` reported no whitespace errors.
+- The final ledger follows sections 18–20 of design 03 and keeps native OAuth,
+  HTTP, secret, persistence, and commit authority outside JavaScript.
+- The focused planning commit contains only `tasks.md`.
+
+### What didn't work
+
+- The first draft used `go run ./cmd/tiny-idp`, but the repository entry point is
+  `./cmd/tinyidp`. It also named a nonexistent `pkg/deviceflow`; the current
+  device implementation lives under `internal/fositeadapter`,
+  `internal/server`, and `pkg/idpui`. I corrected both validation blocks before
+  staging the commit.
+- No source-code tests were run because this checkpoint changes documentation
+  only. Runtime commands in the ledger are acceptance commands for the future
+  packages and phases that introduce them.
+
+### What I learned
+
+- The repository already has two layers of historical task planning. A visible
+  normative boundary inside `tasks.md` is necessary so an implementer does not
+  accidentally combine the deprecated graph-builder API with the lambda-first
+  API.
+- The phase plan is most actionable when each task names one contract or
+  invariant and the gate tests the integration of those tasks together.
+
+### What was tricky to build
+
+- The central difficulty was increasing task detail without increasing product
+  scope. The ledger was therefore derived line by line from the package plan,
+  Phase 0–7 tasks, testing strategy, and accepted decisions in design 03.
+- Phase 3 required careful wording around migration. The design explicitly says
+  to differential-test the old and new registration paths and then remove the
+  old branch, not preserve a compatibility adapter. The task ledger keeps that
+  ordering explicit.
+- Cross-phase assurance could look like a new parallel project. The ledger
+  instead marks it as work performed when each relevant contract lands and
+  states that it must not delay the Phase 0 spike with unrelated refactoring.
+
+### What warrants a second pair of eyes
+
+- Confirm the Phase 0 task boundaries are small enough for focused reviews while
+  still proving owner-safe Promise settlement as one coherent runtime gate.
+- Confirm `SignupCommitter` can atomically cover the stores named in Phase 3
+  before its storage interface is frozen.
+- Confirm Phase 4 provider examples exactly cover the configurability cases
+  motivating this design and do not smuggle general storage/network authority
+  into JavaScript.
+- Confirm the Phase 5 password timing choice before implementing pending-secret
+  persistence.
+
+### What should be done in the future
+
+- Begin with task `lf01` and record the baseline and dependency decision before
+  adding `pkg/idpprogram`.
+- Do not begin Phase 1 integration until the Phase 0 race, isolation, timeout,
+  and worker-discard gate passes.
+
+### Code review instructions
+
+- Start with the `Lambda-first superseding design` section of `tasks.md`.
+- Compare every phase against sections 18–20 of design 03; reject tasks that
+  introduce APIs or authority not present there.
+- Check that task IDs `lf00` through `lf92` are unique with:
+
+  ```bash
+  rg -o 't:[a-z0-9]+' \
+    ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md \
+    | sort | uniq -d
+  ```
+
+- Run `docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30` and
+  `git diff --check`.
+
+### Technical details
+
+```text
+normative source: design-doc/03, sections 18–20
+planning commit: c84bcaa
+Phase 0 tasks: lf01-lf14
+Phase 1 tasks: lf15-lf25
+Phase 2 tasks: lf26-lf35
+Phase 3 tasks: lf36-lf46
+Phase 4 tasks: lf47-lf56
+Phase 5 tasks: lf57-lf66
+Phase 6 tasks: lf67-lf77
+Phase 7 tasks: lf78-lf86
+cross-phase assurance: lf87-lf91
+overall completion gate: lf92
+first implementation task: lf01
 ```

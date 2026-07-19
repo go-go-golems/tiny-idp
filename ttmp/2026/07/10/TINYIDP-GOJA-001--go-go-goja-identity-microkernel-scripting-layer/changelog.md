@@ -87,3 +87,12 @@ Step 8: validated and committed the lambda-first explicit-continuation JavaScrip
 
 - design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — Normative intern-facing JavaScript API design delivered to reMarkable.
 - reference/01-investigation-diary.md — Step 8 records validation, commit, upload, and resolved documentation issues.
+
+## 2026-07-19
+
+Step 9: expanded the normative lambda-first design into 92 ordered implementation and completion tasks across Phase 0-7, with dependencies, acceptance gates, validation commands, assurance checks, and focused commit boundaries (commit c84bcaa).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 9 records the planning process, correction, validation, and review guidance.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md — Detailed execution ledger derived strictly from design 03.
