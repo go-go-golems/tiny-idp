@@ -22,6 +22,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/store/memory"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idppolicy"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
@@ -533,7 +534,12 @@ func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *t
 func TestDeviceClaimsPolicyPersistsAdditionalClaimToUserInfo(t *testing.T) {
 	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
 	provider, _, _ := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-claims", "QRST-UVWX", nil }, now)
-	provider.claims = staticClaimsPolicy{output: idp.ClaimsOutput{Additional: map[string]json.RawMessage{"community_role": json.RawMessage(`"member"`)}}}
+	policy, err := idppolicy.New(context.Background(), gojaAdditionalClaimsSource, 1, idppolicy.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = policy.Close(context.Background()) })
+	provider.claims = policy
 	server := httptest.NewServer(provider.Handler())
 	defer server.Close()
 	client := newDeviceVerificationHTTPClient(t)
@@ -591,6 +597,17 @@ func TestDeviceClaimsPolicyPersistsAdditionalClaimToUserInfo(t *testing.T) {
 		t.Fatalf("userinfo claims=%#v", claims)
 	}
 }
+
+const gojaAdditionalClaimsSource = `
+const A = require("tinyidp").v1;
+module.exports = A.program("claims-policy", p => {
+  const additional = A.lambda("claims.additional", {
+    kind:"provider", input:"claimsInput", output:"claimsOutput",
+    outcomes:["complete"], effects:[], capabilities:[], timeoutMs:100, maxCapabilityCalls:0, maxOutputBytes:8192,
+    run: ctx => A.result.complete({Additional:{community_role:"member"}})
+  });
+  p.provider("claims", "default", {version:1, state:"virtual", replayProtection:"none", revocation:"none", handlers:{additional}});
+});`
 
 func TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay(t *testing.T) {
 	ctx := context.Background()
