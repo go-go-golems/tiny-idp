@@ -18,6 +18,8 @@ RelatedFiles:
       Note: Canonical source-to-GHCR-to-GitOps-to-Argo release path
     - Path: abs:///home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/argocd-app-setup.md
       Note: Argo project, sync-wave, and first-bootstrap requirements
+    - Path: repo://internal/cmds/serve_production.go
+      Note: Explicit listener modes and exact Message Desk bootstrap
     - Path: repo://internal/fositeadapter/provider.go
       Note: Provider-owned signup intent, action validation, account creation, session binding, and consent continuation in d5927e8
     - Path: repo://internal/fositeadapter/registration_test.go
@@ -32,6 +34,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 
@@ -573,3 +576,111 @@ existing Secure cookie and same-origin checks see validated public HTTPS.
 The focused Message Desk command test passes. The full hook will run with this
 checkpoint; the next task is to expand listener-mode test cases and wire the
 external audit/bootstrap configuration.
+
+## Step 9: Backfill the production-listener and external-runtime checkpoints
+
+This entry backfills the ledger after the user asked that the implementation
+diary stay detailed. The code was committed in small, independently tested
+checkpoints: shared proxy peer validation (`5a728f6`), verified HTTPS proxy
+request handling (`56a6ac7`), Tiny-IDP mode wiring (`d707c74`), Message Desk
+mode wiring (`17bbd11`), Message Desk mode tests (`d00ccc2`), and durable
+external-runtime auditing (`f394dd5`).
+
+Together these changes replace ambiguous "HTTPS public origin but HTTP Pod"
+behavior with an explicit contract. Both services now distinguish direct TLS
+from Traefik-terminated TLS, and the external Message Desk has a real audit
+sink rather than a no-op sink.
+
+### Prompt Context
+
+**User prompt (verbatim):** "keep a diary, backfill whatever is necessary (look at skill for format)"
+
+**Assistant interpretation:** Record the already-completed implementation
+checkpoints in the ticket diary using the required structured format.
+
+**Inferred user intent:** Another implementer must be able to reconstruct the
+security decisions, test evidence, commits, and remaining deployment work.
+
+**Commit (code):** `f394dd5` — "feat: audit external Message Desk runtime"
+
+### What I did
+
+- Recorded the listener/audit commit sequence above and the reason each piece
+  was separated.
+- Added `idp.TrustedProxyResolver.TrustsRequestPeer` and forbade catch-all
+  proxy CIDRs.
+- Added `idp.NewTrustedProxyHTTPHandler`, which verifies peer, forwarded HTTPS,
+  canonical Host, and any forwarded Host before representing a request as TLS.
+- Added required `direct-tls`/`trusted-proxy-http` modes to Tiny-IDP and
+  Message Desk; each mode rejects the other mode's inputs.
+- Made external Message Desk validate its state root and open its durable JSONL
+  audit file; that sink participates in close/readiness behavior.
+
+### Why
+
+Traefik TLS termination must not make a Pod pretend that arbitrary local HTTP
+is public HTTPS. The public origin remains configured; headers are evidence
+accepted only from the narrow proxy network.
+
+### What worked
+
+- Focused tests passed for `./pkg/idp`, `./internal/cmds`, and
+  `./examples/tinyidp-message-app`.
+- Every listed commit's Lefthook ran repository-wide `go test ./...`,
+  golangci-lint, Glazed lint, and the idpui analyzer successfully.
+
+### What didn't work
+
+- Sandboxed Go test commands repeatedly failed when the shared Go build cache
+  or `httptest` loopback listener was inaccessible. Re-running the identical
+  focused command with approved local build-cache/loopback access passed.
+- During Message Desk listener wiring, compilation reported exactly
+  `declared and not used: secureOrigin`; the obsolete inferred-TLS variable was
+  removed, then the focused test passed.
+
+### What I learned
+
+- The existing `embeddedidp.Bootstrap` already performs exact client-state
+  reconciliation and active-signing-key creation; the production command can
+  call it rather than duplicating client comparison rules.
+
+### What was tricky to build
+
+- Browser origin checks see `r.TLS`, while a Traefik-to-Pod connection has no
+  socket TLS. The wrapper clones only a request that has passed proxy/HTTPS/host
+  validation and sets its TLS marker; it never trusts forwarded Host to rewrite
+  the configured protocol identity.
+
+### What warrants a second pair of eyes
+
+- Review the chosen Traefik CIDR in GitOps against the cluster's actual stable
+  Pod/network topology. The code correctly rejects broad trust, but deployment
+  chooses the concrete allowed range.
+- Review the exact browser-client identifier (`tinyidp-message-app`) before
+  public deployment; it is the current compiled Message Desk OIDC client ID.
+
+### What should be done in the future
+
+- Complete and test the production command's bootstrap invocation, then mark
+  listener/bootstrap tasks only when both processes have end-to-end coverage.
+- Add containers, CI image publishing, GitOps manifests, Argo sync, and public
+  acceptance evidence; none has been performed yet.
+
+### Code review instructions
+
+- Start at `pkg/idp/trusted_proxy_http.go`, then read
+  `internal/cmds/serve_production.go` and
+  `examples/tinyidp-message-app/commands.go` together.
+- Validate with `go test ./pkg/idp ./internal/cmds
+  ./examples/tinyidp-message-app -count=1`, then `go test ./...`.
+
+### Technical details
+
+```text
+trusted-proxy-http request
+  immediate peer ∈ configured CIDR
+  X-Forwarded-Proto == https
+  Host == configured public host
+  X-Forwarded-Host absent or equal
+  => cloned request is safe to treat as public HTTPS
+```

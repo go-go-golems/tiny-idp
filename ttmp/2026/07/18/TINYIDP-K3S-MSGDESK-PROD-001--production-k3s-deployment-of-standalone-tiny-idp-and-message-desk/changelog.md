@@ -29,3 +29,12 @@ Phase 1 checkpoint: added opt-in provider-owned durable signup interactions and 
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Canonical registration continuation implementation
 
+
+## 2026-07-18
+
+Step 9: Backfilled listener/audit checkpoints and wired IdP bootstrap (pending commit)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Production listener/bootstrap owner
+

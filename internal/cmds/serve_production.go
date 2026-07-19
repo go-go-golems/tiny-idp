@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
@@ -32,6 +33,8 @@ type serveProductionSettings struct {
 	Addr                string   `glazed:"addr"`
 	ListenerMode        string   `glazed:"listener-mode"`
 	Issuer              string   `glazed:"issuer"`
+	MessageDeskOrigin   string   `glazed:"message-desk-origin"`
+	RegistrationEnabled bool     `glazed:"registration-enabled"`
 	DBPath              string   `glazed:"db"`
 	AuditPath           string   `glazed:"audit-path"`
 	TokenSecretFile     string   `glazed:"token-secret-file"`
@@ -76,6 +79,8 @@ Example:
 			fields.New("addr", fields.TypeString, fields.WithDefault(":8443"), fields.WithHelp("Listener address")),
 			fields.New("listener-mode", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Required listener mode: direct-tls or trusted-proxy-http")),
 			fields.New("issuer", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Canonical HTTPS issuer URL")),
+			fields.New("message-desk-origin", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Canonical HTTPS Message Desk public origin for the exact browser client")),
+			fields.New("registration-enabled", fields.TypeBool, fields.WithDefault(false), fields.WithHelp("Enable provider-owned signup for the Message Desk authorization client")),
 			fields.New("db", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Provisioned SQLite database path")),
 			fields.New("audit-path", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Synchronous JSONL audit path")),
 			fields.New("token-secret-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Owner-only file containing at least 32 random bytes")),
@@ -137,6 +142,17 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		_ = store.Close()
 		return err
 	}
+	messageDeskOrigin, originErr := issuerOrigin(settings.MessageDeskOrigin)
+	if originErr != nil {
+		_ = audit.Close()
+		_ = store.Close()
+		return fmt.Errorf("message desk origin: %w", originErr)
+	}
+	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{Mode: idpstore.ProductionMode, Audit: audit, Clients: []embeddedidp.ClientSpec{embeddedidp.BrowserClient("tinyidp-message-app", []string{messageDeskOrigin + "/auth/callback"}, []string{messageDeskOrigin + "/"}, []string{"openid", "profile"})}}); err != nil {
+		_ = audit.Close()
+		_ = store.Close()
+		return fmt.Errorf("bootstrap Message Desk browser client: %w", err)
+	}
 	addressResolver := idp.ClientAddressResolver(idp.DirectClientAddressResolver{})
 	var proxyResolver *idp.TrustedProxyResolver
 	if listenerMode == productionListenerTrustedProxyHTTP {
@@ -157,6 +173,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		Audit:         audit,
 		RateLimiter:   idp.NewFixedWindowRateLimiter(settings.RateLimit, rateWindow),
 		ClientAddress: addressResolver,
+		Registration:  embeddedidp.RegistrationConfig{Enabled: settings.RegistrationEnabled},
 		Maintenance:   embeddedidp.MaintenanceConfig{Interval: maintenanceInterval},
 	})
 	for i := range secret {
