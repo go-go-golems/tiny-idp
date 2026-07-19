@@ -29,6 +29,18 @@ type Executor struct {
 	pool     *idpscript.Pool
 }
 
+// StartInput is the immutable, redacted view of a validated authorization
+// interaction available to the signup-start lambda. It deliberately contains
+// no Fosite request, HTTP request, cookie, browser handle, session identifier,
+// or mutable store object.
+type StartInput struct {
+	ClientID          string `json:"clientId"`
+	RedirectURI       string `json:"redirectUri"`
+	RequestedScope    string `json:"requestedScope"`
+	InteractionID     string `json:"interactionId"`
+	HasBrowserSession bool   `json:"hasBrowserSession"`
+}
+
 var _ idpcontinuation.GenerationResolver = (*Executor)(nil)
 
 func New(ctx context.Context, source string, workers int) (*Executor, error) {
@@ -74,11 +86,15 @@ func (e *Executor) ResolveProgram(_ context.Context, fingerprint string) (idppro
 	return e.Program(), nil
 }
 
-func (e *Executor) Start(ctx context.Context) (idpworkflow.ValidatedPresentation, error) {
+func (e *Executor) Start(ctx context.Context, input StartInput) (idpworkflow.ValidatedPresentation, error) {
 	if e == nil || e.pool == nil {
 		return idpworkflow.ValidatedPresentation{}, errors.New("signup executor is unavailable")
 	}
-	outcome, err := e.pool.Invoke(ctx, "signup.start", json.RawMessage(`{}`), nil)
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return idpworkflow.ValidatedPresentation{}, errors.Wrap(err, "encode signup start input")
+	}
+	outcome, err := e.pool.Invoke(ctx, "signup.start", encoded, nil)
 	if err != nil {
 		return idpworkflow.ValidatedPresentation{}, errors.Wrap(err, "invoke signup start")
 	}
@@ -111,12 +127,19 @@ func (e *Executor) Submit(ctx context.Context, values map[idpworkflow.FieldID]st
 
 func schemas() map[string]idpprogram.Schema {
 	return map[string]idpprogram.Schema{
-		"signupStartInput": {ID: "signupStartInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 64, Additional: false, Fields: map[string]idpprogram.SchemaField{}},
+		"signupStartInput": {ID: "signupStartInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 2048, Additional: false, Fields: map[string]idpprogram.SchemaField{
+			"clientId":          {Ref: "signupText", Required: true},
+			"redirectUri":       {Ref: "signupText", Required: true},
+			"requestedScope":    {Ref: "signupText", Required: true},
+			"interactionId":     {Ref: "signupText", Required: true},
+			"hasBrowserSession": {Ref: "signupBool", Required: true},
+		}},
 		"signupSubmittedInput": {ID: "signupSubmittedInput", Kind: idpprogram.SchemaKindObject, MaxBytes: 1024, Additional: false, Fields: map[string]idpprogram.SchemaField{
 			"displayName": {Ref: "signupText"}, "email": {Ref: "signupEmail"},
 		}},
 		"signupText":   {ID: "signupText", Kind: idpprogram.SchemaKindString, MaxBytes: 512, MaxLength: 120},
 		"signupEmail":  {ID: "signupEmail", Kind: idpprogram.SchemaKindString, MaxBytes: 512, MaxLength: 320},
+		"signupBool":   {ID: "signupBool", Kind: idpprogram.SchemaKindBoolean, MaxBytes: 5},
 		"signupResult": {ID: "signupResult", Kind: idpprogram.SchemaKindObject, MaxBytes: 64, Additional: false, Fields: map[string]idpprogram.SchemaField{}},
 	}
 }

@@ -19,7 +19,7 @@ func TestDefaultProgramPresentsAndRequestsNativeSignupCommit(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
 
-	presentation, err := executor.Start(context.Background())
+	presentation, err := executor.Start(context.Background(), idpsignup.StartInput{ClientID: "test-client", RedirectURI: "https://client.example.test/callback", RequestedScope: "openid profile", InteractionID: "test-interaction"})
 	require.NoError(t, err)
 	assert.Equal(t, "submitted", presentation.Presentation.ResumeHandler)
 	require.Len(t, presentation.Fields, 4)

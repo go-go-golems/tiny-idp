@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/ory/fosite"
 	"github.com/pkg/errors"
@@ -23,13 +24,19 @@ func (p *Provider) beginScriptedSignup(w http.ResponseWriter, r *http.Request, a
 	if p.scriptedSignup == nil || p.workflowContinuations == nil {
 		return errors.New("scripted signup is unavailable")
 	}
-	presentation, err := p.scriptedSignup.Start(r.Context())
-	if err != nil {
-		return err
-	}
 	record, err := p.store.GetInteraction(r.Context(), idpstore.HashSecret(p.csrfKey, interactionHandle))
 	if err != nil {
 		return errors.Wrap(err, "load signup authorization interaction")
+	}
+	presentation, err := p.scriptedSignup.Start(r.Context(), idpsignup.StartInput{
+		ClientID:          client.ID,
+		RedirectURI:       ar.GetRedirectURI().String(),
+		RequestedScope:    strings.Join(ar.GetRequestedScopes(), " "),
+		InteractionID:     hex.EncodeToString(record.IDHash),
+		HasBrowserSession: len(record.SessionIDHash) != 0,
+	})
+	if err != nil {
+		return err
 	}
 	workflow := p.scriptedSignup.Program().Workflows[idpsignup.WorkflowID]
 	publicValues, err := json.Marshal(presentation.Presentation.PublicValues)
@@ -96,37 +103,40 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
-	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, clientAddress, record.ClientID)
+	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, p.signupBindings(record, r), record, clientAddress)
 	if err != nil {
-		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: "registration_rejected"})
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: signupCommitFailureReason(err)})
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
-		return
-	}
-	if _, err := p.workflowContinuations.Consume(r.Context(), continuationHandle, continuation.Revision, p.signupBindings(record, r), idpcontinuation.TerminalOutcome{Kind: idpcontinuation.TerminalComplete}); err != nil {
-		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
 		return
 	}
 	p.completeScriptedSignup(w, r, ar, client, record, registered)
 }
 
-func (p *Provider) completeScriptedSignup(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, client idpstore.Client, record idpstore.InteractionRecord, registered idpstore.User) {
-	sessionHash, err := p.createBrowserSession(w, r, registered, p.now())
-	if err != nil {
-		http.Error(w, "create session failed", http.StatusInternalServerError)
-		return
+func signupCommitFailureReason(err error) string {
+	switch {
+	case errors.Is(err, idpstore.ErrDuplicate):
+		return "duplicate_login"
+	case errors.Is(err, idp.ErrPasswordRejected):
+		return "password_rejected"
+	case errors.Is(err, idpcontinuation.ErrConflict), errors.Is(err, idpcontinuation.ErrAlreadyTerminal), errors.Is(err, idpstore.ErrAlreadyConsumed):
+		return "state_conflict"
+	case errors.Is(err, idpcontinuation.ErrExpired), errors.Is(err, idpcontinuation.ErrRevoked):
+		return "continuation_rejected"
+	default:
+		return "registration_rejected"
 	}
-	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Subject: registered.Sub, Result: "accepted"})
-	requireConsent, err := p.consent.RequireConsent(r.Context(), registered, client, []string(ar.GetRequestedScopes()))
+}
+
+func (p *Provider) completeScriptedSignup(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, client idpstore.Client, record idpstore.InteractionRecord, registered signupCommitResult) {
+	http.SetCookie(w, &http.Cookie{Name: p.sessionCookieName, Value: registered.SessionHandle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.sessionTTL.Seconds())})
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Subject: registered.User.Sub, Result: "accepted"})
+	requireConsent, err := p.consent.RequireConsent(r.Context(), registered.User, client, []string(ar.GetRequestedScopes()))
 	if err != nil {
 		http.Error(w, "consent policy failed", http.StatusInternalServerError)
 		return
 	}
-	if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
-		http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
-		return
-	}
 	if requireConsent {
-		consentHandle, consentCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireConsent, sessionHash)
+		consentHandle, consentCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireConsent, registered.SessionHash)
 		if err != nil {
 			http.Error(w, "create consent interaction failed", http.StatusInternalServerError)
 			return
@@ -135,12 +145,23 @@ func (p *Provider) completeScriptedSignup(w http.ResponseWriter, r *http.Request
 		p.renderInteraction(w, r, http.StatusOK, page)
 		return
 	}
-	p.finishAuthorize(w, r, ar, registered, p.now(), false, nil)
+	p.finishAuthorize(w, r, ar, registered.User, p.now(), false, nil)
 }
 
-func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, clientAddress, clientID string) (idpstore.User, error) {
+type signupCommitResult struct {
+	User          idpstore.User
+	SessionHandle string
+	SessionHash   []byte
+}
+
+// commitScriptedSignup is the sole native commit boundary for an approved
+// signup effect plan. It commits the account, credential, browser session,
+// workflow consumption, and authorization interaction together. JavaScript
+// cannot call this operation directly; it can only return a declared effect
+// plan that this method revalidates.
+func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress string) (signupCommitResult, error) {
 	if len(outcome.Effects) != 2 || outcome.Effects[0].Kind != idpprogram.EffectCreateLocalIdentity || outcome.Effects[1].Kind != idpprogram.EffectAttachPasswordCredential {
-		return idpstore.User{}, errors.New("signup script emitted an invalid effect sequence")
+		return signupCommitResult{}, errors.New("signup script emitted an invalid effect sequence")
 	}
 	var identity struct {
 		Login       string `json:"login"`
@@ -151,18 +172,49 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 		PasswordConfirmationHandle string `json:"passwordConfirmationHandle"`
 	}
 	if err := json.Unmarshal(outcome.Effects[0].Payload, &identity); err != nil {
-		return idpstore.User{}, errors.Wrap(err, "decode signup identity effect")
+		return signupCommitResult{}, errors.Wrap(err, "decode signup identity effect")
 	}
 	if err := json.Unmarshal(outcome.Effects[1].Payload, &credential); err != nil {
-		return idpstore.User{}, errors.Wrap(err, "decode signup credential effect")
+		return signupCommitResult{}, errors.Wrap(err, "decode signup credential effect")
 	}
 	password, confirmation, ok := submissionSecrets(submission, credential.PasswordHandle, credential.PasswordConfirmationHandle)
-	if !ok || len(password) == 0 || !equalBytes(password, confirmation) || !p.allowRegistration(ctx, clientID, clientAddress, identity.Login) {
-		return idpstore.User{}, errors.New("signup effects are not acceptable")
+	if !ok || len(password) == 0 || !equalBytes(password, confirmation) || !p.allowRegistration(ctx, record.ClientID, clientAddress, identity.Login) {
+		return signupCommitResult{}, errors.New("signup effects are not acceptable")
 	}
 	defer clearBytes(password)
 	defer clearBytes(confirmation)
-	return p.registration.Create(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login})
+	prepared, err := p.registration.PrepareCreate(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login})
+	if err != nil {
+		return signupCommitResult{}, err
+	}
+	sessionHandle, err := randomB64(32)
+	if err != nil {
+		return signupCommitResult{}, errors.Wrap(err, "generate signup session handle")
+	}
+	now := p.now()
+	sessionHash := idpstore.HashSecret(p.csrfKey, sessionHandle)
+	session := idpstore.Session{IDHash: sessionHash, UserID: prepared.User.ID, AuthTime: now, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(p.sessionTTL)}
+	err = p.store.Update(ctx, func(tx idpstore.TxStore) error {
+		continuationStore, ok := tx.(idpcontinuation.Store)
+		if !ok {
+			return errors.New("signup transaction store does not own workflow continuations")
+		}
+		if _, err := p.workflowContinuations.ConsumeLoaded(ctx, continuation, bindings, idpcontinuation.TerminalOutcome{Kind: idpcontinuation.TerminalComplete}, continuationStore); err != nil {
+			return err
+		}
+		if err := p.registration.CommitPrepared(ctx, tx, prepared); err != nil {
+			return err
+		}
+		if err := tx.CreateSession(ctx, session); err != nil {
+			return err
+		}
+		_, err := tx.ConsumeInteraction(ctx, record.IDHash, now, idpstore.InteractionOutcomeApproved)
+		return err
+	})
+	if err != nil {
+		return signupCommitResult{}, err
+	}
+	return signupCommitResult{User: prepared.User, SessionHandle: sessionHandle, SessionHash: sessionHash}, nil
 }
 
 func submissionSecrets(submission idpworkflow.Submission, passwordToken, confirmationToken string) ([]byte, []byte, bool) {

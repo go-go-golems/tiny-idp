@@ -798,7 +798,12 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create authorization interaction failed", http.StatusInternalServerError)
 		return
 	}
-	if actions.Has(idpstore.InteractionRequireRegistration) && p.scriptedSignup != nil {
+	if actions.Has(idpstore.InteractionRequireRegistration) {
+		if p.scriptedSignup == nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.start_failed", ClientID: client.ID, Result: "rejected", Reason: "workflow_unavailable"})
+			http.Error(w, "registration request was not accepted", http.StatusServiceUnavailable)
+			return
+		}
 		if err := p.beginScriptedSignup(w, r, ar, client, handle, csrfToken); err != nil {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.start_failed", ClientID: client.ID, Result: "rejected", Reason: "workflow_unavailable"})
 			http.Error(w, "registration request was not accepted", http.StatusServiceUnavailable)
@@ -887,11 +892,15 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "registration request was not accepted", http.StatusForbidden)
 		return
 	}
-	if registrationRequired && p.scriptedSignup != nil {
+	if registrationRequired {
+		if p.scriptedSignup == nil {
+			http.Error(w, "registration workflow is unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		p.resumeScriptedSignup(w, r, ar, client, record, handle, clientAddress)
 		return
 	}
-	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionRemoveAccount && action != idpui.ActionDeny) || (registrationRequired && action != idpui.ActionRegister && action != idpui.ActionDeny) || (!selectionRequired && !registrationRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
+	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionRemoveAccount && action != idpui.ActionDeny) || (!selectionRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
 		http.Error(w, "invalid interaction action", http.StatusBadRequest)
 		return
 	}
@@ -973,60 +982,6 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	hasSession := sessionState == browserSessionActive
 	authTime := sess.AuthTime
-	if registrationRequired {
-		if err := validateRegistrationPostForm(r.PostForm); err != nil {
-			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "invalid_form"})
-			renderRegistrationError(p, w, r, record, ar, client, handle, "", "")
-			return
-		}
-		login := strings.ToLower(strings.TrimSpace(r.PostForm.Get(idpui.LoginFieldName)))
-		if !p.allowRegistration(r.Context(), ar.GetClient().GetID(), clientAddress, login) {
-			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "rate_limited"})
-			http.Error(w, "rate limited", http.StatusTooManyRequests)
-			return
-		}
-		password := []byte(r.PostForm.Get(idpui.PasswordFieldName))
-		confirmation := []byte(r.PostForm.Get(idpui.PasswordConfirmationFieldName))
-		defer clearBytes(password)
-		defer clearBytes(confirmation)
-		if len(password) == 0 || !equalBytes(password, confirmation) {
-			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "registration_rejected"})
-			renderRegistrationError(p, w, r, record, ar, client, handle, login, strings.TrimSpace(r.PostForm.Get(idpui.DisplayNameFieldName)))
-			return
-		}
-		registered, registrationErr := p.registration.Create(r.Context(), idpaccounts.CreateRequest{Login: login, Name: strings.TrimSpace(r.PostForm.Get(idpui.DisplayNameFieldName)), Password: password})
-		if registrationErr != nil {
-			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "registration_rejected"})
-			renderRegistrationError(p, w, r, record, ar, client, handle, login, strings.TrimSpace(r.PostForm.Get(idpui.DisplayNameFieldName)))
-			return
-		}
-		sessionHash, sessionErr := p.createBrowserSession(w, r, registered, p.now())
-		if sessionErr != nil {
-			http.Error(w, "create session failed", http.StatusInternalServerError)
-			return
-		}
-		u, authTime, hasSession = registered, p.now(), true
-		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
-		requireConsent, consentErr := p.consent.RequireConsent(r.Context(), u, client, []string(ar.GetRequestedScopes()))
-		if consentErr != nil {
-			http.Error(w, "consent policy failed", http.StatusInternalServerError)
-			return
-		}
-		if requireConsent {
-			if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
-				http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
-				return
-			}
-			consentHandle, consentCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireConsent, sessionHash)
-			if err != nil {
-				http.Error(w, "create consent interaction failed", http.StatusInternalServerError)
-				return
-			}
-			page := p.newInteractionPage(consentHandle, consentCSRF, idpstore.InteractionRequireConsent, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
-			p.renderInteraction(w, r, http.StatusOK, page)
-			return
-		}
-	}
 	if selectionRequired {
 		entryHash, decodeErr := base64.RawURLEncoding.DecodeString(r.PostForm.Get(idpui.AccountFieldName))
 		if decodeErr != nil || len(entryHash) == 0 {
@@ -1212,15 +1167,6 @@ func authorizeRegistrationIntent(values url.Values) (bool, error) {
 	return true, nil
 }
 
-func validateRegistrationPostForm(form url.Values) error {
-	for _, field := range []string{idpui.InteractionFieldName, idpui.CSRFFieldName, idpui.ActionFieldName, idpui.LoginFieldName, idpui.DisplayNameFieldName, idpui.PasswordFieldName, idpui.PasswordConfirmationFieldName} {
-		if duplicateFormValue(form, field) {
-			return fmt.Errorf("duplicate registration field %q", field)
-		}
-	}
-	return nil
-}
-
 // sameOriginBrowserPost adds browser-context checks to the interaction's
 // cryptographic CSRF token. It derives the expected origin from the public
 // request Host: the listener/proxy enforces canonical Host handling, while the
@@ -1239,14 +1185,6 @@ func sameOriginBrowserPost(r *http.Request) bool {
 		return false
 	}
 	return strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) != "cross-site"
-}
-
-func renderRegistrationError(p *Provider, w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, ar fosite.AuthorizeRequester, client idpstore.Client, handle, login, displayName string) {
-	page := p.newInteractionPage(handle, r.PostForm.Get(idpui.CSRFFieldName), record.RequiredActions, url.Values(record.CanonicalRequest), false, client.ID, []string(ar.GetRequestedScopes()), login, &idpui.PublicError{Code: idpui.ErrorRegistrationRejected, Field: idpui.FieldRegistration, Summary: "Account creation was not accepted. Choose a different login and password and try again."})
-	if page.Registration != nil {
-		page.Registration.DisplayNameValue = displayName
-	}
-	p.renderInteraction(w, r, http.StatusBadRequest, page)
 }
 
 func clearBytes(value []byte) {

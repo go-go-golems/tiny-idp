@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
@@ -38,10 +39,12 @@ type Store struct {
 	deviceGrants       map[string]idpstore.DeviceGrant
 	deviceByUserCode   map[string]string
 	keys               map[string]idpstore.SigningKey
+	continuations      map[string]idpcontinuation.WorkflowContinuation
 }
 
 var _ idpstore.Store = (*Store)(nil)
 var _ idpstore.MaintenanceStore = (*Store)(nil)
+var _ idpcontinuation.Store = (*Store)(nil)
 
 func New() *Store {
 	return &Store{
@@ -64,6 +67,7 @@ func New() *Store {
 		deviceGrants:       map[string]idpstore.DeviceGrant{},
 		deviceByUserCode:   map[string]string{},
 		keys:               map[string]idpstore.SigningKey{},
+		continuations:      map[string]idpcontinuation.WorkflowContinuation{},
 	}
 }
 
@@ -1214,6 +1218,7 @@ func (s *Store) cloneLocked() *Store {
 		deviceGrants:       cloneDeviceGrantMap(s.deviceGrants),
 		deviceByUserCode:   cloneMap(s.deviceByUserCode),
 		keys:               cloneMap(s.keys),
+		continuations:      cloneContinuationMap(s.continuations),
 	}
 }
 
@@ -1237,6 +1242,7 @@ func (s *Store) replaceLocked(next *Store) {
 	s.deviceGrants = next.deviceGrants
 	s.deviceByUserCode = next.deviceByUserCode
 	s.keys = next.keys
+	s.continuations = next.continuations
 }
 
 func cloneDeviceGrantMap(source map[string]idpstore.DeviceGrant) map[string]idpstore.DeviceGrant {

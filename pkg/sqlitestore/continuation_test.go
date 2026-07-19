@@ -13,6 +13,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation/idpcontinuationtest"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
@@ -48,6 +49,29 @@ func TestWorkflowContinuationSurvivesStoreAndServiceRestart(t *testing.T) {
 	consumed, err := service.Consume(ctx, handle, loaded.Revision, restartBindings(), idpcontinuation.TerminalOutcome{Kind: idpcontinuation.TerminalComplete})
 	require.NoError(t, err)
 	assert.Equal(t, idpcontinuation.StatusConsumed, consumed.Status)
+	_, err = service.Load(ctx, handle, restartBindings())
+	var failure *idpcontinuation.Failure
+	require.True(t, errors.As(err, &failure))
+	assert.Equal(t, idpcontinuation.FailureReplayed, failure.Class)
+}
+
+func TestWorkflowContinuationConsumesInsideStoreTransaction(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, time.July, 19, 18, 0, 0, 0, time.UTC)
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "transactional-continuation.db")))
+	require.NoError(t, err)
+	defer store.Close()
+	service := newRestartService(t, store, []byte("0123456789abcdef0123456789abcdef"), &now)
+	handle, current, err := service.Create(ctx, restartRecord(now))
+	require.NoError(t, err)
+	require.NotEmpty(t, handle)
+	err = store.Update(ctx, func(tx idpstore.TxStore) error {
+		continuations, ok := tx.(idpcontinuation.Store)
+		require.True(t, ok)
+		_, err := service.ConsumeLoaded(ctx, current, restartBindings(), idpcontinuation.TerminalOutcome{Kind: idpcontinuation.TerminalComplete}, continuations)
+		return err
+	})
+	require.NoError(t, err)
 	_, err = service.Load(ctx, handle, restartBindings())
 	var failure *idpcontinuation.Failure
 	require.True(t, errors.As(err, &failure))

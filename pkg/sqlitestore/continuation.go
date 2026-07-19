@@ -77,12 +77,26 @@ func (s *Store) Advance(ctx context.Context, hash []byte, expectedRevision uint6
 func (s *Store) Consume(ctx context.Context, hash []byte, expectedRevision uint64, outcome idpcontinuation.TerminalOutcome, now time.Time) (idpcontinuation.WorkflowContinuation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.runner != nil {
+		return consumeContinuation(ctx, s.conn(), hash, expectedRevision, outcome, now)
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return idpcontinuation.WorkflowContinuation{}, errors.Wrap(err, "begin workflow continuation consume")
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit.
-	record, err := loadContinuation(ctx, tx, hash, now)
+	record, err := consumeContinuation(ctx, tx, hash, expectedRevision, outcome, now)
+	if err != nil {
+		return idpcontinuation.WorkflowContinuation{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return idpcontinuation.WorkflowContinuation{}, errors.Wrap(err, "commit workflow continuation consume")
+	}
+	return record, nil
+}
+
+func consumeContinuation(ctx context.Context, query sqlRunner, hash []byte, expectedRevision uint64, outcome idpcontinuation.TerminalOutcome, now time.Time) (idpcontinuation.WorkflowContinuation, error) {
+	record, err := loadContinuation(ctx, query, hash, now)
 	if err != nil {
 		return idpcontinuation.WorkflowContinuation{}, err
 	}
@@ -96,16 +110,13 @@ func (s *Store) Consume(ctx context.Context, hash []byte, expectedRevision uint6
 	if err != nil {
 		return idpcontinuation.WorkflowContinuation{}, errors.Wrap(err, "encode consumed workflow continuation")
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE workflow_continuations SET revision=?, status=?, data=? WHERE handle_hash=? AND revision=? AND status=?`,
+	result, err := query.ExecContext(ctx, `UPDATE workflow_continuations SET revision=?, status=?, data=? WHERE handle_hash=? AND revision=? AND status=?`,
 		record.Revision, record.Status, encoded, hash, expectedRevision, idpcontinuation.StatusActive)
 	if err != nil {
 		return idpcontinuation.WorkflowContinuation{}, errors.Wrap(err, "consume workflow continuation")
 	}
 	if err := requireOneRow(result); err != nil {
 		return idpcontinuation.WorkflowContinuation{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return idpcontinuation.WorkflowContinuation{}, errors.Wrap(err, "commit workflow continuation consume")
 	}
 	return record, nil
 }

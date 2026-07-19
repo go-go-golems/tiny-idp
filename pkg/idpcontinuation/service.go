@@ -227,9 +227,37 @@ func (s *Service) Consume(ctx context.Context, handle string, expectedRevision u
 	if outcome.Kind != TerminalComplete && outcome.Kind != TerminalDeny && outcome.Kind != TerminalError {
 		return WorkflowContinuation{}, &Failure{Class: FailureInvalid, Err: errors.Errorf("invalid terminal outcome %q", outcome.Kind)}
 	}
+	return s.consumeLoaded(ctx, current, bindings, outcome, s.store)
+}
+
+// ConsumeLoaded records a terminal transition for a continuation already
+// loaded and binding-checked by the caller. The supplied store may be a
+// transaction-scoped implementation of Store, which lets a native effect
+// committer consume a continuation in the same transaction as its own state.
+// It never accepts a raw browser handle, so it cannot widen the public API.
+func (s *Service) ConsumeLoaded(ctx context.Context, current WorkflowContinuation, bindings Bindings, outcome TerminalOutcome, store Store) (WorkflowContinuation, error) {
+	if store == nil {
+		return WorkflowContinuation{}, &Failure{Class: FailureInvalid, Err: errors.New("continuation transaction store is required")}
+	}
+	if err := validateExpectedBindings(bindings); err != nil {
+		return WorkflowContinuation{}, &Failure{Class: FailureInvalid, Err: err}
+	}
+	if err := validateBindings(current, bindings); err != nil {
+		return WorkflowContinuation{}, err
+	}
+	if err := s.validate(ctx, current, s.clock().UTC()); err != nil {
+		return WorkflowContinuation{}, &Failure{Class: FailureInvalid, Err: err}
+	}
+	if outcome.Kind != TerminalComplete && outcome.Kind != TerminalDeny && outcome.Kind != TerminalError {
+		return WorkflowContinuation{}, &Failure{Class: FailureInvalid, Err: errors.Errorf("invalid terminal outcome %q", outcome.Kind)}
+	}
+	return s.consumeLoaded(ctx, current, bindings, outcome, store)
+}
+
+func (s *Service) consumeLoaded(ctx context.Context, current WorkflowContinuation, _ Bindings, outcome TerminalOutcome, store Store) (WorkflowContinuation, error) {
 	now := s.clock().UTC()
 	outcome.At = now
-	consumed, err := s.store.Consume(ctx, current.HandleHash, expectedRevision, outcome, now)
+	consumed, err := store.Consume(ctx, current.HandleHash, current.Revision, outcome, now)
 	if err != nil {
 		return WorkflowContinuation{}, classifyStoreFailure(err)
 	}
