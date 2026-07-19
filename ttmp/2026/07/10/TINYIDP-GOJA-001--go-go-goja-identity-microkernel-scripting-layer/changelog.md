@@ -167,3 +167,13 @@ Step 16: completed lf26-lf27 by freezing the provider-owned signup field and act
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/descriptors.go — Closed host-owned field/action registry and validation.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/descriptors_test.go — Security-policy and registry regression tests.
+
+## 2026-07-19
+
+Step 18: completed lf28 and lf30 with a provider-owned WorkflowPage/default renderer and compiled-edge presentation validator; script HTML and rendered secrets are impossible through the typed contract, direct/race tests pass, and lint reports zero issues (commit 9f6ad5b).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/presentation.go — Data-only presentation result and compiled graph/registry/schema/expiry validation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/workflow.go — Provider-owned workflow page and renderer contract.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/templates/workflow.html — Escaping generic field/action template.

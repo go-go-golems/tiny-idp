@@ -34,10 +34,20 @@ RelatedFiles:
       Note: Step 15 sensitive-carry and bounded JSON regression tests
     - Path: repo://pkg/idpscript/codec.go
       Note: Step 15 runtime now shares the core schema validator
+    - Path: repo://pkg/idpui/templates/workflow.html
+      Note: Step 18 escaped generic workflow renderer
+    - Path: repo://pkg/idpui/workflow.go
+      Note: Step 18 provider-owned WorkflowPage contract
+    - Path: repo://pkg/idpui/workflow_test.go
+      Note: Step 18 renderer secret and escaping tests
     - Path: repo://pkg/idpworkflow/descriptors.go
       Note: Step 16 closed provider-owned field and action vocabulary
     - Path: repo://pkg/idpworkflow/descriptors_test.go
       Note: Step 16 authority-policy regression tests
+    - Path: repo://pkg/idpworkflow/presentation.go
+      Note: Step 18 compiled-edge and registry presentation validation (commit 9f6ad5b)
+    - Path: repo://pkg/idpworkflow/presentation_test.go
+      Note: Step 18 presentation authority negative tests
     - Path: repo://pkg/memorystore/continuation.go
       Note: Step 14 atomic ephemeral implementation
     - Path: repo://pkg/memorystore/continuation_test.go
@@ -66,6 +76,11 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
+
+
+
+
 
 
 
@@ -2416,6 +2431,129 @@ secret normalization: none
 secret redisplay: never
 deny form validation: skipped
 next task: lf28
+```
+
+## Step 18: Add validated provider-owned workflow presentations
+
+This step added the rendering boundary without adding an HTTP or JavaScript
+boundary. `idpworkflow.Presentation` is copied data that names registered fields
+and actions, a declared resume handler, public values, stable field errors,
+bounded public carry, and expiry. Validation proves the current lambda may
+return `present`, the compiled workflow has the requested edge, and the
+destination lambda expects the edge schema.
+
+`idpui.WorkflowPage` is the renderer projection. It contains only validated Go
+descriptors and public values, rejects any secret field value, and renders
+through `html/template` to an `io.Writer`. The renderer still cannot set HTTP
+headers, cookies, redirects, status, CSRF policy, or origin policy.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 17)
+
+**Assistant interpretation:** Use restored commit access to continue the
+ticket in focused, validated, frequently diarized slices.
+
+**Inferred user intent:** Keep forward progress toward the working scripted
+signup flow while preserving strict host ownership and reviewable commits.
+
+**Commit (code):** `9f6ad5b` — "Feat: add validated workflow presentations"
+
+### What I did
+
+- Added `Presentation`, `ValidatedPresentation`, bounded stable field errors,
+  public values, carry, actions, fields, resume handler, and expiry.
+- Added validation against the compiled source handler, `present` outcome,
+  exact continuation edge, destination lambda/schema, field/action registry,
+  public-only carry schema, TTL limit, duplicate IDs, public redisplay policy,
+  and stable errors.
+- Added `WorkflowPage`, `WorkflowForm`, `WorkflowField`, `WorkflowAction`, and
+  `WorkflowFieldError` plus defensive clone and validation.
+- Added `WorkflowRenderer` and implemented it on `DefaultRenderer` using a new
+  embedded `workflow.html` template with Bootstrap class names.
+- Ensured a secret descriptor can never carry a rendered value and the template
+  always emits an empty password input.
+- Added direct/race tests for declared edges, defensive copying, unknown fields
+  and actions, secret redisplay, expiry, errors, escaping, rendered secrets, and
+  invalid descriptors.
+- Ran targeted direct/race tests and `make lint`.
+
+### Why
+
+- JavaScript should select host widgets, not author HTML. That keeps XSS,
+  autocomplete, input naming, secret redisplay, and accessibility structure in
+  reviewed Go/template code.
+- Presentation must be validated before continuation persistence; otherwise an
+  invalid resume edge could create durable state that no generation can safely
+  resume.
+- Rendering to `io.Writer` preserves provider ownership of browser security and
+  response behavior.
+
+### What worked
+
+- `go test` and `go test -race` pass for `pkg/idpworkflow` and `pkg/idpui`.
+- The template escapes an attacker-shaped title and never contains a supplied
+  secret value.
+- `make lint` completes with zero issues after one exhaustive-switch fix.
+
+### What didn't work
+
+- The first lint run failed with:
+
+  ```text
+  pkg/idpui/workflow.go:108:2: missing cases in switch of type
+  idpworkflow.FieldErrorCode: idpworkflow.ErrorInvalid (exhaustive)
+  ```
+
+  I added the explicit `ErrorInvalid` case, formatted the file, and reran the
+  complete lint target successfully.
+
+### What I learned
+
+- The exhaustive linter is valuable at the error-to-public-text seam: adding a
+  stable error code now forces an explicit renderer decision.
+- A validated presentation and rendered page should remain separate types. The
+  former uses stable IDs and graph data; the latter contains resolved host
+  descriptors plus provider-generated interaction/CSRF fields.
+
+### What was tricky to build
+
+- Validation must traverse workflow handler, source lambda, edge, destination
+  handler, destination lambda, and schema rather than trusting duplicated IDs.
+- Secret emptiness is enforced in both page validation and the template model,
+  providing defense in depth against accidental rerender.
+
+### What warrants a second pair of eyes
+
+- Review the generic template's accessibility structure and Bootstrap class
+  choices before browser integration.
+- Review whether the 30-minute default maximum continuation TTL should be lower
+  for password signup presentations.
+
+### What should be done in the future
+
+- Implement `lf29` by exposing only these registry builders through
+  `ctx.present.form` and copying its result into `Presentation`.
+- Then implement native GET/POST projection (`lf31`–`lf34`) without adding raw
+  HTTP objects to JavaScript.
+
+### Code review instructions
+
+- Start with `pkg/idpworkflow/presentation.go`, then compare
+  `pkg/idpui/workflow.go` with `templates/workflow.html`.
+- Read both new test files alongside their contracts.
+- Run targeted direct/race tests and `make lint`.
+
+### Technical details
+
+```text
+tasks completed: lf28, lf30
+code commit: 9f6ad5b
+renderer authority: io.Writer only
+script HTML: unsupported
+secret rendered value: rejected
+presentation edge: exact compiled present edge
+next task: lf29
 ```
 
 ## Step 17: Restore focused commit checkpoints and validate the hook commands
