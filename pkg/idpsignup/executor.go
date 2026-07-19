@@ -18,6 +18,9 @@ import (
 //go:embed open_signup.js
 var DefaultSource string
 
+//go:embed email_verified_signup.js
+var EmailVerifiedSource string
+
 const (
 	WorkflowID       = "signup"
 	StartHandler     = "start"

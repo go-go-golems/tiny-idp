@@ -73,3 +73,13 @@ func TestInvitationProgramRequestsNativeInvitationConsumption(t *testing.T) {
 	assert.Equal(t, idpprogram.EffectConsumeInvitation, outcome.Effects[2].Kind)
 	assert.JSONEq(t, `{"code":"invite-code"}`, string(outcome.Effects[2].Payload))
 }
+
+func TestEmailVerifiedProgramDeclaresChallengeThenPasswordWorkflow(t *testing.T) {
+	executor, err := idpsignup.New(context.Background(), idpsignup.EmailVerifiedSource, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+	workflow := executor.Program().Workflows[idpsignup.WorkflowID]
+	assert.Equal(t, "start", workflow.EntryHandler)
+	assert.Equal(t, idpprogram.OutcomeChallenge, workflow.Handlers["submitted"].ContinuationEdges[0].OutcomeKind)
+	assert.Equal(t, "passwordSubmitted", workflow.Handlers["emailVerified"].ContinuationEdges[0].HandlerID)
+}
