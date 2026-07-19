@@ -329,3 +329,11 @@ Step 32: completed lf58-lf60 with atomic memory/SQLite email-challenge persisten
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/service.go — Native dispatch and evidence service
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/email_challenge.go — SQLite atomic lifecycle
+
+## 2026-07-19
+
+Step 33: completed lf61-lf62 with typed email-code challenge outcomes and native-only evidence projection after atomic verification (commits c14d70f, 2e8a517).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/outcomes.go — Challenge request invariant

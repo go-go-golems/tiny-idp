@@ -19,7 +19,9 @@ RelatedFiles:
     - Path: repo://internal/fositeadapter/scripted_signup.go
       Note: Native signup commit revalidates optional invitation effect and redeems it inside its transaction (commit 84a9995)
     - Path: repo://internal/gojamodules/tinyidp/module.go
-      Note: Optional invite code can only become declared consumeInvitation plan (commit 84a9995)
+      Note: |-
+        Optional invite code can only become declared consumeInvitation plan (commit 84a9995)
+        Typed ctx.challenge.emailCode outcome builder (commit 2e8a517)
     - Path: repo://lefthook.yml
       Note: Step 17 exact pre-commit test and lint policy whose runner orphaned children
     - Path: repo://pkg/embeddedidp/options.go
@@ -34,6 +36,8 @@ RelatedFiles:
       Note: Step 14 atomic store and generation-resolution interfaces
     - Path: repo://pkg/idpcontinuation/types.go
       Note: Step 14 versioned VM-independent durable continuation contract
+    - Path: repo://pkg/idpemailchallenge/service.go
+      Note: Native one-use verification produces evidence (commits 04a514f, 0beb0b5)
     - Path: repo://pkg/idpinvite/computed.go
       Note: Bounded host eligibility capability and validation seam (commit 40e7747)
     - Path: repo://pkg/idpinvite/computed_test.go
@@ -46,6 +50,8 @@ RelatedFiles:
       Note: Step 15 sensitive-carry and bounded JSON regression tests
     - Path: repo://pkg/idpscript/codec.go
       Note: Step 15 runtime now shares the core schema validator
+    - Path: repo://pkg/idpscript/invoke.go
+      Note: Invocation-scoped evidence projection (commit c14d70f)
     - Path: repo://pkg/idpsignup/executor_test.go
       Note: Invitation workflow output regression (commit 84a9995)
     - Path: repo://pkg/idpstore/interfaces.go
@@ -94,6 +100,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -3622,4 +3629,97 @@ provider validates plan -> store.Update {
   consume continuation; commit account; redeem durable invite; create session;
   consume interaction
 }
+```
+
+## Step 33: Persist, dispatch, and verify native email challenges
+
+Phase 5 now has a native email-code authority rather than a JavaScript mail or
+verification API. A script can request a typed challenge and select its resume
+handler; native code owns code generation, durable state, delivery, atomic
+verification, and the evidence later visible to the resumed lambda.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Continue, from lf58, lf59, lf60, lf61, lf62. Don't stop, do them all, commit, keep a diary (see skill for the format)."
+
+**Assistant interpretation:** Complete the Phase 5 persistence, mailer,
+dispatch, typed challenge-outcome, and verified-evidence tasks with commits and
+diary records.
+
+**Inferred user intent:** Deliver a restart-safe, composable email-verification
+foundation without weakening the native identity-provider trust boundary.
+
+**Commit (code):** `9a970d5`, `04a514f`, `0beb0b5`, `c14d70f`, `2e8a517`
+
+### What I did
+
+- Added atomic memory and SQLite challenge stores; SQLite migration `013`
+  persists only structured state and a keyed code hash.
+- Added a typed `Mailer` and `Service` that generate a code, dispatch only
+  approved mail request data, and atomically verify the supplied code.
+- Added `emailCode` field descriptor and `ctx.challenge.emailCode` builder.
+- Added invocation-scoped `ctx.evidence`, populated only by native Go code.
+
+### Why
+
+The browser and JavaScript must not be able to forge email verification or use
+an email transport as ambient authority. A structured challenge request keeps
+the workflow expressive while its security-sensitive effects remain native.
+
+### What worked
+
+```bash
+go test ./pkg/idpworkflow ./internal/gojamodules/tinyidp ./pkg/idpemailchallenge ./pkg/sqlitestore -count=1
+go test ./pkg/idpprogram ./pkg/idpscript ./internal/gojamodules/tinyidp -count=1
+```
+
+Both focused validation groups passed.
+
+### What didn't work
+
+The first SQLite adapter used generic `Create`, `Load`, and cleanup names,
+which collided with the existing workflow-continuation store interface. The
+compiler reported duplicate methods. I renamed the contract to explicit
+`*EmailChallenge` lifecycle methods, preserving one shared SQLite store.
+
+### What I learned
+
+The existing generic `OutcomeChallenge` and continuation edge model already
+provided the correct control-flow primitive. Phase 5 needed a typed challenge
+payload and native evidence projection, not a parallel browser protocol.
+
+### What was tricky to build
+
+The evidence must be visible to the resumed callback but impossible for a
+script to install or retain. `InvokeWithSecretsAndEvidence` constructs a fresh
+frozen evidence object inside the owned worker invocation; it is not attached
+to the pool or serializable as a new authority.
+
+### What warrants a second pair of eyes
+
+- SQLite attempt/resend updates should be moved to conditional update
+  predicates before multi-node support is ever considered; Tiny-IDP currently
+  supports one active SQLite connection.
+- The next integration slice must bind the challenge to actual persisted
+  workflow continuations and render the code page before marking Phase 5 done.
+
+### What should be done in the future
+
+Implement `lf63–lf66`: full continuation/browser binding integration, password
+ordering, signup-commit evidence enforcement, and restart/adversarial tests.
+
+### Code review instructions
+
+- Start with `pkg/idpemailchallenge/service.go` and `store.go`.
+- Review `pkg/sqlitestore/email_challenge.go` for durable lifecycle behavior.
+- Review `internal/gojamodules/tinyidp/module.go` and `pkg/idpscript/invoke.go`
+  for script-side request/evidence boundaries.
+
+### Technical details
+
+```text
+script ctx.challenge.emailCode -> native challenge request + continuation
+native service -> HMAC(code) + durable state -> typed mailer request
+browser code -> atomic VerifyEmailChallenge -> verified-email evidence
+native invocation -> frozen ctx.evidence.email -> resumed lambda
 ```
