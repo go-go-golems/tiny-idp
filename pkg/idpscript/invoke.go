@@ -46,7 +46,7 @@ func (w *worker) invoke(ctx context.Context, lambdaID string, input json.RawMess
 	if !ok {
 		return idpprogram.Outcome{}, true, errors.Wrapf(ErrUnknownLambda, "%q", lambdaID)
 	}
-	_, err = validateInput(program, spec, input)
+	err = validateInput(program, spec, input)
 	if err != nil {
 		return idpprogram.Outcome{}, true, err
 	}
