@@ -112,6 +112,13 @@ func (e *Executor) Start(ctx context.Context, input StartInput) (idpworkflow.Val
 }
 
 func (e *Executor) Submit(ctx context.Context, values map[idpworkflow.FieldID]string, secrets map[string]idpworkflow.SecretHandle) (idpprogram.Outcome, error) {
+	return e.SubmitWithEvidence(ctx, values, secrets, nil)
+}
+
+// SubmitWithEvidence is the only executor entry point that can project native
+// verified evidence into a terminal signup handler. Callers supply JSON made
+// by a native verifier; scripts cannot construct this invocation context.
+func (e *Executor) SubmitWithEvidence(ctx context.Context, values map[idpworkflow.FieldID]string, secrets map[string]idpworkflow.SecretHandle, evidence map[string]json.RawMessage) (idpprogram.Outcome, error) {
 	if e == nil || e.pool == nil {
 		return idpprogram.Outcome{}, errors.New("signup executor is unavailable")
 	}
@@ -123,7 +130,7 @@ func (e *Executor) Submit(ctx context.Context, values map[idpworkflow.FieldID]st
 	if err != nil {
 		return idpprogram.Outcome{}, errors.Wrap(err, "encode signup submission")
 	}
-	return e.pool.InvokeWithSecrets(ctx, "signup.submitted", input, nil, secrets)
+	return e.pool.InvokeWithSecretsAndEvidence(ctx, "signup.submitted", input, nil, secrets, evidence)
 }
 
 func schemas() map[string]idpprogram.Schema {
