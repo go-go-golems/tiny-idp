@@ -364,3 +364,12 @@ Step 37: completed Phase 6 compile-time script validation and secret-free explan
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/script.go — Glazed script validate/explain command surface
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Compile-only signup profile seam
+
+## 2026-07-19
+
+Step 38: added a warmed, atomic retained signup generation manager and routed continuation load/advance/consume/commit by the persisted executable generation fingerprint; proved reload between email-code issuance and password completion (commits f28041d, 1e681e0, f9b3e65).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Continuation fingerprint routing at every native transition
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Atomic candidate activation and bounded retained generation registry

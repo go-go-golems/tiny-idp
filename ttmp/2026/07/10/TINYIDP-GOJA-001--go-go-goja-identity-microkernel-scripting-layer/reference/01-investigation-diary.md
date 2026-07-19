@@ -4173,3 +4173,116 @@ Artifact.Program() --> canonical contract --> script explain
 No listener, HTTP request, browser cookie, secret, or mutable global registry
 is created by either command.
 ```
+
+## Step 38: Add atomic retained-generation activation and continuation routing
+
+The scripting runtime can now prepare a new signup generation without changing
+live traffic, publish it atomically only after all workers are warm, and retain
+older executable generations for browser continuations that were issued before
+the activation. The provider no longer assumes that “active now” means “the
+generation that created this form.”
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 34)
+
+**Assistant interpretation:** Continue through the Phase 6 activation work in
+small, committed steps while preserving the explicit-continuation design.
+
+**Inferred user intent:** Make reload safe for live browser flows instead of
+allowing a source update to change the code that resumes an existing signup.
+
+**Commit (code):** `f28041d` — "Feat: add retained signup generation manager"; `1e681e0` — "Feat: route signup continuations by generation"; `f9b3e65` — "Test: preserve signup flow across generation activation"
+
+### What I did
+
+- Added `idpsignup.GenerationManager`, which compiles and warms a candidate
+  executor before publication, atomically swaps on success, and retains a
+  bounded ordered map of prior executable generations.
+- Corrected `Executor.Fingerprint` to combine source and program hashes.
+  Program structure alone is insufficient because a lambda body can change
+  without changing its declared handler/schema/effect contract.
+- Added an optional manager to Fosite provider options and used it as the
+  continuation generation resolver.
+- Changed manager-backed continuation load to omit only the *expected active*
+  generation fingerprint; the loaded record’s own immutable fingerprint is
+  resolved and validated natively, then used for every invoke/advance/consume/
+  commit binding.
+- Added manager atomic-failure/retention tests and converted the browser
+  signup test to activate a changed source after code issuance.
+
+### Why
+
+Reload safety requires two distinct choices: new interactions should use the
+active generation, while an existing continuation must use the generation it
+persisted. Treating a program-contract hash as the generation identity would
+also let changed callback code masquerade as the prior executable generation.
+
+### What worked
+
+```bash
+go test ./pkg/idpsignup -count=1 -v
+go test ./pkg/idpcontinuation ./internal/fositeadapter -count=1
+go test ./internal/fositeadapter -run TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification -count=1 -v
+```
+
+The last test activates a new source while the user is on the email-code page;
+the old code form proceeds to the password page and final commit successfully.
+
+### What didn't work
+
+The first reload run failed safely at the password-page transition. Investigation
+found two residual uses of `signupBindings`, which selected the new active
+fingerprint while advancing a continuation from the old generation. Replacing
+them with bindings derived from `current.ProgramFingerprint` fixed the route;
+the focused integration test then passed.
+
+### What I learned
+
+There are three places that must agree on a continuation’s generation:
+resolver validation during load, JavaScript invocation, and native persistence
+advance/consume. Updating only invocation still fails safely at storage, but
+that failure looks like a generic browser rejection and can obscure a reload
+regression without the dedicated test.
+
+### What was tricky to build
+
+The expected binding field is normally a useful active-generation guard. With
+a manager it would reject every valid old continuation before the manager has a
+chance to resolve it. The safe alternative is narrow: omit that expected field
+only for manager-backed loading, then require the stored fingerprint to resolve
+through the bounded retained registry during `idpcontinuation.Service.Load`.
+
+### What warrants a second pair of eyes
+
+- Retention is presently a bounded count, not a store-aware lease tied to the
+  latest continuation expiry. Production activation should choose the bound so
+  it covers the configured maximum workflow lifetime, or add durable
+  generation-reference accounting before enabling frequent reloads.
+- The manager has not yet been exposed by `embeddedidp` configuration; direct
+  Fosite embedding is covered, but the production host needs an explicit
+  manager lifecycle option.
+
+### What should be done in the future
+
+Finish `lf68–lf69` with embedded deterministic program test cases and the CLI
+test command; then finish readiness/metrics/audit and repeated-reload resource
+tests (`lf74–lf77`) before checking Phase 6 complete.
+
+### Code review instructions
+
+- Read `pkg/idpsignup/manager.go` followed by `manager_test.go`.
+- Review `Executor.Fingerprint` and each use of `ProgramFingerprint` in
+  `internal/fositeadapter/scripted_signup.go`.
+- Run the three commands in **What worked**.
+
+### Technical details
+
+```text
+candidate source --compile + warm workers--> ready candidate
+ready candidate --atomic publication--> active generation for new forms
+
+stored continuation { sourceHash:programHash }
+  --retained resolver--> exact old executor
+  --invoke/advance/consume--> bindings with that same stored fingerprint
+```
