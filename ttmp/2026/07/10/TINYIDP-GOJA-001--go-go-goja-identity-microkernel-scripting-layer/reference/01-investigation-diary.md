@@ -4952,3 +4952,124 @@ the Phase 6 gate before beginning Phase 7 handlers.
 activation --> audit { event, accepted|rejected, reason, sourceHash, programHash }
 invoke --> counters { outcome family, failure, latency total, discarded }
 ```
+
+## Step 46: Complete bounded continuation and interruption metrics
+
+Phase 6 now exposes the complete bounded operational metric set without
+turning observability into a second data plane. Continuation operations count
+creation, successful resume loads, safe load failures, replay, expiry, and
+successful cleanup. Script invocation separately counts deadline/cancellation
+interruptions from generic failures and worker discards.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue Phase 6 implementation in task order,
+commit independent work at a useful boundary, and preserve the detailed diary.
+
+**Inferred user intent:** Make the scripting layer operationally diagnosable
+in production while retaining the security design: metric fields must be
+fixed-cardinality and must not expose script source, callback names, browser
+handles, account data, or raw errors.
+
+**Commit (code):** `4b68241` — "Test: cover continuation lifecycle metrics";
+`570b62c` — "Feat: count interrupted script invocations"
+
+### What I did
+
+- Fixed continuation `Load` accounting so malformed public handles and store
+  failures increment the safe load-failure count.
+- Classified store failures before recording them, which lets the service
+  increment the fixed `expired` and `replayed` counters correctly.
+- Counted successfully removed expired continuations in `Cleanup`.
+- Added lifecycle tests covering create, successful load, malformed handle,
+  revision replay, expiry, and cleanup.
+- Added an executor `Interrupted` counter. It increments only when the
+  invocation error unwraps to the exported timeout or cancellation sentinel.
+- Added a never-settling Promise test that proves a deadline increments
+  invocation, failure, interruption, and discarded-worker counters without
+  recording error text.
+
+### Why
+
+A production operator needs to distinguish normal traffic, a bad/replayed
+browser continuation, expiration cleanup, and unsafe JavaScript interruption.
+Those facts are useful as totals, but the continuation handle, handler name,
+source text, subject, email, password, invite code, and exception message are
+not acceptable metric dimensions. The resulting snapshots are deliberately
+small and host-exportable.
+
+### What worked
+
+```bash
+go test ./pkg/idpcontinuation -run 'TestServiceReports(BoundedLifecycleMetrics|ReplayExpiryAndCleanupMetrics)'
+go test ./pkg/idpsignup -run 'TestExecutor(ReportsBoundedInvocationMetrics|CountsInterruptedInvocationWithoutRecordingErrorText)' -count=1
+git diff --check
+git commit -m 'Test: cover continuation lifecycle metrics'
+git commit -m 'Feat: count interrupted script invocations'
+```
+
+Both focused test groups passed. Each commit also passed the repository
+pre-commit lint and vet hooks.
+
+### What didn't work
+
+The first lifecycle metric test exposed an uncounted early-return path:
+`hashHandle` rejected a malformed external handle before the generic failure
+recorder ran. The test failed with `LoadFailures` equal to zero. Creating the
+uniform `FailureMissing` value before returning and passing it to the recorder
+fixed that boundary without changing the browser-visible error class.
+
+### What I learned
+
+Counters should be incremented at the classification boundary, not at a lower
+store boundary. The store only knows `ErrExpired` and `ErrConflict`; the
+service owns the stable external `FailureClass` vocabulary. Recording after
+classification keeps the metric taxonomy aligned with terminal/audit policy.
+
+### What was tricky to build
+
+The interruption test must exercise a real owned Goja worker rather than
+fabricating an error at the executor boundary. The test program returns a
+never-settling Promise with a one-millisecond declared timeout. This causes
+the normal interruption, cleanup, discard, and replacement machinery to run,
+then asserts only the bounded metric snapshot.
+
+### What warrants a second pair of eyes
+
+- Check that a monitoring adapter exports these totals/gauges without adding
+  labels derived from request, identity, source, callback, or error data.
+- Check that the cleanup counter intentionally counts only records whose
+  storage deletion completed; attachment/delete failures remain visible as
+  operation errors rather than false cleanup successes.
+
+### What should be done in the future
+
+Implement `lf76`: redacted runtime audit records. Activation audit is already
+present, but invocation audit needs stable diagnostic IDs and result classes
+without duplicating metrics or leaking raw exception data.
+
+### Code review instructions
+
+- Read `idpcontinuation.Service.Load`, `recordLoadFailure`, and `Cleanup`.
+- Read `idpsignup.Executor.InvokeSubmission` and confirm the new condition
+  checks only `idpscript.ErrInvocationTimeout` and
+  `idpscript.ErrInvocationCanceled`.
+- Run the two focused test commands above.
+- Confirm `Metrics` structs contain only counters and no string labels.
+
+### Technical details
+
+```text
+store ErrExpired / ErrConflict
+          |
+          v
+  classifyStoreFailure -> FailureClass
+          |
+          +--> loadFailures + {expired | replayed}
+
+InvokeSubmission -> outcome/failure/latency counters
+                 -> timeout|cancellation -> interrupted counter
+                 -> unsafe worker delta -> discarded counter
+```

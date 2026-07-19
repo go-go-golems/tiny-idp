@@ -406,3 +406,14 @@ Steps 43-44: proved bounded generation draining/repeated reload closure and expo
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Generation lifecycle and metrics
+
+## 2026-07-19 - Step 46: bounded continuation and interruption metrics
+
+Completed the bounded Phase 6 metric matrix: continuation lifecycle counters now cover create/load/failure/replay/expiry/cleanup, and script execution separates interruption from generic failure and discard without exposing request or error data.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service.go — Classified lifecycle metrics
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service_test.go — Lifecycle metric regression tests
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Bounded interruption metrics
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor_test.go — Timeout metric regression test
