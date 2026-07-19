@@ -13,6 +13,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
+	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
 	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
@@ -51,6 +52,7 @@ type ScriptedSignupConfig struct {
 	Executor           *idpsignup.Executor
 	Continuations      idpcontinuation.Store
 	DurableInvitations *idpinvite.DurableService
+	EmailChallenges    *idpemailchallenge.Service
 }
 
 // RegistrationConfig enables provider-owned self-registration as a continuation

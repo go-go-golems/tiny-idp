@@ -107,4 +107,16 @@ func (c PendingChallenge) VerifyBindings(bindings VerificationBindings) error {
 	return nil
 }
 
+// VerifyEvidenceBindings validates a later continuation's durable identity
+// context. ResumeHandlerID is intentionally excluded: verification resumes one
+// handler and a successful handler may then present a password form whose
+// handler is different. The provider, not JavaScript, is the only code that
+// may carry the reference across that declared transition.
+func (c PendingChallenge) VerifyEvidenceBindings(bindings VerificationBindings) error {
+	if c.WorkflowID != bindings.WorkflowID || c.ProgramFingerprint != bindings.ProgramFingerprint || c.ClientID != bindings.ClientID || c.ClientGeneration != bindings.ClientGeneration || string(c.BrowserBindingHash) != string(bindings.BrowserBindingHash) {
+		return ErrBinding
+	}
+	return nil
+}
+
 func valid(value string) bool { return strings.TrimSpace(value) != "" && len(value) <= 512 }

@@ -82,4 +82,8 @@ func TestEmailVerifiedProgramDeclaresChallengeThenPasswordWorkflow(t *testing.T)
 	assert.Equal(t, "start", workflow.EntryHandler)
 	assert.Equal(t, idpprogram.OutcomeChallenge, workflow.Handlers["submitted"].ContinuationEdges[0].OutcomeKind)
 	assert.Equal(t, "passwordSubmitted", workflow.Handlers["emailVerified"].ContinuationEdges[0].HandlerID)
+	outcome, err := executor.Submit(context.Background(), map[idpworkflow.FieldID]string{idpworkflow.FieldDisplayName: "Ada", idpworkflow.FieldEmail: "ada@example.test"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, idpprogram.OutcomeChallenge, outcome.Kind)
+	assert.NotEmpty(t, outcome.Challenge)
 }

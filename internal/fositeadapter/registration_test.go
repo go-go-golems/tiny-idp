@@ -16,6 +16,8 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/store/memory"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
@@ -137,6 +139,139 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 				t.Fatalf("registration audit leaks password material: %#v", event)
 			}
 		}
+	}
+}
+
+type signupEmailCapture struct {
+	requests []idpemailchallenge.MailRequest
+}
+
+func (m *signupEmailCapture) SendEmailChallenge(_ context.Context, request idpemailchallenge.MailRequest) error {
+	m.requests = append(m.requests, request)
+	return nil
+}
+
+func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	requireRegistrationClient(t, ctx, store)
+	key, err := keys.GenerateRSA("email-verified-registration-test-key", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	audit := idp.NewMemorySink()
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: audit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor, err := idpsignup.New(ctx, idpsignup.EmailVerifiedSource, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer executor.Close(context.Background())
+	mail := &signupEmailCapture{}
+	emailChallenges, err := idpemailchallenge.NewService(idpemailchallenge.NewMemoryStore(), mail, []byte("email-verified-registration-test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+		Issuer:                "http://127.0.0.1:5556",
+		Store:                 store,
+		SecretKey:             []byte("provider-registration-test-secret-key"),
+		Audit:                 audit,
+		Authenticator:         accounts,
+		Consent:               fositeadapter.AlwaysSkipConsent{},
+		Registration:          fositeadapter.RegistrationConfig{Enabled: true, Accounts: accounts},
+		ScriptedSignup:        executor,
+		WorkflowContinuations: store,
+		EmailChallenges:       emailChallenges,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	request := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	request.Del("login")
+	request.Set("client_id", "message-desk")
+	request.Set("scope", "openid profile")
+	request.Set("tinyidp_signup", "1")
+	response, err := client.Get(server.URL + "/authorize?" + request.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="email"`) || strings.Contains(string(body), `name="password"`) {
+		t.Fatalf("initial email-verification page status=%d body=%s", response.StatusCode, body)
+	}
+	identityForm := parseInteractionInputs(string(body))
+	identityForm.Set(idpui.ActionFieldName, "submit")
+	identityForm.Set("email", "verified-user@example.test")
+	identityForm.Set(idpui.DisplayNameFieldName, "Verified User")
+
+	response = submitRegistration(t, client, server.URL, identityForm)
+	body, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="email_code"`) || len(mail.requests) != 1 {
+		t.Fatalf("email-code page status=%d mail=%d body=%s", response.StatusCode, len(mail.requests), body)
+	}
+	codeForm := parseInteractionInputs(string(body))
+	codeForm.Set(idpui.ActionFieldName, "submit")
+	codeForm.Set("email_code", mail.requests[0].Code)
+
+	response = submitRegistration(t, client, server.URL, codeForm)
+	body, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="`+idpui.PasswordFieldName+`"`) || !strings.Contains(string(body), `name="`+idpui.PasswordConfirmationFieldName+`"`) {
+		t.Fatalf("password page status=%d body=%s", response.StatusCode, body)
+	}
+	passwordForm := parseInteractionInputs(string(body))
+	passwordForm.Set(idpui.ActionFieldName, "submit")
+	passwordForm.Set(idpui.PasswordFieldName, "correct horse battery staple 2026")
+	passwordForm.Set(idpui.PasswordConfirmationFieldName, "correct horse battery staple 2026")
+
+	response = submitRegistration(t, client, server.URL, passwordForm)
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusSeeOther {
+		body, _ = io.ReadAll(response.Body)
+		t.Fatalf("verified signup status=%d body=%s", response.StatusCode, body)
+	}
+	user, err := store.GetUserByLogin(ctx, "verified-user@example.test")
+	if err != nil || !user.EmailVerified || user.Name != "Verified User" {
+		t.Fatalf("verified signup user=%#v err=%v", user, err)
+	}
+}
+
+func requireRegistrationClient(t *testing.T, ctx context.Context, store *memory.Store) {
+	t.Helper()
+	if err := store.PutClient(ctx, idpstore.Client{
+		ID:                "message-desk",
+		Public:            true,
+		RequirePKCE:       true,
+		RedirectURIs:      []string{"http://localhost/callback"},
+		AllowedScopes:     []string{"openid", "profile"},
+		AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode},
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

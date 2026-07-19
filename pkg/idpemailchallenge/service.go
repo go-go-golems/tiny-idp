@@ -97,7 +97,7 @@ func (s *Service) Evidence(ctx context.Context, ref Reference, b VerificationBin
 	if err != nil {
 		return VerifiedEmailEvidence{}, err
 	}
-	if err := c.VerifyBindings(b); err != nil {
+	if err := c.VerifyEvidenceBindings(b); err != nil {
 		return VerifiedEmailEvidence{}, err
 	}
 	if c.Status != StatusVerified || c.VerifiedAt == nil {

@@ -132,9 +132,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
-	outcome, err := p.scriptedSignup.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, map[string]idpworkflow.SecretHandle{
-		"password": submission.Secrets[idpworkflow.FieldPassword], "passwordConfirmation": submission.Secrets[idpworkflow.FieldPasswordConfirmation],
-	}, evidence)
+	outcome, err := p.scriptedSignup.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, signupSubmissionSecrets(submission), evidence)
 	if err != nil {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
@@ -317,7 +315,7 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 	}
 	defer clearBytes(password)
 	defer clearBytes(confirmation)
-	prepared, err := p.registration.PrepareCreate(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login})
+	prepared, err := p.registration.PrepareCreate(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login, EmailVerified: verifiedEmail != ""})
 	if err != nil {
 		return signupCommitResult{}, err
 	}
@@ -367,6 +365,21 @@ func submissionSecrets(submission idpworkflow.Submission, passwordToken, confirm
 		}
 	}
 	return password, confirmation, password != nil && confirmation != nil
+}
+
+// signupSubmissionSecrets projects only descriptors submitted on the active
+// page. A workflow that collects identity data before a password must not hand
+// zero-value secret handles to the Goja binding, because those values are not
+// valid native capabilities.
+func signupSubmissionSecrets(submission idpworkflow.Submission) map[string]idpworkflow.SecretHandle {
+	secrets := map[string]idpworkflow.SecretHandle{}
+	if handle, ok := submission.Secrets[idpworkflow.FieldPassword]; ok && handle.Token() != "" {
+		secrets["password"] = handle
+	}
+	if handle, ok := submission.Secrets[idpworkflow.FieldPasswordConfirmation]; ok && handle.Token() != "" {
+		secrets["passwordConfirmation"] = handle
+	}
+	return secrets
 }
 
 func (p *Provider) renderScriptedSignupError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string) {
