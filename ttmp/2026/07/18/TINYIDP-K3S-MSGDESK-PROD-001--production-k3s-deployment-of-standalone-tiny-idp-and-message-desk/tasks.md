@@ -6,9 +6,9 @@
 - [x] Phase 0: Record production hostnames, one-replica SQLite topology, signup policy, and deferred device/multi-app scope <!-- t:d7s0 -->
 - [x] Phase 0: Inspect current cluster Traefik forwarding, NetworkPolicy, prod-apps, Vault/VSO, registry, and backup contracts <!-- t:k9g9 -->
 - [x] Phase 0: Write the detailed implementation design, acceptance matrix, rollback plan, and implementation diary <!-- t:avj8 -->
-- [ ] Phase 1: Design provider-owned signup as part of an existing OIDC authorization interaction <!-- t:ev4b -->
-- [ ] Phase 1: Implement durable one-use provider registration attempts with expiry and replay protection <!-- t:bumr -->
-- [ ] Phase 1: Implement provider registration GET/POST interactions using idpaccounts.Service.Create <!-- t:g4u2 -->
+- [x] Phase 1: Design provider-owned signup as part of an existing OIDC authorization interaction <!-- t:ev4b -->
+- [x] Phase 1: Implement durable one-use provider registration attempts with expiry and replay protection <!-- t:bumr -->
+- [x] Phase 1: Implement provider registration GET/POST interactions using idpaccounts.Service.Create <!-- t:g4u2 -->
 - [ ] Phase 1: Add CSRF, Origin/Fetch-Metadata, request bounds, generic errors, rate limits, password clearing, and audit events <!-- t:uo24 -->
 - [ ] Phase 1: Add Message Desk /auth/register initiation without exposing the provider account store or password <!-- t:hpkb -->
 - [ ] Phase 1: Update Message Desk UI for external provider-owned signup <!-- t:0uf8 -->

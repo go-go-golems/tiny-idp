@@ -18,6 +18,12 @@ RelatedFiles:
       Note: Canonical source-to-GHCR-to-GitOps-to-Argo release path
     - Path: abs:///home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/argocd-app-setup.md
       Note: Argo project, sync-wave, and first-bootstrap requirements
+    - Path: repo://internal/fositeadapter/provider.go
+      Note: Provider-owned signup intent, action validation, account creation, session binding, and consent continuation in d5927e8
+    - Path: repo://internal/fositeadapter/registration_test.go
+      Note: End-to-end PKCE signup and replay evidence in d5927e8
+    - Path: repo://pkg/idpui/types.go
+      Note: Typed registration presentation contract in d5927e8
     - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/tasks.md
       Note: Authoritative phased production task ledger
 ExternalSources: []
@@ -26,6 +32,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 # Production deployment implementation diary
@@ -169,4 +176,149 @@ cluster node: k3s-demo-1 / 91.98.46.169 / k3s v1.34.5+k3s1
 storage: local-path / WaitForFirstConsumer
 Pod CIDR: 10.42.0.0/24; trusted proxy hop target: 1
 public ingress: Traefik 3.6.9 + cert-manager letsencrypt-prod
+```
+
+## Step 2: Add provider-owned registration to durable authorization interactions
+
+This step added account creation as a first-class required action on Tiny-IDP's
+existing server-owned authorization interaction. A valid `tinyidp_signup=1`
+request now produces the same kind of hashed, one-use, expiring,
+browser-bound, client-generation-bound continuation that login and consent use.
+The provider renders the account form, calls the existing account service,
+creates the provider session, and resumes the original PKCE authorization
+request. There is no application-owned password endpoint or separate redirect
+state to attack.
+
+The implementation deliberately keeps registration opt-in. Supplying an
+account-service pointer without explicitly enabling registration does not open
+the feature. Existing provider consumers retain their existing login-only
+behavior until a host selects `Registration.Enabled`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Implement the first source phase of the public
+product while keeping security-critical lifecycle and audit behavior explicit.
+
+**Inferred user intent:** New users should be able to join through the identity
+provider and continue directly into the standalone Message Desk OIDC flow.
+
+**Commit (code):** `d5927e8` — "feat: add provider-owned signup interactions"
+
+### What I did
+
+- Added `InteractionRequireRegistration` to the durable interaction action set.
+- Added a strict `tinyidp_signup=1` authorization request parameter. Missing is
+  normal login; duplicate or values other than exactly `1` fail with an OAuth
+  `invalid_request` redirect.
+- Added typed registration fields, action, public error category, page contract,
+  defensive cloning, and the default HTML renderer form.
+- Added opt-in registration composition in `embeddedidp.Options` and
+  `fositeadapter.Options`.
+- Made registration require an `idpaccounts.Service`; a custom password
+  authenticator cannot accidentally enable account creation without an explicit
+  account service.
+- Made `createBrowserSession` return only the hashed session identifier needed
+  to bind a follow-up consent interaction; the raw session value remains only in
+  the outgoing HttpOnly cookie.
+- Added registration-specific client/address/login-key rate-limit namespaces,
+  duplicate-field rejection, password confirmation, generic public rejection,
+  audit events, and best-effort byte-slice clearing.
+- Added an end-to-end test covering PKCE signup, code issuance, persistent
+  user creation, replay rejection, and audit field inspection.
+- Added a malformed-intent test and verified the provider's normal `303 See
+  Other` OAuth error redirect.
+- Ran focused provider/UI/embedded tests, then the full pre-commit repository
+  test and lint gates.
+
+### Why
+
+- The authorization interaction already owns canonical redirect/client/PKCE
+  validation and has atomic consumption behavior. Reusing it avoids duplicating
+  an easy-to-forget part of the OIDC security boundary.
+- Keeping registration opt-in prevents a new public endpoint from appearing in
+  arbitrary embedded-provider users.
+- A post-registration consent page, if the configured policy requires it, is a
+  new interaction bound to the just-created browser session; registration does
+  not silently approve consent.
+
+### What worked
+
+- `go test ./internal/fositeadapter -run 'TestProviderOwnedRegistration' -count=1`
+  passed.
+- `go test ./internal/fositeadapter ./pkg/idpui ./pkg/embeddedidp -count=1`
+  passed.
+- The commit hook ran `go test ./...`, golangci-lint, Glazed CLI lint, and the
+  idpui analyzer successfully.
+
+### What didn't work
+
+- The first sandboxed focused test could not create entries under the shared Go
+  build cache; it failed with `read-only file system`. The same command passed
+  with approved build-cache access.
+- The initial malformed-intent test expected `302 Found`; Fosite correctly uses
+  `303 See Other` for this authorization error redirect. The test now accepts
+  either redirect status while asserting the stable `invalid_request` code.
+- The first commit-hook process finished after its execution cell ceased
+  reporting output. A status check confirmed that it had created `d5927e8`; the
+  retry found a clean index and made no second commit.
+
+### What I learned
+
+- `idpaccounts.Service.Create` can report audit delivery failure after durable
+  account mutation. The provider therefore treats any creation error as a
+  generic rejection and never exposes whether a login exists. Recovery/audit
+  policy still needs a product-level decision so a user is not stranded after a
+  post-commit audit outage.
+- A registration flow and a consent flow must not share an action vocabulary:
+  `register` creates an identity, while `approve` grants a requesting client.
+
+### What was tricky to build
+
+- The registered session is created during the POST, but that new raw cookie is
+  not available from the request object when creating a follow-up consent
+  continuation. Returning only its hash from `createBrowserSession` lets the
+  next interaction bind correctly without retaining the raw credential.
+- An account-service pointer alone must not be the enable switch. The code
+  explicitly clears the internal registration service unless
+  `Registration.Enabled` is true.
+
+### What warrants a second pair of eyes
+
+- Review the public `tinyidp_signup` parameter name and whether it should be
+  documented as a stable product extension before third parties depend on it.
+- Review behavior after `idp.ErrAuditDelivery`: state can be committed before
+  audit delivery fails, which is safe against credential disclosure but needs an
+  operator recovery runbook.
+- Review the exact registration rate limits before public exposure; current
+  keys provide the correct isolation but not final production thresholds.
+
+### What should be done in the future
+
+- Wire `Registration.Enabled` in the standalone production host only after the
+  listener, UI, abuse-control, and audit/readiness tasks are complete.
+- Add explicit Origin and Fetch Metadata checks for registration POST before
+  marking the full abuse-control task complete.
+- Add SQLite-backed restart/race tests in addition to the memory-store protocol
+  test.
+
+### Code review instructions
+
+- Read `beginAuthorize`, `resumeAuthorize`, and `createInteractionForSession`
+  together in `internal/fositeadapter`.
+- Confirm the typed `idpui.RegistrationPrompt` permits no protocol continuation
+  fields other than the opaque interaction and CSRF inputs.
+- Run the focused command above, then `go test ./...`.
+
+### Technical details
+
+```text
+GET /authorize?...&tinyidp_signup=1
+  -> InteractionRequireRegistration
+  -> hashed interaction + CSRF + browser binding
+POST /authorize action=register
+  -> idpaccounts.Service.Create
+  -> hashed browser session
+  -> original PKCE authorization response
 ```
