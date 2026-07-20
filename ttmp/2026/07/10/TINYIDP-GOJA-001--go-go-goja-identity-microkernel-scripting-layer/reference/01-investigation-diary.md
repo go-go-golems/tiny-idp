@@ -6027,3 +6027,43 @@ go test ./internal/assurance -count=1
 
 The focused test passed. Commit `8faf130` also passed the full `GOWORK=off go
 test ./...`, lint, custom UI analysis, and vet hook gate.
+
+## Step 60: Complete the Phase 4 provider examples and matrix
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `31fffbb` — "Docs: add provider pattern examples and matrix"
+
+### What I did
+
+- Added `examples/tinyidp-script/provider-patterns.md`, covering open signup,
+  allowed-domain policy, signed invitations, computed eligibility, durable
+  one-time invitations, virtual identity, and local stored identity.
+- Linked each pattern to the actual native API or checked-in JavaScript source;
+  the document calls out what scripts may declare versus what only native Go may
+  validate or commit.
+- Added `TestProviderOutcomeMatrix`, a table-driven cross-provider test covering
+  signed-invitation acceptance/expiry, durable invitation acceptance/replay/
+  revocation, computed acceptance/denial/malformed-input/capability failure,
+  virtual identity protocol-claim protection, and concurrent atomic one-time
+  redemption.
+
+### What worked
+
+```bash
+go test ./pkg/idpinvite ./pkg/idpidentity ./pkg/idpsignup ./pkg/idpprogram ./pkg/idpworkflow ./pkg/idpscript ./pkg/idpaccounts -count=1
+go test ./pkg/memorystore ./pkg/sqlitestore ./internal/fositeadapter -count=1
+go test -race ./pkg/idpworkflow ./pkg/idpscript -count=1
+```
+
+All Phase 4 gate commands passed. The code commit hook additionally passed
+`GOWORK=off go test ./...`, lint, the custom UI analyzer, and vet.
+
+### Review notes
+
+The outcome matrix intentionally checks the common acceptance/rejection contract
+and leaves exact wire/error identities to the existing focused tests in
+`signed_test.go`, `durable_test.go`, `computed_test.go`, and `virtual_test.go`.
+This keeps the matrix legible while retaining strict package-level checks.

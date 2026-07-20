@@ -341,9 +341,9 @@ implementations.
 - [x] Implement a capability-backed computed invitation example whose eligibility decision is bounded and whose result contains no ambient database or network authority <!-- t:lf51 -->
 - [x] Implement a durable one-time invitation provider with hashed lookup, expiry, revocation, atomic redemption, and replay-safe evidence <!-- t:lf52 -->
 - [x] Integrate provider results into the Phase 3 signup workflow without changing the native signup commit authority or duplicating account/session logic <!-- t:lf53 -->
-- [ ] Add checked-in examples for open signup, allowed email domain, signed invitation, computed eligibility, durable one-time invitation, virtual identity, and local stored identity <!-- t:lf54 -->
+- [x] Add checked-in examples for open signup, allowed email domain, signed invitation, computed eligibility, durable one-time invitation, virtual identity, and local stored identity <!-- t:lf54 -->
 - [x] Extend explain output to state for each provider whether state exists, where replay is prevented, how revocation works, what identity is materialized, and which native effects may occur <!-- t:lf55 -->
-- [ ] Add a table-driven provider matrix covering success, denial, malformed data, expiry, revocation, replay, capability failure, timeout, virtual subject stability, claim protection, and atomic one-time redemption <!-- t:lf56 -->
+- [x] Add a table-driven provider matrix covering success, denial, malformed data, expiry, revocation, replay, capability failure, timeout, virtual subject stability, claim protection, and atomic one-time redemption <!-- t:lf56 -->
 
 **Phase 4 gate:** All design-03 signup policies run through the same workflow
 API, virtual identities require no local row, and durable one-time invitation

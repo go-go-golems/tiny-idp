@@ -525,3 +525,15 @@ dependencies, so subsequent catalogs and codecs can share it safely.
 
 - internal/assurance/vocabulary.go — Versioned stable-ID types and closed initial IDs
 - internal/assurance/vocabulary_test.go — Identifier grammar and secret-free shape tests
+
+## 2026-07-20 - Step 60: Phase 4 provider examples and outcome matrix
+
+Completed the final Phase 4 deliverables. Added checked-in author/operator
+examples for each supported signup/provider pattern and one reviewable
+cross-provider outcome matrix. The examples distinguish JavaScript declaration
+authority from native host signing, storage, credential, and commit authority.
+
+### Related Files
+
+- examples/tinyidp-script/provider-patterns.md — Supported provider authoring patterns
+- pkg/idpinvite/provider_matrix_test.go — Success/failure/replay/protected-claim/atomicity matrix
