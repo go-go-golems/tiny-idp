@@ -55,6 +55,8 @@ func NewGenerationManager(ctx context.Context, source string, workers, retained 
 	return NewGenerationManagerWithOptions(ctx, source, workers, retained, GenerationManagerOptions{})
 }
 
+// NewGenerationManagerWithOptions constructs a generation manager.
+// tinyidp:development-default -- production construction injects a durable provider audit sink.
 func NewGenerationManagerWithOptions(ctx context.Context, source string, workers, retained int, options GenerationManagerOptions) (*GenerationManager, error) {
 	if workers <= 0 {
 		return nil, errors.New("generation manager worker count must be positive")

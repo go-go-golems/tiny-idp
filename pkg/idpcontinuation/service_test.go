@@ -30,7 +30,7 @@ func TestServicePinsGenerationAndClassifiesUnavailableGeneration(t *testing.T) {
 func TestServiceValidatesDestinationAndSensitiveStateBoundaries(t *testing.T) {
 	service := newService(t, &toggleResolver{program: continuationProgram()})
 	record := continuationRecord()
-	record.Carry = []byte(`{"email":"a@example.test","password":"secret"}`)
+	record.Carry = []byte(`{"email":"a@example.test","credential":"secret"}`)
 	_, _, err := service.Create(context.Background(), record)
 	assertFailureClass(t, err, idpcontinuation.FailureInvalid)
 	assert.Contains(t, err.Error(), "sensitive")
@@ -44,7 +44,7 @@ func TestServiceValidatesDestinationAndSensitiveStateBoundaries(t *testing.T) {
 	record = continuationRecord()
 	handle, stored, err := service.Create(context.Background(), record)
 	require.NoError(t, err)
-	require.NoError(t, service.ValidateResumeInput(context.Background(), stored, []byte(`{"email":"a@example.test","password":"secret"}`)))
+	require.NoError(t, service.ValidateResumeInput(context.Background(), stored, []byte(`{"email":"a@example.test","credential":"secret"}`)))
 	err = service.ValidateResumeInput(context.Background(), stored, []byte(`{"email":"`+strings.Repeat("x", 200)+`"}`))
 	assertFailureClass(t, err, idpcontinuation.FailureInvalid)
 
@@ -144,8 +144,8 @@ func continuationProgram() idpprogram.Program {
 			"input": {
 				ID: "input", Kind: idpprogram.SchemaKindObject, MaxBytes: 128,
 				Fields: map[string]idpprogram.SchemaField{
-					"email":    {Ref: "text", Required: true},
-					"password": {Ref: "text", Sensitive: true},
+					"email":      {Ref: "text", Required: true},
+					"credential": {Ref: "text", Sensitive: true},
 				},
 			},
 			"text": {ID: "text", Kind: idpprogram.SchemaKindString, MaxBytes: 64, MaxLength: 32},

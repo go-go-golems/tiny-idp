@@ -14,13 +14,13 @@ func TestValidatePublicJSONRejectsSensitiveCarryButResumeAllowsIt(t *testing.T) 
 		"form": {
 			ID: "form", Kind: idpprogram.SchemaKindObject, MaxBytes: 128,
 			Fields: map[string]idpprogram.SchemaField{
-				"email":    {Ref: "text", Required: true},
-				"password": {Ref: "text", Required: true, Sensitive: true},
+				"email":      {Ref: "text", Required: true},
+				"credential": {Ref: "text", Required: true, Sensitive: true},
 			},
 		},
 		"text": {ID: "text", Kind: idpprogram.SchemaKindString, MaxBytes: 64, MaxLength: 32},
 	}
-	value := []byte(`{"email":"a@example.test","password":"secret"}`)
+	value := []byte(`{"email":"a@example.test","credential":"secret"}`)
 	require.NoError(t, idpprogram.ValidateJSON(schemas, "form", value))
 	err := idpprogram.ValidatePublicJSON(schemas, "form", value)
 	require.Error(t, err)

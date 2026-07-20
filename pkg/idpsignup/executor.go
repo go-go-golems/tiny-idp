@@ -84,6 +84,8 @@ func New(ctx context.Context, source string, workers int) (*Executor, error) {
 	return NewWithOptions(ctx, source, workers, ExecutorOptions{})
 }
 
+// NewWithOptions compiles and warms a signup executor.
+// tinyidp:development-default -- production construction injects a durable provider audit sink.
 func NewWithOptions(ctx context.Context, source string, workers int, options ExecutorOptions) (*Executor, error) {
 	if source == "" {
 		source = DefaultSource
