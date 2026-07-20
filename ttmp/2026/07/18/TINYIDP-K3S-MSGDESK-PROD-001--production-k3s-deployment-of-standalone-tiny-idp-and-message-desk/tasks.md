@@ -89,8 +89,8 @@ item has concrete evidence.
 - [x] Add OCI source, revision, version, and creation metadata to both images <!-- t:p4i4 -->
 - [ ] Mount the reviewed signup program as read-only non-secret input <!-- t:img1 -->
 - [ ] Mount native-provider and token credentials through owner-only secret files <!-- t:p4s1 -->
-- [ ] Verify read-only root filesystem compatibility and explicitly writable state/audit paths <!-- t:p4s2 -->
-- [ ] Add image-level health/readiness and non-root ownership smoke tests <!-- t:6m3o -->
+- [x] Verify read-only root filesystem compatibility and explicitly writable state/audit paths <!-- t:p4s2 -->
+- [x] Add image-level health/readiness and non-root ownership smoke tests <!-- t:6m3o -->
 - [ ] Run both images together and repeat the essential signup/login/message smoke path <!-- t:p4t1 -->
 - [ ] Publish Tiny-IDP and Message Desk with immutable `sha-<commit>` tags from the same source commit <!-- t:tbv9 -->
 - [ ] Add `deploy/gitops-targets.json` for both image consumers <!-- t:cs2l -->
