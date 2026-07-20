@@ -6285,3 +6285,59 @@ analyzer, vet, and its isolated full test gate.
   `scripted_signup.go`, and `device_verification.go`. Each appears immediately
   after the native durable consume/commit that makes that terminal outcome
   true.
+
+## Step 67: Gate Fosite artifacts behind an unexported approval proof
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `560ad2d` — "Feat: isolate approved authorization artifact issuance"
+
+### What I did
+
+- Introduced the package-private `approvedAuthorizationProof` carrying the
+  native protocol context, reconstructed request, OIDC session, interaction
+  correlation record, and optional SQL lifecycle finalizer.
+- Kept all existing native client lookup, authorization-policy decision,
+  consent decision/recording, scope/audience grant, claims session creation,
+  and SQL lifecycle setup in `finishAuthorize`.
+- Constructed the proof only after those checks succeeded and moved the sole
+  `oauth2.NewAuthorizeResponse` call into
+  `issueApprovedAuthorizationArtifacts`.
+- Preserved error response, lifecycle rollback/commit, security trace,
+  authorization audit, POST redirect behavior, and Fosite response writing in
+  that single sink. No external API or Fosite wire behavior changed.
+
+### Why
+
+Fosite response creation is the point at which authorization-code and related
+protocol artifacts come into existence. Before this change it was embedded in
+a large mixed policy/protocol function. A private proof makes the authority
+handoff explicit in code review: scripts and request inputs cannot call the
+sink, and policy code cannot accidentally issue artifacts before native checks
+and native lifecycle setup have completed.
+
+### What worked
+
+```bash
+rg -n 'NewAuthorizeResponse\\(' . --glob '*.go'
+go test ./internal/fositeadapter \\
+  -run 'Test(AuthorizationSecurityTrace|AuthorizationPolicy|AuthorizationAndClaims|ConsentDenial)' -count=1
+go test ./internal/fositeadapter -count=1
+```
+
+The source query returned one production call, at the proof-gated sink. The
+focused and package suites passed, and the commit hook passed lint, analyzers,
+vet, and the isolated full repository test suite.
+
+### Review instructions
+
+- Read `finishAuthorize` down to the proof literal, then read only
+  `issueApprovedAuthorizationArtifacts`; this is the full artifact authority
+  path.
+- Confirm all early exits occur before proof construction and that every
+  post-proof error either rolls back the SQL lifecycle or returns the same
+  protocol error as before.
+- Repeat the `rg` query above; there must be exactly one Fosite artifact
+  creation call in the repository.

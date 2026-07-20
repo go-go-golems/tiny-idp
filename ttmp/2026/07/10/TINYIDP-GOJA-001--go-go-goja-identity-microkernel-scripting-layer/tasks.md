@@ -134,7 +134,7 @@
 - [x] Add lossless fail-closed codecs between InteractionRequiredAction bits and obligation IDs. <!-- t:mdhf -->
 - [x] Add typed VerificationPlan step codecs and reject unknown kinds/parameters during plan materialization. <!-- t:vpdm -->
 - [x] Map current authorization events to transition results and prove complete secret-free terminal-path instrumentation. <!-- t:0zlh -->
-- [ ] Introduce unexported authorization proof types and one approved artifact-issuance sink without changing Fosite protocol behavior. <!-- t:uopp -->
+- [x] Introduce unexported authorization proof types and one approved artifact-issuance sink without changing Fosite protocol behavior. <!-- t:uopp -->
 - [ ] Generate static-analysis authority/effect metadata and a formal-model vocabulary skeleton from the transition catalog. <!-- t:9zhn -->
 - [ ] Replay one normalized model counterexample through registered VerificationPlan codecs without a handwritten action-name adapter. <!-- t:e9p7 -->
 - [ ] Materialize the local-web Goja configuration graph solely from registered native block and policy descriptors. <!-- t:t0q3 -->

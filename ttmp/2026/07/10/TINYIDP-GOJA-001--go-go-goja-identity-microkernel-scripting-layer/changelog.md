@@ -610,3 +610,14 @@ SQL terminal paths emit a validated terminal result.
 - internal/fositeadapter/provider.go — Browser authorization terminal instrumentation
 - internal/fositeadapter/scripted_signup.go — Scripted-signup deny/commit terminal instrumentation
 - internal/fositeadapter/interaction_hardening_test.go — Approved and denied terminal-path proof
+
+## 2026-07-20 - Step 67: proof-gated authorization artifact sink
+
+Completed the authorization artifact authority boundary. The unexported
+`approvedAuthorizationProof` can be built only after native client, policy,
+consent, claims, and lifecycle checks; one private sink is now the repository's
+only Fosite `NewAuthorizeResponse` call.
+
+### Related Files
+
+- internal/fositeadapter/provider.go — Private proof type and sole artifact-issuance sink
