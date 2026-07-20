@@ -50,7 +50,7 @@ module.exports = V.plan({suites: [{name: "native boundary", scenarios: [{
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := verifyplan.Runner{Driver: recordingDriver{}, Assertions: map[string]verifyplan.AssertionFunc{
+	runner := verifyplan.Runner{Driver: recordingDriver{}, Steps: verifyplan.StepRegistry{"authorize.begin": verifyplan.ExactObjectValidator}, Assertions: map[string]verifyplan.AssertionFunc{
 		"observedKind@v1": func(_ context.Context, config json.RawMessage, observations []verifyplan.Observation) error {
 			var expected struct {
 				Kind string `json:"kind"`

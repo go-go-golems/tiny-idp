@@ -98,6 +98,28 @@ func (p Plan) Validate(limits Limits) error {
 	return nil
 }
 
+// ValidateWithSteps materializes a plan against the native driver's explicit
+// step registry. It is the required boundary before a driver may execute any
+// user-authored scenario action.
+func (p Plan) ValidateWithSteps(limits Limits, steps StepRegistry) error {
+	if len(steps) == 0 {
+		return fmt.Errorf("verification step registry is required")
+	}
+	if err := p.Validate(limits); err != nil {
+		return err
+	}
+	for _, suite := range p.Suites {
+		for _, scenario := range suite.Scenarios {
+			for _, step := range scenario.Steps {
+				if err := steps.Validate(step); err != nil {
+					return fmt.Errorf("suite %q scenario %q: %w", suite.Name, scenario.Name, err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (p *Plan) BindSource(source []byte) {
 	digest := sha256.Sum256(source)
 	p.SourceHash = hex.EncodeToString(digest[:])
@@ -116,6 +138,7 @@ type AssertionFunc func(ctx context.Context, config json.RawMessage, observation
 
 type Runner struct {
 	Driver     Driver
+	Steps      StepRegistry
 	Assertions map[string]AssertionFunc
 }
 
@@ -131,7 +154,7 @@ func (r Runner) Run(ctx context.Context, plan Plan) ([]ScenarioResult, error) {
 	if r.Driver == nil {
 		return nil, fmt.Errorf("verification driver is required")
 	}
-	if err := plan.Validate(DefaultLimits()); err != nil {
+	if err := plan.ValidateWithSteps(DefaultLimits(), r.Steps); err != nil {
 		return nil, err
 	}
 	results := make([]ScenarioResult, 0)

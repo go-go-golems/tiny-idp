@@ -183,7 +183,7 @@ module.exports = V.plan({suites: [{name: "fresh authentication", scenarios: [{
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := verifyplan.Runner{Driver: driver, Assertions: strictScenarioAssertions()}
+	runner := verifyplan.Runner{Driver: driver, Steps: strictScenarioSteps(), Assertions: strictScenarioAssertions()}
 	results, err := runner.Run(context.Background(), plan)
 	if err != nil {
 		t.Fatal(err)
@@ -213,6 +213,31 @@ func strictScenarioAssertions() map[string]verifyplan.AssertionFunc {
 				}
 			}
 			return fmt.Errorf("scenario has no interaction response")
+		},
+	}
+}
+
+func strictScenarioSteps() verifyplan.StepRegistry {
+	return verifyplan.StepRegistry{
+		"session.login": verifyplan.ExactObjectValidator,
+		"authorize.begin": func(raw json.RawMessage) error {
+			var parameters beginAuthorizationParameters
+			return decodeStepParameters(raw, &parameters)
+		},
+		"interaction.submit": func(raw json.RawMessage) error {
+			var parameters submitInteractionParameters
+			return decodeStepParameters(raw, &parameters)
+		},
+		"clock.advance": func(raw json.RawMessage) error {
+			var parameters advanceClockParameters
+			if err := decodeStepParameters(raw, &parameters); err != nil {
+				return err
+			}
+			duration, err := time.ParseDuration(parameters.Duration)
+			if err != nil || duration < 0 {
+				return fmt.Errorf("invalid non-negative clock duration %q", parameters.Duration)
+			}
+			return nil
 		},
 	}
 }
