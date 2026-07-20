@@ -38,6 +38,8 @@ RelatedFiles:
       Note: End-to-end PKCE signup and replay evidence in d5927e8
     - Path: repo://pkg/idpui/types.go
       Note: Typed registration presentation contract in d5927e8
+    - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/02-production-image-smoke.sh
+      Note: Repeatable non-root, read-only-root, owner-only-secret, and readiness OCI smoke (cc99a15)
     - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/tasks.md
       Note: Authoritative phased production task ledger
 ExternalSources: []
@@ -46,6 +48,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 
@@ -2523,4 +2526,108 @@ node:22 + pinned pnpm build
 Go source -> Tiny-IDP production binary
 
 both -> Debian runtime, CA roots, UID/GID 65532, immutable metadata
+```
+
+## Step 31 — Phase 4 image filesystem and readiness smoke
+
+The image contract is now executable rather than a Dockerfile-only claim. The
+smoke runs both runtime images under a read-only root filesystem and supplies
+only temporary, non-production material, so it verifies that the deployed
+process does not depend on a writable image layer or a root entrypoint.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 30)
+
+**Assistant interpretation:** Add a repeatable local image gate for the
+runtime security and readiness assertions before attempting a combined OIDC
+browser flow or publishing.
+
+**Inferred user intent:** Image hardening must be validated by execution, not
+just inferred from Dockerfile instructions.
+
+**Commit (code):** `cc99a15` — "Test: smoke production OCI images"
+
+### What I did
+
+- Added `scripts/02-production-image-smoke.sh` under the ticket.
+- The script builds both images, validates their non-root user, stop signal,
+  OCI source/revision/version labels, and direct `--help` entrypoints under a
+  read-only root filesystem.
+- It verifies each fixed state/audit directory is writable only when supplied
+  as a UID/GID-65532 tmpfs and confirms no signup source or credential file is
+  present in the image by default.
+- It starts Tiny-IDP with direct TLS, an external read-only signup-program
+  mount, and a disposable UID-65532 tmpfs secret directory. The script creates
+  a 0600 test token and TLS key inside that mount, then polls `/readyz` over
+  TLS.
+- It starts Message Desk with an initialized UID/GID-65532 tmpfs state root
+  and polls its `/readyz` endpoint.
+
+### Why
+
+The future Kubernetes secret-copy init container will create files owned by
+the main non-root user. A host bind mount with a local developer UID is not an
+equivalent security test: Tiny-IDP correctly rejects its owner-only token.
+The test's tmpfs setup models the final ownership result without embedding or
+printing a credential.
+
+### What worked
+
+- `sh -n scripts/02-production-image-smoke.sh` passed.
+- The complete smoke passed and printed `production image smoke passed`.
+- Both readiness endpoints became healthy with `--read-only`, explicit
+  writable tmpfs mounts, and UID 65532.
+
+### What didn't work
+
+- The first run used Docker anonymous TLS port publication; Docker did not
+  expose it to `docker port`, producing an empty curl `--resolve` port.
+- The second run used a local `0600` host token bind mount. Docker preserved
+  the host UID (1000), so the non-root container correctly could not read it
+  and exited before readiness. The final script uses an in-container UID-65532
+  tmpfs secret fixture instead. No production behavior was weakened.
+
+### What I learned
+
+- A successful non-root secret test must verify both permissions and ownership;
+  `0600` alone is intentionally insufficient when the file belongs to another
+  UID.
+
+### What was tricky to build
+
+- The public TLS probe needs a stable loopback port and an SNI/Host matching
+  the configured issuer. The final harness reserves `18443`, uses curl
+  `--resolve`, and fails early if that port or the Message Desk `18080` port is
+  already occupied.
+
+### What warrants a second pair of eyes
+
+- Phase 5 should preserve this exact ownership invariant when its Vault secret
+  copier writes `/run/tinyidp-secrets`: UID/GID 65532, regular owner-only files,
+  no value logging.
+
+### What should be done in the future
+
+- Run both images in their external OIDC topology and repeat the essential
+  signup/login/message path. Then add CI publishing and GitOps target metadata.
+
+### Code review instructions
+
+- Run `ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/02-production-image-smoke.sh`.
+- Verify the script never prints its generated token/key and inspect the
+  `--read-only`, `--tmpfs`, and `--entrypoint` clauses before relying on it.
+
+### Technical details
+
+```text
+image (read-only root, UID 65532)
+  + tmpfs state/audit paths
+  + tmpfs owner-only secret fixture
+  + read-only reviewed signup program
+  -> Tiny-IDP HTTPS /readyz
+
+image (read-only root, UID 65532)
+  + initialized tmpfs state root
+  -> Message Desk /readyz
 ```

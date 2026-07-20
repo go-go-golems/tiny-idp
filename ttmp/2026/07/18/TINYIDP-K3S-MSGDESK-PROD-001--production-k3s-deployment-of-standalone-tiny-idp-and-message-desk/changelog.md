@@ -144,3 +144,14 @@ paths, `SIGTERM`, OCI metadata, and local Docker build/inspection evidence.
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/images/Dockerfile.tinyidp — Provider production image contract
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/images/Dockerfile.message-desk — Deterministic Message Desk UI and runtime image contract
+
+## 2026-07-20
+
+Phase 4 image security/readiness checkpoint: added the repeatable Docker
+smoke (`cc99a15`) that verifies non-root, read-only-root, owner-only tmpfs
+secret ownership, fixed writable paths, TLS Tiny-IDP readiness, and initialized
+Message Desk readiness.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/02-production-image-smoke.sh — Executable OCI runtime security and readiness gate
