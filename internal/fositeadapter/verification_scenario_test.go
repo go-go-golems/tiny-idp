@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-go-golems/tiny-idp/internal/assurance"
 	"github.com/go-go-golems/tiny-idp/internal/gojaverify"
 	"github.com/go-go-golems/tiny-idp/pkg/verifyplan"
 )
@@ -60,13 +61,13 @@ type advanceClockParameters struct {
 
 func (d *strictScenarioDriver) Execute(_ context.Context, step verifyplan.Step) (verifyplan.Observation, error) {
 	switch step.Kind {
-	case "session.login":
+	case string(assurance.StepSessionLogin):
 		d.fixture.login()
 		return verifyplan.Observation{Kind: "session.established"}, nil
-	case "authorize.begin":
+	case string(assurance.StepInteractionCreate):
 		var parameters beginAuthorizationParameters
 		if err := decodeStepParameters(step.Parameters, &parameters); err != nil {
-			return verifyplan.Observation{}, fmt.Errorf("decode authorize.begin: %w", err)
+			return verifyplan.Observation{}, fmt.Errorf("decode interaction.create: %w", err)
 		}
 		request := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 		request.Del("login")
@@ -86,13 +87,13 @@ func (d *strictScenarioDriver) Execute(_ context.Context, step verifyplan.Step) 
 			"credentialForm":    strings.Contains(body, `name="password"`),
 			"opaqueInteraction": form.Get("interaction") != "",
 		}}, nil
-	case "interaction.submit":
+	case string(assurance.StepInteractionApprove):
 		var parameters submitInteractionParameters
 		if err := decodeStepParameters(step.Parameters, &parameters); err != nil {
-			return verifyplan.Observation{}, fmt.Errorf("decode interaction.submit: %w", err)
+			return verifyplan.Observation{}, fmt.Errorf("decode interaction.approve: %w", err)
 		}
 		if d.form == nil {
-			return verifyplan.Observation{}, fmt.Errorf("interaction.submit requires authorize.begin")
+			return verifyplan.Observation{}, fmt.Errorf("interaction.approve requires interaction.create")
 		}
 		form := cloneScenarioValues(d.form)
 		if parameters.Login != "" {
@@ -123,7 +124,7 @@ func (d *strictScenarioDriver) Execute(_ context.Context, step verifyplan.Step) 
 			"state":  location.Query().Get("state"),
 			"body":   string(body),
 		}}, nil
-	case "clock.advance":
+	case string(assurance.StepClockAdvance):
 		var parameters advanceClockParameters
 		if err := decodeStepParameters(step.Parameters, &parameters); err != nil {
 			return verifyplan.Observation{}, fmt.Errorf("decode clock.advance: %w", err)
@@ -171,9 +172,9 @@ const V = require("tinyidp/verify").v1;
 module.exports = V.plan({suites: [{name: "fresh authentication", scenarios: [{
   name: "blank forced-login submit cannot reuse an old session",
   steps: [
-    {kind: "session.login"},
-    {kind: "authorize.begin", parameters: {prompt: "login", state: "forced-state"}},
-    {kind: "interaction.submit"}
+    {kind: "session.login@v1"},
+    {kind: "interaction.create@v1", parameters: {prompt: "login", state: "forced-state"}},
+    {kind: "interaction.approve@v1"}
   ],
   assertions: [
     {id: "credentialFormShown", version: "v1"},
@@ -190,6 +191,35 @@ module.exports = V.plan({suites: [{name: "fresh authentication", scenarios: [{
 	}
 	if len(results) != 1 || !results[0].Passed {
 		t.Fatalf("results=%#v", results)
+	}
+}
+
+func TestNormalizedModelCounterexampleReplaysWithStableRegisteredSteps(t *testing.T) {
+	clock := &securityClock{now: time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)}
+	driver := &strictScenarioDriver{fixture: newInteractionFixtureWithClock(t, nil, clock.Now), clock: clock}
+	counterexample := assurance.NormalizedCounterexample{
+		SchemaVersion: assurance.NormalizedCounterexampleSchemaVersion,
+		Name:          "duplicate approved terminal is rejected",
+		Steps: []assurance.ScenarioStep{
+			{Step: assurance.StepInteractionCreate, Parameters: json.RawMessage(`{}`)},
+			{Step: assurance.StepInteractionApprove, Parameters: json.RawMessage(`{"login":"alice"}`)},
+			{Step: assurance.StepInteractionApprove, Parameters: json.RawMessage(`{}`)},
+		},
+	}
+	plan, err := counterexample.VerificationPlan(assurance.CurrentAuthorizationCatalog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := (verifyplan.Runner{Driver: driver, Steps: strictScenarioSteps(), Assertions: strictScenarioAssertions()}).Run(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || !results[0].Passed || len(results[0].Observations) != 3 {
+		t.Fatalf("results=%#v", results)
+	}
+	first, second := results[0].Observations[1].Data, results[0].Observations[2].Data
+	if first["code"] != true || second["code"] != false || second["status"] != http.StatusBadRequest {
+		t.Fatalf("counterexample replay observations=%#v", results[0].Observations)
 	}
 }
 
@@ -219,16 +249,16 @@ func strictScenarioAssertions() map[string]verifyplan.AssertionFunc {
 
 func strictScenarioSteps() verifyplan.StepRegistry {
 	return verifyplan.StepRegistry{
-		"session.login": verifyplan.ExactObjectValidator,
-		"authorize.begin": func(raw json.RawMessage) error {
+		string(assurance.StepSessionLogin): verifyplan.ExactObjectValidator,
+		string(assurance.StepInteractionCreate): func(raw json.RawMessage) error {
 			var parameters beginAuthorizationParameters
 			return decodeStepParameters(raw, &parameters)
 		},
-		"interaction.submit": func(raw json.RawMessage) error {
+		string(assurance.StepInteractionApprove): func(raw json.RawMessage) error {
 			var parameters submitInteractionParameters
 			return decodeStepParameters(raw, &parameters)
 		},
-		"clock.advance": func(raw json.RawMessage) error {
+		string(assurance.StepClockAdvance): func(raw json.RawMessage) error {
 			var parameters advanceClockParameters
 			if err := decodeStepParameters(raw, &parameters); err != nil {
 				return err
@@ -245,7 +275,7 @@ func strictScenarioSteps() verifyplan.StepRegistry {
 func TestStrictScenarioDriverRejectsUnknownFieldsAndActions(t *testing.T) {
 	clock := &securityClock{now: time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)}
 	driver := &strictScenarioDriver{fixture: newInteractionFixtureWithClock(t, nil, clock.Now), clock: clock}
-	if _, err := driver.Execute(context.Background(), verifyplan.Step{Kind: "authorize.begin", Parameters: json.RawMessage(`{"unknown":true}`)}); err == nil {
+	if _, err := driver.Execute(context.Background(), verifyplan.Step{Kind: string(assurance.StepInteractionCreate), Parameters: json.RawMessage(`{"unknown":true}`)}); err == nil {
 		t.Fatal("unknown security action parameter was accepted")
 	}
 	if _, err := driver.Execute(context.Background(), verifyplan.Step{Kind: "provider.raw"}); err == nil {

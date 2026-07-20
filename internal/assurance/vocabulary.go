@@ -57,6 +57,8 @@ const (
 	StepInteractionDeny         StepID = "interaction.deny@v1"
 	StepInteractionCopyMutation StepID = "interaction.copy_mutation@v1"
 	StepAccountSelection        StepID = "account.selection@v1"
+	StepSessionLogin            StepID = "session.login@v1"
+	StepClockAdvance            StepID = "clock.advance@v1"
 	StepAuthorizationBegin      StepID = "authorize.begin@v1"
 	StepAuthorizationCommit     StepID = "authorize.commit@v1"
 	StepPasswordAuthenticate    StepID = "authn.password.verify@v1"
