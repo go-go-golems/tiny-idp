@@ -243,9 +243,11 @@ func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, e
 		Kind, Email, Template           string
 		MaximumAttempts, MaximumResends int
 	}
-	if err := json.Unmarshal(outcome.Challenge, &request); err != nil || request.Kind != "email_code" || request.Email == "" || request.MaximumAttempts <= 0 || request.MaximumResends <= 0 {
+	if err := json.Unmarshal(outcome.Challenge, &request); err != nil || request.Kind != "email_code" || request.Email == "" || request.MaximumAttempts <= 0 || request.MaximumResends <= 0 || uint64(request.MaximumAttempts) > uint64(^uint32(0)) || uint64(request.MaximumResends) > uint64(^uint32(0)) {
 		return errors.New("email challenge request is invalid")
 	}
+	maximumAttempts := uint32(request.MaximumAttempts) // #nosec G115 -- validated positive and no greater than MaxUint32 above.
+	maximumResends := uint32(request.MaximumResends)   // #nosec G115 -- validated positive and no greater than MaxUint32 above.
 	workflow := executor.Program().Workflows[idpsignup.WorkflowID]
 	currentHandler := workflow.Handlers[current.ResumeHandlerID]
 	inputSchema := ""
@@ -270,7 +272,7 @@ func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, e
 	expiresAt := p.now().Add(time.Duration(outcome.Continuation.ExpiresIn) * time.Second)
 	challengeBindings := idpemailchallenge.BindingsFromContinuation(current)
 	challengeBindings.ResumeHandlerID = outcome.Continuation.HandlerID
-	if _, err := p.emailChallenges.CreateAndSend(r.Context(), idpemailchallenge.CreateRequest{ID: challengeID, Email: request.Email, Template: request.Template, Bindings: challengeBindings, ExpiresAt: expiresAt, MaximumAttempts: uint32(request.MaximumAttempts), MaximumResends: uint32(request.MaximumResends)}); err != nil {
+	if _, err := p.emailChallenges.CreateAndSend(r.Context(), idpemailchallenge.CreateRequest{ID: challengeID, Email: request.Email, Template: request.Template, Bindings: challengeBindings, ExpiresAt: expiresAt, MaximumAttempts: maximumAttempts, MaximumResends: maximumResends}); err != nil {
 		return err
 	}
 	next := idpcontinuation.WorkflowContinuation{ResumeHandlerID: outcome.Continuation.HandlerID, InputSchema: inputSchema, Carry: outcome.Continuation.Carry, EvidenceReferences: []idpcontinuation.EvidenceReference{{Kind: "pendingEmailChallenge", ID: challengeID}}, Presentation: idpcontinuation.PresentationState{ID: "email-code", Fields: []string{string(idpworkflow.FieldEmailCode)}, AllowedActions: []string{string(idpworkflow.ActionSubmit), string(idpworkflow.ActionResend), string(idpworkflow.ActionDeny)}, PublicValues: json.RawMessage(`{}`)}, ExpiresAt: expiresAt}

@@ -324,7 +324,9 @@ func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input j
 	started := time.Now()
 	outcome, err := e.pool.InvokeWithSecretsAndEvidence(ctx, handlerSpec.LambdaID, input, nil, secrets, evidence)
 	e.metrics.invocations.Add(1)
-	e.metrics.latencyNanos.Add(uint64(time.Since(started)))
+	if elapsed := time.Since(started); elapsed > 0 {
+		e.metrics.latencyNanos.Add(uint64(elapsed)) // #nosec G115 -- elapsed is checked positive before conversion.
+	}
 	after := e.pool.Stats().Discarded
 	if after > before {
 		e.metrics.discarded.Add(after - before)

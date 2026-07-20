@@ -331,8 +331,8 @@ func (s *Service) Cleanup(ctx context.Context, limit int) (int, error) {
 			return removed, errors.Wrap(err, "delete expired workflow continuation")
 		}
 		removed++
+		s.metrics.cleaned.Add(1)
 	}
-	s.metrics.cleaned.Add(uint64(removed))
 	return removed, nil
 }
 
