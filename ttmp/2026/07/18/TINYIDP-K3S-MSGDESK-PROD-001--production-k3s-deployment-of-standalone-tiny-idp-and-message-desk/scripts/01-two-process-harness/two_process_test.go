@@ -114,6 +114,9 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	requireStatus(t, registration, http.StatusSeeOther)
 	authorizeURL := requiredLocation(t, registration)
 	assertRegistrationAuthorization(t, authorizeURL)
+	harness.stop("message-desk")
+	harness.startMessageDesk()
+	harness.waitReady(harness.messageAddress, messagePublicOrigin, "/readyz")
 
 	formPage := browser.get(t, authorizeURL)
 	requireStatus(t, formPage, http.StatusOK)
