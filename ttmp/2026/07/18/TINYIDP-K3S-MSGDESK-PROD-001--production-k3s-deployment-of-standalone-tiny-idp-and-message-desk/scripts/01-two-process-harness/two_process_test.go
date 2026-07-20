@@ -122,6 +122,36 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	completed := browser.postForm(t, idpIssuer+"/authorize", form)
 	requireStatus(t, completed, http.StatusOK)
 	harness.assertSingleProviderIdentityAndSession()
+	duplicateBrowser := newPublicBrowser(harness)
+	duplicateStart := duplicateBrowser.get(t, messagePublicOrigin+"/auth/register")
+	requireStatus(t, duplicateStart, http.StatusSeeOther)
+	duplicatePage := duplicateBrowser.get(t, requiredLocation(t, duplicateStart))
+	requireStatus(t, duplicatePage, http.StatusOK)
+	duplicateHTML, err := io.ReadAll(duplicatePage.Body)
+	duplicatePage.Body.Close()
+	if err != nil {
+		t.Fatalf("read duplicate signup form: %v", err)
+	}
+	duplicate := duplicateBrowser.postForm(t, idpIssuer+"/authorize", url.Values{
+		"action":                {"submit"},
+		"interaction":           {hiddenFormValue(t, duplicateHTML, "interaction")},
+		"workflow_continuation": {hiddenFormValue(t, duplicateHTML, "workflow_continuation")},
+		"csrf_token":            {hiddenFormValue(t, duplicateHTML, "csrf_token")},
+		"display_name":          {"Different Name"},
+		"email":                 {"ada@example.test"},
+		"password":              {"correct horse battery staple 2026"},
+		"password_confirmation": {"correct horse battery staple 2026"},
+	})
+	requireStatus(t, duplicate, http.StatusBadRequest)
+	duplicateBody, err := io.ReadAll(duplicate.Body)
+	duplicate.Body.Close()
+	if err != nil {
+		t.Fatalf("read duplicate signup rejection: %v", err)
+	}
+	if !strings.Contains(string(duplicateBody), "This value could not be accepted.") || strings.Contains(strings.ToLower(string(duplicateBody)), "already exists") || strings.Contains(strings.ToLower(string(duplicateBody)), "duplicate") {
+		t.Fatalf("duplicate rejection is not generic: %s", duplicateBody)
+	}
+	harness.assertSingleProviderIdentityAndSession()
 	replayed := browser.postForm(t, idpIssuer+"/authorize", form)
 	requireStatus(t, replayed, http.StatusBadRequest)
 	replayed.Body.Close()
