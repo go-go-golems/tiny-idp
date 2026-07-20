@@ -2097,3 +2097,72 @@ observable across both process boundaries.
 Tiny-IDP log + Message Desk log + both JSONL audits
   must not contain known password / secret file / code / CSRF / cookie values
 ```
+
+## Step 27 — Phase 3 concurrent signup continuation serialization
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Complete the outstanding simultaneous-submit
+continuation behavior with separate clients using the same form and cookies.
+
+**Inferred user intent:** Exactly one atomic signup commit may win; concurrent
+browser submission must not create duplicate identities or provider sessions.
+
+**Commit:** `67ec7c6` — "Test: serialize concurrent two-process signup continuation"
+
+### What I did
+
+- Started a fresh real registration flow, cloned its public-host cookie state
+  into two independent browser clients, and posted the identical rendered form
+  concurrently.
+- Asserted one response is `200` (the normal consent page), one is `400`, and
+  the durable Tiny-IDP database has exactly one user and one provider session.
+
+### Why
+
+The continuation service's compare-and-consume operation is the final
+concurrency boundary for atomic scripted signup.
+
+### What worked
+
+- Focused concurrency harness passed in 9.73 seconds. `67ec7c6` passed full
+  repository tests, lint, Glazed validation, and IdP UI analysis.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- Independent cookie copies allow genuine concurrent clients without sharing a
+  mutable test jar; the persistent continuation serialization is observable as
+  one winner and one safe rejection.
+
+### What was tricky to build
+
+- The test deliberately does not follow the winner's consent page: its purpose
+  is to isolate the atomic signup commit and prevent callback behavior from
+  obscuring the race result.
+
+### What warrants a second pair of eyes
+
+- Review the expectation that the winning submission returns the consent page;
+  that reflects the configured authorization policy.
+
+### What should be done in the future
+
+- Run final focused/race/repository gates and complete Phase 3 diary evidence.
+
+### Code review instructions
+
+- Review `TestTwoProcessConcurrentSignupContinuation` and `publicBrowser.clone`.
+
+### Technical details
+
+```text
+same continuation + same cookie state, submitted concurrently
+  -> one 200 consent page + one 400 rejection
+  -> users=1, provider sessions=1
+```

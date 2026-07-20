@@ -72,7 +72,7 @@ item has concrete evidence.
 - [x] Prove local logout revokes only the Message Desk session <!-- t:p3f6 -->
 - [x] Prove provider logout and subsequent re-login follow the registered redirect contract <!-- t:hv5c -->
 - [x] Test duplicate identity, weak password, malformed input, and generic non-enumerating public errors <!-- t:p3n1 -->
-- [ ] Test expired, replayed, and concurrently submitted signup continuations <!-- t:p3n2 -->
+- [x] Test expired, replayed, and concurrently submitted signup continuations <!-- t:p3n2 -->
 - [x] Restart Tiny-IDP during a pending continuation and prove pinned resume or an explicit safe failure <!-- t:p3r1 -->
 - [x] Restart Message Desk during a pending OIDC transaction and prove the declared durable-state behavior <!-- t:p3r2 -->
 - [x] Restart both processes after signup and prove users, key, client, sessions-by-policy, and messages persist <!-- t:mbvy -->
