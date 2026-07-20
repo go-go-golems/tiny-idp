@@ -14,6 +14,8 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/store/memory"
 	"github.com/go-go-golems/tiny-idp/pkg/idpidentity"
 	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
+	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
 )
 
 // TestProviderOutcomeMatrix keeps the security-relevant provider outcomes in
@@ -93,13 +95,20 @@ func TestProviderOutcomeMatrix(t *testing.T) {
 			_, err := capability.Invoke(ctx, json.RawMessage(`{"email":"failure@example.test","audience":"message-app"}`))
 			return err
 		}, wantError: true},
+		{name: "provider timeout", run: func() error {
+			return invokeTimedOutProvider(ctx)
+		}, wantError: true},
 		{name: "virtual identity protects protocol claims", run: func() error {
 			candidate, err := idpidentity.NewVirtual(deriver, idpidentity.VirtualRequest{Namespace: "message-app", Seed: "verified-subject", Email: "member@example.test", EmailVerified: true})
 			if err != nil {
 				return err
 			}
+			again, err := idpidentity.NewVirtual(deriver, idpidentity.VirtualRequest{Namespace: "message-app", Seed: "verified-subject"})
+			if err != nil {
+				return err
+			}
 			claims := candidate.ProfileClaims()
-			if candidate.Subject == "verified-subject" || claims["sub"] != nil || claims["iss"] != nil || claims["aud"] != nil {
+			if candidate.Subject == "verified-subject" || candidate.Subject != again.Subject || claims["sub"] != nil || claims["iss"] != nil || claims["aud"] != nil {
 				return errors.New("virtual identity leaked or overrode a protocol claim")
 			}
 			return nil
@@ -136,3 +145,44 @@ func TestProviderOutcomeMatrix(t *testing.T) {
 		assert.Equal(t, 1, successful)
 	})
 }
+
+func invokeTimedOutProvider(ctx context.Context) error {
+	options := idpscript.DefaultCompileOptions()
+	options.Schemas = map[string]idpprogram.Schema{
+		"input":  {ID: "input", Kind: idpprogram.SchemaKindObject, MaxBytes: 64},
+		"output": {ID: "output", Kind: idpprogram.SchemaKindObject, MaxBytes: 64},
+	}
+	artifact, err := idpscript.Compile(ctx, timedOutProviderSource, options)
+	if err != nil {
+		return err
+	}
+	factory, err := idpscript.NewRuntimeFactory(options.Schemas)
+	if err != nil {
+		return err
+	}
+	pool, err := idpscript.NewPool(ctx, artifact, factory, 1)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = pool.Close(context.Background()) }()
+	invoker, err := idpscript.NewProviderInvoker(pool)
+	if err != nil {
+		return err
+	}
+	_, err = invoker.Invoke(ctx, "invitation.timeout", idpprogram.InvitationValidateHandler, json.RawMessage(`{}`), nil)
+	return err
+}
+
+const timedOutProviderSource = `
+const A = require("tinyidp").v1;
+module.exports = A.program("provider-timeout", program => {
+  const validate = A.lambda("invitation.timeout.validate", {
+    kind: "provider", input: "input", output: "output", outcomes: ["complete"],
+    effects: [], capabilities: [], timeoutMs: 1, maxCapabilityCalls: 0, maxOutputBytes: 64,
+    run: async _ctx => await new Promise(() => {}),
+  });
+  program.provider("invitation", "timeout", {
+    version: 1, state: "virtual", replayProtection: "none", revocation: "none",
+    handlers: {validate},
+  });
+});`
