@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 )
 
@@ -59,6 +60,34 @@ func TestLambdaVocabularyRejectsUnknownContractValues(t *testing.T) {
 	}
 }
 
+func TestDiagnosticAndEvidenceIDsRemainBoundedMetadata(t *testing.T) {
+	diagnostics, err := DiagnosticIDs(idpprogram.Diagnostics{
+		{ID: "schema.kind"},
+		{ID: "schema.kind"},
+		{ID: "lambda.outcome"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := diagnostics, []DiagnosticID{"lambda.outcome", "schema.kind"}; !equalDiagnostics(got, want) {
+		t.Fatalf("diagnostics=%v want %v", got, want)
+	}
+	evidence, err := AuthorizationEvidenceIDs(idp.AuthorizationDecision{
+		Kind:         idp.AuthorizationDeny,
+		DiagnosticID: "policy.member_required",
+		Evidence:     []idp.AuthorizationEvidence{{ID: "evidence.community_membership"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := evidence, []EvidenceID{"evidence.community_membership"}; !equalEvidence(got, want) {
+		t.Fatalf("evidence=%v want %v", got, want)
+	}
+	if _, err := DiagnosticIDs(idpprogram.Diagnostics{{ID: "diagnostic:raw user text"}}); err == nil {
+		t.Fatal("unbounded diagnostic accepted")
+	}
+}
+
 func equalOutcomes(a, b []OutcomeID) bool {
 	if len(a) != len(b) {
 		return false
@@ -84,6 +113,30 @@ func equalEffects(a, b []EffectID) bool {
 }
 
 func equalCapabilities(a, b []CapabilityID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalDiagnostics(a, b []DiagnosticID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalEvidence(a, b []EvidenceID) bool {
 	if len(a) != len(b) {
 		return false
 	}

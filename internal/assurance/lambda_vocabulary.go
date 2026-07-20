@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 )
 
@@ -135,6 +136,45 @@ func LambdaEffectID(effect idpprogram.EffectKind) (EffectID, error) {
 	default:
 		return "", fmt.Errorf("unknown lambda effect %q", effect)
 	}
+}
+
+// DiagnosticIDs projects deterministic compiler diagnostics into their typed
+// assurance form. The compiler owns their spelling; this function makes a
+// malformed or user-text diagnostic impossible to use as analysis metadata.
+func DiagnosticIDs(diagnostics idpprogram.Diagnostics) ([]DiagnosticID, error) {
+	result := make([]DiagnosticID, 0, len(diagnostics))
+	seen := map[DiagnosticID]struct{}{}
+	for _, diagnostic := range diagnostics {
+		id := DiagnosticID(diagnostic.ID)
+		if !ValidStableID(diagnostic.ID) {
+			return nil, fmt.Errorf("invalid program diagnostic ID %q", diagnostic.ID)
+		}
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result, nil
+}
+
+// AuthorizationEvidenceIDs validates and projects a policy decision's bounded
+// native evidence names. Evidence is metadata only; no credential, claim, or
+// proof value crosses this boundary.
+func AuthorizationEvidenceIDs(decision idp.AuthorizationDecision) ([]EvidenceID, error) {
+	normalized, err := idp.NormalizeAuthorizationDecision(decision)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]EvidenceID, 0, len(normalized.Evidence))
+	for _, evidence := range normalized.Evidence {
+		if !ValidStableID(evidence.ID) {
+			return nil, fmt.Errorf("invalid authorization evidence ID %q", evidence.ID)
+		}
+		result = append(result, EvidenceID(evidence.ID))
+	}
+	return result, nil
 }
 
 func sortedSchemaIDs(values []SchemaID) []SchemaID {
