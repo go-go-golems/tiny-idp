@@ -23,12 +23,14 @@ RelatedFiles:
     - Path: repo://internal/cmds/serve_production.go
       Note: Strict standalone provider process and listener topology
     - Path: repo://internal/fositeadapter/provider.go
-      Note: Owns OIDC authorization interactions that provider registration must resume
-    - Path: repo://pkg/idpaccounts/accounts.go
-      Note: Canonical account-creation service and transaction boundary
+      Note: Owns the OIDC authorization interaction that scripted signup resumes
+    - Path: repo://pkg/idpsignup/manager.go
+      Note: Owns checked signup-program generations and activation
+    - Path: repo://pkg/embeddedidp/options.go
+      Note: Public composition seam for the scripted signup runtime
 ExternalSources: []
-Summary: 'Implement and operate the first public Tiny-IDP product slice: provider-owned signup, standalone OIDC, Message Desk, immutable images, GitOps deployment, browser acceptance, and verified recovery on the Hetzner k3s cluster.'
-LastUpdated: 2026-07-18T20:32:20.403213226-04:00
+Summary: 'Implement and operate the first public Tiny-IDP product slice: lambda-first scripted signup, standalone OIDC, Message Desk, immutable images, GitOps deployment, browser acceptance, and verified recovery on the Hetzner k3s cluster.'
+LastUpdated: 2026-07-20T00:00:00-04:00
 WhatFor: Drive the source, packaging, GitOps, production rollout, and disaster-recovery work from one gated plan.
 WhenToUse: Use while implementing or reviewing TINYIDP-K3S-MSGDESK-PROD-001 and before declaring the public deployment production-ready.
 ---
@@ -42,8 +44,10 @@ This ticket turns the existing Tiny-IDP and Message Desk components into the
 first public production slice on the Hetzner k3s cluster. The product has two
 independent processes and two independent SQLite stores. Tiny-IDP owns identity,
 passwords, browser authentication, OIDC protocol state, signing keys, clients,
-and provider audit. Message Desk owns only its application sessions and message
-data. Users register at the provider and reach Message Desk through an OIDC
+and provider audit. Its lambda-first Goja layer selects the signup workflow
+while Go retains every protocol, persistence, evidence, and atomic mutation
+boundary. Message Desk owns only its application sessions and message data.
+Users register at the provider and reach Message Desk through an OIDC
 authorization-code flow with PKCE.
 
 The work is complete only when immutable source artifacts have been merged,
@@ -61,7 +65,9 @@ The initial public contract is deliberately narrow:
 - `authorization_code`, PKCE S256, `openid`, and `profile` only;
 - one replica for each process, each with a separate local-path PVC;
 - TLS terminated by Traefik with an explicit trusted-proxy listener mode;
-- public signup without email verification or automated password recovery;
+- a reviewed signup program mounted as non-secret deployment input;
+- open signup only for protected staging; email-verified signup is the public
+  production target once mail delivery is operational;
 - operator-assisted recovery and an emergency registration-disable control;
 - device authorization, coding agents, bearer APIs, xgoja routes, refresh
   tokens, and multiple applications are deferred.
@@ -78,7 +84,7 @@ The initial public contract is deliberately narrow:
     v                                                                  v
 +------------------+        ClusterIP HTTP       +-------------------------+
 | Traefik          |---------------------------->| Tiny-IDP Deployment      |
-| TLS + routing    |                              | provider-owned signup    |
+| TLS + routing    |                              | scripted signup          |
 +--------+---------+                              | OIDC + identity SQLite   |
          |                                        +------------+------------+
          | message-desk.yolo.scapegoat.dev                     |
@@ -103,7 +109,13 @@ Tiny-IDP owns:
 - usernames, display names, password hashes, subjects, and disabled state;
 - OIDC clients, exact redirect/logout URIs, scopes, and grant capabilities;
 - browser sessions, authorization interactions, authorization codes, and keys;
-- account-creation controls and provider audit events.
+- the checked signup-program generation, explicit continuations, native
+  evidence providers, atomic account commit, and provider audit events.
+
+The Goja program is application logic, not an alternate HTTP or OAuth server.
+It chooses forms, challenges, decisions, and commits through narrow host
+capabilities. Go owns request parsing, CSRF, continuation lifecycle, secret
+handles, password hashing, transactions, OAuth resumption, and durable audit.
 
 Message Desk owns:
 
@@ -129,19 +141,22 @@ GitOps commits are merged.
 
 The implementation and review must preserve all of the following:
 
-1. A registration request exists only inside a validated OIDC authorization
-   interaction for the registered Message Desk client.
+1. A signup workflow exists only inside a validated OIDC authorization
+   interaction for the registered Message Desk client and an active checked
+   program generation.
 2. The provider stores only a hash of every browser capability handle. A handle
    is bounded, expires, is bound to browser context and client generation, and
    can be consumed once.
-3. Account creation uses `idpaccounts.Service.Create`; it does not reimplement
-   normalization, password hashing, uniqueness, rollback, or audit semantics.
+3. JavaScript can request only declared native operations. Atomic account
+   creation ultimately uses the canonical Go service; scripts cannot
+   reimplement hashing, uniqueness, rollback, or audit semantics.
 4. Duplicate and invalid registrations return the same public failure shape.
 5. CSRF, Origin, Fetch Metadata, address, login-key, and password-work limits
    execute before expensive or durable account mutation.
 6. The successful account becomes the subject of the original authorization
    flow. Registration alone grants no application role.
-7. External Message Desk exposes no local `POST /api/accounts` route.
+7. External Message Desk exposes no local `POST /api/accounts` route and never
+   executes the signup program.
 8. Only configured public origins are used for issuer, redirect, logout, cookie,
    and origin validation. Forwarded `Host` cannot rewrite protocol identity.
 9. Forwarding headers from an untrusted peer are ignored or rejected; a catch-
@@ -152,6 +167,8 @@ The implementation and review must preserve all of the following:
     traceable to a CI-green source commit.
 12. A backup is not accepted until restored identity and application state can
     complete a login and read an existing message.
+13. Production has one exact-state bootstrap owner: Tiny-IDP process startup.
+    Kubernetes does not race it with a second bootstrap Job.
 
 ## 3. Public flow contracts
 
@@ -165,13 +182,14 @@ GET https://message-desk.../auth/register?return_to=/
 
 GET Tiny-IDP /authorize?...registration intent...
   validate client, redirect URI, PKCE, scope, and prompt
-  create durable provider interaction
-  render registration form
+  pin the active checked signup-program generation
+  invoke the program until it presents a form or native challenge
 
-POST Tiny-IDP registration interaction
+POST Tiny-IDP scripted signup continuation
   check media type, size, browser binding, CSRF, Origin, Fetch Metadata
-  consume/register atomically enough to prevent duplicate mutations
-  call idpaccounts.Service.Create
+  consume the one-use continuation and recover only native secret handles
+  resume the pinned program generation with normalized evidence
+  program requests an atomic native signup commit
   establish authenticated provider session
   resume the canonical authorization request
 
@@ -186,9 +204,32 @@ GET Message Desk /auth/callback?code=...&state=...
 The signup-intent representation must be explicit and covered by tests. It may
 be a provider-specific authorization parameter because registration is not an
 OIDC standard endpoint, but unknown or malformed values must fail closed and it
-must not weaken the normal client/redirect validation.
+must not weaken normal client/redirect validation. Browser waits are explicit
+durable continuations: no Goja VM, goroutine, or Promise is suspended across an
+HTTP round trip. Every continuation is bound to a checked program generation so
+activation cannot change the meaning of an in-flight workflow.
 
-### 3.2 Login and logout
+### 3.2 Script and browser boundary
+
+The deployment supplies a reviewed JavaScript source file. At startup Tiny-IDP
+checks it, activates a generation, verifies that all declared native
+capabilities are bound, and only then becomes ready. A form expression such as
+the following produces an internal presentation command rather than directly
+controlling the browser:
+
+```javascript
+const form = await ctx.present.form({
+  fields: ["displayName", "email", "password"],
+});
+```
+
+Go converts that command to an allowlisted form, stores a hashed one-use
+continuation, and sends HTML. The next browser POST starts a fresh bounded
+runtime invocation with normalized public values and opaque native secret
+handles. Kubernetes may replace the program ConfigMap only through review and a
+rollout that successfully activates the new generation.
+
+### 3.3 Login and logout
 
 Existing users use the same authorization endpoint without signup intent.
 Application-local logout revokes only the Message Desk session. Provider logout
@@ -196,7 +237,7 @@ revokes the provider browser session through the registered end-session flow.
 Both application mutations remain POST plus CSRF; navigating a GET must not
 silently revoke local state.
 
-### 3.3 Health
+### 3.4 Health
 
 | Process | Liveness | Readiness |
 | --- | --- | --- |
@@ -248,29 +289,27 @@ Tasks:
 Exit gate: `docmgr doctor` passes, the branch is based on current upstream, and
 no implementation decision depends on an unverified proxy or cluster fact.
 
-### Phase 1: provider-owned signup
+### Phase 1: lambda-first signup foundation and Message Desk initiation
 
-Purpose: allow a new public user to create an identity without placing provider
-credentials or passwords in Message Desk.
+Purpose: use the completed `TINYIDP-GOJA-001` foundation to let a new user
+create an identity without placing provider credentials, policy wiring, or
+passwords in Message Desk.
 
 Tasks:
 
-- extend the provider presentation/API contract with a registration prompt;
-- use durable one-use interaction state and the existing canonical request;
-- implement GET/render and POST/submit paths near authorization interaction
-  composition;
-- call `idpaccounts.Service.Create` and clear password buffers;
-- apply request bounds, browser binding, CSRF, Origin, Fetch Metadata, rate
-  limits, generic errors, and fixed audit reasons;
-- establish a provider session and resume the original OIDC request;
+- reuse checked artifacts, pinned generations, explicit continuations, native
+  secret handles, and atomic commit operations from `TINYIDP-GOJA-001`;
+- use the shipped open-signup and email-verified-signup programs as executable
+  references rather than rebuilding registration policy in handlers;
 - add `/auth/register` to Message Desk as OIDC initiation only;
 - render an external-mode create-account link without enabling local account
   endpoints;
-- cover success, duplicates, weak passwords, mismatch, malformed input, CSRF,
-  replay, expiry, concurrency, restart, enumeration, limiter, and audit failure.
+- keep the legacy registration implementation out of the production command;
+  it is not a compatibility contract.
 
-Exit gate: a two-user test obtains distinct subjects through signup; external
-Message Desk has no provider store and direct `/api/accounts` remains 404.
+Exit gate: the lambda-first ticket is complete, Message Desk can initiate
+provider signup, external Message Desk has no provider store, and direct
+`/api/accounts` remains 404.
 
 ### Phase 2: production listeners, audit, and bootstrap
 
@@ -279,6 +318,12 @@ their desired identity state reproducible.
 
 Tasks:
 
+- remove `RegistrationConfig` and `--registration-enabled` from the production
+  command rather than preserving a dual-path adapter;
+- require a signup-program source file, check it, bind exactly its declared
+  native capabilities, activate it, and fail before listening on any error;
+- include active generation, required stores, native providers, signing state,
+  and audit availability in readiness;
 - add a required listener-mode enum with `direct-tls` and
   `trusted-proxy-http`; do not retain an ambiguous compatibility behavior;
 - make direct TLS require certificate/key and trusted proxy HTTP forbid them;
@@ -288,14 +333,17 @@ Tasks:
 - preserve Secure cookies and canonical-origin validation;
 - add a durable external Message Desk audit sink and fail readiness when it is
   unavailable;
-- implement an idempotent bootstrap command for schema, one active signing key,
-  and the exact public Message Desk client;
-- show a non-secret diff, allow exact/narrow reconciliation, and reject
-  unexpected grant/scope/redirect widening;
-- add validation and focused tests for all listener/bootstrap states.
+- use Tiny-IDP process startup as the sole idempotent owner of schema, one
+  active signing key, and the exact public Message Desk client;
+- show a non-secret bootstrap diff, allow exact/narrow reconciliation, reject
+  unexpected grant/scope/redirect widening, and do not add a Kubernetes Job
+  that competes for the same state;
+- add validation and focused tests for script activation, native capability
+  binding, listener, readiness, and bootstrap states.
 
 Exit gate: only Traefik-trusted forwarding changes client identity, direct HTTP
-misconfiguration fails before listening, and repeated bootstrap is a no-op.
+misconfiguration fails before listening, invalid signup programs never become
+ready, and repeated bootstrap is a no-op.
 
 ### Phase 3: local production-shaped assurance
 
@@ -304,12 +352,12 @@ container and cluster variables are introduced.
 
 Tasks:
 
-- create a ticket script or Go integration harness that launches both servers
-  in tmux/child processes with separate temporary state;
-- test signup, authorization callback, application session, feed, message
+- create a Go integration harness that launches both real servers with separate
+  temporary durable state; use tmux for manual server interaction;
+- test scripted signup, authorization callback, application session, feed, message
   mutation, negative CSRF, local logout, provider logout, and re-login;
-- interrupt each process during a pending flow and document whether the flow
-  resumes or fails cleanly;
+- interrupt each process during a pending continuation and document whether the
+  pinned flow resumes or fails cleanly;
 - restart both processes and prove users, clients, signing key, messages, and
   the declared session policy persist;
 - scan captured logs and audit for passwords, cookies, codes, raw tokens, and
@@ -329,6 +377,8 @@ Tasks:
 
 - add two multi-stage image targets: Tiny-IDP production host and external
   Message Desk;
+- mount the reviewed signup source as non-secret input while keeping mail,
+  invite, token, and other native-provider credentials in owner-only files;
 - build the Message Desk React assets deterministically before Go compilation;
 - use non-root runtime users, minimal images, fixed working/state paths,
   stop signals, and OCI source/revision labels;
@@ -351,8 +401,8 @@ Tasks:
 
 - create an isolated k3s branch/worktree from current `origin/main`;
 - add `tiny-message-desk` to the `prod-apps` AppProject;
-- add namespace, distinct ServiceAccounts, two PVCs, bootstrap Job, two
-  Deployments, Services, Ingresses, resource requests/limits, probes, and
+- add namespace, distinct ServiceAccounts, two PVCs, signup-program ConfigMap,
+  two Deployments, Services, Ingresses, resource requests/limits, probes, and
   `Recreate` strategies;
 - create least-privilege Vault policy/role, `VaultAuth`, and
   `VaultStaticSecret` for `kv/apps/tiny-message-desk/prod/idp`;
@@ -361,6 +411,8 @@ Tasks:
 - wire a private-image pull secret only if GHCR package visibility requires it;
 - add a NetworkPolicy allowing application ingress from Traefik and necessary
   probe/controller traffic, and allowing Message Desk egress to Tiny-IDP;
+- configure Message Desk with the public HTTPS issuer and the internal
+  Tiny-IDP Service as its backchannel without changing issuer identity;
 - add backup scheduling/runbook and the Argo Application;
 - render with `kubectl kustomize`, run schema/policy validation, open the GitOps
   PR, obtain review, and merge.
@@ -417,8 +469,9 @@ has no unchecked task.
 | Scenario | Required result |
 | --- | --- |
 | Anonymous Message Desk load | 200; public feed readable |
-| Create account | Redirects into provider-bound OIDC signup |
-| Valid signup | One IdP user, one subject, one OIDC completion, one app session |
+| Create account | Redirects into the active provider signup program inside the OIDC interaction |
+| Valid scripted signup | One IdP user, one subject, one OIDC completion, one app session |
+| Invalid program/capability | Tiny-IDP fails closed before readiness |
 | Duplicate/invalid account | Generic rejection; no existence oracle |
 | Replayed signup capability | Rejected; no second account mutation |
 | Direct external `/api/accounts` | 404 |
@@ -446,11 +499,12 @@ the matching pre-deployment recovery set or use an explicitly tested downgrade
 path; never point older code at a newer database merely because Kubernetes can
 start the Pod.
 
-During initial rollout, registration can be disabled without disabling login.
-If signup security fails but existing login remains safe, disable registration,
-preserve evidence, and roll forward or back through Git. If identity integrity,
-key material, or protocol validation is suspect, remove public ingress and stop
-the issuer before attempting repair.
+During initial rollout, signup can be disabled without disabling login by
+deploying the reviewed disabled policy and rolling Tiny-IDP through GitOps. If
+signup security fails but existing login remains safe, disable signup, preserve
+evidence, and roll forward or back through Git. If identity integrity, key
+material, or protocol validation is suspect, remove public ingress and stop the
+issuer before attempting repair.
 
 Argo remains the desired-state owner. Emergency `kubectl` changes must be
 recorded, followed by a Git change or deliberate rollback, because self-heal
@@ -460,9 +514,9 @@ will otherwise erase them.
 
 - The two documented hostnames are accepted as the initial target unless DNS
   or certificate issuance proves they are unavailable.
-- Launch without email verification and automated password recovery is
-  accepted only with visible product documentation and operator-assisted
-  recovery.
+- Open signup is permitted only on protected staging. Public production targets
+  the email-verified reference workflow once outbound mail and its secret
+  material are operational; automated password recovery remains deferred.
 - Signup limits and emergency disablement require concrete defaults before
   public exposure.
 - The live Traefik Pod currently uses cluster address `10.42.0.193`, but Pod
@@ -484,6 +538,10 @@ Start review in these files and follow the named ownership boundaries:
   sessions;
 - `pkg/embeddedidp/options.go` and `pkg/embeddedidp/provider.go` — public
   provider composition;
+- `pkg/idpsignup/manager.go`, `pkg/idpsignup/open_signup.js`, and
+  `pkg/idpsignup/email_verified_signup.js` — generation activation and the
+  deployable reference policies;
+- `pkg/idpcontinuation/` and `pkg/idpworkflow/` — durable browser/runtime seam;
 - `pkg/idpaccounts/accounts.go` — the only account-creation service;
 - `internal/cmds/serve_production.go` — strict provider process;
 - `examples/tinyidp-message-app/oidc_client.go` — PKCE client and callback;
@@ -497,6 +555,7 @@ Start review in these files and follow the named ownership boundaries:
 
 - `TINYIDP-PROD-XGOJA-REVIEW-001/design-doc/02-initial-k3s-deployment-design-for-standalone-tiny-idp-and-message-desk.md`
 - `TINYIDP-PROD-DEPLOY-001/design-doc/01-production-deployment-ergonomics-analysis-design-and-implementation-guide.md`
+- `TINYIDP-GOJA-001/design-doc/02-lambda-first-goja-identity-workflow-api.md`
 - `/home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/app-deployment-pipeline.md`
 - `/home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/app-runtime-secrets-and-identity-provisioning-playbook.md`
 - `/home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/argocd-app-setup.md`

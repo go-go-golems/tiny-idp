@@ -684,3 +684,107 @@ trusted-proxy-http request
   X-Forwarded-Host absent or equal
   => cloned request is safe to treat as public HTTPS
 ```
+
+## Step 10: Re-baseline production delivery on lambda-first scripted signup
+
+The production plan had fallen behind the implementation. It still described
+the original hardcoded provider-registration handlers as the intended public
+workflow even though `TINYIDP-GOJA-001` had completed the lambda-first signup
+system. It also left completed trusted-Traefik work unchecked and assigned
+exact-state bootstrap to both process startup and a future Kubernetes Job.
+
+I updated the design and task ledger rather than changing runtime code. The new
+baseline gives the production command one signup path, gives bootstrap one
+owner, and orders the remaining work from production composition through local
+two-process proof, images, GitOps, public acceptance, and recovery.
+
+### Prompt Context
+
+**User prompt (verbatim):** "perfect, rebase / update the design doc / update the task list."
+
+**Assistant interpretation:** Reconcile the existing Message Desk production
+ticket with the completed Goja work and the implementation already present on
+the branch, then rewrite its design and tasks to be executable from here.
+
+**Inferred user intent:** Resume the original production deployment without
+rebuilding obsolete signup primitives or losing track of completed listener,
+audit, and bootstrap work.
+
+### What I did
+
+- Replaced the hardcoded production-registration plan with checked,
+  generation-pinned scripted signup.
+- Recorded the browser/runtime seam: Go renders allowlisted presentations and
+  resumes fresh bounded invocations from durable one-use continuations.
+- Made production command startup the sole exact-state bootstrap owner and
+  removed the planned competing Kubernetes bootstrap Job.
+- Checked off listener, trusted-proxy, Secure-cookie, Message Desk audit, and
+  existing startup-bootstrap tasks supported by the implementation diary.
+- Added remaining tasks for program loading, native capability binding,
+  readiness, two-process acceptance, ConfigMap delivery, backchannel wiring,
+  and provider secrets.
+
+### Why
+
+- The deployment plan must describe the architecture that will actually ship.
+- Maintaining both the legacy registration path and scripted signup would
+  create two security surfaces and an unrequested compatibility contract.
+- Two bootstrap owners could race or disagree about client and signing state.
+
+### What worked
+
+- The ticket already contained commit-level evidence for the completed
+  listener, proxy, audit, and startup-bootstrap checkpoints.
+- The Goja ticket provides shipped open and email-verified programs plus the
+  generation, continuation, commit, readiness, and native-provider primitives.
+
+### What didn't work
+
+- The first documentation patch failed with `apply_patch verification failed`
+  because the target paragraph had a different line wrap. I split the change
+  into smaller exact-context patches; the failed patch applied no changes.
+
+### What I learned
+
+- Phase 1 now represents completed Goja foundations plus Message Desk
+  initiation. Production composition is the new front of Phase 2.
+- The production command already owns exact client and active-key bootstrap,
+  so Kubernetes should supply inputs and storage, not duplicate the mutation.
+
+### What was tricky to build
+
+- This was a semantic rebase, not merely checkbox maintenance. Older work
+  remains useful infrastructure, but its hardcoded signup policy is superseded.
+  The ledger distinguishes reusable completed mechanisms from the unimplemented
+  production Goja composition.
+
+### What warrants a second pair of eyes
+
+- Confirm the launch policy before public rollout: protected staging can use
+  open signup, while public production should wait for working email delivery.
+- Review whether startup bootstrap diagnostics are operationally sufficient
+  before treating that task as permanently closed.
+
+### What should be done in the future
+
+- Implement Phase 2 in task order, beginning by removing the legacy production
+  registration option and requiring a checked signup program.
+- Build the real two-process harness before adding containers or cluster state.
+
+### Code review instructions
+
+- Read the updated design sections 1 through 5, then compare `tasks.md` Phase 2
+  and Phase 3 with `internal/cmds/serve_production.go` and
+  `pkg/embeddedidp/options.go`.
+- Validate with `docmgr validate frontmatter` and `docmgr doctor`.
+
+### Technical details
+
+```text
+reviewed signup.js -> check -> activate generation -> readiness
+browser POST -> consume continuation -> resume pinned generation
+commit request -> native atomic account service -> resume OIDC
+
+Tiny-IDP startup -> schema + signing key + exact browser client
+Kubernetes       -> no competing bootstrap Job
+```
