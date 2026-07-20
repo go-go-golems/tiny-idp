@@ -61,6 +61,7 @@ func (p *Provider) beginScriptedSignup(w http.ResponseWriter, r *http.Request, a
 	if err != nil {
 		return errors.Wrap(err, "create signup workflow continuation")
 	}
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ContinuationCreated, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationCreate, Outcome: assurance.TransitionApplied})
 	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, csrfToken, continuationHandle, presentation.Fields, presentation.Actions, presentation.Presentation.PublicValues, nil))
 	return nil
 }
@@ -100,6 +101,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
 		}
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ContinuationTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationConsume, Outcome: assurance.TransitionDenied})
 		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepInteractionDeny, Outcome: assurance.TransitionDenied})
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
 		return
@@ -133,10 +135,12 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		}
 		verified, verifyErr := p.emailChallenges.Verify(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, submission.PublicValues[idpworkflow.FieldEmailCode], idpemailchallenge.BindingsFromContinuation(continuation))
 		if verifyErr != nil {
+			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.EvidenceVerified, InteractionID: interactionTraceID(record), Transition: assurance.StepEvidenceVerify, Outcome: assurance.TransitionRejected})
 			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 			return
 		}
 		evidence, err = idpemailchallenge.EvidenceProjection(verified)
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.EvidenceVerified, InteractionID: interactionTraceID(record), Transition: assurance.StepEvidenceVerify, Outcome: assurance.TransitionApplied})
 		verifiedEmail = verified.Address
 		verifiedReference = idpcontinuation.EvidenceReference{Kind: "verifiedEmail", ID: challengeID}
 		input = continuation.Carry
@@ -147,10 +151,12 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		}
 		verified, evidenceErr := p.emailChallenges.Evidence(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, idpemailchallenge.BindingsFromContinuation(continuation))
 		if evidenceErr != nil {
+			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.EvidenceVerified, InteractionID: interactionTraceID(record), Transition: assurance.StepEvidenceVerify, Outcome: assurance.TransitionRejected})
 			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 			return
 		}
 		evidence, err = idpemailchallenge.EvidenceProjection(verified)
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.EvidenceVerified, InteractionID: interactionTraceID(record), Transition: assurance.StepEvidenceVerify, Outcome: assurance.TransitionApplied})
 		verifiedEmail = verified.Address
 		verifiedReference = idpcontinuation.EvidenceReference{Kind: "verifiedEmail", ID: challengeID}
 	}
@@ -158,11 +164,20 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationStarted, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionApplied})
 	outcome, err := executor.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, signupSubmissionSecrets(submission), evidence)
 	if err != nil {
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationRejected, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionRejected})
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
+	lambdaOutcome, mapErr := assurance.LambdaOutcomeID(outcome.Kind)
+	if mapErr != nil {
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationRejected, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionRejected})
+		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+		return
+	}
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationCompleted, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: lambdaOutcome})
 	if outcome.Kind == idpprogram.OutcomeChallenge {
 		if err := p.beginEmailChallenge(w, r, executor, outcome, continuationHandle, continuation, record, interactionHandle); err != nil {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_send", ClientID: record.ClientID, Result: "rejected", Reason: emailChallengeFailureReason(err)})
@@ -215,6 +230,7 @@ func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		return err
 	}
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ContinuationCreated, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationCreate, Outcome: assurance.TransitionApplied})
 	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, validated.Fields, validated.Actions, validated.Presentation.PublicValues, nil))
 	return nil
 }
@@ -262,6 +278,7 @@ func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, e
 	if err != nil {
 		return err
 	}
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ContinuationCreated, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationCreate, Outcome: assurance.TransitionApplied})
 	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_send", ClientID: record.ClientID, Result: "accepted"})
 	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, []idpworkflow.FieldDescriptor{code}, []idpworkflow.ActionDescriptor{submit, resend, deny}, map[idpworkflow.FieldID]string{}, nil))
 	return nil
@@ -317,6 +334,7 @@ type signupCommitResult struct {
 // plan that this method revalidates.
 func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress, verifiedEmail string) (signupCommitResult, error) {
 	if len(outcome.Effects) != 2 && len(outcome.Effects) != 3 || outcome.Effects[0].Kind != idpprogram.EffectCreateLocalIdentity || outcome.Effects[1].Kind != idpprogram.EffectAttachPasswordCredential || len(outcome.Effects) == 3 && outcome.Effects[2].Kind != idpprogram.EffectConsumeInvitation {
+		p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.EffectValidationCompleted, InteractionID: interactionTraceID(record), Transition: assurance.StepEffectValidate, Outcome: assurance.TransitionRejected})
 		return signupCommitResult{}, errors.New("signup script emitted an invalid effect sequence")
 	}
 	var identity struct {
@@ -343,14 +361,19 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 	}
 	password, confirmation, ok := submissionSecrets(submission, credential.PasswordHandle, credential.PasswordConfirmationHandle)
 	if !ok || len(password) == 0 || !equalBytes(password, confirmation) || verifiedEmail != "" && !strings.EqualFold(identity.Login, verifiedEmail) || !p.allowRegistration(ctx, record.ClientID, clientAddress, identity.Login) {
+		p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.EffectValidationCompleted, InteractionID: interactionTraceID(record), Transition: assurance.StepEffectValidate, Outcome: assurance.TransitionRejected})
 		return signupCommitResult{}, errors.New("signup effects are not acceptable")
 	}
+	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.EffectValidationCompleted, InteractionID: interactionTraceID(record), Transition: assurance.StepEffectValidate, Outcome: assurance.TransitionApplied})
 	defer clearBytes(password)
 	defer clearBytes(confirmation)
 	prepared, err := p.registration.PrepareCreate(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login, EmailVerified: verifiedEmail != ""})
 	if err != nil {
+		p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.NativeEffectCommitted, InteractionID: interactionTraceID(record), Transition: assurance.StepSignupCommit, Outcome: assurance.TransitionRejected})
 		return signupCommitResult{}, err
 	}
+	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.ContinuationTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationConsume, Outcome: assurance.TransitionApplied})
+	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.NativeEffectCommitted, InteractionID: interactionTraceID(record), Transition: assurance.StepSignupCommit, Outcome: assurance.TransitionApplied})
 	sessionHandle, err := randomB64(32)
 	if err != nil {
 		return signupCommitResult{}, errors.Wrap(err, "generate signup session handle")

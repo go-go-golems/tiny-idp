@@ -2,6 +2,7 @@ package fositeadapter_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -13,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-go-golems/tiny-idp/internal/assurance"
 	"github.com/go-go-golems/tiny-idp/internal/fositeadapter"
 	"github.com/go-go-golems/tiny-idp/internal/keys"
+	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
 	"github.com/go-go-golems/tiny-idp/internal/store/memory"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
@@ -169,6 +172,7 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 		t.Fatal(err)
 	}
 	audit := idp.NewMemorySink()
+	securityEvents := &securitytrace.Recorder{}
 	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: audit})
 	if err != nil {
 		t.Fatal(err)
@@ -194,6 +198,7 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 		ScriptedSignupManager: manager,
 		WorkflowContinuations: store,
 		EmailChallenges:       emailChallenges,
+		SecurityEvents:        securityEvents,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -315,6 +320,51 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 	user, err := store.GetUserByLogin(ctx, "verified-user@example.test")
 	if err != nil || !user.EmailVerified || user.Name != "Verified User" {
 		t.Fatalf("verified signup user=%#v err=%v", user, err)
+	}
+	assertScriptedSignupSecurityTrace(t, securityEvents.Events())
+}
+
+func assertScriptedSignupSecurityTrace(t *testing.T, events []securitytrace.Event) {
+	t.Helper()
+	monitor := securitytrace.NewMonitor()
+	want := map[securitytrace.Kind]assurance.StepID{
+		securitytrace.LambdaInvocationStarted:   assurance.StepLambdaInvoke,
+		securitytrace.LambdaInvocationCompleted: assurance.StepLambdaInvoke,
+		securitytrace.ContinuationCreated:       assurance.StepContinuationCreate,
+		securitytrace.ContinuationTerminal:      assurance.StepContinuationConsume,
+		securitytrace.EvidenceVerified:          assurance.StepEvidenceVerify,
+		securitytrace.EffectValidationCompleted: assurance.StepEffectValidate,
+		securitytrace.NativeEffectCommitted:     assurance.StepSignupCommit,
+	}
+	seen := map[securitytrace.Kind]bool{}
+	for _, event := range events {
+		monitor.Observe(event)
+		if _, err := event.Result(); err != nil {
+			t.Fatalf("invalid scripted-signup trace event=%#v err=%v", event, err)
+		}
+		if step, ok := want[event.Kind]; ok {
+			if event.Transition != step {
+				t.Fatalf("trace kind %q transition=%q want %q", event.Kind, event.Transition, step)
+			}
+			seen[event.Kind] = true
+		}
+		encoded, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{"verified-user", "correct horse", "email_code", "password", "token", "secret"} {
+			if strings.Contains(string(encoded), forbidden) {
+				t.Fatalf("scripted-signup trace leaked %q: %s", forbidden, encoded)
+			}
+		}
+	}
+	for kind := range want {
+		if !seen[kind] {
+			t.Fatalf("missing scripted-signup trace kind %q events=%#v", kind, events)
+		}
+	}
+	if violations := monitor.Violations(); len(violations) != 0 {
+		t.Fatalf("scripted-signup trace monitor violations=%v events=%#v", violations, events)
 	}
 }
 

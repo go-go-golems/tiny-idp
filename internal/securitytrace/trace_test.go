@@ -35,6 +35,40 @@ func traceEvent(kind Kind, interactionID string, required uint32, outcome assura
 	case TokenLifecycleDone:
 		event.Transition = assurance.StepTokenIssue
 		event.Outcome = assurance.TransitionApplied
+	case LambdaInvocationStarted:
+		event.Transition = assurance.StepLambdaInvoke
+		event.Outcome = assurance.TransitionApplied
+	case LambdaInvocationCompleted:
+		event.Transition = assurance.StepLambdaInvoke
+		if outcome == "" {
+			event.Outcome = assurance.LambdaOutcomeComplete
+		}
+	case LambdaInvocationRejected:
+		event.Transition = assurance.StepLambdaInvoke
+		event.Outcome = assurance.TransitionRejected
+	case ContinuationCreated:
+		event.Transition = assurance.StepContinuationCreate
+		event.Outcome = assurance.TransitionApplied
+	case ContinuationTerminal:
+		event.Transition = assurance.StepContinuationConsume
+		if outcome == "" {
+			event.Outcome = assurance.TransitionApplied
+		}
+	case EvidenceVerified:
+		event.Transition = assurance.StepEvidenceVerify
+		if outcome == "" {
+			event.Outcome = assurance.TransitionApplied
+		}
+	case EffectValidationCompleted:
+		event.Transition = assurance.StepEffectValidate
+		if outcome == "" {
+			event.Outcome = assurance.TransitionApplied
+		}
+	case NativeEffectCommitted:
+		event.Transition = assurance.StepSignupCommit
+		if outcome == "" {
+			event.Outcome = assurance.TransitionApplied
+		}
 	}
 	return event
 }

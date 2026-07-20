@@ -24,6 +24,14 @@ const (
 	InteractionTerminal        Kind = "interaction.terminal"
 	AuthorizationArtifactsDone Kind = "authorization.artifacts_committed"
 	TokenLifecycleDone         Kind = "token.lifecycle_committed"
+	LambdaInvocationStarted    Kind = "lambda.invocation_started"
+	LambdaInvocationCompleted  Kind = "lambda.invocation_completed"
+	LambdaInvocationRejected   Kind = "lambda.invocation_rejected"
+	ContinuationCreated        Kind = "continuation.created"
+	ContinuationTerminal       Kind = "continuation.terminal"
+	EvidenceVerified           Kind = "evidence.verified"
+	EffectValidationCompleted  Kind = "effect.validation_completed"
+	NativeEffectCommitted      Kind = "native_effect.committed"
 )
 
 type Event struct {
@@ -96,6 +104,14 @@ var transitionResults = map[Kind]eventContract{
 	InteractionTerminal:        {assurance.ObservationInteractionTerminal, []assurance.StepID{assurance.StepInteractionApprove, assurance.StepInteractionDeny, assurance.StepAccountSelection, assurance.StepDeviceApprove}, []assurance.OutcomeID{assurance.TransitionApproved, assurance.TransitionDenied}},
 	AuthorizationArtifactsDone: {assurance.ObservationAuthorizationArtifacts, []assurance.StepID{assurance.StepAuthorizationCommit}, []assurance.OutcomeID{assurance.TransitionApplied}},
 	TokenLifecycleDone:         {assurance.ObservationTokenLifecycle, []assurance.StepID{assurance.StepTokenIssue}, []assurance.OutcomeID{assurance.TransitionApplied}},
+	LambdaInvocationStarted:    {assurance.ObservationLambdaStarted, []assurance.StepID{assurance.StepLambdaInvoke}, []assurance.OutcomeID{assurance.TransitionApplied}},
+	LambdaInvocationCompleted:  {assurance.ObservationLambdaCompleted, []assurance.StepID{assurance.StepLambdaInvoke}, []assurance.OutcomeID{assurance.LambdaOutcomeContinue, assurance.LambdaOutcomePresent, assurance.LambdaOutcomeChallenge, assurance.LambdaOutcomeCommit, assurance.LambdaOutcomeComplete, assurance.LambdaOutcomeDeny, assurance.LambdaOutcomeSkip, assurance.LambdaOutcomeError}},
+	LambdaInvocationRejected:   {assurance.ObservationLambdaRejected, []assurance.StepID{assurance.StepLambdaInvoke}, []assurance.OutcomeID{assurance.TransitionRejected}},
+	ContinuationCreated:        {assurance.ObservationContinuationCreated, []assurance.StepID{assurance.StepContinuationCreate}, []assurance.OutcomeID{assurance.TransitionApplied}},
+	ContinuationTerminal:       {assurance.ObservationContinuationTerminal, []assurance.StepID{assurance.StepContinuationConsume}, []assurance.OutcomeID{assurance.TransitionApplied, assurance.TransitionDenied}},
+	EvidenceVerified:           {assurance.ObservationEvidenceVerified, []assurance.StepID{assurance.StepEvidenceVerify}, []assurance.OutcomeID{assurance.TransitionApplied, assurance.TransitionRejected}},
+	EffectValidationCompleted:  {assurance.ObservationNativeEffectCommitted, []assurance.StepID{assurance.StepEffectValidate}, []assurance.OutcomeID{assurance.TransitionApplied, assurance.TransitionRejected}},
+	NativeEffectCommitted:      {assurance.ObservationNativeEffectCommitted, []assurance.StepID{assurance.StepSignupCommit}, []assurance.OutcomeID{assurance.TransitionApplied, assurance.TransitionRejected}},
 }
 
 func validInteractionReference(value string) bool {
@@ -206,6 +222,11 @@ func (m *Monitor) Observe(event Event) {
 			m.violate(event, "event occurred before interaction creation")
 			return
 		}
+	case LambdaInvocationStarted, LambdaInvocationCompleted, LambdaInvocationRejected, ContinuationCreated, ContinuationTerminal, EvidenceVerified, EffectValidationCompleted, NativeEffectCommitted:
+		if state == nil {
+			m.violate(event, "event occurred before interaction creation")
+		}
+		return
 	case TokenLifecycleDone:
 		return
 	}

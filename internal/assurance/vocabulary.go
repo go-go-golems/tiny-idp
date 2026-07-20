@@ -65,6 +65,12 @@ const (
 	StepConsentGrant            StepID = "consent.grant@v1"
 	StepDeviceApprove           StepID = "device.approve@v1"
 	StepTokenIssue              StepID = "token.issue@v1"
+	StepLambdaInvoke            StepID = "lambda.invoke@v1"
+	StepContinuationCreate      StepID = "continuation.create@v1"
+	StepContinuationConsume     StepID = "continuation.consume@v1"
+	StepEvidenceVerify          StepID = "evidence.verify@v1"
+	StepEffectValidate          StepID = "effect.validate@v1"
+	StepSignupCommit            StepID = "signup.commit@v1"
 
 	EffectReadResource            EffectID = "read.resource@v1"
 	EffectCreateResource          EffectID = "create.resource@v1"
