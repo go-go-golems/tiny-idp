@@ -96,3 +96,12 @@ session (`bfda128`), including exact durable IdP user/session row assertions.
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go — Browser-equivalent registration and callback evidence
+
+## 2026-07-20
+
+Step 16: Added real two-process Message Desk message creation/listing and
+missing-CSRF no-mutation proof (`4daf974`).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go — Authenticated application message and CSRF evidence

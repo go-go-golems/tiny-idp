@@ -1331,3 +1331,70 @@ Message Desk /auth/register
   -> code callback
   -> Message Desk token exchange and app session
 ```
+
+## Step 16 — Phase 3 authenticated Message Desk and CSRF proof
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Continue the real browser session through the
+standalone application's durable message and CSRF boundary.
+
+**Inferred user intent:** Verify the external OIDC handoff is usable without
+weakening application-side mutation protection.
+
+**Commit:** `4daf974` — "Test: cover two-process message CSRF flow"
+
+### What I did
+
+- Posted a JSON message using the authenticated app session and its CSRF token;
+  asserted `201`, the exact echoed body, and a subsequent durable list result.
+- Posted a second same-origin message with the valid app cookie but no CSRF
+  token; asserted `403` and proved its text is absent from the message list.
+
+### Why
+
+The provider browser session is not an authorization substitute for Message
+Desk's own app session and CSRF defense. This validates both process boundaries.
+
+### What worked
+
+- The focused signup harness command passed in 18.29 seconds.
+- `4daf974` passed full `go test ./...`, lint, Glazed, and IdP UI analyzer
+  gates; the complete harness package passed in 20.861 seconds.
+
+### What didn't work
+
+- Nothing failed. The negative request remains authenticated, so its `403`
+  proves CSRF rejection rather than merely missing-session rejection.
+
+### What I learned
+
+- The session API's opaque CSRF token gates Message Desk mutations separately
+  from Tiny-IDP's provider cookies.
+
+### What was tricky to build
+
+- The test preserves a public HTTPS `Origin` while posting over loopback so it
+  exercises trusted-proxy production behavior rather than development HTTP.
+
+### What warrants a second pair of eyes
+
+- Review the upcoming local/provider logout distinction before adding it.
+
+### What should be done in the future
+
+- Add logout/re-login, duplicate/continuation/restart cases, and leak scanning.
+
+### Code review instructions
+
+- Review `publicBrowser.postJSON` and the final message assertions in
+  `TestTwoProcessRegistrationRedirectAndSignup`.
+
+### Technical details
+
+```text
+valid app session + Origin + X-CSRF-Token -> 201 -> durable message
+valid app session + Origin without token  -> 403 -> no durable message
+```

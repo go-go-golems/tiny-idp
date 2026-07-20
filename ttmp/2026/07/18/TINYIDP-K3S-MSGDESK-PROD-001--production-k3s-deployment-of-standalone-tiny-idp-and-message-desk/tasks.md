@@ -67,8 +67,8 @@ item has concrete evidence.
 - [x] Drive `/auth/register` and assert the authorization request retains client, redirect URI, PKCE, nonce, scope, and signup intent <!-- t:p3f1 -->
 - [x] Submit the scripted signup form and assert exactly one identity and provider session are created <!-- t:p3f2 -->
 - [x] Complete the authorization callback and assert a Message Desk application session is created <!-- t:p3f3 -->
-- [ ] Create and read a message as the signed-in subject <!-- t:p3f4 -->
-- [ ] Prove missing/invalid message CSRF is rejected without durable mutation <!-- t:p3f5 -->
+- [x] Create and read a message as the signed-in subject <!-- t:p3f4 -->
+- [x] Prove missing/invalid message CSRF is rejected without durable mutation <!-- t:p3f5 -->
 - [ ] Prove local logout revokes only the Message Desk session <!-- t:p3f6 -->
 - [ ] Prove provider logout and subsequent re-login follow the registered redirect contract <!-- t:hv5c -->
 - [ ] Test duplicate identity, weak password, malformed input, and generic non-enumerating public errors <!-- t:p3n1 -->
