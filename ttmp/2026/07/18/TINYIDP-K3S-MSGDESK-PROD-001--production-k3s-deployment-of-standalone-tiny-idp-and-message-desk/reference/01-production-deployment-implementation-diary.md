@@ -1600,3 +1600,68 @@ it proves one atomic commit cannot be repeated by a retained browser request.
 first signed form POST -> user=1, provider sessions=1
 identical second POST  -> 400, user=1, provider sessions=1
 ```
+
+## Step 20 — Phase 3 weak-password public rejection
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Expand product-level negative signup coverage
+with a public password-policy rejection.
+
+**Inferred user intent:** A bad public submission must neither persist an
+identity nor leak the submitted secret in its response.
+
+**Commit:** `8aeb17f` — "Test: reject weak two-process signup password"
+
+### What I did
+
+- Opened a second independent real registration browser, submitted a
+  deliberately weak password through the rendered workflow form, and asserted
+  `400 Bad Request`.
+- Verified the response does not contain the submitted password and Tiny-IDP's
+  durable user/session counts remain zero before the valid signup scenario.
+
+### Why
+
+Password policy is enforced at the Go-owned atomic identity boundary; this
+confirms the scripted workflow does not create partial account state first.
+
+### What worked
+
+- Focused harness passed in 9.84 seconds. `8aeb17f` passed full repository
+  tests, lint, Glazed validation, and IdP UI analysis.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- The negative browser can be independent while using the same two production
+  processes, which makes state-count assertions reliable.
+
+### What was tricky to build
+
+- The assertion checks for both absent secret reflection and zero durable state;
+  either alone would be insufficient product evidence.
+
+### What warrants a second pair of eyes
+
+- Duplicate and malformed public errors still need equivalent two-process proof
+  before completing the broader public-error task.
+
+### What should be done in the future
+
+- Add duplicate/malformed, expiry/concurrency, and restart cases.
+
+### Code review instructions
+
+- Review the `weakBrowser` scenario at the start of the registration test.
+
+### Technical details
+
+```text
+weak password form POST -> 400, no password reflection, users=0, sessions=0
+```
