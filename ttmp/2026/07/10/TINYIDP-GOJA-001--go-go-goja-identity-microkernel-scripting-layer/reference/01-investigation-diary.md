@@ -32,6 +32,8 @@ RelatedFiles:
       Note: |-
         Native signup commit revalidates optional invitation effect and redeems it inside its transaction (commit 84a9995)
         Native signup continuation, proof, delivery, and resend boundary
+    - Path: repo://internal/fositeadapter/sqlstore_test.go
+      Note: Phase 9 provider/persistence/failpoint regression matrix exercised in Step 72
     - Path: repo://internal/gojamodules/tinyidp/module.go
       Note: |-
         Optional invite code can only become declared consumeInvitation plan (commit 84a9995)
@@ -40,6 +42,8 @@ RelatedFiles:
       Note: JavaScript and TypeScript test fakes API
     - Path: repo://internal/securitytrace/trace.go
       Note: Trace monitor delegates to pure kernel in a460c83
+    - Path: repo://internal/securitytrace/trace_test.go
+      Note: Phase 9 trace property and fuzz validation exercised in Step 72
     - Path: repo://lefthook.yml
       Note: Step 17 exact pre-commit test and lint policy whose runner orphaned children
     - Path: repo://pkg/embeddedidp/options.go
@@ -116,6 +120,8 @@ RelatedFiles:
       Note: Step 14 durable schema and expiry index
     - Path: repo://pkg/sqlitestore/migrations/012_durable_invitations.sql
       Note: Persistent durable invitation state (commit 21c7c4c)
+    - Path: repo://scripts/run-conformance.sh
+      Note: Existing local strict-engine conformance gate consulted in Step 72
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md
       Note: Primary design produced by the investigation
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md
@@ -134,6 +140,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -6657,3 +6664,159 @@ The kernel accepts only authentication, consent, terminal, and artifact
 observations. It rejects every other member of the closed observation enum;
 that is a scope guard, not a claim that lambda or continuation observations are
 invalid in their own dedicated models.
+
+## Step 72: Run the Phase 9 assurance regression matrix
+
+The Phase 9 refactor changed a shared semantic boundary, so its validation
+cannot stop at a unit test of the new type. This step exercised the existing
+provider, persistence, failpoint, trace, UI-conformance, property, fuzz, and
+race suites that would reveal a mismatch between the new kernel and the
+production-shaped authorization paths.
+
+The repository has no product-tree Go benchmarks at this revision. That is a
+documented coverage fact, not a performance conclusion: the static surface
+audit reported eight fuzz targets and zero benchmarks. The project deliberately
+did not add a synthetic benchmark solely to check a box during an assurance
+refactor.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as earlier `continue` steps)
+
+**Assistant interpretation:** Finish the in-scope Phase 9 validation task and
+keep the implementation diary evidence precise.
+
+**Inferred user intent:** Ensure the new analysis-friendly boundary is backed
+by the established realistic test layers, including durability and concurrency,
+before moving to cross-phase assurance work.
+
+**Commit (code):** N/A — validation and ticket bookkeeping only
+
+### What I did
+
+- Ran direct provider/persistence/trace/conformance packages:
+
+  ```bash
+  go test ./internal/assurance ./internal/securitytrace ./internal/fositeadapter \
+    ./pkg/sqlitestore ./pkg/idpui/idpuitest ./pkg/idpscript \
+    ./pkg/idpcontinuation ./pkg/idpemailchallenge ./pkg/idpinvite -count=1
+  ```
+
+- Ran bounded, one-worker fuzz campaigns without relying on an unbounded
+  wall-clock worker pool:
+
+  ```bash
+  go test ./internal/securitytrace -run '^$' -fuzz=FuzzMonitorEventSequences -fuzztime=5s
+  go test ./internal/fositeadapter -run '^$' -fuzz=FuzzInteractionModelActionSequences -fuzztime=100x -parallel=1
+  go test ./internal/fositeadapter -run '^$' -fuzz=FuzzBoundedInteractionBuffer -fuzztime=100x -parallel=1
+  go test ./pkg/idpui/idpuitest -run '^$' -fuzz=FuzzConformanceParserNeverPanics -fuzztime=100x -parallel=1
+  go test ./pkg/idpui -run '^$' -fuzz=FuzzDefaultRendererEscapingAndConformance -fuzztime=100x -parallel=1
+  ```
+
+- Ran targeted race suites across the assurance/trace/script/continuation,
+  Fosite/SQLite, Goja-module, workflow, memory-store, and UI boundaries.
+- Ran the existing static-surface audit. It reported 496 unit/integration
+  tests, eight product-tree fuzz targets, and zero product-tree benchmarks.
+- Invoked the existing `scripts/run-conformance.sh` local strict-engine gate;
+  its full-suite stage passed. Its targeted provider coverage is also included
+  in the independently passing direct Fosite adapter package gate above.
+
+### Why
+
+The kernel consumes decoded action obligations and validated observations, both
+of which meet persistence, Goja, UI, and protocol routes. Package-local tests
+would not detect a lost transactional rollback, a changed trace event, a race
+in the script worker, or a browser conformance regression. This matrix uses
+existing end-to-end evidence rather than adding a second test framework.
+
+### What worked
+
+Every direct package suite and every bounded fuzz/race command listed above
+passed. The Fosite+SQLite race command completed and a subsequent cache-backed
+confirmation returned:
+
+```text
+ok   github.com/go-go-golems/tiny-idp/internal/fositeadapter  (cached)
+ok   github.com/go-go-golems/tiny-idp/pkg/sqlitestore          (cached)
+```
+
+The direct Fosite package test includes existing SQLite authorization and device
+failpoint atomicity tests, restart/replay tests, strict verification-plan
+replay, and security-trace monitor tests. The earlier code commit hook also
+passed `GOWORK=off go test ./...`, lint, and configured analyzers/vet.
+
+### What didn't work
+
+The first time-based invocation of the pure interaction-model fuzzer did not
+return promptly after `-fuzztime=5s` and left an orphaned Go test process after
+the tool session ended. The process was identified by exact PID and allowed to
+exit/was cleaned up; no source was changed. A deterministic one-worker
+`-fuzztime=100x` run completed in 0.122 seconds with all five seed cases and
+100 generated executions, so that is the recorded fuzz evidence.
+
+No product-tree benchmark exists. The audit result is an explicit remaining
+performance-observability limitation, not a claim that the refactor has a
+measured latency or allocation budget.
+
+### What I learned
+
+- Bounded iteration-count fuzzing is a reproducible local gate for pure model
+  transitions; time-based multiprocess fuzzing remains useful for CI campaigns
+  but needs process supervision in this environment.
+- The repository already has broad failure-atomicity and restart coverage in
+  `internal/fositeadapter` and `pkg/sqlitestore`, so a new assurance type can
+  be checked against realistic behavior without duplicating those scenarios.
+- Performance assurance needs an explicit future benchmark/budget decision;
+  it cannot be inferred from passing functional and race gates.
+
+### What was tricky to build
+
+There was no implementation to debug in this step, but the validation evidence
+had to distinguish a test command that merely starts from one that has a known
+pass result. The long Fosite race suite is expected to run much longer under
+instrumentation; after it exited, its cached confirmation provided an explicit
+zero-exit, passing result. The time-based fuzzer's orphaned process was not
+misclassified as a source failure; the deterministic bounded rerun supplied
+the reliable gate instead.
+
+### What warrants a second pair of eyes
+
+- Decide whether the release process needs a real authorization/continuation
+  performance benchmark and a budget before treating performance as a hard
+  production gate.
+- In CI, ensure fuzz invocations are supervised so a worker process cannot
+  outlive a canceled job.
+- Review the specific Fosite failpoint tests if changing proof construction or
+  artifact-commit order; this matrix proves the current behavior, not a generic
+  transaction theorem.
+
+### What should be done in the future
+
+Use the catalog/kernel/replay artifacts in the cross-phase stable-ID,
+secret-free boundary, constrained-lambda model, runtime-profile, and final
+completion tasks. Add benchmarks only if a concrete production SLO or release
+budget is chosen; do not invent a meaningless microbenchmark.
+
+### Code review instructions
+
+- Read `internal/assurance/authorization_kernel_test.go` with
+  `internal/securitytrace/trace_test.go` to see the pure and recorded-trace
+  levels.
+- Inspect `internal/fositeadapter/sqlstore_test.go` for the failpoint and
+  atomicity cases that the direct package gate exercised.
+- Run the direct package command and the deterministic `100x` fuzz commands
+  above. Use the release workflow for longer time-based fuzz campaigns.
+
+### Technical details
+
+```text
+pure kernel        -> internal/assurance tests
+recorded trace     -> internal/securitytrace property + fuzz tests
+native browser     -> internal/fositeadapter verification/security tests
+durable artifacts  -> Fosite SQLite + pkg/sqlitestore failpoint/restart tests
+script/UI boundary -> idpscript, Goja module, workflow, UI conformance + race
+```
+
+The matrix is additive: it does not attempt a false single "differential"
+oracle. Memory/SQLite conformance suites and strict-provider scenario replay
+remain the repository's concrete cross-implementation comparisons.

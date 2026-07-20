@@ -668,3 +668,13 @@ Step 71: extracted a pure authorization transition kernel from the monitor (comm
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/authorization_kernel.go — Pure terminal-ordering kernel; no HTTP, Fosite, store, Goja, clock, or secret dependency
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace.go — Monitor now maps validated trace events then delegates ordering invariants to the kernel
+
+## 2026-07-19
+
+Step 72: completed the available Phase 9 provider, persistence, trace, conformance, race, fuzz, failpoint, and performance-inventory gates after the assurance refactor
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/authorization_kernel_test.go — Pure transition-kernel regression coverage included in the Phase 9 validation matrix
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — Existing SQLite authorization and device failpoint atomicity coverage exercised by the provider package gate
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace_test.go — Property and fuzz coverage for normalized secret-free trace monitoring

@@ -139,7 +139,7 @@
 - [x] Replay one normalized model counterexample through registered VerificationPlan codecs without a handwritten action-name adapter. <!-- t:e9p7 -->
 - [x] Materialize the local-web Goja configuration graph solely from registered native block and policy descriptors. <!-- t:t0q3 -->
 - [x] Evaluate selective pure transition kernels only after the vocabulary, tracing, proof boundary, analyzers, and model replay are stable. <!-- t:qh8f -->
-- [ ] Run differential provider, persistence, trace, monitor, conformance, race, fuzz, failpoint, and performance gates after each refactoring phase. <!-- t:kjlg -->
+- [x] Run differential provider, persistence, trace, monitor, conformance, race, fuzz, failpoint, and performance gates after each refactoring phase. <!-- t:kjlg -->
 
 ## Lambda-first superseding design
 
