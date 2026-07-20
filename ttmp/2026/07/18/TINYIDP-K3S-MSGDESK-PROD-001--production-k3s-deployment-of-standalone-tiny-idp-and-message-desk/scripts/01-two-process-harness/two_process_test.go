@@ -54,6 +54,64 @@ func TestTwoProcessLifecycle(t *testing.T) {
 	harness.requireLog("message-desk", "message application listening")
 }
 
+func TestTwoProcessConcurrentSignupContinuation(t *testing.T) {
+	t.Parallel()
+	harness := newHarness(t)
+	harness.build()
+	harness.initializeMessageDesk()
+	harness.startTinyIDP()
+	harness.waitReady(harness.idpAddress, idpPublicOrigin, "/idp/readyz")
+	harness.startIDPProxy()
+	harness.startMessageDesk()
+	harness.waitReady(harness.messageAddress, messagePublicOrigin, "/readyz")
+
+	browser := newPublicBrowser(harness)
+	start := browser.get(t, messagePublicOrigin+"/auth/register")
+	requireStatus(t, start, http.StatusSeeOther)
+	page := browser.get(t, requiredLocation(t, start))
+	requireStatus(t, page, http.StatusOK)
+	body, err := io.ReadAll(page.Body)
+	page.Body.Close()
+	if err != nil {
+		t.Fatalf("read concurrent signup form: %v", err)
+	}
+	form := url.Values{
+		"action":                {"submit"},
+		"interaction":           {hiddenFormValue(t, body, "interaction")},
+		"workflow_continuation": {hiddenFormValue(t, body, "workflow_continuation")},
+		"csrf_token":            {hiddenFormValue(t, body, "csrf_token")},
+		"display_name":          {"Concurrent Ada"},
+		"email":                 {"concurrent@example.test"},
+		"password":              {"correct horse battery staple 2026"},
+		"password_confirmation": {"correct horse battery staple 2026"},
+	}
+	left, right := browser.clone(), browser.clone()
+	type result struct {
+		response *http.Response
+		err      error
+	}
+	results := make(chan result, 2)
+	for _, client := range []*publicBrowser{left, right} {
+		go func(client *publicBrowser) {
+			response, requestErr := client.do(http.MethodPost, idpIssuer+"/authorize", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded")
+			results <- result{response: response, err: requestErr}
+		}(client)
+	}
+	statuses := map[int]int{}
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			t.Fatalf("concurrent signup submission: %v", result.err)
+		}
+		statuses[result.response.StatusCode]++
+		result.response.Body.Close()
+	}
+	if statuses[http.StatusOK] != 1 || statuses[http.StatusBadRequest] != 1 || len(statuses) != 2 {
+		t.Fatalf("concurrent signup statuses = %#v, want one 200 and one 400", statuses)
+	}
+	harness.assertSingleProviderIdentityAndSession()
+}
+
 func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	t.Parallel()
 	harness := newHarness(t)
@@ -678,6 +736,18 @@ type publicBrowser struct {
 
 func newPublicBrowser(harness *harness) *publicBrowser {
 	return &publicBrowser{harness: harness, cookies: map[string]map[string]*http.Cookie{}, client: &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+}
+
+func (b *publicBrowser) clone() *publicBrowser {
+	clone := newPublicBrowser(b.harness)
+	for host, byName := range b.cookies {
+		clone.cookies[host] = map[string]*http.Cookie{}
+		for name, cookie := range byName {
+			cookieCopy := *cookie
+			clone.cookies[host][name] = &cookieCopy
+		}
+	}
+	return clone
 }
 
 func (b *publicBrowser) get(t *testing.T, rawURL string) *http.Response {
