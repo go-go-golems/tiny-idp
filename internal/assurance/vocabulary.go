@@ -56,11 +56,13 @@ const (
 	StepInteractionApprove      StepID = "interaction.approve@v1"
 	StepInteractionDeny         StepID = "interaction.deny@v1"
 	StepInteractionCopyMutation StepID = "interaction.copy_mutation@v1"
+	StepAccountSelection        StepID = "account.selection@v1"
 	StepAuthorizationBegin      StepID = "authorize.begin@v1"
 	StepAuthorizationCommit     StepID = "authorize.commit@v1"
 	StepPasswordAuthenticate    StepID = "authn.password.verify@v1"
 	StepConsentGrant            StepID = "consent.grant@v1"
 	StepDeviceApprove           StepID = "device.approve@v1"
+	StepTokenIssue              StepID = "token.issue@v1"
 
 	EffectReadResource            EffectID = "read.resource@v1"
 	EffectCreateResource          EffectID = "create.resource@v1"
@@ -74,6 +76,7 @@ const (
 	TransitionApplied  OutcomeID = "applied"
 	TransitionRejected OutcomeID = "rejected"
 	TransitionDenied   OutcomeID = "denied"
+	TransitionApproved OutcomeID = "approved"
 	TransitionExpired  OutcomeID = "expired"
 	TransitionConflict OutcomeID = "conflict"
 

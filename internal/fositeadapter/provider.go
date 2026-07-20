@@ -31,6 +31,7 @@ import (
 	fositememory "github.com/ory/fosite/storage"
 	fositejwt "github.com/ory/fosite/token/jwt"
 
+	"github.com/go-go-golems/tiny-idp/internal/assurance"
 	"github.com/go-go-golems/tiny-idp/internal/keys"
 	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
 	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
@@ -928,8 +929,8 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		traceID := interactionTraceID(record)
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentDenied, InteractionID: traceID, ClientID: record.ClientID})
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeDenied)})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentDenied, InteractionID: traceID, Transition: assurance.StepInteractionDeny, Outcome: assurance.TransitionDenied})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, Transition: assurance.StepInteractionDeny, Outcome: assurance.TransitionDenied})
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
 		return
 	}
@@ -943,7 +944,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account_selection.use_another_account", ClientID: ar.GetClient().GetID(), Result: "accepted"})
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepAccountSelection, Outcome: assurance.TransitionApproved})
 		loginActions := idpstore.InteractionRequireFreshLogin
 		loginHandle, loginCSRF, err := p.createInteractionForSession(w, r, ar, loginActions, nil)
 		if err != nil {
@@ -984,6 +985,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
 		}
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepAccountSelection, Outcome: assurance.TransitionApproved})
 		loginHandle, loginCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireFreshLogin, nil)
 		if err != nil {
 			http.Error(w, "create login interaction failed", http.StatusInternalServerError)
@@ -1036,7 +1038,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 				return
 			}
-			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepAccountSelection, Outcome: assurance.TransitionApproved})
 			freshSessionHash := idpstore.HashSecret(p.csrfKey, newHandle)
 			consentHandle, consentCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireConsent, freshSessionHash)
 			if err != nil {
@@ -1082,7 +1084,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.success", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthenticationSatisfied, InteractionID: interactionTraceID(record), ClientID: record.ClientID})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthenticationSatisfied, InteractionID: interactionTraceID(record), Transition: assurance.StepPasswordAuthenticate, Outcome: assurance.TransitionApplied})
 	}
 	if !hasSession {
 		http.Error(w, "login is required", http.StatusBadRequest)
@@ -1105,14 +1107,14 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if requireConsent && approved {
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentApproved, InteractionID: interactionTraceID(record), ClientID: record.ClientID})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentApproved, InteractionID: interactionTraceID(record), Transition: assurance.StepConsentGrant, Outcome: assurance.TransitionApplied})
 	}
 	if p.sqlStore == nil {
 		if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
 		}
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepInteractionApprove, Outcome: assurance.TransitionApproved})
 	}
 	p.finishAuthorize(w, r, ar, u, authTime, approved, &record)
 }
@@ -1265,7 +1267,7 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
-	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.TokenLifecycleDone, RequestID: accessRequest.GetID(), ClientID: accessRequest.GetClient().GetID(), GrantType: strings.Join(accessRequest.GetGrantTypes(), " ")})
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.TokenLifecycleDone, Transition: assurance.StepTokenIssue, Outcome: assurance.TransitionApplied})
 	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "token.request.accepted", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "accepted", Fields: map[string]string{"grant_type": strings.Join(accessRequest.GetGrantTypes(), " ")}})
 	p.oauth2.WriteAccessResponse(r.Context(), w, accessRequest, response)
 }
@@ -1740,9 +1742,9 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 	if interaction != nil {
 		traceID := interactionTraceID(*interaction)
 		if p.sqlStore != nil {
-			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, ClientID: client.ID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, Transition: assurance.StepInteractionApprove, Outcome: assurance.TransitionApproved})
 		}
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthorizationArtifactsDone, InteractionID: traceID, RequestID: ar.GetID(), ClientID: client.ID})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthorizationArtifactsDone, InteractionID: traceID, Transition: assurance.StepAuthorizationCommit, Outcome: assurance.TransitionApplied})
 	}
 	p.emit(r.Context(), idp.New("authorize.request.accepted"), ar, "accepted", "")
 	responseWriter := w

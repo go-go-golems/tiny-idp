@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-go-golems/tiny-idp/internal/assurance"
 	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
@@ -185,8 +186,8 @@ func (p *Provider) completeDeviceVerification(w http.ResponseWriter, r *http.Req
 		notice = "The device request was denied. You may return to your device."
 	}
 	p.recordAudit(r.Context(), idp.Event{Time: now, Name: eventName, ClientID: client.ID, Subject: user.Sub, Result: "accepted"})
-	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthenticationSatisfied, InteractionID: interactionTraceID(record), ClientID: client.ID})
-	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: client.ID, Outcome: string(outcome)})
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthenticationSatisfied, InteractionID: interactionTraceID(record), Transition: assurance.StepDeviceApprove, Outcome: assurance.TransitionApplied})
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepDeviceApprove, Outcome: assurance.OutcomeID(outcome)})
 	p.renderDeviceVerification(w, r, http.StatusOK, idpui.DeviceVerificationPage{DocumentTitle: "Device verification complete", Form: idpui.DeviceVerificationForm{ActionURL: p.issuer.Endpoint("/device")}, Notice: &idpui.DeviceVerificationNotice{Summary: notice}})
 }
 
@@ -215,7 +216,7 @@ func (p *Provider) createDeviceVerificationInteraction(w http.ResponseWriter, r 
 	if err := p.store.CreateInteraction(r.Context(), record); err != nil {
 		return "", "", idpstore.InteractionRecord{}, fmt.Errorf("persist device verification interaction: %w", err)
 	}
-	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionCreated, InteractionID: interactionTraceID(record), ClientID: client.ID})
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionCreated, InteractionID: interactionTraceID(record), Transition: assurance.StepInteractionCreate, Outcome: assurance.TransitionApplied})
 	return handle, csrfToken, record, nil
 }
 

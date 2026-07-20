@@ -1,19 +1,54 @@
 package securitytrace
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/go-go-golems/tiny-idp/internal/assurance"
 	"pgregory.net/rapid"
 )
+
+func traceEvent(kind Kind, interactionID string, required uint32, outcome assurance.OutcomeID) Event {
+	event := Event{Version: SchemaVersion, Kind: kind, InteractionID: interactionID, RequiredActions: required, Outcome: outcome}
+	switch kind {
+	case InteractionCreated:
+		event.Transition = assurance.StepInteractionCreate
+		event.Outcome = assurance.TransitionApplied
+	case AuthenticationSatisfied:
+		event.Transition = assurance.StepPasswordAuthenticate
+		event.Outcome = assurance.TransitionApplied
+	case ConsentApproved:
+		event.Transition = assurance.StepConsentGrant
+		event.Outcome = assurance.TransitionApplied
+	case ConsentDenied:
+		event.Transition = assurance.StepInteractionDeny
+		event.Outcome = assurance.TransitionDenied
+	case InteractionTerminal:
+		if outcome == assurance.TransitionDenied {
+			event.Transition = assurance.StepInteractionDeny
+		} else {
+			event.Transition = assurance.StepInteractionApprove
+		}
+	case AuthorizationArtifactsDone:
+		event.Transition = assurance.StepAuthorizationCommit
+		event.Outcome = assurance.TransitionApplied
+	case TokenLifecycleDone:
+		event.Transition = assurance.StepTokenIssue
+		event.Outcome = assurance.TransitionApplied
+	}
+	return event
+}
+
+func traceID(index int) string { return fmt.Sprintf("%064x", index) }
 
 func TestMonitorAcceptsRequiredAuthenticationConsentAndArtifactOrder(t *testing.T) {
 	monitor := NewMonitor()
 	for _, event := range []Event{
-		{Version: SchemaVersion, Kind: InteractionCreated, InteractionID: "i1", RequiredActions: requireFreshLogin | requireConsent},
-		{Version: SchemaVersion, Kind: AuthenticationSatisfied, InteractionID: "i1"},
-		{Version: SchemaVersion, Kind: ConsentApproved, InteractionID: "i1"},
-		{Version: SchemaVersion, Kind: InteractionTerminal, InteractionID: "i1", Outcome: "approved"},
-		{Version: SchemaVersion, Kind: AuthorizationArtifactsDone, InteractionID: "i1"},
+		traceEvent(InteractionCreated, traceID(1), requireFreshLogin|requireConsent, assurance.TransitionApplied),
+		traceEvent(AuthenticationSatisfied, traceID(1), 0, assurance.TransitionApplied),
+		traceEvent(ConsentApproved, traceID(1), 0, assurance.TransitionApplied),
+		traceEvent(InteractionTerminal, traceID(1), 0, assurance.TransitionApproved),
+		traceEvent(AuthorizationArtifactsDone, traceID(1), 0, assurance.TransitionApplied),
 	} {
 		monitor.Observe(event)
 	}
@@ -32,21 +67,21 @@ func TestMonitorAcceptsGeneratedValidTraces(t *testing.T) {
 			required |= requireConsent
 		}
 		approved := rapid.Bool().Draw(t, "approved")
-		events := []Event{{Version: SchemaVersion, Kind: InteractionCreated, InteractionID: "generated", RequiredActions: required}}
+		events := []Event{traceEvent(InteractionCreated, traceID(2), required, assurance.TransitionApplied)}
 		if required&requireFreshLogin != 0 {
-			events = append(events, Event{Version: SchemaVersion, Kind: AuthenticationSatisfied, InteractionID: "generated"})
+			events = append(events, traceEvent(AuthenticationSatisfied, traceID(2), 0, assurance.TransitionApplied))
 		}
 		if approved && required&requireConsent != 0 {
-			events = append(events, Event{Version: SchemaVersion, Kind: ConsentApproved, InteractionID: "generated"})
+			events = append(events, traceEvent(ConsentApproved, traceID(2), 0, assurance.TransitionApplied))
 		}
-		outcome := "approved"
+		outcome := assurance.TransitionApproved
 		if !approved {
-			outcome = "denied"
-			events = append(events, Event{Version: SchemaVersion, Kind: ConsentDenied, InteractionID: "generated"})
+			outcome = assurance.TransitionDenied
+			events = append(events, traceEvent(ConsentDenied, traceID(2), 0, assurance.TransitionDenied))
 		}
-		events = append(events, Event{Version: SchemaVersion, Kind: InteractionTerminal, InteractionID: "generated", Outcome: outcome})
+		events = append(events, traceEvent(InteractionTerminal, traceID(2), 0, outcome))
 		if approved {
-			events = append(events, Event{Version: SchemaVersion, Kind: AuthorizationArtifactsDone, InteractionID: "generated"})
+			events = append(events, traceEvent(AuthorizationArtifactsDone, traceID(2), 0, assurance.TransitionApplied))
 		}
 		monitor := NewMonitor()
 		for _, event := range events {
@@ -69,15 +104,15 @@ func FuzzMonitorEventSequences(f *testing.F) {
 		monitor := NewMonitor()
 		for index, value := range sequence {
 			kind := kinds[int(value)%len(kinds)]
-			outcome := "approved"
+			outcome := assurance.TransitionApproved
 			if value&1 != 0 {
-				outcome = "denied"
+				outcome = assurance.TransitionDenied
 			}
-			version := SchemaVersion
+			event := traceEvent(kind, traceID(index%4), uint32(value)&7, outcome)
 			if value == 255 {
-				version = 99
+				event.Version = 99
 			}
-			monitor.Observe(Event{Version: version, Kind: kind, InteractionID: string(rune('a' + index%4)), RequiredActions: uint32(value) & 7, Outcome: outcome})
+			monitor.Observe(event)
 		}
 		_ = monitor.Violations()
 	})
@@ -86,11 +121,11 @@ func FuzzMonitorEventSequences(f *testing.F) {
 func TestMonitorRejectsMissingActionsDuplicateTerminalAndArtifact(t *testing.T) {
 	monitor := NewMonitor()
 	for _, event := range []Event{
-		{Version: SchemaVersion, Kind: InteractionCreated, InteractionID: "i1", RequiredActions: requireLogin | requireConsent},
-		{Version: SchemaVersion, Kind: InteractionTerminal, InteractionID: "i1", Outcome: "approved"},
-		{Version: SchemaVersion, Kind: InteractionTerminal, InteractionID: "i1", Outcome: "denied"},
-		{Version: SchemaVersion, Kind: AuthorizationArtifactsDone, InteractionID: "i1"},
-		{Version: SchemaVersion, Kind: AuthorizationArtifactsDone, InteractionID: "i1"},
+		traceEvent(InteractionCreated, traceID(3), requireLogin|requireConsent, assurance.TransitionApplied),
+		traceEvent(InteractionTerminal, traceID(3), 0, assurance.TransitionApproved),
+		traceEvent(InteractionTerminal, traceID(3), 0, assurance.TransitionDenied),
+		traceEvent(AuthorizationArtifactsDone, traceID(3), 0, assurance.TransitionApplied),
+		traceEvent(AuthorizationArtifactsDone, traceID(3), 0, assurance.TransitionApplied),
 	} {
 		monitor.Observe(event)
 	}

@@ -11,6 +11,8 @@ import (
 	"github.com/ory/fosite"
 	"github.com/pkg/errors"
 
+	"github.com/go-go-golems/tiny-idp/internal/assurance"
+	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
@@ -98,6 +100,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
 		}
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepInteractionDeny, Outcome: assurance.TransitionDenied})
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
 		return
 	}
@@ -282,6 +285,7 @@ func signupCommitFailureReason(err error) string {
 func (p *Provider) completeScriptedSignup(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, client idpstore.Client, record idpstore.InteractionRecord, registered signupCommitResult) {
 	http.SetCookie(w, &http.Cookie{Name: p.sessionCookieName, Value: registered.SessionHandle, Path: p.cookiePath(), HttpOnly: true, Secure: p.cookieSecure, SameSite: p.cookieSameSite, MaxAge: int(p.sessionTTL.Seconds())})
 	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Subject: registered.User.Sub, Result: "accepted"})
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepInteractionApprove, Outcome: assurance.TransitionApproved})
 	requireConsent, err := p.consent.RequireConsent(r.Context(), registered.User, client, []string(ar.GetRequestedScopes()))
 	if err != nil {
 		http.Error(w, "consent policy failed", http.StatusInternalServerError)
