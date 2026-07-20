@@ -327,6 +327,14 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 func assertScriptedSignupSecurityTrace(t *testing.T, events []securitytrace.Event) {
 	t.Helper()
 	monitor := securitytrace.NewMonitor()
+	model, err := assurance.NewDeclaredLambdaModel([]assurance.OutcomeID{
+		assurance.LambdaOutcomePresent,
+		assurance.LambdaOutcomeChallenge,
+		assurance.LambdaOutcomeCommit,
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := map[securitytrace.Kind]assurance.StepID{
 		securitytrace.LambdaInvocationStarted:   assurance.StepLambdaInvoke,
 		securitytrace.LambdaInvocationCompleted: assurance.StepLambdaInvoke,
@@ -339,8 +347,12 @@ func assertScriptedSignupSecurityTrace(t *testing.T, events []securitytrace.Even
 	seen := map[securitytrace.Kind]bool{}
 	for _, event := range events {
 		monitor.Observe(event)
-		if _, err := event.Result(); err != nil {
+		result, err := event.Result()
+		if err != nil {
 			t.Fatalf("invalid scripted-signup trace event=%#v err=%v", event, err)
+		}
+		if violations := model.Apply(assurance.TraceObservation{Step: result.Step, Kind: result.Observation, Outcome: result.Outcome}); len(violations) != 0 {
+			t.Fatalf("scripted-signup lambda model violations=%v event=%#v", violations, event)
 		}
 		if step, ok := want[event.Kind]; ok {
 			if event.Transition != step {
