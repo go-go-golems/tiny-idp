@@ -1803,3 +1803,82 @@ unneeded durable protocol state.
 GET /auth/register?return_to=//attacker.example.test
   -> 400, no attacker reflection, no IdP user/session state
 ```
+
+## Step 23 — Phase 3 Tiny-IDP restart with pinned signup continuation
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Prove durable continuation behavior across a
+real Tiny-IDP process restart, as required before production deployment.
+
+**Inferred user intent:** Browser progress must not silently become unsafe or
+inconsistent when the one-replica IdP is restarted.
+
+**Commit:** `aedd02c` — "Test: resume two-process signup after Tiny-IDP restart"
+
+### What I did
+
+- Rendered and retained a real signed signup form, gracefully stopped the
+  Tiny-IDP production subprocess, then started a new Tiny-IDP subprocess on the
+  same address, SQLite state, audit path, token-secret file, and signup source.
+- Waited for new readiness and submitted the retained form successfully; the
+  existing downstream assertions prove the pinned continuation reached exactly
+  one identity/session commit and the normal authorization flow.
+- Made child-process shutdown idempotent with `sync.Once`, so an explicit
+  restart and test cleanup cannot double-wait or report a false failure.
+
+### Why
+
+The production design intentionally retains the checked program generation
+fingerprint in the durable continuation. Restarting with the same reviewed
+source must allow this pinned resume rather than accidentally executing a
+different program or losing browser state.
+
+### What worked
+
+- Focused harness passed in 15.59 seconds. `aedd02c` passed full repository
+  tests, lint, Glazed validation, and IdP UI analysis.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- The current production host recreates the same active checked generation from
+  its source at startup, and the durable workflow continuation is sufficient to
+  resume this first open-signup form after restart.
+
+### What was tricky to build
+
+- The trusted-proxy endpoint and backchannel proxy stay running while the IdP
+  process restarts; preserving the public issuer and private listener address
+  makes this a real restart, not a fresh test topology.
+
+### What warrants a second pair of eyes
+
+- This proves the selected same-source pinned-resume policy. Program changes
+  while a continuation is pending remain governed by generation-retention
+  policy and are not part of this initial deployment slice.
+
+### What should be done in the future
+
+- Restart Message Desk during a pending OIDC transaction, restart both after
+  signup, and scan the resulting logs/audits for secrets.
+
+### Code review instructions
+
+- Review `harness.stop`, `startedProcess.stopOnce`, and the restart directly
+  before the first valid signup form submission.
+
+### Technical details
+
+```text
+render signup form (durable continuation + fingerprint)
+  -> stop Tiny-IDP
+  -> start Tiny-IDP with same source/state
+  -> /readyz
+  -> original form POST -> one normal signup commit
+```
