@@ -100,24 +100,24 @@ item has concrete evidence.
 
 ## Phase 5: Submit complete k3s GitOps desired state
 
-- [ ] Refresh the k3s repository and create an isolated branch/worktree from current `origin/main` <!-- t:5hhi -->
-- [ ] Add `tiny-message-desk` namespace authorization to the `prod-apps` Argo project <!-- t:p5a1 -->
-- [ ] Add namespace and distinct least-privilege ServiceAccounts <!-- t:p5k1 -->
-- [ ] Add separate Tiny-IDP and Message Desk PVCs with documented storage sizes <!-- t:p5k2 -->
-- [ ] Add Tiny-IDP Deployment with one replica, `Recreate`, probes, resources, security context, and immutable image <!-- t:p5k3 -->
-- [ ] Add Message Desk Deployment with one replica, `Recreate`, probes, resources, security context, and immutable image <!-- t:p5k4 -->
-- [ ] Add ClusterIP Services and Traefik Ingresses for the two canonical HTTPS origins <!-- t:p5k5 -->
-- [ ] Add the reviewed signup program as a checksum-rollout ConfigMap mount <!-- t:mr4d -->
-- [ ] Configure Message Desk's public issuer and internal Tiny-IDP backchannel without changing issuer identity <!-- t:p5k6 -->
-- [ ] Add least-privilege Vault policy, Kubernetes auth role, VaultAuth, and VaultStaticSecret resources <!-- t:mmv8 -->
+- [x] Refresh the k3s repository and create an isolated branch/worktree from current `origin/main` <!-- t:5hhi -->
+- [x] Add `tiny-message-desk` namespace authorization to the `prod-apps` Argo project <!-- t:p5a1 -->
+- [x] Add namespace and distinct least-privilege ServiceAccounts <!-- t:p5k1 -->
+- [x] Add separate Tiny-IDP and Message Desk PVCs with documented storage sizes <!-- t:p5k2 -->
+- [x] Add Tiny-IDP Deployment with one replica, `Recreate`, probes, resources, security context, and immutable image <!-- t:p5k3 -->
+- [x] Add Message Desk Deployment with one replica, `Recreate`, probes, resources, security context, and immutable image <!-- t:p5k4 -->
+- [x] Add ClusterIP Services and Traefik Ingresses for the two canonical HTTPS origins <!-- t:p5k5 -->
+- [x] Add the reviewed signup program as a checksum-rollout ConfigMap mount <!-- t:mr4d -->
+- [x] Configure Message Desk's public issuer and canonical HTTPS Traefik backchannel without changing issuer identity <!-- t:p5k6 -->
+- [x] Add least-privilege Vault policy, Kubernetes auth role, VaultAuth, and VaultStaticSecret resources <!-- t:mmv8 -->
 - [ ] Copy secret material into main-container-owned `0600` files without logging values <!-- t:p5v1 -->
-- [ ] Add mail-provider credentials only if the selected public signup program declares that capability <!-- t:p5v2 -->
-- [ ] Add GHCR image-pull wiring only if package visibility requires it <!-- t:p5v3 -->
-- [ ] Add NetworkPolicy for Traefik ingress, probes, DNS, Message Desk-to-IdP backchannel, and required provider egress <!-- t:9q3v -->
-- [ ] Confirm manifests contain no bootstrap Job competing with Tiny-IDP startup <!-- t:p5b1 -->
-- [ ] Add online SQLite backup CronJobs, external destination, retention, and restore runbook <!-- t:p5d1 -->
-- [ ] Add Kustomization and Argo Application resources with explicit sync ordering <!-- t:p5a2 -->
-- [ ] Render with `kubectl kustomize` and validate schemas, immutable images, probes, selectors, mounts, and namespace scope <!-- t:wng5 -->
+- [x] Add mail-provider credentials only if the selected public signup program declares that capability <!-- t:p5v2 -->
+- [x] Add GHCR image-pull wiring only if package visibility requires it <!-- t:p5v3 -->
+- [x] Add NetworkPolicy for Traefik ingress, probes, DNS, Message Desk-to-IdP backchannel, and required provider egress <!-- t:9q3v -->
+- [x] Confirm manifests contain no bootstrap Job competing with Tiny-IDP startup <!-- t:p5b1 -->
+- [x] Add online SQLite backup CronJobs, external destination, retention, and restore runbook <!-- t:p5d1 -->
+- [x] Add Kustomization and Argo Application resources with explicit sync ordering <!-- t:p5a2 -->
+- [x] Render with `kubectl kustomize` and validate schemas, immutable images, probes, selectors, mounts, and namespace scope <!-- t:wng5 -->
 - [ ] Validate NetworkPolicy reachability and denial boundaries against the documented topology <!-- t:p5n1 -->
 - [ ] Seed required Vault material through an approved non-printing operator path <!-- t:mnn9 -->
 - [ ] Open the GitOps PR and record rendered-diff, policy, secret-shape, and rollback review instructions <!-- t:p5p1 -->

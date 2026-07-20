@@ -190,3 +190,12 @@ Phase 4 closed: PR #7 merged as 3d92b34; the same-SHA Tiny-IDP and Message Desk 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/publish-production-images.yml — Main-branch immutable two-image publisher verified by Actions run 29779935831
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/gitops-targets.json — Exact future consumer image/container mapping
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/lefthook.yml — Aligned exactly with go-template in 3ecb480
+
+## 2026-07-20
+
+Step 35: added Phase 5 GitOps desired state (2625c15), scoped source automation (253856e), and review PRs #178/#9; Vault seeding remains an explicit external prerequisite.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/hetzner-k3s-phase5/gitops/kustomize/tiny-message-desk/deployment.yaml — Production desired state checkpoint
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/publish-production-images.yml — GitOps PR handoff

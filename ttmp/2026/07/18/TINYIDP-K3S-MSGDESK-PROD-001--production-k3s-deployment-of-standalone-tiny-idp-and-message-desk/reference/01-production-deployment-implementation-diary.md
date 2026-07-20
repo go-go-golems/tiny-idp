@@ -34,6 +34,12 @@ RelatedFiles:
       Note: Production Message Desk OCI image contract and deterministic UI build (e6f558f)
     - Path: repo://deploy/images/Dockerfile.tinyidp
       Note: Production Tiny-IDP OCI image contract (e6f558f)
+    - Path: abs:///home/manuel/workspaces/2026-07-07/prod-tiny-idp/hetzner-k3s-phase5/gitops/kustomize/tiny-message-desk/deployment.yaml
+      Note: One-replica trusted-proxy runtime and immutable image contract (2625c15)
+    - Path: abs:///home/manuel/workspaces/2026-07-07/prod-tiny-idp/hetzner-k3s-phase5/gitops/kustomize/tiny-message-desk/network-policy.yaml
+      Note: Traefik-only provider ingress and canonical HTTPS backchannel boundary (2625c15)
+    - Path: abs:///home/manuel/workspaces/2026-07-07/prod-tiny-idp/hetzner-k3s-phase5/vault/roles/github-actions/tiny-idp-gitops-pr.json
+      Note: Main-branch OIDC binding for GitOps update automation (2625c15)
     - Path: repo://internal/cmds/serve_production.go
       Note: |-
         Explicit listener modes and exact Message Desk bootstrap
@@ -50,6 +56,8 @@ RelatedFiles:
       Note: Exact go-template hook alignment recorded in Step 34
     - Path: repo://pkg/idpui/types.go
       Note: Typed registration presentation contract in d5927e8
+    - Path: abs:///home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/publish-production-images.yml
+      Note: Single post-publish multi-image GitOps PR writer (253856e)
     - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/02-production-image-smoke.sh
       Note: Repeatable non-root, read-only-root, owner-only-secret, and readiness OCI smoke (cc99a15)
     - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/03-production-image-flow/main.go
@@ -62,6 +70,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 
@@ -3065,4 +3074,166 @@ main merge commit: 3d92b34f57053d8a3b705c0924bcedbb2e1d1ac9
 
 Each image config: OCI revision = full merge SHA
 Phase 5: consumes these tags in the k3s desired-state PR
+```
+
+## Step 35 — Phase 5 GitOps desired state and automation handoff
+
+Phase 5 now has two reviewable implementation checkpoints: the k3s desired
+state in commit `2625c15` and the source publisher handoff in `253856e`.
+The manifests deploy the reviewed one-replica SQLite topology, with Vault/VSO
+secret delivery, backups, NetworkPolicy, and Argo ordering all expressed as
+declarative desired state rather than ad-hoc cluster mutations.
+
+The key correction is architectural rather than cosmetic. Tiny-IDP's
+`trusted-proxy-http` listener validates the direct peer and forwarded HTTPS
+identity. Message Desk therefore cannot use `http://tinyidp:8081` as a
+backchannel: it must use the canonical issuer URL through Traefik. This keeps
+the provider's external issuer exact and preserves the TLS topology that the
+processes are designed to enforce.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 34)
+
+**Assistant interpretation:** Continue Phase 5 through a concrete k3s GitOps
+implementation, including scoped deployment automation and a reviewable PR.
+
+**Inferred user intent:** Turn the already-published Tiny-IDP and Message
+Desk images into a secure, inspectable production delivery path without
+reintroducing a hardcoded or direct-service listener model.
+
+**Commit (code):** `2625c15` — "Deploy Tiny-IDP Message Desk with GitOps"
+
+### What I did
+
+- Created an isolated k3s worktree from `origin/main` and added the
+  `tiny-message-desk` namespace to the `prod-apps` Argo project.
+- Added the namespace, three least-privilege ServiceAccounts, two RWO
+  `local-path` PVCs, VSO connection/auth/static-secret resources, two
+  one-replica `Recreate` Deployments, Services, TLS Ingresses, NetworkPolicy,
+  a ConfigMap-mounted `open_signup.js`, an online SQLite backup CronJob, and
+  recovery instructions.
+- Pinned both Deployment containers to `sha-3d92b34`, whose Phase 4 OCI
+  revision labels identify merged source revision `3d92b34f57053d8a3b705c0924bcedbb2e1d1ac9`.
+- Added Kubernetes Vault policies/roles and a GitHub Actions OIDC policy/role
+  that can read only `kv/data/ci/github/tiny-idp/gitops-pr-app`.
+- Updated the Tiny-IDP image workflow in `253856e` so only the dependent
+  Tiny-IDP publisher opens the multi-image GitOps PR, after the matching
+  Message Desk image has published.
+- Opened [k3s PR #178](https://github.com/wesen/2026-03-27--hetzner-k3s/pull/178)
+  and [Tiny-IDP PR #9](https://github.com/go-go-golems/tiny-idp/pull/9).
+
+### Why
+
+The provider must never infer its security boundary from an ordinary cluster
+HTTP request. Routing the backchannel to the canonical HTTPS issuer lets
+Traefik supply the trusted peer, host, and scheme headers that both
+applications require. The one writer (Tiny-IDP) avoids opening an image-update
+PR before the matching Message Desk image exists.
+
+### What worked
+
+- `kubectl kustomize gitops/kustomize/tiny-message-desk` rendered 22 objects.
+- Live API-schema validation succeeded after substituting `default` only in a
+  temporary rendered copy, including VSO CRDs, Argo Application, Ingress,
+  NetworkPolicy, PVCs, and CronJob.
+- `python3 .../validate_gitops_targets.py deploy/gitops-targets.json` returned
+  `OK (1 target(s))`; the shared updater dry-run against the k3s worktree
+  returned `No change needed for tiny-message-desk-prod` for `sha-3d92b34`.
+- `rhysd/actionlint:1.7.7` accepted the source workflow. The source push also
+  passed its local Lefthook lint and full `go test ./...` gate.
+
+### What didn't work
+
+- Applying the fully rendered file with `kubectl apply --dry-run=server`
+  initially failed after reporting `namespace/tiny-message-desk created
+  (server dry run)`: dry-run creation does not persist the namespace for the
+  following namespaced objects, so the API returned `namespaces
+  "tiny-message-desk" not found`. The temporary namespace-substitution
+  validation proved every dependent object schema without writing cluster
+  state.
+- `VAULT_ADDR` is present but `VAULT_TOKEN` is absent in this shell. No Vault
+  secret, policy, or role was applied or printed; the operator prerequisites
+  remain open rather than being simulated.
+
+### What I learned
+
+- The correct trusted-proxy backchannel is the public canonical issuer through
+  Traefik, not the provider's ClusterIP Service. The matching direct-pod
+  NetworkPolicy ingress allowance was removed, so policy and runtime behavior
+  tell the same story.
+- VSO policy/role files can be reviewed and merged safely without secret
+  values; actual seeding must happen later through the approved Vault operator
+  path.
+
+### What was tricky to build
+
+- There are two valid-looking routes to Tiny-IDP: a ClusterIP Service and the
+  HTTPS Ingress. The Service is suitable only for a separate explicitly
+  trusted internal listener, which does not exist here. The deployed listener
+  accepts HTTP only from Traefik's Pod CIDR and requires canonical forwarded
+  HTTPS headers. The solution was to make the backchannel use the issuer URL,
+  allow Message Desk egress only to the node's Traefik HTTPS endpoint, and
+  remove the now-invalid direct application-to-provider ingress allowance.
+- Kubernetes dry-run has a namespace lifecycle limitation. Rendering once and
+  applying a temporary namespace-rewritten copy gives server-side schema
+  coverage while keeping the real namespace absent.
+
+### What warrants a second pair of eyes
+
+- PR #178: verify the open-signup policy is acceptable for the selected hosts.
+  The program has no mail capability; it is not an email-verified public
+  signup launch.
+- Verify the backup object-storage policy permits exactly the prefix supplied
+  by `tiny-message-desk-prefix`, including retention deletes, and that the
+  GitHub App installation has pull-request write access only to the target
+  k3s repository.
+- Verify Traefik retains the observed `10.42.0.0/16` pod source range and
+  node address `91.98.46.169` before production rollout.
+
+### What should be done in the future
+
+- Merge PR #178, use an approved non-printing Vault operator session to seed
+  the Tiny-IDP runtime secret and backup-prefix shape, then apply the
+  Kubernetes and GitHub Actions Vault bootstrap scripts.
+- Seed the GitHub App `app_id`/`private_key` at the dedicated CI path before
+  merging PR #9; merge PR #9 only after that prerequisite exists.
+- Reconcile the Argo Application and perform the Phase 6 public acceptance
+  suite. Replace open signup with an email-verified program before treating
+  the public hostnames as an unrestricted launch.
+
+### Code review instructions
+
+- Start with k3s PR #178: read `deployment.yaml`, then `network-policy.yaml`,
+  `vault-*.yaml`, `backup-cronjob.yaml`, and `README.md` in that order.
+- Verify the backchannel argument is
+  `https://idp-message-desk.yolo.scapegoat.dev`, never `http://tinyidp:8081`.
+- Run:
+
+  ```bash
+  kubectl kustomize gitops/kustomize/tiny-message-desk
+  kubectl apply --dry-run=server -f /tmp/tiny-message-desk-rendered-default.yaml
+  python3 /path/to/infra-tooling/scripts/gitops/validate_gitops_targets.py \
+    deploy/gitops-targets.json
+  ```
+
+- Review Tiny-IDP PR #9 with `actionlint` and confirm only the dependent
+  `tinyidp` job can open a GitOps PR.
+
+### Technical details
+
+```text
+browser ── HTTPS ──> Traefik ── trusted HTTP ──> Tiny-IDP :8081
+                         │
+Message Desk ─ HTTPS canonical issuer ─────────> Traefik ──> Tiny-IDP
+
+Tiny-IDP trust input:
+  peer CIDR = 10.42.0.0/16 (Traefik Pods)
+  X-Forwarded-Proto = https
+  Host = idp-message-desk.yolo.scapegoat.dev
+
+Vault paths (names only):
+  kv/apps/tiny-message-desk/prod/idp              -> token-secret
+  kv/infra/backups/object-storage                 -> S3 keys + tiny-message-desk-prefix
+  kv/ci/github/tiny-idp/gitops-pr-app             -> app_id + private_key
 ```
