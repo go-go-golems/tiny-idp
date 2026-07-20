@@ -96,6 +96,18 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 		t.Fatalf("weak-password rejection reflects password: %s", weakBody)
 	}
 	harness.assertProviderCounts(0, 0)
+	malformedBrowser := newPublicBrowser(harness)
+	malformed := malformedBrowser.get(t, messagePublicOrigin+"/auth/register?return_to=%2F%2Fattacker.example.test")
+	requireStatus(t, malformed, http.StatusBadRequest)
+	malformedBody, err := io.ReadAll(malformed.Body)
+	malformed.Body.Close()
+	if err != nil {
+		t.Fatalf("read malformed registration rejection: %v", err)
+	}
+	if strings.Contains(string(malformedBody), "attacker.example.test") {
+		t.Fatalf("malformed registration reflects untrusted target: %s", malformedBody)
+	}
+	harness.assertProviderCounts(0, 0)
 
 	registration := browser.get(t, messagePublicOrigin+"/auth/register?return_to=/messages")
 	requireStatus(t, registration, http.StatusSeeOther)
