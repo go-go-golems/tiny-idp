@@ -570,3 +570,14 @@ not confer one another's authority.
 
 - internal/assurance/schemas.go — Three schema contracts and validators
 - internal/assurance/schemas_test.go — Cross-boundary acceptance/rejection tests
+
+## 2026-07-20 - Step 64: fail-closed interaction-obligation codec
+
+Completed the bidirectional lossless codec between persisted interaction action
+bits and stable assurance obligations. Unknown bits, unknown obligation IDs, and
+duplicates fail closed.
+
+### Related Files
+
+- internal/assurance/obligations.go — Codec implementation
+- internal/assurance/obligations_test.go — Round-trip and rejection coverage

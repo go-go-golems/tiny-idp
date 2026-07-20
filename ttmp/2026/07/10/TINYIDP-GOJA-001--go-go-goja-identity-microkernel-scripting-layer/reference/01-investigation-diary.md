@@ -6158,3 +6158,12 @@ work begins.
 
 `go test ./internal/assurance -count=1` passed. The code commit hook passed the
 isolated full suite, lint, custom UI analysis, and vet.
+
+## Step 64: Codec persisted interaction obligations
+
+**Commit:** `c0c18b1` — "Feat: add fail-closed obligation codec"
+
+Mapped every `InteractionRequiredAction` bit to one stable obligation ID and
+implemented both directions. The decoder rejects unknown future bits; the
+encoder rejects unknown or duplicate IDs. Round-trip tests prove no supported
+bit is lost. Focused and full-hook validation passed.
