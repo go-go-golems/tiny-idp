@@ -65,6 +65,38 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	harness.waitReady(harness.messageAddress, messagePublicOrigin, "/readyz")
 
 	browser := newPublicBrowser(harness)
+	weakBrowser := newPublicBrowser(harness)
+	weakRegistration := weakBrowser.get(t, messagePublicOrigin+"/auth/register")
+	requireStatus(t, weakRegistration, http.StatusSeeOther)
+	weakPage := weakBrowser.get(t, requiredLocation(t, weakRegistration))
+	requireStatus(t, weakPage, http.StatusOK)
+	weakHTML, err := io.ReadAll(weakPage.Body)
+	weakPage.Body.Close()
+	if err != nil {
+		t.Fatalf("read weak-password signup form: %v", err)
+	}
+	weakPassword := "too-short"
+	weakSubmission := weakBrowser.postForm(t, idpIssuer+"/authorize", url.Values{
+		"action":                {"submit"},
+		"interaction":           {hiddenFormValue(t, weakHTML, "interaction")},
+		"workflow_continuation": {hiddenFormValue(t, weakHTML, "workflow_continuation")},
+		"csrf_token":            {hiddenFormValue(t, weakHTML, "csrf_token")},
+		"display_name":          {"Weak Password"},
+		"email":                 {"weak@example.test"},
+		"password":              {weakPassword},
+		"password_confirmation": {weakPassword},
+	})
+	requireStatus(t, weakSubmission, http.StatusBadRequest)
+	weakBody, err := io.ReadAll(weakSubmission.Body)
+	weakSubmission.Body.Close()
+	if err != nil {
+		t.Fatalf("read weak-password rejection: %v", err)
+	}
+	if strings.Contains(string(weakBody), weakPassword) {
+		t.Fatalf("weak-password rejection reflects password: %s", weakBody)
+	}
+	harness.assertProviderCounts(0, 0)
+
 	registration := browser.get(t, messagePublicOrigin+"/auth/register?return_to=/messages")
 	requireStatus(t, registration, http.StatusSeeOther)
 	authorizeURL := requiredLocation(t, registration)
@@ -347,6 +379,11 @@ func (h *harness) startTinyIDP() {
 
 func (h *harness) assertSingleProviderIdentityAndSession() {
 	h.t.Helper()
+	h.assertProviderCounts(1, 1)
+}
+
+func (h *harness) assertProviderCounts(users, sessions int) {
+	h.t.Helper()
 	database, err := sql.Open("sqlite3", "file:"+h.idpDatabase+"?mode=ro")
 	if err != nil {
 		h.t.Fatalf("open Tiny-IDP assertion database: %v", err)
@@ -354,7 +391,7 @@ func (h *harness) assertSingleProviderIdentityAndSession() {
 	defer database.Close()
 	context, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	for table, want := range map[string]int{"users": 1, "sessions": 1} {
+	for table, want := range map[string]int{"users": users, "sessions": sessions} {
 		var got int
 		if err := database.QueryRowContext(context, "SELECT COUNT(*) FROM "+table).Scan(&got); err != nil {
 			h.t.Fatalf("count Tiny-IDP %s: %v", table, err)
