@@ -23,7 +23,9 @@ RelatedFiles:
     - Path: repo://internal/assurance/lambda_commit_model.go
       Note: Step 75 constrained declared-outcome/native-commit proof model
     - Path: repo://internal/assurance/lambda_commit_model_test.go
-      Note: Step 75 nondeterminism and early-completion counterexample tests
+      Note: |-
+        Step 75 nondeterminism and early-completion counterexample tests
+        Step 76 deterministic fuzz boundary coverage
     - Path: repo://internal/assurance/lambda_vocabulary.go
       Note: Step 73 typed stable-ID projection for compiled lambda contracts, diagnostics, and authorization evidence
     - Path: repo://internal/assurance/lambda_vocabulary_test.go
@@ -52,6 +54,8 @@ RelatedFiles:
         Typed ctx.challenge.emailCode outcome builder (commit 2e8a517)
     - Path: repo://internal/gojamodules/tinyidp/typescript.go
       Note: JavaScript and TypeScript test fakes API
+    - Path: repo://internal/gojaverify/compiler_test.go
+      Note: Step 76 verification module-isolation test
     - Path: repo://internal/securitytrace/trace.go
       Note: |-
         Trace monitor delegates to pure kernel in a460c83
@@ -96,6 +100,8 @@ RelatedFiles:
       Note: Step 15 runtime now shares the core schema validator
     - Path: repo://pkg/idpscript/invoke.go
       Note: Invocation-scoped evidence projection (commit c14d70f)
+    - Path: repo://pkg/idpscript/invoke_test.go
+      Note: Step 76 production scripting module-isolation test
     - Path: repo://pkg/idpsignup/executor.go
       Note: Fixed test-only deterministic capability catalog
     - Path: repo://pkg/idpsignup/executor_test.go
@@ -154,6 +160,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -7226,3 +7233,111 @@ lambda.commit@v1
 
 Any arrow skipped in a commit-relevant trace produces a model violation rather
 than a best-effort warning.
+
+## Step 76: Fuzz the lambda boundary and prove runtime-profile isolation
+
+The model and trace boundary now have a deterministic fuzz target, and the two
+JavaScript runtimes have explicit negative tests in both directions. Production
+scripting may load only `tinyidp`; offline verification may load only
+`tinyidp/verify`. Neither profile gets the other profile's module as an
+accidental transitive capability.
+
+This step also records the targeted race/replay evidence rather than claiming
+that a pure model test alone covers the runtime-owned worker and provider
+paths.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as earlier `continue` steps)
+
+**Assistant interpretation:** Finish the remaining cross-phase testing and
+runtime-profile separation requirements.
+
+**Inferred user intent:** Prevent verification tooling from becoming a hidden
+production capability and make malformed trace/model inputs safe to explore.
+
+**Commit (code):** `c6ff3dc` — "Test: fuzz lambda safety and isolate verification runtime"
+
+### What I did
+
+- Added `FuzzDeclaredLambdaModelNeverPanics`, which constructs a fresh pure
+  model and feeds bounded normalized observation sequences through it.
+- Ran the target deterministically with one worker and 100 iterations; it
+  completed 122 executions including its seed corpus without a panic.
+- Added `tinyidp/verify` to the production runtime’s forbidden-module matrix.
+- Added a verification-compiler test requiring that `require("tinyidp")`
+  fails as an ambient module.
+- Ran `-race` across assurance, trace, verification compiler, scripting
+  runtime, and Fosite provider packages; the Fosite result was confirmed from
+  its cache-backed successful race result after its normal long run.
+
+### Why
+
+The verification compiler is allowed to construct data-only plans, while the
+production runtime is allowed to compile declarative identity workflows. If a
+single VM profile could resolve both modules, verification helpers could become
+a request-path dependency or production policy code could gain test-only
+surface area. Fuzzing the pure model covers malformed normalized histories
+without assigning it persistence or protocol authority.
+
+### What worked
+
+```bash
+go test ./internal/assurance ./internal/gojaverify ./pkg/idpscript -count=1
+go test ./internal/assurance -run '^$' -fuzz=FuzzDeclaredLambdaModelNeverPanics -fuzztime=100x -parallel=1
+go test -race ./internal/assurance ./internal/securitytrace ./internal/gojaverify ./pkg/idpscript ./internal/fositeadapter -count=1
+go test -race ./internal/fositeadapter
+```
+
+All direct, fuzz, and race checks passed. The commit hook also passed the full
+isolated test suite, lint, analyzers, and vet.
+
+### What didn't work
+
+The long Fosite race process outlived the tool's first output window, so a
+second command was avoided after confirming the process was still active. Once
+it completed, `go test -race ./internal/fositeadapter` returned a cached pass.
+This is an execution-observation limitation, not a test failure.
+
+### What I learned
+
+- Module registration plus a disabled ambient loader is a stronger profile
+  boundary than documentation alone; both directions need a regression test.
+- The pure model’s fuzzer is fast enough to be a local bounded gate, while the
+  Fosite race suite remains appropriately more expensive.
+
+### What was tricky to build
+
+The model fuzz target deliberately ignores whether generated sequences are
+valid histories; it is testing totality and safe rejection. A fuzzer that only
+generated valid paths would never exercise the malformed-ordering branches that
+matter for offline trace ingestion.
+
+### What warrants a second pair of eyes
+
+- Verify new native modules are registered in exactly one runtime profile and
+  get a reciprocal negative test when they introduce a second profile.
+- Keep bounded iteration fuzzing separate from CI's longer time-based campaign;
+  neither should be presented as a formal proof.
+
+### What should be done in the future
+
+Run the overall completion audit: check normative TypeScript/examples against
+the implementation, execute the final full/race/GOWORK-off gates, validate
+ticket documentation, and upload the updated ticket bundle to reMarkable.
+
+### Code review instructions
+
+- Inspect `FuzzDeclaredLambdaModelNeverPanics` and its finite observation
+  mapper; it must not call a provider or store.
+- Inspect both module-denial tests together with their runtime factories.
+- Re-run the commands under **What worked**.
+
+### Technical details
+
+```text
+production Compile -> RuntimeFactory -> require("tinyidp") only
+verification Compile -> isolated registry -> require("tinyidp/verify") only
+
+normalized bytes -> pure model Apply -> violations or state; never panic
+```

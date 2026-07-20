@@ -707,3 +707,13 @@ Step 75: modeled declared lambda outcomes as constrained nondeterminism and prov
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_commit_model.go — Pure constrained-lambda safety model
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Real signup trace replayed through the pure model
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Commit trace emission moved after successful native transaction
+
+## 2026-07-20
+
+Step 76: added bounded lambda-model fuzzing and explicit bidirectional production/verification module isolation tests; replay and targeted race gates pass (commit c6ff3dc)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_commit_model_test.go — Bounded malformed-sequence fuzz coverage for the pure lambda safety model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojaverify/compiler_test.go — Verification runtime explicitly rejects production tinyidp
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — Production scripting runtime explicitly rejects tinyidp/verify
