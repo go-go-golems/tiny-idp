@@ -31,11 +31,14 @@ RelatedFiles:
     - Path: repo://internal/cmds/script_test.go
       Note: Success and nonzero assertion-failure diagnostics
     - Path: repo://internal/fositeadapter/registration_test.go
-      Note: Browser proof and delivery lifecycle evidence
+      Note: |-
+        Browser proof and delivery lifecycle evidence
+        Step 74 end-to-end trace secrecy and monitor coverage
     - Path: repo://internal/fositeadapter/scripted_signup.go
       Note: |-
         Native signup commit revalidates optional invitation effect and redeems it inside its transaction (commit 84a9995)
         Native signup continuation, proof, delivery, and resend boundary
+        Step 74 production native trace emission seams
     - Path: repo://internal/fositeadapter/sqlstore_test.go
       Note: Phase 9 provider/persistence/failpoint regression matrix exercised in Step 72
     - Path: repo://internal/gojamodules/tinyidp/module.go
@@ -45,7 +48,9 @@ RelatedFiles:
     - Path: repo://internal/gojamodules/tinyidp/typescript.go
       Note: JavaScript and TypeScript test fakes API
     - Path: repo://internal/securitytrace/trace.go
-      Note: Trace monitor delegates to pure kernel in a460c83
+      Note: |-
+        Trace monitor delegates to pure kernel in a460c83
+        Step 74 bounded lambda/continuation/evidence/effect/commit trace contract
     - Path: repo://internal/securitytrace/trace_test.go
       Note: Phase 9 trace property and fuzz validation exercised in Step 72
     - Path: repo://lefthook.yml
@@ -144,6 +149,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -6952,3 +6958,136 @@ compiled Program --validate--> finite declarations
 This is a projection, not a callback bridge: no VM, HTTP request, persistence
 row, credential, browser state, or native effect implementation enters the
 result.
+
+## Step 74: Trace scripted-signup native boundaries without secrets
+
+The lambda-first design requires evidence from the actual native seams, not a
+post-hoc audit guess. This step adds a closed security-trace contract for the
+scripted-signup flow and emits it at lambda invocation, continuation creation
+and terminal consumption, native email-evidence verification, effect-plan
+validation, and successful/failed atomic native commit.
+
+Every event carries only the existing HMAC-derived interaction correlation,
+a stable native step ID, a closed observation mapping, and a bounded outcome.
+It deliberately excludes lambda input/output, continuation handles, email,
+passwords, invitation codes, evidence payloads, client IDs, subjects, tokens,
+and error text.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as earlier `continue` steps)
+
+**Assistant interpretation:** Continue the normative ticket by completing the
+cross-phase secret-free trace requirement at real native workflow boundaries.
+
+**Inferred user intent:** Make the scriptable signup system reviewable and
+model-observable without turning trace telemetry into a second secret store.
+
+**Commit (code):** `34758c1` — "Feat: trace scripted signup native boundaries"
+
+### What I did
+
+- Extended the closed `securitytrace.Kind` contract with lambda start/complete/
+  reject, continuation create/terminal, evidence verified, effect validation,
+  and native effect committed events.
+- Added stable assurance step IDs for each boundary and mapped every event to
+  an existing closed observation/outcome contract.
+- Emitted the events in the native Fosite scripted-signup path, not inside
+  Goja: after continuation persistence; around `InvokeSubmission`; after
+  email-challenge verification; after effect-plan revalidation; and only after
+  the transaction that consumes the continuation, creates identity/credential/
+  session state, redeems the invitation, and consumes the interaction succeeds.
+- Kept the monitor strict for trace ordering while making these non-authorization
+  observations validated trace facts rather than inputs to the authorization
+  terminal-ordering kernel.
+- Added an end-to-end email-verified signup test that requires every boundary,
+  validates every event, runs the monitor, and scans serialized events for
+  sensitive fixture material.
+
+### Why
+
+The critical safety claim is not “a script returned `commit`.” It is that a
+native validator accepted a finite plan and the native transaction committed
+all required state exactly once. These trace events make that distinction
+visible to offline review and later model/replay tools while preserving the
+existing private Fosite issuance and native registration authorities.
+
+### What worked
+
+```bash
+go test ./internal/fositeadapter -run TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification -count=1
+go test ./internal/assurance ./internal/securitytrace ./internal/fositeadapter -count=1
+GOWORK=off /tmp/golangci-lint-v2.12.2-go1.26.5 run -v
+```
+
+All focused tests passed. The code commit hook passed isolated full
+`GOWORK=off go test ./...`, lint, the configured analyzers, and vet.
+
+### What didn't work
+
+The first commit-hook lint run found that the exhaustive trace-test fixture
+switch did not name the eight new `securitytrace.Kind` cases. I added explicit
+fixture transitions and outcomes for every new kind; lint then reported zero
+issues. No runtime behavior was weakened.
+
+### What I learned
+
+- A trace can represent a successful lambda outcome with a versioned
+  `lambda.*@v1` result without serializing the lambda output.
+- Continuation consumption and native effect commit are distinct facts even
+  when they share one transaction; recording both makes the atomic boundary
+  easier to review.
+- The authorization kernel must not absorb all observations. It stays a small
+  terminal-ordering model; the trace contract validates the richer workflow
+  vocabulary independently.
+
+### What was tricky to build
+
+The trace monitor previously fed every event after interaction creation into
+the authorization kernel. That would incorrectly report lambda and workflow
+events as invalid authorization transitions. The monitor now still requires a
+created interaction and validates the event contract, but returns after those
+non-authorization facts. This preserves strict correlation/order checks
+without duplicating a second workflow state machine prematurely.
+
+### What warrants a second pair of eyes
+
+- Confirm future native workflow slices use the same bounded event shapes;
+  do not add arbitrary fields for script metadata or exceptions.
+- Review the placement of `NativeEffectCommitted`: it is intentionally after
+  the outer store transaction returns successfully.
+- Confirm `EffectValidationCompleted` remains an assertion about native
+  revalidation, never a claim that JavaScript executed an effect.
+
+### What should be done in the future
+
+Use the new trace facts as the input vocabulary for the constrained
+lambda-outcome model and normalized replay task. Add equivalent emitters for a
+new native workflow slice when it is implemented; do not emit generic events
+from inside a Goja VM.
+
+### Code review instructions
+
+- Start at `transitionResults` in `internal/securitytrace/trace.go` and check
+  that every new event accepts only its declared step/outcome pair.
+- Follow `resumeScriptedSignup`, `advanceSignupPresentation`,
+  `beginEmailChallenge`, and `commitScriptedSignup` in order.
+- Run the focused end-to-end test and inspect
+  `assertScriptedSignupSecurityTrace` for the secrecy and monitor assertions.
+
+### Technical details
+
+```text
+native browser POST
+  -> lambda.started
+  -> (email evidence verified, if required)
+  -> lambda.completed(lambda.commit@v1)
+  -> effect.validation_completed
+  -> [single native transaction]
+       continuation consumed + identity/credential/session/interaction commit
+  -> continuation.terminal + native_effect.committed
+```
+
+For present/challenge outcomes, the analogous path records a new continuation
+creation; rejected invocation/evidence/effect/commit paths record only the
+bounded rejected outcome and never include an error string.

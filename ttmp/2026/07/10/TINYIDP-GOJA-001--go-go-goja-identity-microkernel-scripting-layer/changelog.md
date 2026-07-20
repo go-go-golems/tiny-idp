@@ -687,3 +687,13 @@ Step 73: completed cross-phase stable assurance ID bindings for native handlers/
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_vocabulary.go — Validated projection of compiled program and policy metadata into typed assurance IDs
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/vocabulary.go — Closed typed stable identifier families and native handler/observation IDs
+
+## 2026-07-19
+
+Step 74: emitted bounded secret-free scripted-signup traces at lambda invocation, continuation, evidence verification, effect validation, atomic commit, and terminal boundaries (commit 34758c1)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — End-to-end secret-free trace and offline-monitor proof
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Actual native scripted-signup boundary emissions using HMAC interaction correlation only
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace.go — Closed trace-event contract for lambda and native workflow boundaries
