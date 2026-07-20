@@ -20,6 +20,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/store/memory"
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
@@ -151,6 +152,45 @@ func TestProviderReadinessAndIdempotentClose(t *testing.T) {
 	p.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("closed handler status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestProviderReadinessRejectsClosedConfiguredSignupGeneration(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	key, err := keys.GenerateRSA("signup-ready", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.DefaultSource, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := embeddedidp.New(ctx, embeddedidp.Options{Issuer: "http://127.0.0.1:5556", Store: store, ScriptedSignup: embeddedidp.ScriptedSignupConfig{GenerationManager: manager}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report := provider.Readiness(ctx); !report.Ready {
+		t.Fatalf("initial readiness = %#v", report)
+	}
+	if err := manager.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	report := provider.Readiness(ctx)
+	if report.Ready {
+		t.Fatalf("readiness after signup generation close = %#v", report)
+	}
+	found := false
+	for _, check := range report.Checks {
+		if check.Name == "scripted_signup" && !check.Ready && check.Reason == "active_generation_unavailable" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing scripted signup readiness failure: %#v", report)
 	}
 }
 

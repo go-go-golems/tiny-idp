@@ -50,6 +50,26 @@ func TestTrustedProxyResolver(t *testing.T) {
 	}
 }
 
+func TestTrustedProxyResolverRejectsCatchAllAndIdentifiesImmediatePeer(t *testing.T) {
+	for _, cidr := range []string{"0.0.0.0/0", "::/0"} {
+		if _, err := idp.NewTrustedProxyResolver(idp.TrustedProxyConfig{TrustedCIDRs: []string{cidr}}); err == nil {
+			t.Fatalf("catch-all CIDR %q was accepted", cidr)
+		}
+	}
+	resolver, err := idp.NewTrustedProxyResolver(idp.TrustedProxyConfig{TrustedCIDRs: []string{"10.42.0.0/24"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trusted, err := resolver.TrustsRequestPeer(&http.Request{RemoteAddr: "10.42.0.193:8080"})
+	if err != nil || !trusted {
+		t.Fatalf("trusted peer = %v, %v", trusted, err)
+	}
+	trusted, err = resolver.TrustsRequestPeer(&http.Request{RemoteAddr: "198.51.100.3:8080"})
+	if err != nil || trusted {
+		t.Fatalf("untrusted peer = %v, %v", trusted, err)
+	}
+}
+
 func TestFixedWindowLimiterFailsClosed(t *testing.T) {
 	ctx := context.Background()
 	limiter := idp.NewFixedWindowRateLimiter(2, time.Hour)

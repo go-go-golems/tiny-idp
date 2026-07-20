@@ -31,13 +31,19 @@ import (
 	fositememory "github.com/ory/fosite/storage"
 	fositejwt "github.com/ory/fosite/token/jwt"
 
+	"github.com/go-go-golems/tiny-idp/internal/assurance"
 	"github.com/go-go-golems/tiny-idp/internal/keys"
 	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
 	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
+	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
+	"github.com/go-go-golems/tiny-idp/pkg/memorystore"
 )
 
 var ProductionHandlerFactories = []string{
@@ -48,6 +54,11 @@ var ProductionHandlerFactories = []string{
 	"OpenIDConnectRefreshFactory",
 	"OAuth2TokenIntrospectionFactory",
 }
+
+const (
+	registrationIntentParameter = "tinyidp_signup"
+	authorizeInteractionMaxBody = 64 << 10
+)
 
 type Options struct {
 	Issuer          string
@@ -64,20 +75,29 @@ type Options struct {
 	// ClientSecrets optionally supplies plaintext client secrets for callers that
 	// are converting legacy/dev config into Fosite's BCrypt client store. The
 	// production embedded API should prefer BCrypt hashes in idpstore.Client.SecretHash.
-	ClientSecrets     map[string]string
-	CookieSecure      bool
-	CookieSameSite    http.SameSite
-	SessionCookieName string
-	CSRFCookieName    string
-	CookiePath        string
-	AccountChooser    AccountChooserConfig
-	Audit             idp.Sink
-	Consent           idp.ConsentPolicy
-	RateLimiter       idp.RateLimiter
-	ClientAddress     idp.ClientAddressResolver
-	Authenticator     idp.PasswordAuthenticator
-	PasswordPolicy    idp.PasswordAcceptancePolicy
-	PasswordWork      idp.PasswordWorkConfig
+	ClientSecrets         map[string]string
+	CookieSecure          bool
+	CookieSameSite        http.SameSite
+	SessionCookieName     string
+	CSRFCookieName        string
+	CookiePath            string
+	AccountChooser        AccountChooserConfig
+	Audit                 idp.Sink
+	Consent               idp.ConsentPolicy
+	Authorization         idp.AuthorizationPolicy
+	Claims                idp.ClaimsPolicy
+	Presentation          idp.PresentationPolicy
+	RateLimiter           idp.RateLimiter
+	ClientAddress         idp.ClientAddressResolver
+	Authenticator         idp.PasswordAuthenticator
+	PasswordPolicy        idp.PasswordAcceptancePolicy
+	PasswordWork          idp.PasswordWorkConfig
+	Registration          RegistrationConfig
+	ScriptedSignup        *idpsignup.Executor
+	ScriptedSignupManager *idpsignup.GenerationManager
+	DurableInvitations    *idpinvite.DurableService
+	EmailChallenges       *idpemailchallenge.Service
+	WorkflowContinuations idpcontinuation.Store
 	// AuthorizePersistenceHook is a test-only failpoint hook for the durable
 	// authorization response lifecycle. Production callers should leave it nil.
 	AuthorizePersistenceHook func(point string) error
@@ -86,6 +106,7 @@ type Options struct {
 	TokenPersistenceHook       func(point string) error
 	SecurityEvents             securitytrace.Sink
 	InteractionRenderer        idpui.InteractionRenderer
+	WorkflowRenderer           idpui.WorkflowRenderer
 	DeviceVerificationRenderer idpui.DeviceVerificationRenderer
 	// deviceCodeGenerator is an internal test seam. Production code always uses
 	// cryptographic randomness from generateDeviceCodes.
@@ -93,35 +114,54 @@ type Options struct {
 }
 
 type Provider struct {
-	issuer               oidcmeta.Issuer
-	store                idpstore.Store
-	fositeStore          *fositememory.MemoryStore
-	sqlStore             *sqlFositeStore
-	oauth2               fosite.OAuth2Provider
-	config               *fosite.Config
-	mode                 idpstore.Mode
-	csrfKey              []byte
-	cookieSecure         bool
-	cookieSameSite       http.SameSite
-	sessionCookieName    string
-	csrfCookieName       string
-	chooser              AccountChooserConfig
-	cookiePathValue      string
-	audit                idp.Sink
-	securityEvents       securitytrace.Sink
-	consent              idp.ConsentPolicy
-	rateLimiter          idp.RateLimiter
-	clientAddress        idp.ClientAddressResolver
-	authenticator        idp.PasswordAuthenticator
-	auditFailures        atomic.Uint64
-	securityFailures     atomic.Uint64
-	sessionTTL           time.Duration
-	interactionTTL       time.Duration
-	clock                func() time.Time
-	interactionUI        idpui.InteractionRenderer
-	deviceVerificationUI idpui.DeviceVerificationRenderer
-	deviceCodeGenerator  func() (deviceCode, userCode string, err error)
-	renderMetrics        interactionRenderMetrics
+	issuer                oidcmeta.Issuer
+	store                 idpstore.Store
+	fositeStore           *fositememory.MemoryStore
+	sqlStore              *sqlFositeStore
+	oauth2                fosite.OAuth2Provider
+	config                *fosite.Config
+	mode                  idpstore.Mode
+	csrfKey               []byte
+	cookieSecure          bool
+	cookieSameSite        http.SameSite
+	sessionCookieName     string
+	csrfCookieName        string
+	chooser               AccountChooserConfig
+	cookiePathValue       string
+	audit                 idp.Sink
+	securityEvents        securitytrace.Sink
+	consent               idp.ConsentPolicy
+	authorization         idp.AuthorizationPolicy
+	claims                idp.ClaimsPolicy
+	presentation          idp.PresentationPolicy
+	rateLimiter           idp.RateLimiter
+	clientAddress         idp.ClientAddressResolver
+	authenticator         idp.PasswordAuthenticator
+	registration          *idpaccounts.Service
+	scriptedSignup        *idpsignup.Executor
+	scriptedSignupManager *idpsignup.GenerationManager
+	durableInvitations    *idpinvite.DurableService
+	emailChallenges       *idpemailchallenge.Service
+	workflowContinuations *idpcontinuation.Service
+	auditFailures         atomic.Uint64
+	securityFailures      atomic.Uint64
+	sessionTTL            time.Duration
+	interactionTTL        time.Duration
+	clock                 func() time.Time
+	interactionUI         idpui.InteractionRenderer
+	workflowUI            idpui.WorkflowRenderer
+	deviceVerificationUI  idpui.DeviceVerificationRenderer
+	deviceCodeGenerator   func() (deviceCode, userCode string, err error)
+	renderMetrics         interactionRenderMetrics
+}
+
+// RegistrationConfig enables provider-owned account creation during a
+// validated browser authorization interaction. The account service is optional
+// only when the configured password authenticator is the standard account
+// service; production callers using a custom authenticator must provide one.
+type RegistrationConfig struct {
+	Enabled  bool
+	Accounts *idpaccounts.Service
 }
 
 func (p *Provider) PasswordWorkStats() (idp.PasswordWorkStats, bool) {
@@ -211,6 +251,17 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			opts.DeviceVerificationRenderer = renderer
 		}
 	}
+	if opts.WorkflowRenderer == nil {
+		if renderer, ok := opts.InteractionRenderer.(idpui.WorkflowRenderer); ok {
+			opts.WorkflowRenderer = renderer
+		} else {
+			renderer, rendererErr := idpui.NewDefaultRenderer()
+			if rendererErr != nil {
+				return nil, fmt.Errorf("build default workflow renderer: %w", rendererErr)
+			}
+			opts.WorkflowRenderer = renderer
+		}
+	}
 	if opts.Consent == nil {
 		if opts.Mode == idpstore.ProductionMode {
 			opts.Consent = NewStoredConsent(opts.Store, 0)
@@ -238,6 +289,23 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("build password authenticator: %w", err)
 		}
 		opts.Authenticator = authenticator
+	}
+	// Scripted signup is an independent production workflow. It uses the same
+	// canonical account service as password login, but must not require callers
+	// to enable the legacy RegistrationConfig path just to reach that service.
+	if (opts.ScriptedSignup != nil || opts.ScriptedSignupManager != nil) && opts.Registration.Accounts == nil {
+		accounts, ok := opts.Authenticator.(*idpaccounts.Service)
+		if !ok {
+			return nil, fmt.Errorf("scripted signup requires an idpaccounts service")
+		}
+		opts.Registration.Accounts = accounts
+	}
+	if opts.Registration.Enabled && opts.Registration.Accounts == nil {
+		accounts, ok := opts.Authenticator.(*idpaccounts.Service)
+		if !ok {
+			return nil, fmt.Errorf("provider-owned registration requires an idpaccounts service")
+		}
+		opts.Registration.Accounts = accounts
 	}
 	if opts.CodeTTL == 0 {
 		opts.CodeTTL = 5 * time.Minute
@@ -307,7 +375,42 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	registration := opts.Registration.Accounts
+	if !opts.Registration.Enabled && opts.ScriptedSignup == nil && opts.ScriptedSignupManager == nil {
+		registration = nil
+	}
+	if opts.ScriptedSignup == nil && opts.ScriptedSignupManager == nil && registration != nil {
+		executor, executorErr := idpsignup.New(ctx, "", 1)
+		if executorErr != nil {
+			return nil, fmt.Errorf("create default scripted signup executor: %w", executorErr)
+		}
+		opts.ScriptedSignup = executor
+	}
+	var workflowContinuations *idpcontinuation.Service
+	if opts.ScriptedSignup != nil || opts.ScriptedSignupManager != nil {
+		continuationStore := opts.WorkflowContinuations
+		if continuationStore == nil {
+			if durableStore, ok := opts.Store.(idpcontinuation.Store); ok {
+				continuationStore = durableStore
+			} else if opts.Mode != idpstore.ProductionMode {
+				continuationStore = memorystore.NewContinuationStore()
+			} else {
+				return nil, fmt.Errorf("production scripted signup requires a durable workflow continuation store")
+			}
+		}
+		var continuationErr error
+		resolver := idpcontinuation.GenerationResolver(opts.ScriptedSignup)
+		if opts.ScriptedSignupManager != nil {
+			resolver = opts.ScriptedSignupManager
+		}
+		workflowContinuations, continuationErr = idpcontinuation.NewService(continuationStore, idpcontinuation.Config{
+			HashKey: opts.SecretKey, Clock: opts.Clock, Resolver: resolver,
+		})
+		if continuationErr != nil {
+			return nil, fmt.Errorf("create scripted signup continuation service: %w", continuationErr)
+		}
+	}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, authorization: opts.Authorization, claims: opts.Claims, presentation: opts.Presentation, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -613,6 +716,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		p.beginAuthorize(w, r)
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, authorizeInteractionMaxBody)
 		p.resumeAuthorize(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -653,6 +757,20 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown or disabled client", http.StatusBadRequest)
 		return
 	}
+	registrationRequested, registrationErr := authorizeRegistrationIntent(ar.GetRequestForm())
+	if registrationErr != nil || (registrationRequested && p.registration == nil) {
+		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrInvalidRequest.WithHint("invalid registration request"))
+		return
+	}
+	if registrationRequested && hasSession {
+		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrInvalidRequest.WithHint("registration requires a new browser session"))
+		return
+	}
+	if registrationRequested {
+		needLogin = false
+		actions &^= idpstore.InteractionRequireLogin | idpstore.InteractionRequireFreshLogin
+		actions |= idpstore.InteractionRequireRegistration
+	}
 	selectAccount := p.chooser.Enabled && promptHas(ar.GetRequestForm().Get("prompt"), "select_account") && !needLogin
 	var chooserEntries []idpstore.RememberedBrowserSession
 	if selectAccount {
@@ -683,6 +801,10 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if promptHas(ar.GetRequestForm().Get("prompt"), "none") {
+		if registrationRequested {
+			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrLoginRequired)
+			return
+		}
 		if actions.Has(idpstore.InteractionRequireAccountSelection) || (selectAccount && needLogin) {
 			p.oauth2.WriteAuthorizeError(r.Context(), w, ar, accountSelectionRequiredError())
 			return
@@ -696,7 +818,7 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !needLogin && !requireConsent && !actions.Has(idpstore.InteractionRequireAccountSelection) {
+	if !needLogin && !requireConsent && !actions.Has(idpstore.InteractionRequireAccountSelection) && !actions.Has(idpstore.InteractionRequireRegistration) {
 		p.finishAuthorize(w, r, ar, u, sess.AuthTime, false, nil)
 		return
 	}
@@ -705,7 +827,19 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "create authorization interaction failed", http.StatusInternalServerError)
 		return
 	}
-	page := p.newInteractionPage(handle, csrfToken, actions, ar.GetRequestForm(), !actions.Has(idpstore.InteractionRequireAccountSelection), client.ID, []string(ar.GetRequestedScopes()), strings.TrimSpace(ar.GetRequestForm().Get("login_hint")), nil)
+	if actions.Has(idpstore.InteractionRequireRegistration) {
+		if _, signupErr := p.activeSignupExecutor(); signupErr != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.start_failed", ClientID: client.ID, Result: "rejected", Reason: "workflow_unavailable"})
+			http.Error(w, "registration request was not accepted", http.StatusServiceUnavailable)
+			return
+		}
+		if err := p.beginScriptedSignup(w, r, ar, client, handle, csrfToken); err != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.start_failed", ClientID: client.ID, Result: "rejected", Reason: "workflow_unavailable"})
+			http.Error(w, "registration request was not accepted", http.StatusServiceUnavailable)
+		}
+		return
+	}
+	page := p.newInteractionPage(handle, csrfToken, actions, ar.GetRequestForm(), !actions.Has(idpstore.InteractionRequireAccountSelection) && !actions.Has(idpstore.InteractionRequireRegistration), client.ID, []string(ar.GetRequestedScopes()), strings.TrimSpace(ar.GetRequestForm().Get("login_hint")), nil)
 	if actions.Has(idpstore.InteractionRequireAccountSelection) {
 		page.DocumentTitle = "Choose an account"
 		page.AccountChooser = chooserPrompt(chooserEntries)
@@ -781,6 +915,20 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	action := idpui.Action(r.PostForm.Get(idpui.ActionFieldName))
 	selectionRequired := record.RequiredActions.Has(idpstore.InteractionRequireAccountSelection)
+	registrationRequired := record.RequiredActions.Has(idpstore.InteractionRequireRegistration)
+	if registrationRequired && !sameOriginBrowserPost(r) {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: "origin_rejected"})
+		http.Error(w, "registration request was not accepted", http.StatusForbidden)
+		return
+	}
+	if registrationRequired {
+		if _, signupErr := p.activeSignupExecutor(); signupErr != nil {
+			http.Error(w, "registration workflow is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		p.resumeScriptedSignup(w, r, ar, client, record, handle, clientAddress)
+		return
+	}
 	if (selectionRequired && action != idpui.ActionContinue && action != idpui.ActionUseAnotherAccount && action != idpui.ActionRemoveAccount && action != idpui.ActionDeny) || (!selectionRequired && action != idpui.ActionApprove && action != idpui.ActionDeny) {
 		http.Error(w, "invalid interaction action", http.StatusBadRequest)
 		return
@@ -791,8 +939,8 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		traceID := interactionTraceID(record)
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentDenied, InteractionID: traceID, ClientID: record.ClientID})
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeDenied)})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentDenied, InteractionID: traceID, Transition: assurance.StepInteractionDeny, Outcome: assurance.TransitionDenied})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, Transition: assurance.StepInteractionDeny, Outcome: assurance.TransitionDenied})
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
 		return
 	}
@@ -806,7 +954,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account_selection.use_another_account", ClientID: ar.GetClient().GetID(), Result: "accepted"})
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepAccountSelection, Outcome: assurance.TransitionApproved})
 		loginActions := idpstore.InteractionRequireFreshLogin
 		loginHandle, loginCSRF, err := p.createInteractionForSession(w, r, ar, loginActions, nil)
 		if err != nil {
@@ -847,6 +995,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
 		}
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepAccountSelection, Outcome: assurance.TransitionApproved})
 		loginHandle, loginCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireFreshLogin, nil)
 		if err != nil {
 			http.Error(w, "create login interaction failed", http.StatusInternalServerError)
@@ -899,7 +1048,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 				return
 			}
-			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepAccountSelection, Outcome: assurance.TransitionApproved})
 			freshSessionHash := idpstore.HashSecret(p.csrfKey, newHandle)
 			consentHandle, consentCSRF, err := p.createInteractionForSession(w, r, ar, idpstore.InteractionRequireConsent, freshSessionHash)
 			if err != nil {
@@ -940,12 +1089,12 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		u = result.User
 		authTime = p.now()
 		hasSession = true
-		if err := p.createBrowserSession(w, r, u, authTime); err != nil {
+		if _, err := p.createBrowserSession(w, r, u, authTime); err != nil {
 			http.Error(w, "create session failed", http.StatusInternalServerError)
 			return
 		}
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.success", ClientID: ar.GetClient().GetID(), Subject: u.Sub, Result: "accepted"})
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthenticationSatisfied, InteractionID: interactionTraceID(record), ClientID: record.ClientID})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthenticationSatisfied, InteractionID: interactionTraceID(record), Transition: assurance.StepPasswordAuthenticate, Outcome: assurance.TransitionApplied})
 	}
 	if !hasSession {
 		http.Error(w, "login is required", http.StatusBadRequest)
@@ -968,14 +1117,14 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if requireConsent && approved {
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentApproved, InteractionID: interactionTraceID(record), ClientID: record.ClientID})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ConsentApproved, InteractionID: interactionTraceID(record), Transition: assurance.StepConsentGrant, Outcome: assurance.TransitionApplied})
 	}
 	if p.sqlStore == nil {
 		if _, err := p.store.ConsumeInteraction(r.Context(), record.IDHash, p.now(), idpstore.InteractionOutcomeApproved); err != nil {
 			http.Error(w, "authorization interaction already completed", http.StatusBadRequest)
 			return
 		}
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), ClientID: record.ClientID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepInteractionApprove, Outcome: assurance.TransitionApproved})
 	}
 	p.finishAuthorize(w, r, ar, u, authTime, approved, &record)
 }
@@ -1018,6 +1167,60 @@ func (p *Provider) allowLogin(ctx context.Context, clientID, clientAddress, logi
 		}
 	}
 	return allowed
+}
+
+func (p *Provider) allowRegistration(ctx context.Context, clientID, clientAddress, login string) bool {
+	sum := sha256.Sum256([]byte(idpaccounts.NormalizeLogin(login)))
+	account := hex.EncodeToString(sum[:])
+	keys := []string{
+		"registration:account:" + account,
+		"registration:client:" + clientID,
+		"registration:address:" + clientAddress,
+	}
+	allowed := true
+	for _, key := range keys {
+		if !p.rateLimiter.Allow(ctx, key) {
+			allowed = false
+		}
+	}
+	return allowed
+}
+
+func authorizeRegistrationIntent(values url.Values) (bool, error) {
+	entries, ok := values[registrationIntentParameter]
+	if !ok {
+		return false, nil
+	}
+	if len(entries) != 1 || entries[0] != "1" {
+		return false, fmt.Errorf("invalid registration intent")
+	}
+	return true, nil
+}
+
+// sameOriginBrowserPost adds browser-context checks to the interaction's
+// cryptographic CSRF token. It derives the expected origin from the public
+// request Host: the listener/proxy enforces canonical Host handling, while the
+// interaction rejects a cross-site form before account creation. Missing Fetch
+// Metadata is accepted for browser compatibility; a supplied cross-site value
+// is never accepted.
+func sameOriginBrowserPost(r *http.Request) bool {
+	if r == nil || r.Header.Get("Origin") == "" || r.Host == "" {
+		return false
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if r.Header.Get("Origin") != scheme+"://"+r.Host {
+		return false
+	}
+	return strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) != "cross-site"
+}
+
+func clearBytes(value []byte) {
+	for index := range value {
+		value[index] = 0
+	}
 }
 
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
@@ -1074,7 +1277,7 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 		p.oauth2.WriteAccessError(r.Context(), w, accessRequest, err)
 		return
 	}
-	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.TokenLifecycleDone, RequestID: accessRequest.GetID(), ClientID: accessRequest.GetClient().GetID(), GrantType: strings.Join(accessRequest.GetGrantTypes(), " ")})
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.TokenLifecycleDone, Transition: assurance.StepTokenIssue, Outcome: assurance.TransitionApplied})
 	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "token.request.accepted", ClientID: accessRequest.GetClient().GetID(), Subject: accessRequest.GetSession().GetSubject(), Result: "accepted", Fields: map[string]string{"grant_type": strings.Join(accessRequest.GetGrantTypes(), " ")}})
 	p.oauth2.WriteAccessResponse(r.Context(), w, accessRequest, response)
 }
@@ -1311,7 +1514,7 @@ func (p *Provider) grantRequestedAccessScopes(ar fosite.AccessRequester) {
 	}
 }
 
-func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosite.Requester, authTime time.Time) *openid.DefaultSession {
+func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosite.Requester, authTime time.Time) (*openid.DefaultSession, error) {
 	now := p.now()
 	claims := &fositejwt.IDTokenClaims{
 		Issuer:   p.issuer.String(),
@@ -1326,7 +1529,34 @@ func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosit
 	if promptHas(prompt, "none") || promptHas(prompt, "login") || ar.GetRequestForm().Get("max_age") != "" {
 		claims.RequestedAt = now
 	}
-	for k, v := range idpstore.ClaimsForScopes(u, []string(ar.GetGrantedScopes())) {
+	nativeClaims := idpstore.ClaimsForScopes(u, []string(ar.GetGrantedScopes()))
+	if p.claims != nil {
+		base := make(map[string]json.RawMessage, len(nativeClaims))
+		for name, value := range nativeClaims {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return nil, fmt.Errorf("encode native claim %q: %w", name, err)
+			}
+			base[name] = encoded
+		}
+		output, err := p.claims.Claims(ctx, idp.ClaimsInput{Subject: idp.AuthorizationSubject{Subject: u.Sub, Tenant: u.Tenant, Groups: append([]string(nil), u.Groups...), Roles: append([]string(nil), u.Roles...), EmailVerified: u.EmailVerified}, Client: idp.AuthorizationClient{ID: ar.GetClient().GetID(), Public: ar.GetClient().IsPublic()}, GrantedScopes: []string(ar.GetGrantedScopes()), Base: base}.Clone())
+		if err != nil {
+			return nil, err
+		}
+		merged, err := idp.MergeClaims(base, output)
+		if err != nil {
+			return nil, err
+		}
+		nativeClaims = map[string]any{}
+		for name, value := range merged {
+			var decoded any
+			if err := json.Unmarshal(value, &decoded); err != nil {
+				return nil, fmt.Errorf("decode policy claim %q: %w", name, err)
+			}
+			nativeClaims[name] = decoded
+		}
+	}
+	for k, v := range nativeClaims {
 		if k != "sub" {
 			claims.Extra[k] = v
 		}
@@ -1335,7 +1565,7 @@ func (p *Provider) newOIDCSession(ctx context.Context, u idpstore.User, ar fosit
 	if key, err := p.store.ActiveSigningKey(ctx); err == nil && key.ID != "" {
 		headers.Add("kid", key.ID)
 	}
-	return &openid.DefaultSession{Claims: claims, Headers: headers, Subject: u.Sub, Username: u.PreferredUsername, ExpiresAt: map[fosite.TokenType]time.Time{}}
+	return &openid.DefaultSession{Claims: claims, Headers: headers, Subject: u.Sub, Username: u.PreferredUsername, ExpiresAt: map[fosite.TokenType]time.Time{}}, nil
 }
 
 func (p *Provider) rejectUnsupportedRequestObject(w http.ResponseWriter, r *http.Request) bool {
@@ -1451,10 +1681,33 @@ func (p *Provider) emit(ctx context.Context, e idp.Event, ar fosite.AuthorizeReq
 	p.recordAudit(ctx, e)
 }
 
+// approvedAuthorizationProof is an unforgeable-outside-this-package witness
+// that native client, policy, consent, claims, and lifecycle checks completed.
+// It is intentionally not a protocol response and cannot be supplied by an
+// HTTP caller or JavaScript provider.
+type approvedAuthorizationProof struct {
+	protocolContext context.Context
+	request         fosite.AuthorizeRequester
+	session         *openid.DefaultSession
+	interaction     *idpstore.InteractionRecord
+	finishLifecycle func(bool) error
+}
+
 func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, u idpstore.User, authTime time.Time, consentApproved bool, interaction *idpstore.InteractionRecord) {
 	client, err := p.store.GetClient(r.Context(), ar.GetClient().GetID())
 	if err != nil || client.Disabled {
 		http.Error(w, "unknown client", http.StatusBadRequest)
+		return
+	}
+	decision, err := p.authorizePolicy(r.Context(), u, client, ar, authTime)
+	if err != nil {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "authorization.policy.failed", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "policy_unavailable"})
+		http.Error(w, "authorization policy failed", http.StatusInternalServerError)
+		return
+	}
+	if decision.Kind == idp.AuthorizationDeny {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "authorization.policy.denied", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: decision.DiagnosticID})
+		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrAccessDenied)
 		return
 	}
 	scopes := []string(ar.GetRequestedScopes())
@@ -1477,7 +1730,12 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 	}
 	p.grantRequestedScopes(ar)
 	p.grantRequestedAudience(ar)
-	session := p.newOIDCSession(r.Context(), u, ar, authTime)
+	session, err := p.newOIDCSession(r.Context(), u, ar, authTime)
+	if err != nil {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "claims.policy.failed", ClientID: client.ID, Subject: u.Sub, Result: "rejected", Reason: "policy_unavailable"})
+		http.Error(w, "claims policy failed", http.StatusInternalServerError)
+		return
+	}
 	protocolContext := fosite.NewContext()
 	var finishLifecycle func(bool) error
 	if p.sqlStore != nil {
@@ -1487,33 +1745,64 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 			return
 		}
 	}
-	response, err := p.oauth2.NewAuthorizeResponse(protocolContext, ar, session)
+	proof := approvedAuthorizationProof{
+		protocolContext: protocolContext,
+		request:         ar,
+		session:         session,
+		interaction:     interaction,
+		finishLifecycle: finishLifecycle,
+	}
+	p.issueApprovedAuthorizationArtifacts(w, r, proof)
+}
+
+// issueApprovedAuthorizationArtifacts is the sole Fosite artifact-issuance
+// sink. Its private proof parameter prevents policy code, workflow scripts,
+// and HTTP inputs from reaching NewAuthorizeResponse directly.
+func (p *Provider) issueApprovedAuthorizationArtifacts(w http.ResponseWriter, r *http.Request, proof approvedAuthorizationProof) {
+	response, err := p.oauth2.NewAuthorizeResponse(proof.protocolContext, proof.request, proof.session)
 	if err != nil {
-		if finishLifecycle != nil {
-			_ = finishLifecycle(false)
+		if proof.finishLifecycle != nil {
+			_ = proof.finishLifecycle(false)
 		}
-		p.emit(r.Context(), idp.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
-		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
+		p.emit(r.Context(), idp.New("authorize.request.rejected"), proof.request, "rejected", auditReason(err))
+		p.oauth2.WriteAuthorizeError(r.Context(), w, proof.request, err)
 		return
 	}
-	if finishLifecycle != nil {
-		if err := finishLifecycle(true); err != nil {
-			p.emit(r.Context(), idp.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
+	if proof.finishLifecycle != nil {
+		if err := proof.finishLifecycle(true); err != nil {
+			p.emit(r.Context(), idp.New("authorize.request.rejected"), proof.request, "rejected", auditReason(err))
 			http.Error(w, "authorization persistence failed", http.StatusInternalServerError)
 			return
 		}
 	}
-	if interaction != nil {
-		traceID := interactionTraceID(*interaction)
+	if proof.interaction != nil {
+		traceID := interactionTraceID(*proof.interaction)
 		if p.sqlStore != nil {
-			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, ClientID: client.ID, Outcome: string(idpstore.InteractionOutcomeApproved)})
+			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, Transition: assurance.StepInteractionApprove, Outcome: assurance.TransitionApproved})
 		}
-		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthorizationArtifactsDone, InteractionID: traceID, RequestID: ar.GetID(), ClientID: client.ID})
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthorizationArtifactsDone, InteractionID: traceID, Transition: assurance.StepAuthorizationCommit, Outcome: assurance.TransitionApplied})
 	}
-	p.emit(r.Context(), idp.New("authorize.request.accepted"), ar, "accepted", "")
+	p.emit(r.Context(), idp.New("authorize.request.accepted"), proof.request, "accepted", "")
 	responseWriter := w
 	if r.Method == http.MethodPost {
 		responseWriter = seeOtherRedirectWriter{ResponseWriter: w}
 	}
-	p.oauth2.WriteAuthorizeResponse(r.Context(), responseWriter, ar, response)
+	p.oauth2.WriteAuthorizeResponse(r.Context(), responseWriter, proof.request, response)
+}
+
+func (p *Provider) authorizePolicy(ctx context.Context, user idpstore.User, client idpstore.Client, ar fosite.AuthorizeRequester, authTime time.Time) (idp.AuthorizationDecision, error) {
+	if p.authorization == nil {
+		return idp.AuthorizationDecision{Kind: idp.AuthorizationSkip}, nil
+	}
+	input := idp.AuthorizationInput{
+		Subject:        idp.AuthorizationSubject{Subject: user.Sub, Tenant: user.Tenant, Groups: append([]string(nil), user.Groups...), Roles: append([]string(nil), user.Roles...), EmailVerified: user.EmailVerified},
+		Client:         idp.AuthorizationClient{ID: client.ID, Public: client.Public},
+		Request:        idp.AuthorizationRequest{Scopes: []string(ar.GetRequestedScopes()), Audience: []string(ar.GetRequestedAudience()), Prompt: strings.Fields(ar.GetRequestForm().Get("prompt"))},
+		Authentication: idp.AuthenticationView{AuthenticatedAt: authTime.UTC()},
+	}
+	decision, err := p.authorization.Authorize(ctx, input.Clone())
+	if err != nil {
+		return idp.AuthorizationDecision{}, err
+	}
+	return idp.NormalizeAuthorizationDecision(decision)
 }

@@ -14,14 +14,19 @@ var defaultInteractionTemplate string
 //go:embed templates/device_verification.html
 var defaultDeviceVerificationTemplate string
 
+//go:embed templates/workflow.html
+var defaultWorkflowTemplate string
+
 // DefaultRenderer is the dependency-free built-in interaction renderer.
 type DefaultRenderer struct {
 	template                   *template.Template
 	deviceVerificationTemplate *template.Template
+	workflowTemplate           *template.Template
 }
 
 var _ InteractionRenderer = (*DefaultRenderer)(nil)
 var _ DeviceVerificationRenderer = (*DefaultRenderer)(nil)
+var _ WorkflowRenderer = (*DefaultRenderer)(nil)
 
 // NewDefaultRenderer parses the embedded template. Callers should construct a
 // renderer once and reuse it for every request.
@@ -34,7 +39,30 @@ func NewDefaultRenderer() (*DefaultRenderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse default device verification template: %w", err)
 	}
-	return &DefaultRenderer{template: tmpl, deviceVerificationTemplate: deviceTemplate}, nil
+	workflowTemplate, err := template.New("workflow").Parse(defaultWorkflowTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("parse default workflow template: %w", err)
+	}
+	return &DefaultRenderer{template: tmpl, deviceVerificationTemplate: deviceTemplate, workflowTemplate: workflowTemplate}, nil
+}
+
+func (r *DefaultRenderer) RenderWorkflow(ctx context.Context, dst io.Writer, page WorkflowPage) error {
+	if r == nil || r.workflowTemplate == nil {
+		return fmt.Errorf("default workflow renderer is not initialized")
+	}
+	if ctx == nil || dst == nil {
+		return fmt.Errorf("context and destination writer are required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := page.Validate(); err != nil {
+		return fmt.Errorf("validate workflow page: %w", err)
+	}
+	if err := r.workflowTemplate.ExecuteTemplate(dst, "workflow", page.Clone()); err != nil {
+		return fmt.Errorf("execute default workflow template: %w", err)
+	}
+	return nil
 }
 
 func (r *DefaultRenderer) RenderDeviceVerification(ctx context.Context, dst io.Writer, page DeviceVerificationPage) error {

@@ -30,7 +30,21 @@ type selectAccountFixture struct {
 	server        *httptest.Server
 }
 
-func newSelectAccountFixture(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy) *selectAccountFixture {
+type presentationTitlePolicy struct{}
+
+func (presentationTitlePolicy) Present(_ context.Context, input idp.PresentationInput) (idp.PresentationOutput, error) {
+	switch input.Kind {
+	case idp.PresentationAccountSelection:
+		return idp.PresentationOutput{DocumentTitle: "Select a message-app account"}, nil
+	case idp.PresentationConsent:
+		return idp.PresentationOutput{DocumentTitle: "Grant message-app access"}, nil
+	case idp.PresentationDeviceVerify:
+		return idp.PresentationOutput{}, nil
+	}
+	return idp.PresentationOutput{}, nil
+}
+
+func newSelectAccountFixture(t *testing.T, consentFactory func(*memory.Store) idp.ConsentPolicy, presentation idp.PresentationPolicy) *selectAccountFixture {
 	t.Helper()
 	ctx := context.Background()
 	store := memory.New()
@@ -75,7 +89,7 @@ func newSelectAccountFixture(t *testing.T, consentFactory func(*memory.Store) id
 	if consentFactory != nil {
 		consent = consentFactory(store)
 	}
-	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, Consent: consent, AccountChooser: fositeadapter.AccountChooserConfig{Enabled: true}})
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: secret, Consent: consent, Presentation: presentation, AccountChooser: fositeadapter.AccountChooserConfig{Enabled: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +146,7 @@ func (f *selectAccountFixture) submit(t *testing.T, form url.Values, csrfCookie 
 }
 
 func TestPromptSelectAccountActivatesSelectedRememberedSession(t *testing.T) {
-	fixture := newSelectAccountFixture(t, nil)
+	fixture := newSelectAccountFixture(t, nil, nil)
 	form, csrfCookie := fixture.begin(t)
 	completed := fixture.submit(t, form, csrfCookie)
 	defer completed.Body.Close()
@@ -158,10 +172,45 @@ func TestPromptSelectAccountActivatesSelectedRememberedSession(t *testing.T) {
 	}
 }
 
+func TestPromptSelectAccountPresentationPolicyDecoratesNativeChooserAndConsent(t *testing.T) {
+	fixture := newSelectAccountFixture(t, func(store *memory.Store) idp.ConsentPolicy {
+		return fositeadapter.NewStoredConsent(store, 0)
+	}, presentationTitlePolicy{})
+	form, csrfCookie := fixture.begin(t)
+
+	// begin already rendered the chooser through the provider's normal
+	// continuation path. Reissue the same prompt to inspect its public title;
+	// the form submitted below remains provider-owned.
+	query := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	query.Set("prompt", "select_account")
+	request, _ := http.NewRequest(http.MethodGet, fixture.server.URL+"/authorize?"+query.Encode(), nil)
+	request.AddCookie(&http.Cookie{Name: "tinyidp_session", Value: fixture.activeHandle})
+	request.AddCookie(&http.Cookie{Name: "tinyidp_browser_context", Value: fixture.contextHandle})
+	response, err := (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), "Select a message-app account") {
+		t.Fatalf("chooser presentation status=%d body=%s", response.StatusCode, body)
+	}
+
+	completed := fixture.submit(t, form, csrfCookie)
+	defer completed.Body.Close()
+	consentBody, err := io.ReadAll(completed.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.StatusCode != http.StatusOK || !strings.Contains(string(consentBody), "Grant message-app access") {
+		t.Fatalf("consent presentation status=%d body=%s", completed.StatusCode, consentBody)
+	}
+}
+
 func TestPromptSelectAccountCreatesFreshConsentInteraction(t *testing.T) {
 	fixture := newSelectAccountFixture(t, func(store *memory.Store) idp.ConsentPolicy {
 		return fositeadapter.NewStoredConsent(store, 0)
-	})
+	}, nil)
 	form, csrfCookie := fixture.begin(t)
 	completed := fixture.submit(t, form, csrfCookie)
 	defer completed.Body.Close()
@@ -210,7 +259,7 @@ func TestPromptSelectAccountCreatesFreshConsentInteraction(t *testing.T) {
 }
 
 func TestPromptSelectAccountUseAnotherAccountRequiresCredentials(t *testing.T) {
-	fixture := newSelectAccountFixture(t, nil)
+	fixture := newSelectAccountFixture(t, nil, nil)
 	form, csrfCookie := fixture.begin(t)
 	form.Del("account")
 	form.Set("action", string(idpui.ActionUseAnotherAccount))
@@ -229,7 +278,7 @@ func TestPromptSelectAccountUseAnotherAccountRequiresCredentials(t *testing.T) {
 }
 
 func TestPromptSelectAccountRemovesOnlySelectedRememberedMembership(t *testing.T) {
-	fixture := newSelectAccountFixture(t, nil)
+	fixture := newSelectAccountFixture(t, nil, nil)
 	form, csrfCookie := fixture.begin(t)
 	form.Set("action", string(idpui.ActionRemoveAccount))
 	response := fixture.submit(t, form, csrfCookie)

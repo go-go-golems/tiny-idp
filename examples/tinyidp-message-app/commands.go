@@ -64,19 +64,22 @@ func (c *InitCommand) Run(ctx context.Context, vals *values.Values) error {
 type ServeCommand struct{ *cmds.CommandDescription }
 
 type serveSettings struct {
-	StateRoot           string `glazed:"state-root"`
-	Addr                string `glazed:"addr"`
-	TLSCertificate      string `glazed:"tls-cert"`
-	TLSKey              string `glazed:"tls-key"`
-	MaintenanceInterval string `glazed:"maintenance-interval"`
-	ShutdownTimeout     string `glazed:"shutdown-timeout"`
-	ReadHeaderTimeout   string `glazed:"read-header-timeout"`
-	ReadTimeout         string `glazed:"read-timeout"`
-	WriteTimeout        string `glazed:"write-timeout"`
-	IdleTimeout         string `glazed:"idle-timeout"`
-	MaxRequestBytes     int    `glazed:"max-request-bytes"`
-	ExternalIssuer      string `glazed:"external-issuer"`
-	ExternalBackchannel string `glazed:"external-backchannel-url"`
+	StateRoot           string   `glazed:"state-root"`
+	Addr                string   `glazed:"addr"`
+	ListenerMode        string   `glazed:"listener-mode"`
+	TLSCertificate      string   `glazed:"tls-cert"`
+	TLSKey              string   `glazed:"tls-key"`
+	TrustedProxyCIDRs   []string `glazed:"trusted-proxy-cidrs"`
+	MaxProxyHops        int      `glazed:"max-proxy-hops"`
+	MaintenanceInterval string   `glazed:"maintenance-interval"`
+	ShutdownTimeout     string   `glazed:"shutdown-timeout"`
+	ReadHeaderTimeout   string   `glazed:"read-header-timeout"`
+	ReadTimeout         string   `glazed:"read-timeout"`
+	WriteTimeout        string   `glazed:"write-timeout"`
+	IdleTimeout         string   `glazed:"idle-timeout"`
+	MaxRequestBytes     int      `glazed:"max-request-bytes"`
+	ExternalIssuer      string   `glazed:"external-issuer"`
+	ExternalBackchannel string   `glazed:"external-backchannel-url"`
 }
 
 var _ cmds.BareCommand = (*ServeCommand)(nil)
@@ -85,12 +88,15 @@ func NewServeCommand() (cmds.BareCommand, error) {
 	return &ServeCommand{CommandDescription: cmds.NewCommandDescription(
 		"serve",
 		cmds.WithShort("Run the initialized self-contained message application"),
-		cmds.WithLong("Open the durable identity and message stores, reconcile the public PKCE client and signing key, run initial maintenance, then bind the application listener. HTTP public origins are accepted only on loopback for local development."),
+		cmds.WithLong("Open the durable identity and message stores, reconcile the public PKCE client and signing key, run initial maintenance, then bind an explicit direct-TLS or trusted-proxy HTTP listener."),
 		cmds.WithFlags(
 			fields.New("state-root", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Initialized state directory")),
 			fields.New("addr", fields.TypeString, fields.WithDefault("127.0.0.1:8090"), fields.WithHelp("HTTP listen address")),
-			fields.New("tls-cert", fields.TypeString, fields.WithHelp("TLS certificate PEM; required when the public origin is HTTPS")),
-			fields.New("tls-key", fields.TypeString, fields.WithHelp("TLS private key PEM; required when the public origin is HTTPS")),
+			fields.New("listener-mode", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Required listener mode: development-http, direct-tls, or trusted-proxy-http")),
+			fields.New("tls-cert", fields.TypeString, fields.WithHelp("TLS certificate PEM; required only for direct-tls")),
+			fields.New("tls-key", fields.TypeString, fields.WithHelp("TLS private key PEM; required only for direct-tls")),
+			fields.New("trusted-proxy-cidrs", fields.TypeStringList, fields.WithHelp("Required only for trusted-proxy-http")),
+			fields.New("max-proxy-hops", fields.TypeInteger, fields.WithDefault(8)),
 			fields.New("maintenance-interval", fields.TypeString, fields.WithDefault("15m")),
 			fields.New("shutdown-timeout", fields.TypeString, fields.WithDefault("20s")),
 			fields.New("read-header-timeout", fields.TypeString, fields.WithDefault("5s")),
@@ -286,6 +292,10 @@ func runMessageApplication(ctx context.Context, settings serveSettings) error {
 	if settings.MaxRequestBytes < 1 {
 		return errors.New("max-request-bytes must be positive")
 	}
+	listenerMode, err := parseMessageListenerMode(settings.ListenerMode)
+	if err != nil {
+		return err
+	}
 	app, err := openInitializedMessageApplication(ctx, settings.StateRoot)
 	if settings.ExternalIssuer != "" {
 		app, err = openExternalMessageApplication(ctx, settings.StateRoot, settings.ExternalIssuer, settings.ExternalBackchannel)
@@ -307,16 +317,26 @@ func runMessageApplication(ctx context.Context, settings serveSettings) error {
 			return fmt.Errorf("refuse listener while provider is not ready: %#v", report.Checks)
 		}
 	}
-	server := &http.Server{Addr: settings.Addr, Handler: http.MaxBytesHandler(app.handler, int64(settings.MaxRequestBytes)), ReadHeaderTimeout: durations.readHeader, ReadTimeout: durations.read, WriteTimeout: durations.write, IdleTimeout: durations.idle, MaxHeaderBytes: 1 << 20, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
-	secureOrigin := strings.HasPrefix(app.manifest.PublicBaseURL, "https://")
-	if secureOrigin != (settings.TLSCertificate != "" || settings.TLSKey != "") {
-		return errors.New("--tls-cert and --tls-key are both required exactly when the public origin is HTTPS")
+	if err := validateMessageListenerSettings(listenerMode, settings, app.manifest.PublicBaseURL); err != nil {
+		return err
 	}
+	handler := http.Handler(http.MaxBytesHandler(app.handler, int64(settings.MaxRequestBytes)))
+	if listenerMode == messageListenerTrustedProxyHTTP {
+		resolver, resolverErr := idp.NewTrustedProxyResolver(idp.TrustedProxyConfig{TrustedCIDRs: settings.TrustedProxyCIDRs, MaxHops: settings.MaxProxyHops})
+		if resolverErr != nil {
+			return errors.Wrap(resolverErr, "trusted proxy resolver")
+		}
+		handler, resolverErr = idp.NewTrustedProxyHTTPHandler(idp.TrustedProxyHTTPConfig{PublicOrigin: app.manifest.PublicBaseURL, Resolver: resolver}, handler)
+		if resolverErr != nil {
+			return errors.Wrap(resolverErr, "trusted proxy listener")
+		}
+	}
+	server := &http.Server{Addr: settings.Addr, Handler: handler, ReadHeaderTimeout: durations.readHeader, ReadTimeout: durations.read, WriteTimeout: durations.write, IdleTimeout: durations.idle, MaxHeaderBytes: 1 << 20, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		log.Info().Str("addr", settings.Addr).Str("origin", app.manifest.PublicBaseURL).Msg("message application listening")
 		var serveErr error
-		if secureOrigin {
+		if listenerMode == messageListenerDirectTLS {
 			serveErr = server.ListenAndServeTLS(settings.TLSCertificate, settings.TLSKey)
 		} else {
 			serveErr = server.ListenAndServe()
@@ -352,6 +372,41 @@ func runMessageApplication(ctx context.Context, settings serveSettings) error {
 		return server.Shutdown(shutdownCtx)
 	})
 	return group.Wait()
+}
+
+type messageListenerMode string
+
+const (
+	messageListenerDevelopmentHTTP  messageListenerMode = "development-http"
+	messageListenerDirectTLS        messageListenerMode = "direct-tls"
+	messageListenerTrustedProxyHTTP messageListenerMode = "trusted-proxy-http"
+)
+
+func parseMessageListenerMode(raw string) (messageListenerMode, error) {
+	mode := messageListenerMode(strings.TrimSpace(raw))
+	if mode != messageListenerDevelopmentHTTP && mode != messageListenerDirectTLS && mode != messageListenerTrustedProxyHTTP {
+		return "", errors.New("--listener-mode must be development-http, direct-tls, or trusted-proxy-http")
+	}
+	return mode, nil
+}
+func validateMessageListenerSettings(mode messageListenerMode, settings serveSettings, origin string) error {
+	secure := strings.HasPrefix(origin, "https://")
+	if mode == messageListenerDevelopmentHTTP {
+		if secure || settings.TLSCertificate != "" || settings.TLSKey != "" || len(settings.TrustedProxyCIDRs) != 0 {
+			return errors.New("development-http requires a loopback HTTP public origin and forbids TLS and trusted proxy flags")
+		}
+		return nil
+	}
+	if mode == messageListenerDirectTLS {
+		if !secure || settings.TLSCertificate == "" || settings.TLSKey == "" || len(settings.TrustedProxyCIDRs) != 0 {
+			return errors.New("direct-tls requires an HTTPS public origin, certificate/key, and no trusted proxy CIDRs")
+		}
+		return nil
+	}
+	if !secure || len(settings.TrustedProxyCIDRs) == 0 || settings.TLSCertificate != "" || settings.TLSKey != "" {
+		return errors.New("trusted-proxy-http requires an HTTPS public origin and trusted proxy CIDRs and forbids certificate flags")
+	}
+	return nil
 }
 
 type serveDurations struct{ maintenance, shutdown, readHeader, read, write, idle time.Duration }

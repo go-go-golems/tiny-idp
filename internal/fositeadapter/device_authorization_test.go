@@ -22,6 +22,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/store/memory"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idppolicy"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
@@ -424,6 +425,28 @@ func TestDeviceVerificationRendererFailureFailsClosed(t *testing.T) {
 	t.Fatal("renderer failure was not audited")
 }
 
+func TestDeviceVerificationPresentationPolicyDecoratesNativeConfirmation(t *testing.T) {
+	now := time.Date(2026, 7, 15, 17, 0, 0, 0, time.UTC)
+	provider, _, _ := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-presentation", "WXYZ-ABCD", nil }, now)
+	provider.presentation = devicePresentationTitlePolicy{}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	client := newDeviceVerificationHTTPClient(t)
+	start, err := client.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var device deviceAuthorizationResponse
+	if err := json.NewDecoder(start.Body).Decode(&device); err != nil {
+		t.Fatal(err)
+	}
+	_ = start.Body.Close()
+	page := getDeviceVerificationPage(t, client, server.URL+"/device?user_code="+device.UserCode, http.StatusOK)
+	if !strings.Contains(page, "Review coding-agent access") {
+		t.Fatalf("device presentation title missing from native confirmation: %s", page)
+	}
+}
+
 func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *testing.T) {
 	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
 	provider, _, _ := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-one", "ABCD-EFGH", nil }, now)
@@ -529,6 +552,84 @@ func TestDeviceTokenExchangeIssuesOIDCTokensConsumesOnceAndSupportsUserInfo(t *t
 		t.Fatalf("replay token response = %d", replay.StatusCode)
 	}
 }
+
+func TestDeviceClaimsPolicyPersistsAdditionalClaimToUserInfo(t *testing.T) {
+	now := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	provider, _, _ := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-claims", "QRST-UVWX", nil }, now)
+	policy, err := idppolicy.New(context.Background(), gojaAdditionalClaimsSource, 1, idppolicy.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = policy.Close(context.Background()) })
+	provider.claims = policy
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	client := newDeviceVerificationHTTPClient(t)
+
+	start, err := client.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var device deviceAuthorizationResponse
+	if err := json.NewDecoder(start.Body).Decode(&device); err != nil {
+		t.Fatal(err)
+	}
+	_ = start.Body.Close()
+	page := getDeviceVerificationPage(t, client, server.URL+"/device?user_code="+device.UserCode, http.StatusOK)
+	decision := deviceVerificationHiddenFields(t, page)
+	decision.Set(idpui.ActionFieldName, string(idpui.ActionApprove))
+	decision.Set(idpui.LoginFieldName, "alice")
+	decision.Set(idpui.PasswordFieldName, "password")
+	approval, err := client.PostForm(server.URL+"/device", decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = approval.Body.Close()
+	token := postDeviceToken(t, client, server.URL, device.DeviceCode, "device-cli")
+	if token.StatusCode != http.StatusOK {
+		t.Fatalf("token status=%d body=%q", token.StatusCode, readAndClose(t, token))
+	}
+	var tokens map[string]any
+	if err := json.NewDecoder(token.Body).Decode(&tokens); err != nil {
+		t.Fatal(err)
+	}
+	_ = token.Body.Close()
+	accessToken, _ := tokens["access_token"].(string)
+	if accessToken == "" {
+		t.Fatalf("token response=%#v", tokens)
+	}
+	userinfo, err := http.NewRequest(http.MethodGet, server.URL+"/userinfo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userinfo.Header.Set("Authorization", "Bearer "+accessToken)
+	response, err := client.Do(userinfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("userinfo status=%d body=%q", response.StatusCode, readAndClose(t, response))
+	}
+	var claims map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&claims); err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if claims["sub"] != "user-alice" || claims["community_role"] != "member" {
+		t.Fatalf("userinfo claims=%#v", claims)
+	}
+}
+
+const gojaAdditionalClaimsSource = `
+const A = require("tinyidp").v1;
+module.exports = A.program("claims-policy", p => {
+  const additional = A.lambda("claims.additional", {
+    kind:"provider", input:"claimsInput", output:"claimsOutput",
+    outcomes:["complete"], effects:[], capabilities:[], timeoutMs:100, maxCapabilityCalls:0, maxOutputBytes:8192,
+    run: ctx => A.result.complete({Additional:{community_role:"member"}})
+  });
+  p.provider("claims", "default", {version:1, state:"virtual", replayProtection:"none", revocation:"none", handlers:{additional}});
+});`
 
 func TestSQLiteDeviceBrowserApprovalTokenUserInfoAndReplay(t *testing.T) {
 	ctx := context.Background()
@@ -650,6 +751,15 @@ func newDeviceAuthorizationProvider(t *testing.T, generator func() (string, stri
 }
 
 type deviceTestAuthenticator struct{}
+
+type devicePresentationTitlePolicy struct{}
+
+func (devicePresentationTitlePolicy) Present(_ context.Context, input idp.PresentationInput) (idp.PresentationOutput, error) {
+	if input.Kind != idp.PresentationDeviceVerify || input.ClientID != "device-cli" {
+		return idp.PresentationOutput{}, fmt.Errorf("unexpected presentation input: %#v", input)
+	}
+	return idp.PresentationOutput{DocumentTitle: "Review coding-agent access"}, nil
+}
 
 type failingDeviceVerificationRenderer struct{}
 

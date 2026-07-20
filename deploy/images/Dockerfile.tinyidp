@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1.7
+
+FROM golang:1.26-bookworm AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . ./
+
+ARG VERSION=dev
+RUN CGO_ENABLED=1 go build \
+    -trimpath \
+    -buildvcs=false \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/tinyidp \
+    ./cmd/tinyidp
+
+FROM debian:bookworm-slim AS runtime
+
+ARG IMAGE_SOURCE=unknown
+ARG IMAGE_REVISION=unknown
+ARG VERSION=dev
+
+LABEL org.opencontainers.image.title="tiny-idp" \
+      org.opencontainers.image.description="Tiny-IDP production OIDC provider" \
+      org.opencontainers.image.source="${IMAGE_SOURCE}" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.version="${VERSION}"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 65532 tinyidp \
+    && useradd --uid 65532 --gid 65532 --no-create-home --shell /usr/sbin/nologin tinyidp \
+    && install -d --owner=65532 --group=65532 --mode=0750 \
+        /var/lib/tinyidp \
+        /var/log/tinyidp \
+        /etc/tinyidp/signup \
+        /run/tinyidp-secrets
+
+COPY --from=build --chown=65532:65532 /out/tinyidp /usr/local/bin/tinyidp
+
+USER 65532:65532
+WORKDIR /var/lib/tinyidp
+EXPOSE 8081
+STOPSIGNAL SIGTERM
+
+# The reviewed non-secret signup program is mounted read-only at
+# /etc/tinyidp/signup/open-signup.js. Token credentials are mounted by the
+# workload as owner-only files under /run/tinyidp-secrets; no secret is baked
+# into this image.
+ENTRYPOINT ["/usr/local/bin/tinyidp"]
+CMD ["serve-production"]

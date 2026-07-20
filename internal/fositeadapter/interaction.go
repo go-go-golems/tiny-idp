@@ -11,6 +11,7 @@ import (
 
 	"github.com/ory/fosite"
 
+	"github.com/go-go-golems/tiny-idp/internal/assurance"
 	"github.com/go-go-golems/tiny-idp/internal/securitytrace"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
@@ -18,13 +19,15 @@ import (
 const interactionFieldName = "interaction"
 
 var transientAuthorizeFields = map[string]struct{}{
-	interactionFieldName: {},
-	"action":             {},
-	"consent_approved":   {},
-	"csrf_token":         {},
-	"login":              {},
-	"password":           {},
-	"account":            {},
+	interactionFieldName:    {},
+	"action":                {},
+	"consent_approved":      {},
+	"csrf_token":            {},
+	"login":                 {},
+	"password":              {},
+	"password_confirmation": {},
+	"display_name":          {},
+	"account":               {},
 }
 
 func canonicalAuthorizeForm(ar fosite.AuthorizeRequester) url.Values {
@@ -94,7 +97,7 @@ func (p *Provider) createInteractionForSession(w http.ResponseWriter, r *http.Re
 	canonical := canonicalAuthorizeForm(ar)
 	now := p.now()
 	var browserContextHash []byte
-	if actions.Has(idpstore.InteractionRequireLogin) {
+	if actions.Has(idpstore.InteractionRequireLogin) || actions.Has(idpstore.InteractionRequireRegistration) {
 		sessionIDHash = nil
 	}
 	if actions.Has(idpstore.InteractionRequireAccountSelection) {
@@ -117,7 +120,7 @@ func (p *Provider) createInteractionForSession(w http.ResponseWriter, r *http.Re
 	if err := p.store.CreateInteraction(r.Context(), record); err != nil {
 		return "", "", fmt.Errorf("create interaction: %w", err)
 	}
-	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionCreated, InteractionID: interactionTraceID(record), ClientID: record.ClientID, RequiredActions: uint32(record.RequiredActions)})
+	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionCreated, InteractionID: interactionTraceID(record), Transition: assurance.StepInteractionCreate, RequiredActions: uint32(record.RequiredActions), Outcome: assurance.TransitionApplied})
 	return handle, csrfToken, nil
 }
 

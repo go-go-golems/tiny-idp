@@ -81,9 +81,28 @@ func NewTrustedProxyResolver(cfg TrustedProxyConfig) (*TrustedProxyResolver, err
 		if err != nil {
 			return nil, fmt.Errorf("parse trusted proxy CIDR %q: %w", raw, err)
 		}
+		ones, bits := network.Mask.Size()
+		if ones == 0 && bits > 0 {
+			return nil, fmt.Errorf("trusted proxy CIDR %q must not trust every address", raw)
+		}
 		resolver.trusted = append(resolver.trusted, network)
 	}
 	return resolver, nil
+}
+
+// TrustsRequestPeer reports whether the immediate TCP peer is one of the
+// configured proxies. Listener code uses this before accepting any forwarding
+// metadata that affects transport security; it intentionally does not inspect
+// X-Forwarded-For itself.
+func (r *TrustedProxyResolver) TrustsRequestPeer(req *http.Request) (bool, error) {
+	if req == nil {
+		return false, fmt.Errorf("request is required")
+	}
+	peer, err := remoteIP(req.RemoteAddr)
+	if err != nil {
+		return false, err
+	}
+	return r != nil && r.isTrusted(peer), nil
 }
 
 func (r *TrustedProxyResolver) ResolveClientAddress(req *http.Request) (string, error) {

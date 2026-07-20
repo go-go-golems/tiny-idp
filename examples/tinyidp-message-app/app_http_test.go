@@ -86,6 +86,36 @@ func TestExternalModeDoesNotExposeSelfRegistration(t *testing.T) {
 	}
 }
 
+func TestProviderRegistrationStartsOIDCWithoutApplicationAccountFields(t *testing.T) {
+	store, err := openAppStore(context.Background(), filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := newMessageApp(store, &oidcClient{config: oauth2.Config{ClientID: clientID, Endpoint: oauth2.Endpoint{AuthURL: "https://issuer.example.test/authorize"}, RedirectURL: registrationTestOrigin + callbackPath}, now: time.Now}, nil, nil, false)
+	app.registrationEnabled = false
+	app.providerRegistrationEnabled = true
+
+	session := httptest.NewRecorder()
+	app.ServeHTTP(session, httptest.NewRequest(http.MethodGet, "/api/session", nil))
+	if session.Code != http.StatusOK || !strings.Contains(session.Body.String(), `"registrationEnabled":false`) || !strings.Contains(session.Body.String(), `"providerRegistrationEnabled":true`) {
+		t.Fatalf("external session capabilities = %d: %s", session.Code, session.Body.String())
+	}
+
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/auth/register?return_to=/messages", nil))
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("provider registration status = %d: %s", response.Code, response.Body.String())
+	}
+	location, err := url.Parse(response.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if location.Host != "issuer.example.test" || location.Query().Get("tinyidp_signup") != "1" || location.Query().Get("state") == "" || location.Query().Get("code_challenge") == "" {
+		t.Fatalf("provider registration location = %q", location.String())
+	}
+}
+
 func TestLogoutReturnsBrowserNavigableIDPEndSessionURL(t *testing.T) {
 	ctx := context.Background()
 	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))

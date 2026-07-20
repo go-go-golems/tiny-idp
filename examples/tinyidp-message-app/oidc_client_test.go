@@ -48,6 +48,38 @@ func TestBeginLoginPersistsPKCEStateAndNonce(t *testing.T) {
 	}
 }
 
+func TestBeginRegistrationPersistsPKCEStateAndRequestsProviderSignup(t *testing.T) {
+	store, err := openAppStore(context.Background(), filepath.Join(t.TempDir(), "messages.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	client := &oidcClient{config: oauth2.Config{
+		ClientID: clientID, RedirectURL: "http://127.0.0.1:8090" + callbackPath,
+		Endpoint: oauth2.Endpoint{AuthURL: "http://127.0.0.1:8090/idp/authorize"},
+	}, now: func() time.Time { return now }}
+	authorizationURL, err := client.beginRegistration(context.Background(), store, "/messages")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(authorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	if query.Get("tinyidp_signup") != "1" || query.Get("prompt") != "" || query.Get("state") == "" || query.Get("nonce") == "" || query.Get("code_challenge") == "" {
+		t.Fatalf("registration authorization URL = %q", authorizationURL)
+	}
+	attempt, err := store.consumeLoginAttempt(context.Background(), query.Get("state"), now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempt.ReturnTo != "/messages" || attempt.Nonce != query.Get("nonce") || attempt.PKCEVerifier == "" {
+		t.Fatalf("stored registration attempt = %#v", attempt)
+	}
+}
+
 func TestReturnToRejectsExternalAndAmbiguousPaths(t *testing.T) {
 	for _, raw := range []string{"https://example.test", "//example.test", "/a/../b", "/%2fetc", "/%2e%2e/x", "/a\\b", "/?next=x"} {
 		if _, err := normalizeReturnTo(raw); err == nil {

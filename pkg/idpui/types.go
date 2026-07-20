@@ -7,13 +7,16 @@ import (
 )
 
 const (
-	InteractionFieldName = "interaction"
-	CSRFFieldName        = "csrf_token"
-	ActionFieldName      = "action"
-	LoginFieldName       = "login"
-	PasswordFieldName    = "password"
-	AccountFieldName     = "account"
-	UserCodeFieldName    = "user_code"
+	InteractionFieldName          = "interaction"
+	CSRFFieldName                 = "csrf_token"
+	ActionFieldName               = "action"
+	WorkflowContinuationFieldName = "workflow_continuation"
+	LoginFieldName                = "login"
+	PasswordFieldName             = "password"
+	PasswordConfirmationFieldName = "password_confirmation"
+	DisplayNameFieldName          = "display_name"
+	AccountFieldName              = "account"
+	UserCodeFieldName             = "user_code"
 )
 
 // Action is a browser-submitted interaction decision. The provider validates
@@ -27,11 +30,12 @@ const (
 	ActionRemoveAccount     Action = "remove_account"
 	ActionApprove           Action = "approve"
 	ActionDeny              Action = "deny"
+	ActionRegister          Action = "register"
 )
 
 func (a Action) Valid() bool {
 	switch a {
-	case ActionContinue, ActionUseAnotherAccount, ActionRemoveAccount, ActionApprove, ActionDeny:
+	case ActionContinue, ActionUseAnotherAccount, ActionRemoveAccount, ActionApprove, ActionDeny, ActionRegister:
 		return true
 	default:
 		return false
@@ -52,6 +56,8 @@ func (a Action) Label() string {
 		return "Approve"
 	case ActionDeny:
 		return "Deny"
+	case ActionRegister:
+		return "Create account"
 	default:
 		return ""
 	}
@@ -103,15 +109,16 @@ func (r LoginReason) Explanation() string {
 type ErrorCode string
 
 const (
-	ErrorMissingLogin       ErrorCode = "missing_login"
-	ErrorInvalidCredentials ErrorCode = "invalid_credentials"
-	ErrorConsentRequired    ErrorCode = "consent_required"
-	ErrorInvalidUserCode    ErrorCode = "invalid_user_code"
+	ErrorMissingLogin         ErrorCode = "missing_login"
+	ErrorInvalidCredentials   ErrorCode = "invalid_credentials"
+	ErrorConsentRequired      ErrorCode = "consent_required"
+	ErrorInvalidUserCode      ErrorCode = "invalid_user_code"
+	ErrorRegistrationRejected ErrorCode = "registration_rejected"
 )
 
 func (c ErrorCode) Valid() bool {
 	switch c {
-	case ErrorMissingLogin, ErrorInvalidCredentials, ErrorConsentRequired, ErrorInvalidUserCode:
+	case ErrorMissingLogin, ErrorInvalidCredentials, ErrorConsentRequired, ErrorInvalidUserCode, ErrorRegistrationRejected:
 		return true
 	default:
 		return false
@@ -122,14 +129,15 @@ func (c ErrorCode) Valid() bool {
 type FieldName string
 
 const (
-	FieldCredentials FieldName = "credentials"
-	FieldConsent     FieldName = "consent"
-	FieldUserCode    FieldName = "user_code"
+	FieldCredentials  FieldName = "credentials"
+	FieldConsent      FieldName = "consent"
+	FieldUserCode     FieldName = "user_code"
+	FieldRegistration FieldName = "registration"
 )
 
 func (f FieldName) Valid() bool {
 	switch f {
-	case FieldCredentials, FieldConsent, FieldUserCode:
+	case FieldCredentials, FieldConsent, FieldUserCode, FieldRegistration:
 		return true
 	default:
 		return false
@@ -140,11 +148,16 @@ func (f FieldName) Valid() bool {
 // interaction. It contains no password, cookie, redirect URI, authorization
 // code, original OAuth request, or stored interaction record.
 type InteractionPage struct {
-	DocumentTitle  string
+	DocumentTitle string
+	// ClientID is the public OAuth client identifier for the interaction. It is
+	// intentionally distinct from the opaque interaction handle and contains no
+	// credential or redirect data.
+	ClientID       string
 	Form           InteractionForm
 	Login          *LoginPrompt
 	Consent        *ConsentPrompt
 	AccountChooser *AccountChooserPrompt
+	Registration   *RegistrationPrompt
 	Error          *PublicError
 }
 
@@ -186,6 +199,18 @@ type AccountChooserPrompt struct {
 type AccountChooserEntry struct {
 	Value string
 	Label string
+}
+
+// RegistrationPrompt is presentation-only account-creation metadata for a
+// provider-owned authorization interaction. The browser never receives a
+// provider store handle or an independent continuation URL.
+type RegistrationPrompt struct {
+	LoginField                string
+	DisplayNameField          string
+	PasswordField             string
+	PasswordConfirmationField string
+	LoginValue                string
+	DisplayNameValue          string
 }
 
 type Scope struct {
@@ -338,7 +363,12 @@ func (p InteractionPage) Validate() error {
 			seen[entry.Value] = struct{}{}
 		}
 	}
-	if p.Login == nil && p.Consent == nil && p.AccountChooser == nil {
+	if p.Registration != nil {
+		if p.Registration.LoginField != LoginFieldName || p.Registration.DisplayNameField != DisplayNameFieldName || p.Registration.PasswordField != PasswordFieldName || p.Registration.PasswordConfirmationField != PasswordConfirmationFieldName {
+			return fmt.Errorf("registration fields must use the provider contract")
+		}
+	}
+	if p.Login == nil && p.Consent == nil && p.AccountChooser == nil && p.Registration == nil {
 		return fmt.Errorf("at least one interaction prompt is required")
 	}
 	if p.Error != nil {
@@ -402,6 +432,10 @@ func (p InteractionPage) Clone() InteractionPage {
 		chooser := *p.AccountChooser
 		chooser.Entries = append([]AccountChooserEntry(nil), p.AccountChooser.Entries...)
 		clone.AccountChooser = &chooser
+	}
+	if p.Registration != nil {
+		registration := *p.Registration
+		clone.Registration = &registration
 	}
 	if p.Error != nil {
 		publicError := *p.Error

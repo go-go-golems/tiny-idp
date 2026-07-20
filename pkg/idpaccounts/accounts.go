@@ -29,6 +29,16 @@ type CreateRequest struct {
 	Locale            string
 }
 
+// PreparedCreate is a validated account and password credential ready to be
+// written by a caller-owned idpstore transaction. It deliberately contains no
+// plaintext password. Callers must commit it immediately and must not retain
+// it beyond the request that prepared it.
+type PreparedCreate struct {
+	Login      string
+	User       idpstore.User
+	Credential idpstore.PasswordCredential
+}
+
 // NormalizeLogin returns the canonical login representation used by account
 // creation and password authentication. Embedding applications can use this
 // value for non-secret correlation keys such as rate limits; they must not use
@@ -51,28 +61,76 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (idpstore.User,
 	} else if !errors.Is(err, idpstore.ErrNotFound) {
 		return idpstore.User{}, err
 	}
+	if id := strings.TrimSpace(req.ID); id != "" {
+		if _, err := s.store.GetUser(ctx, id); err == nil {
+			return idpstore.User{}, idpstore.ErrDuplicate
+		} else if !errors.Is(err, idpstore.ErrNotFound) {
+			return idpstore.User{}, err
+		}
+	}
+	if subject := strings.TrimSpace(req.Subject); subject != "" {
+		if _, err := s.store.GetUserBySubject(ctx, subject); err == nil {
+			return idpstore.User{}, idpstore.ErrDuplicate
+		} else if !errors.Is(err, idpstore.ErrNotFound) {
+			return idpstore.User{}, err
+		}
+	}
+	prepared, err := s.prepareCreate(ctx, req, login)
+	if err != nil {
+		return idpstore.User{}, err
+	}
+	if err := s.store.CreateUserWithCredential(ctx, prepared.Login, prepared.User, prepared.Credential); err != nil {
+		return idpstore.User{}, err
+	}
+	err = s.auditCommitted(ctx, idp.Event{Time: prepared.User.CreatedAt, Name: "identity.account.created", Subject: prepared.User.Sub, Result: "accepted"})
+	return prepared.User, err
+}
+
+// PrepareCreate validates and hashes an account creation request without
+// writing it. It exists for a higher-level native transaction such as signup,
+// which must commit an identity together with its continuation and interaction
+// state. It performs no account-existence check because that check must happen
+// at the final transaction boundary.
+func (s *Service) PrepareCreate(ctx context.Context, req CreateRequest) (PreparedCreate, error) {
+	login := NormalizeLogin(req.Login)
+	if login == "" {
+		return PreparedCreate{}, fmt.Errorf("login is required")
+	}
+	if len(req.Password) == 0 {
+		return PreparedCreate{}, fmt.Errorf("password is required")
+	}
+	return s.prepareCreate(ctx, req, login)
+}
+
+// CommitPrepared writes a prepared identity and credential into the caller's
+// transaction. It intentionally does not emit audit output: callers must do
+// that only after their complete transaction commits.
+func (s *Service) CommitPrepared(ctx context.Context, tx idpstore.TxStore, prepared PreparedCreate) error {
+	if tx == nil {
+		return fmt.Errorf("transaction is required")
+	}
+	if prepared.Login == "" || prepared.User.ID == "" || prepared.Credential.UserID != prepared.User.ID || prepared.Credential.Login != prepared.Login {
+		return fmt.Errorf("prepared account is invalid")
+	}
+	if err := tx.PutUser(ctx, prepared.Login, prepared.User); err != nil {
+		return err
+	}
+	return tx.PutPasswordCredential(ctx, prepared.Credential)
+}
+
+func (s *Service) prepareCreate(ctx context.Context, req CreateRequest, login string) (PreparedCreate, error) {
 	now := s.clock().UTC()
 	id := strings.TrimSpace(req.ID)
 	if id == "" {
 		generatedID, err := newID("user")
 		if err != nil {
-			return idpstore.User{}, fmt.Errorf("generate user id: %w", err)
+			return PreparedCreate{}, fmt.Errorf("generate user id: %w", err)
 		}
 		id = generatedID
-	}
-	if _, err := s.store.GetUser(ctx, id); err == nil {
-		return idpstore.User{}, idpstore.ErrDuplicate
-	} else if !errors.Is(err, idpstore.ErrNotFound) {
-		return idpstore.User{}, err
 	}
 	subject := strings.TrimSpace(req.Subject)
 	if subject == "" {
 		subject = id
-	}
-	if _, err := s.store.GetUserBySubject(ctx, subject); err == nil {
-		return idpstore.User{}, idpstore.ErrDuplicate
-	} else if !errors.Is(err, idpstore.ErrNotFound) {
-		return idpstore.User{}, err
 	}
 	u := idpstore.User{
 		ID: id, Sub: subject, Email: strings.TrimSpace(req.Email), EmailVerified: req.EmailVerified,
@@ -81,17 +139,13 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (idpstore.User,
 		Locale: strings.TrimSpace(req.Locale), CreatedAt: now, UpdatedAt: now,
 	}
 	if err := u.Validate(); err != nil {
-		return idpstore.User{}, err
+		return PreparedCreate{}, err
 	}
 	credential, err := s.hashCredential(ctx, u.ID, login, req.Password, now)
 	if err != nil {
-		return idpstore.User{}, err
+		return PreparedCreate{}, err
 	}
-	if err := s.store.CreateUserWithCredential(ctx, login, u, credential); err != nil {
-		return idpstore.User{}, err
-	}
-	err = s.auditCommitted(ctx, idp.Event{Time: now, Name: "identity.account.created", Subject: u.Sub, Result: "accepted"})
-	return u, err
+	return PreparedCreate{Login: login, User: u, Credential: credential}, nil
 }
 
 // SetPasswordRequest identifies an account and its replacement password.

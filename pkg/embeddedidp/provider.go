@@ -13,6 +13,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/fositeadapter"
 	"github.com/go-go-golems/tiny-idp/internal/keys"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
@@ -25,6 +26,8 @@ type Provider struct {
 	mode                   idpstore.Mode
 	audit                  idp.Sink
 	limiter                idp.RateLimiter
+	scriptedSignup         *idpsignup.Executor
+	scriptedSignupManager  *idpsignup.GenerationManager
 	tokenSecretReady       bool
 	maintenanceConfig      MaintenanceConfig
 	maintenanceRunMu       sync.Mutex
@@ -58,7 +61,7 @@ func New(ctx context.Context, opts Options) (*Provider, error) {
 	if opts.Audit == nil {
 		opts.Audit = idp.NoopSink{}
 	}
-	adapter, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, CookieSameSite: opts.Cookie.SameSite, SessionCookieName: opts.Cookie.SessionName, CSRFCookieName: opts.Cookie.CSRFName, CookiePath: opts.Cookie.Path, AccountChooser: fositeadapter.AccountChooserConfig{Enabled: opts.AccountChooser.Enabled, ContextCookieName: opts.AccountChooser.ContextCookieName, ContextTTL: opts.AccountChooser.ContextTTL, MaxRememberedAccounts: opts.AccountChooser.MaxRememberedAccounts, RememberOnPasswordLogin: opts.AccountChooser.RememberOnPasswordLogin, DisplayLabel: opts.AccountChooser.DisplayLabel}, Audit: opts.Audit, Consent: opts.Consent, RateLimiter: opts.RateLimiter, ClientAddress: opts.ClientAddress, Authenticator: opts.Authenticator, PasswordPolicy: opts.PasswordPolicy, PasswordWork: opts.PasswordWork, InteractionRenderer: opts.UI.Renderer, DeviceVerificationRenderer: opts.UI.DeviceVerificationRenderer})
+	adapter, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{Issuer: opts.Issuer, Store: opts.Store, SecretKey: opts.Token.SecretKey, Mode: opts.Mode, CookieSecure: opts.Cookie.Secure, CookieSameSite: opts.Cookie.SameSite, SessionCookieName: opts.Cookie.SessionName, CSRFCookieName: opts.Cookie.CSRFName, CookiePath: opts.Cookie.Path, AccountChooser: fositeadapter.AccountChooserConfig{Enabled: opts.AccountChooser.Enabled, ContextCookieName: opts.AccountChooser.ContextCookieName, ContextTTL: opts.AccountChooser.ContextTTL, MaxRememberedAccounts: opts.AccountChooser.MaxRememberedAccounts, RememberOnPasswordLogin: opts.AccountChooser.RememberOnPasswordLogin, DisplayLabel: opts.AccountChooser.DisplayLabel}, Registration: fositeadapter.RegistrationConfig{Enabled: opts.Registration.Enabled, Accounts: opts.Registration.Accounts}, ScriptedSignup: opts.ScriptedSignup.Executor, ScriptedSignupManager: opts.ScriptedSignup.GenerationManager, DurableInvitations: opts.ScriptedSignup.DurableInvitations, EmailChallenges: opts.ScriptedSignup.EmailChallenges, WorkflowContinuations: opts.ScriptedSignup.Continuations, Audit: opts.Audit, Consent: opts.Consent, Authorization: opts.Authorization, Claims: opts.Claims, Presentation: opts.Presentation, RateLimiter: opts.RateLimiter, ClientAddress: opts.ClientAddress, Authenticator: opts.Authenticator, PasswordPolicy: opts.PasswordPolicy, PasswordWork: opts.PasswordWork, InteractionRenderer: opts.UI.Renderer, WorkflowRenderer: opts.UI.WorkflowRenderer, DeviceVerificationRenderer: opts.UI.DeviceVerificationRenderer})
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +74,7 @@ func New(ctx context.Context, opts Options) (*Provider, error) {
 		prefix = ""
 	}
 	now := time.Now().UTC()
-	return &Provider{handler: adapter.Handler(), adapter: adapter, store: opts.Store, mode: opts.Mode, audit: opts.Audit, limiter: opts.RateLimiter, tokenSecretReady: len(opts.Token.SecretKey) >= 32, maintenanceConfig: maintenance, createdAt: now, healthPath: prefix + "/healthz", readyPath: prefix + "/readyz"}, nil
+	return &Provider{handler: adapter.Handler(), adapter: adapter, store: opts.Store, mode: opts.Mode, audit: opts.Audit, limiter: opts.RateLimiter, scriptedSignup: opts.ScriptedSignup.Executor, scriptedSignupManager: opts.ScriptedSignup.GenerationManager, tokenSecretReady: len(opts.Token.SecretKey) >= 32, maintenanceConfig: maintenance, createdAt: now, healthPath: prefix + "/healthz", readyPath: prefix + "/readyz"}, nil
 }
 
 func (p *Provider) Handler() http.Handler {
@@ -166,6 +169,13 @@ func (p *Provider) Readiness(ctx context.Context) idp.ReadinessReport {
 		limiterReady = limiter.ProductionReady()
 	}
 	add("rate_limiter", limiterReady || p.mode != idpstore.ProductionMode, !limiterReady && p.mode != idpstore.ProductionMode, reasonIfCondition(limiterReady, "production_limiter_unavailable"))
+	if p.scriptedSignupManager != nil {
+		ready := p.scriptedSignupManager.Ready() == nil
+		add("scripted_signup", ready, false, reasonIfCondition(ready, "active_generation_unavailable"))
+	} else if p.scriptedSignup != nil {
+		ready := p.scriptedSignup.Ready()
+		add("scripted_signup", ready, false, reasonIfCondition(ready, "executor_unavailable"))
+	}
 	p.maintenanceStatusMu.Lock()
 	status := p.maintenanceStatus
 	p.maintenanceStatusMu.Unlock()

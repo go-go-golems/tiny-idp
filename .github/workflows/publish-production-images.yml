@@ -1,0 +1,82 @@
+name: Publish production images
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/publish-production-images.yml
+      - .dockerignore
+      - deploy/images/**
+      - deploy/gitops-targets.json
+      - cmd/**
+      - examples/tinyidp-message-app/**
+      - internal/**
+      - pkg/**
+      - go.mod
+      - go.sum
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-production-images.yml
+      - .dockerignore
+      - deploy/images/**
+      - deploy/gitops-targets.json
+      - cmd/**
+      - examples/tinyidp-message-app/**
+      - internal/**
+      - pkg/**
+      - go.mod
+      - go.sum
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: publish-production-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  message-desk:
+    name: Build and publish Message Desk
+    uses: go-go-golems/infra-tooling/.github/workflows/publish-ghcr-image.yml@main
+    secrets: inherit
+    with:
+      dockerfile: ./deploy/images/Dockerfile.message-desk
+      build_context: .
+      test_command: go test ./examples/tinyidp-message-app -count=1
+      go_version_file: go.mod
+      image_name: ghcr.io/go-go-golems/tiny-idp-message-desk
+      platforms: linux/amd64
+      gitops_target_config: deploy/gitops-targets.json
+      push_image: ${{ github.event_name != 'pull_request' }}
+      # Phase 5 creates the target manifest and its least-privilege GitHub App
+      # credential. Keep the source-release workflow green until then.
+      open_gitops_pr: false
+      tooling_repository: go-go-golems/infra-tooling
+      tooling_ref: main
+
+  tinyidp:
+    name: Build and publish Tiny-IDP
+    needs: message-desk
+    uses: go-go-golems/infra-tooling/.github/workflows/publish-ghcr-image.yml@main
+    secrets: inherit
+    with:
+      dockerfile: ./deploy/images/Dockerfile.tinyidp
+      build_context: .
+      test_command: go test ./cmd/tinyidp ./internal/cmds ./pkg/idpsignup -count=1
+      go_version_file: go.mod
+      image_name: ghcr.io/go-go-golems/tiny-idp
+      platforms: linux/amd64
+      gitops_target_config: deploy/gitops-targets.json
+      push_image: ${{ github.event_name != 'pull_request' }}
+      # Both jobs use the same GITHUB_SHA. When Phase 5 supplies the actual
+      # manifest plus scoped Vault credential, enable this shared GitOps PR
+      # caller; its multi-image target applies that one immutable SHA tag to
+      # both image repositories atomically in the generated GitOps change.
+      open_gitops_pr: false
+      tooling_repository: go-go-golems/infra-tooling
+      tooling_ref: main

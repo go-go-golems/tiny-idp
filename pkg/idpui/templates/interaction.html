@@ -21,6 +21,27 @@
     </section>
     {{end}}
     <form method="post" action="{{.Page.Form.ActionURL}}">
+      {{with .Page.Registration}}
+      <fieldset>
+        <legend>Create an account</legend>
+        <p>
+          <label for="tinyidp-display-name">Display name</label>
+          <input id="tinyidp-display-name" name="{{.DisplayNameField}}" value="{{.DisplayNameValue}}" autocomplete="name" required autofocus>
+        </p>
+        <p>
+          <label for="tinyidp-login">Username</label>
+          <input id="tinyidp-login" name="{{.LoginField}}" value="{{.LoginValue}}" autocomplete="username" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}>
+        </p>
+        <p>
+          <label for="tinyidp-password">Password</label>
+          <input id="tinyidp-password" name="{{.PasswordField}}" type="password" autocomplete="new-password" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}>
+        </p>
+        <p>
+          <label for="tinyidp-password-confirmation">Confirm password</label>
+          <input id="tinyidp-password-confirmation" name="{{.PasswordConfirmationField}}" type="password" autocomplete="new-password" required{{if $.CredentialsBad}} aria-invalid="true" aria-describedby="interaction-error"{{end}}>
+        </p>
+      </fieldset>
+      {{end}}
       {{with .Page.AccountChooser}}
       {{$chooser := .}}
       <fieldset>

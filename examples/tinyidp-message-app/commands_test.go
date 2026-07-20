@@ -40,3 +40,29 @@ func TestParseServeDurationsRejectsNonPositiveValues(t *testing.T) {
 		t.Fatal("parseServeDurations accepted zero maintenance interval")
 	}
 }
+
+func TestMessageListenerModesAreExplicitAndMutuallyExclusive(t *testing.T) {
+	if _, err := parseMessageListenerMode(""); err == nil {
+		t.Fatal("empty listener mode accepted")
+	}
+	direct, err := parseMessageListenerMode("direct-tls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMessageListenerSettings(direct, serveSettings{TLSCertificate: "cert.pem", TLSKey: "key.pem"}, "https://message.example.test"); err != nil {
+		t.Fatalf("direct TLS rejected: %v", err)
+	}
+	proxy, err := parseMessageListenerMode("trusted-proxy-http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMessageListenerSettings(proxy, serveSettings{TrustedProxyCIDRs: []string{"10.42.0.0/24"}}, "https://message.example.test"); err != nil {
+		t.Fatalf("trusted proxy rejected: %v", err)
+	}
+	if err := validateMessageListenerSettings(proxy, serveSettings{TrustedProxyCIDRs: []string{"10.42.0.0/24"}, TLSCertificate: "cert.pem"}, "https://message.example.test"); err == nil {
+		t.Fatal("trusted proxy accepted certificate")
+	}
+	if err := validateMessageListenerSettings(proxy, serveSettings{TrustedProxyCIDRs: []string{"10.42.0.0/24"}}, "http://127.0.0.1:8090"); err == nil {
+		t.Fatal("trusted proxy accepted HTTP public origin")
+	}
+}

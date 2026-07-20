@@ -69,3 +69,672 @@ Rendered and uploaded TINYIDP-GOJA-001 Assurance Core Grammar 3267560.pdf to /ai
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 6 records the render failure, correction, and successful upload
+
+## 2026-07-19
+
+Step 7: published the normative 1,821-line lambda-first JavaScript API and explicit browser continuation design, deprecated design-doc/01, and replaced the implementation sequence
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/01-go-go-goja-scripting-layer-analysis-design-and-implementation-guide.md — Clearly marked deprecated and linked to its replacement
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — New normative intern implementation guide
+
+## 2026-07-19
+
+Step 8: validated and committed the lambda-first explicit-continuation JavaScript API design in commit 0d5e4fb, then uploaded the index, normative design, and investigation diary as 'TINYIDP GOJA 001 Lambda First JS API Explicit Continuations 2026 07 19' to /ai/2026/07/19/TINYIDP-GOJA-001 on reMarkable.
+
+### Related Files
+
+- design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — Normative intern-facing JavaScript API design delivered to reMarkable.
+- reference/01-investigation-diary.md — Step 8 records validation, commit, upload, and resolved documentation issues.
+
+## 2026-07-19
+
+Step 9: expanded the normative lambda-first design into 92 ordered implementation and completion tasks across Phase 0-7, with dependencies, acceptance gates, validation commands, assurance checks, and focused commit boundaries (commit c84bcaa).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 9 records the planning process, correction, validation, and review guidance.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md — Detailed execution ledger derived strictly from design 03.
+
+## 2026-07-19
+
+Step 10: completed lf01 by confirming the Go 1.26.4/toolchain 1.26.5 baseline and pinned go-go-goja c6e464c5bbc6 dependency; direct and GOWORK=off suites pass, with one documented non-reproducing pre-existing race-test failure.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/go.mod — Validated language/toolchain and exact go-go-goja dependency baseline.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 10 records commands, failures, reruns, decisions, and the next task.
+
+## 2026-07-19
+
+Step 11: completed lf02-lf05 with runtime-independent program/lambda/schema/outcome contracts, deterministic validation, canonical JSON, and source/program/callback/schema fingerprints (commit 0e0a4b0); package, race, full GOWORK=off, and lint gates pass.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram — Pure-Go Phase 0 contracts and tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 11 records contract decisions, validation evidence, risks, and review instructions.
+
+## 2026-07-19
+
+Step 12: completed lf06-lf08 with isolated require("tinyidp").v1 builders, immutable compiled artifacts, per-runtime callback collectors, two-worker fingerprint verification, and schema-drift rejection (commit 1b8cb17); normal, race, GOWORK=off, full tests, and lint pass.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp — Phase 0 JavaScript builder module and identity-branded lambda handles.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript — Isolated compiler, artifact, runtime factory, lifecycle, and integration tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 12 records failures, fixes, invariants, validation, and review guidance.
+
+## 2026-07-19
+
+Step 13: completed lf09-lf14 with an isolated bounded runtime pool, Promise capability bridge, cancellation/deadline interruption and unsafe-worker replacement, bounded JSON codecs, TypeScript declarations, a checked no-browser example, and concurrency/race acceptance tests (commit 10cd9e6).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript — Runtime pool, capability bindings, bounded codecs, invocation lifecycle, and acceptance tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp/typescript.go — Phase 0 TypeScript declaration descriptor.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-script/phase0.js — Checked compile-only pure and Promise-capability example.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/01-investigation-diary.md — Step 13 records implementation, failure analysis, validation, and the Git checkpoint constraint.
+
+## 2026-07-19
+
+Step 14: completed lf15-lf19 with versioned VM-independent continuation records, HMAC-hashed public handles, mandatory workflow/client/browser/generation bindings, an atomic memory store, SQLite migration 011 and transactional SQLite operations, plus a shared race-tested conformance suite foundation (commit 1765f61).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation — Durable continuation contracts, service, classifications, and validation tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/memorystore/continuation.go — Atomic in-memory continuation store.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation.go — Transactional durable continuation operations.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/migrations/011_workflow_continuations.sql — Durable continuation schema and expiry index.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/idpcontinuationtest/suite.go — Reusable store conformance and concurrency suite.
+
+## 2026-07-19
+
+Step 15: completed lf20-lf25 and the Phase 1 gate with shared resume/carry schema validation, sensitive-carry rejection, exact generation pinning, uniform public terminal failures plus bounded audit classes, retry-safe attachment cleanup, complete store conformance, and SQLite restart/resume proof; direct, race, and GOWORK-off tests pass (commit 1765f61).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/value.go — Shared bounded JSON and public-only carry validator.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service.go — Generation-pinned validation, classified failures, resume inputs, and retry-safe cleanup ordering.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service_test.go — Malformed state, generation, sensitive data, and safe-terminal tests.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation_test.go — Store restart and newly constructed service resume test.
+
+## 2026-07-19
+
+Step 16: completed lf26-lf27 by freezing the provider-owned signup field and action vocabulary in pkg/idpworkflow, including normalization, bounds, sensitivity, autocomplete, redisplay, labels, and deny/form-validation behavior; direct and race tests pass (commit f645f0c).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/descriptors.go — Closed host-owned field/action registry and validation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/descriptors_test.go — Security-policy and registry regression tests.
+
+## 2026-07-19
+
+Step 18: completed lf28 and lf30 with a provider-owned WorkflowPage/default renderer and compiled-edge presentation validator; script HTML and rendered secrets are impossible through the typed contract, direct/race tests pass, and lint reports zero issues (commit 9f6ad5b).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/presentation.go — Data-only presentation result and compiled graph/registry/schema/expiry validation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/workflow.go — Provider-owned workflow page and renderer contract.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/templates/workflow.html — Escaping generic field/action template.
+
+## 2026-07-19
+
+Step 19: completed lf29 with branded `A.field.*` / `A.action.*` descriptor
+builders and the data-only `ctx.present.form` outcome bridge. The runtime now
+copies a presentation envelope alongside its browser continuation without
+exposing HTTP or rendering authority to JavaScript; direct/race tests and lint
+pass (code commit `7f1497e`).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp/module.go — Branded descriptor builders and invocation-scoped form presentation bridge.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/outcomes.go — VM-independent presentation JSON envelope with outcome-family validation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke.go — Per-invocation frozen `ctx.present` binding.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — End-to-end presentation serialization regression test.
+
+## 2026-07-19
+
+Step 20: completed lf31 with an unexported native workflow rendering boundary
+in the Fosite adapter. It preserves the interaction CSP/cache/buffer envelope
+for validated WorkflowPage data, but deliberately exposes no incomplete public
+workflow route before Phase 3 routing (code commit `87db6ba`).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/rendering.go — Native bounded workflow renderer with provider-owned headers and failure recording.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Workflow renderer dependency wiring.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/workflow.go — Redirect-origin contract used for provider CSP construction.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/workflow_rendering_internal_test.go — Security-envelope regression test.
+
+## 2026-07-19
+
+Step 21: completed the Phase 2 POST projection and most of the Phase 3 signup
+vertical routing (`lf32-lf35`, `lf37-lf40`, `lf43-lf44`): host-owned
+continuation form control, strict parser, opaque password handles, a
+checked-in `open_signup.js` workflow, Fosite routing, and embedded option
+wiring. The focused adapter/UI/workflow/executor suite passes. Atomic
+cross-record signup commitment and legacy-branch removal remain explicitly
+open.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Native Fosite-to-script routing and safe form projection.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/open_signup.js — Checked-in open-signup workflow.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/submission.go — Closed-set form parser and opaque secret handles.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/options.go — Explicit activated executor/continuation configuration.
+
+## 2026-07-19
+
+Step 22: completed the remaining Phase 3 implementation work (`lf36`, `lf41`,
+`lf42`, and `lf45`): immutable start DTO, prepared password-verifier account
+creation, transaction-scoped continuation consumption in memory and SQLite,
+one native signup commit boundary for continuation/account/credential/session/
+interaction state, stable redacted failures, and removal of the hardcoded
+registration branch. Focused direct tests pass; the complete phase gate is in
+progress before `lf46` is checked off.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Immutable input, effect validation, atomic native signup commit, and redacted result mapping.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpaccounts/accounts.go — Prepared verifier-bearing account creation and caller-owned transaction commit.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service.go — Binding-checked transaction-scoped terminal continuation operation.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/store/memory/continuation.go — Copy-on-write memory continuation implementation co-located with domain state.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation.go — SQLite transaction-aware continuation consumption.
+
+## 2026-07-19
+
+Step 23: completed `lf46` and passed the Phase 2/3 gates: focused direct
+integration suite, Fosite/workflow/idpscript race suite, complete repository
+suite, and lint/custom analyzers. The sole final code delta was a test fixture
+updated to include the mandatory workflow continuation field (commit d65eff0).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — Secret-projection fixture using the complete workflow form contract.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Scripted signup PKCE/cross-origin/replay/audit browser regression.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/continuation_test.go — SQLite transaction-scoped continuation regression.
+
+## 2026-07-19
+
+Step 24: completed `lf47` with fingerprinted typed identity/invitation
+provider contracts, explicit state/replay/revocation semantics, handler/schema
+pinning, and deterministic invalid-contract diagnostics (commit 414cfb4).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/providers.go — Provider state, replay, revocation, and handler contracts.
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/validate.go — Compile-time provider invariant validation.
+
+## 2026-07-19
+
+Step 25: completed `lf48-lf50`: isolated JavaScript provider registration and
+pool invocation, keyed pairwise virtual identity derivation with protected
+profile projection, and native signed stateless invitation verification
+(commits 95dc662, c544a5f, 2555f0b).
+
+## 2026-07-19
+
+Step 26: completed lf51 with an explicitly bounded computed-invitation eligibility capability, including native request/decision validation and an end-to-end provider-pool test (commit 40e7747).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpinvite/computed.go — Host-owned eligibility seam
+
+## 2026-07-19
+
+Step 27: completed lf52 with hashed durable invitation lookup, revocation/expiry checks, one-time transactional redemption, SQLite persistence, and replay-safe evidence (commit 21c7c4c).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpinvite/durable.go — Durable invitation service
+
+## 2026-07-19
+
+Step 28: completed lf53 by routing an optional declared invitation effect through the existing native signup transaction without duplicating account/session logic (commit 84a9995).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Atomic invitation + signup commit
+
+## 2026-07-19
+
+Step 29: threaded durable invitation configuration through embeddedidp to the Fosite adapter (commit d46ec55).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Provider configuration propagation
+
+## 2026-07-19
+
+Step 30: completed lf55 with deterministic provider explanations for materialization, replay, revocation, and native effects (commit 5dc7567).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/explain.go — Operator-facing provider projection
+
+## 2026-07-19
+
+Step 31: completed lf57 with versioned pending-email challenge, safe reference, workflow bindings, attempt/resend state, and native verified-email evidence contracts (commit 01882e0).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/types.go — Phase 5 native contract boundary
+
+## 2026-07-19
+
+Step 32: completed lf58-lf60 with atomic memory/SQLite email-challenge persistence, a narrow typed mailer interface, generated-code dispatch, and native verified evidence (commits 9a970d5, 04a514f, 0beb0b5).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/service.go — Native dispatch and evidence service
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/email_challenge.go — SQLite atomic lifecycle
+
+## 2026-07-19
+
+Step 33: completed lf61-lf62 with typed email-code challenge outcomes and native-only evidence projection after atomic verification (commits c14d70f, 2e8a517).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpprogram/outcomes.go — Challenge request invariant
+
+## 2026-07-19
+
+Step 34-35: completed the verified-email signup browser workflow, durable native proof carry, retryable delivery ordering, and bounded resend/code-rotation lifecycle (commits 706a2c6, 348df6e, c7fd7a3).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Provider-owned proof and browser flow
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/service.go — Native delivery and resend lifecycle
+
+## 2026-07-19
+
+Step 36: completed Phase 5 lifecycle enforcement, post-verification password collection, native commit proof binding, restart/replay/binding/resend/mailer-failure/concurrency coverage, and Phase 5 gate validation (commits 14e374c, 1799362).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Browser and SQLite restart Phase 5 evidence
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpemailchallenge/memory_test.go — Atomic correct-code concurrency evidence
+
+## 2026-07-19
+
+Step 37: completed Phase 6 compile-time script validation and secret-free explanation commands for the host-owned signup production profile (commit c390379).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/script.go — Glazed script validate/explain command surface
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Compile-only signup profile seam
+
+## 2026-07-19
+
+Step 38: added a warmed, atomic retained signup generation manager and routed continuation load/advance/consume/commit by the persisted executable generation fingerprint; proved reload between email-code issuance and password completion (commits f28041d, 1e681e0, f9b3e65).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Continuation fingerprint routing at every native transition
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Atomic candidate activation and bounded retained generation registry
+
+## 2026-07-19
+
+Steps 39-40: added declarative embedded script tests, candidate activation gating, and aggregate scripted-signup readiness (commits eff4573, 7e089e8, 759962f).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/embeddedidp/provider.go — Readiness aggregation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Activation gate and readiness
+
+## 2026-07-19
+
+Step 41: proved script-test structured success output and stable failing-case diagnostic/nonzero behavior (commit 115b7d4).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/script_test.go — CLI operational test evidence
+
+## 2026-07-19
+
+Step 42: added bounded deterministic clock/random/mailer/identity/invitation/store test fakes, bound only by the embedded-test runner (commit 9b22790).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Test-only capability binding
+
+## 2026-07-19
+
+Steps 43-44: proved bounded generation draining/repeated reload closure and exposed bounded activation/pool metrics (commits dcfef75, f5b5f87).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Generation lifecycle and metrics
+
+## 2026-07-19 - Step 46: bounded continuation and interruption metrics
+
+Completed the bounded Phase 6 metric matrix: continuation lifecycle counters now cover create/load/failure/replay/expiry/cleanup, and script execution separates interruption from generic failure and discard without exposing request or error data.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service.go — Classified lifecycle metrics
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service_test.go — Lifecycle metric regression tests
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Bounded interruption metrics
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor_test.go — Timeout metric regression test
+
+## 2026-07-19 - Step 47: redacted scripted-signup runtime audit
+
+Completed Phase 6 runtime audit records: generation-manager audit configuration now reaches active executors, which emit fixed outcome/failure diagnostic IDs plus compiled source/program fingerprints and no browser, identity, handler, or raw-error data.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor.go — Invocation audit boundary and redaction
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/executor_test.go — Accepted and rejected audit tests
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager.go — Audit propagation into generations
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager_test.go — Manager propagation regression test
+
+## 2026-07-19 - Step 48: Phase 6 reload and failure-matrix gate
+
+Completed the Phase 6 generation lifecycle gate by adding concurrent retained-executor activation coverage and validating it with the existing rollback, routing, retention, drain, close, and browser continuation reload tests.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Browser continuation generation-routing regression evidence
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpsignup/manager_test.go — Concurrent activation and retained executor test
+
+## 2026-07-19 - Step 51: one-time native password recovery evidence
+
+Completed the Phase 7 recovery primitive through typed native email-challenge and credential services. Verified recovery evidence is now consumed once before password replacement; memory and SQLite tests reject replay and non-recovery templates.
+
+### Related Files
+
+- pkg/idpemailchallenge/service.go — Verified evidence consumption boundary
+- pkg/idprecovery/service.go — Native recovery effect boundary
+- pkg/idprecovery/service_test.go — Recovery replay and template regression coverage
+- pkg/sqlitestore/email_challenge.go — Durable one-time challenge transition
+
+## 2026-07-19 - Step 52: Phase 7 authorization and claims matrix
+
+Added public-path regressions for prompt=none existing-session authorization denial, device-grant claims propagation to UserInfo, and fail-closed authorization/claims policy errors.
+
+### Related Files
+
+- internal/fositeadapter/device_authorization_test.go — Device claims to UserInfo coverage
+- internal/fositeadapter/hardening_test.go — Browser policy denial and error fail-closed coverage
+
+## 2026-07-19 - Step 53: real Goja authorization and claims providers
+
+Extended the compiled provider vocabulary and added a bounded idppolicy executor. Goja policy callbacks now implement the native authorization/claims interfaces through copied JSON and closed outcomes; browser authorization denial is covered end to end.
+
+### Related Files
+
+- internal/fositeadapter/hardening_test.go — Browser Goja authorization integration evidence
+- pkg/idppolicy/executor.go — Bounded Goja policy executor and native outcome validation
+- pkg/idpprogram/providers.go — Authorization and claims provider contracts
+
+## 2026-07-19 - Step 56: bounded existing-protocol presentation handlers
+
+Completed lf82 and lf84 with a typed `presentation.render` provider callback.
+The callback receives only a copied presentation kind, public client ID,
+requested scopes, and account count; it may return only a bounded document
+title. Existing account-selection, consent, and device-verification forms keep
+their native opaque handles, CSRF protection, validation, OAuth/Fosite response
+ownership, and RFC 8628 state transitions.
+
+### Related Files
+
+- pkg/idp/presentation.go — Closed native presentation-policy contract
+- pkg/idppolicy/executor.go — Bounded Goja provider executor
+- internal/fositeadapter/rendering.go — Native route rendering and fail-closed decoration
+- internal/fositeadapter/select_account_test.go — Account chooser and consent route proof
+- internal/fositeadapter/device_authorization_test.go — Device confirmation route proof
+
+## 2026-07-19 - Step 57: Phase 7 strict protocol regression matrix
+
+Completed lf85 by validating the complete native/Goja interaction matrix:
+browser session and `prompt=none`, consent, account chooser, authorization
+allow/deny/error behavior, protected claims through UserInfo, refresh rotation,
+password-recovery replay prevention, and native device verification.
+
+### Related Files
+
+- internal/fositeadapter/session_test.go — Existing-session and `prompt=none` behavior
+- internal/fositeadapter/select_account_test.go — Account chooser and consent continuation behavior
+- internal/fositeadapter/hardening_test.go — Authorization deny/error behavior
+- internal/fositeadapter/device_authorization_test.go — Device, claims, UserInfo, and SQLite proof
+- pkg/idprecovery/service_test.go — Recovery one-use evidence behavior
+
+## 2026-07-19 - Step 58: Phase 7 production-profile regression gate
+
+Completed lf86. Normal integration, targeted race, and isolated-workspace full
+test gates passed, covering browser, conformance, security-model, memory,
+SQLite, workflow, Goja worker, and device-flow paths before Phase 7 handlers
+are considered eligible for a production profile.
+
+### Related Files
+
+- internal/fositeadapter — Browser, Fosite, device, SQLite, state-model, and security-trace coverage
+- pkg/idpscript — Owned Goja worker and bounded invocation race coverage
+- pkg/idpworkflow — Typed field/action/presentation contract coverage
+- pkg/idppolicy — Authorization, claims, and presentation provider coverage
+
+## 2026-07-19 - Step 59: dependency-free assurance vocabulary foundation
+
+Started lf87 with a versioned internal assurance vocabulary for bounded handler,
+schema, capability, effect, evidence, diagnostic, observation, outcome, step,
+and property identifiers. The package has no HTTP, Fosite, persistence, or Goja
+dependencies, so subsequent catalogs and codecs can share it safely.
+
+### Related Files
+
+- internal/assurance/vocabulary.go — Versioned stable-ID types and closed initial IDs
+- internal/assurance/vocabulary_test.go — Identifier grammar and secret-free shape tests
+
+## 2026-07-20 - Step 60: Phase 4 provider examples and outcome matrix
+
+Completed the final Phase 4 deliverables. Added checked-in author/operator
+examples for each supported signup/provider pattern and one reviewable
+cross-provider outcome matrix. The examples distinguish JavaScript declaration
+authority from native host signing, storage, credential, and commit authority.
+
+### Related Files
+
+- examples/tinyidp-script/provider-patterns.md — Supported provider authoring patterns
+- pkg/idpinvite/provider_matrix_test.go — Success/failure/replay/protected-claim/atomicity matrix
+
+## 2026-07-20 - Step 61: assurance vocabulary crosswalk
+
+Completed the Phase 9 vocabulary inventory. The crosswalk records every
+persisted interaction obligation/outcome, private model action, verification
+step/observation/assertion, security trace event, monitor property, and
+diagnostic boundary before shared identifiers or codecs change behavior.
+
+### Related Files
+
+- reference/03-current-assurance-vocabulary-crosswalk.md — Source-backed vocabulary and migration map
+
+## 2026-07-20 - Step 62: versioned assurance identifier families
+
+Completed the dependency-free assurance vocabulary with closed versioned IDs
+for resources, facts, obligations, steps, effects, transition and lambda
+outcomes, observations, and properties, plus grammar and duplicate guards.
+
+### Related Files
+
+- internal/assurance/vocabulary.go — Shared versioned identifier families
+- internal/assurance/vocabulary_test.go — Identifier validity and uniqueness guard
+
+## 2026-07-20 - Step 63: assurance configuration, transition, and trace schemas
+
+Completed the three-schema boundary. Configuration references, native transition
+catalog descriptors, and scenario/trace records validate independently and do
+not confer one another's authority.
+
+### Related Files
+
+- internal/assurance/schemas.go — Three schema contracts and validators
+- internal/assurance/schemas_test.go — Cross-boundary acceptance/rejection tests
+
+## 2026-07-20 - Step 64: fail-closed interaction-obligation codec
+
+Completed the bidirectional lossless codec between persisted interaction action
+bits and stable assurance obligations. Unknown bits, unknown obligation IDs, and
+duplicates fail closed.
+
+### Related Files
+
+- internal/assurance/obligations.go — Codec implementation
+- internal/assurance/obligations_test.go — Round-trip and rejection coverage
+
+## 2026-07-20 - Step 65: registered VerificationPlan step codecs
+
+Completed the Phase 9 verification-plan materialization boundary. Every runner
+now receives an explicit registry of accepted step kinds. A plan fails before
+the driver can observe it when a step kind is unknown, its JSON is malformed,
+or its parameters do not conform to the registered codec.
+
+### Related Files
+
+- pkg/verifyplan/registry.go — Step registry and fail-closed JSON validators
+- pkg/verifyplan/plan.go — Registry-aware plan and runner validation
+- internal/fositeadapter/verification_scenario_test.go — Strict native scenario parameter codecs
+- internal/gojaverify/compiler_test.go — Registered native Goja verification step
+
+## 2026-07-20 - Step 66: secret-free authorization transition traces
+
+Completed the current authorization trace migration. Each recorded event now
+names a permitted native transition and a closed outcome; the event schema no
+longer admits client IDs, request IDs, grant values, handles, credentials, or
+tokens. The approval, denial, account-selection, scripted-signup, device, and
+SQL terminal paths emit a validated terminal result.
+
+### Related Files
+
+- internal/securitytrace/trace.go — Bounded event contract and event-to-transition mapping
+- internal/fositeadapter/provider.go — Browser authorization terminal instrumentation
+- internal/fositeadapter/scripted_signup.go — Scripted-signup deny/commit terminal instrumentation
+- internal/fositeadapter/interaction_hardening_test.go — Approved and denied terminal-path proof
+
+## 2026-07-20 - Step 67: proof-gated authorization artifact sink
+
+Completed the authorization artifact authority boundary. The unexported
+`approvedAuthorizationProof` can be built only after native client, policy,
+consent, claims, and lifecycle checks; one private sink is now the repository's
+only Fosite `NewAuthorizeResponse` call.
+
+### Related Files
+
+- internal/fositeadapter/provider.go — Private proof type and sole artifact-issuance sink
+
+## 2026-07-20 - Step 68: catalog-generated analysis and model vocabulary
+
+Completed the deterministic catalog projections. The current authorization
+catalog declares native handler authority and effect summaries, then generates
+static-analysis authority metadata and a finite formal-model vocabulary without
+becoming a runtime dispatcher.
+
+### Related Files
+
+- internal/assurance/catalog.go — Current native catalog and deterministic projections
+- internal/assurance/catalog_test.go — Catalog, artifact-authority, and model-vocabulary proof
+- internal/assurance/schemas.go — Native authority required on every descriptor
+
+## 2026-07-20 - Step 69: direct normalized-counterexample replay
+
+Completed the model-to-native replay bridge. A normalized counterexample holds
+stable `StepID` values and copies them directly to registered VerificationPlan
+kinds; the strict provider replay proves a duplicate terminal approval is
+rejected without a model-action name adapter.
+
+### Related Files
+
+- internal/assurance/replay.go — Normalized counterexample schema and direct plan projection
+- internal/assurance/replay_test.go — Registry materialization without an adapter
+- internal/fositeadapter/verification_scenario_test.go — Native HTTP duplicate-terminal replay
+
+## 2026-07-20 - Step 70: registered local-web configuration graph
+
+Completed local-web graph materialization. A compiled Goja program now becomes
+a data-only local-web graph only through the small native block/policy registry;
+unknown workflows and provider kinds fail before activation and cannot define
+new host semantics.
+
+### Related Files
+
+- internal/assurance/localweb.go — Registered local-web graph materializer
+- internal/assurance/localweb_test.go — Compiled-Goja materialization and rejection proof
+
+## 2026-07-19
+
+Step 71: extracted a pure authorization transition kernel from the monitor (commit a460c83)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/authorization_kernel.go — Pure terminal-ordering kernel; no HTTP, Fosite, store, Goja, clock, or secret dependency
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace.go — Monitor now maps validated trace events then delegates ordering invariants to the kernel
+
+## 2026-07-19
+
+Step 72: completed the available Phase 9 provider, persistence, trace, conformance, race, fuzz, failpoint, and performance-inventory gates after the assurance refactor
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/authorization_kernel_test.go — Pure transition-kernel regression coverage included in the Phase 9 validation matrix
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — Existing SQLite authorization and device failpoint atomicity coverage exercised by the provider package gate
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace_test.go — Property and fuzz coverage for normalized secret-free trace monitoring
+
+## 2026-07-19
+
+Step 73: completed cross-phase stable assurance ID bindings for native handlers/observations and compiled program outcomes, effects, schemas, capabilities, diagnostics, and policy evidence (commits b2c1608, 37c8bfb)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_vocabulary.go — Validated projection of compiled program and policy metadata into typed assurance IDs
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/vocabulary.go — Closed typed stable identifier families and native handler/observation IDs
+
+## 2026-07-19
+
+Step 74: emitted bounded secret-free scripted-signup traces at lambda invocation, continuation, evidence verification, effect validation, atomic commit, and terminal boundaries (commit 34758c1)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — End-to-end secret-free trace and offline-monitor proof
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Actual native scripted-signup boundary emissions using HMAC interaction correlation only
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace.go — Closed trace-event contract for lambda and native workflow boundaries
+
+## 2026-07-19
+
+Step 75: modeled declared lambda outcomes as constrained nondeterminism and proved evidence/effect validation plus successful native atomic commit precede continuation, authorization-artifact, and token-relevant completion (commit cc401b7)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_commit_model.go — Pure constrained-lambda safety model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Real signup trace replayed through the pure model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Commit trace emission moved after successful native transaction
+
+## 2026-07-20
+
+Step 76: added bounded lambda-model fuzzing and explicit bidirectional production/verification module isolation tests; replay and targeted race gates pass (commit c6ff3dc)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_commit_model_test.go — Bounded malformed-sequence fuzz coverage for the pure lambda safety model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojaverify/compiler_test.go — Verification runtime explicitly rejects production tinyidp
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — Production scripting runtime explicitly rejects tinyidp/verify
+
+## 2026-07-20
+
+Step 77: audited the lambda-first completion gate; aligned the normative API reference with the implemented v1 surface and passed direct, race, fuzz, and GOWORK=off validation (commit d927f4e)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp/typescript_test.go — Guards implementation/declaration surface
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — Normative API source alignment
+
+## 2026-07-20
+
+Closed: the superseding lambda-first implementation ledger (lf00–lf92) is complete and validated; remaining unchecked graph-first tasks are explicitly deprecated historical planning, not open scope.
+
+## 2026-07-20
+
+Step 78: marked the retired graph-first task ledger closed at user request, with an explicit annotation that it is superseded rather than implemented
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md — Historical-plan closure annotation and checked retired tasks

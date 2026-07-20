@@ -10,7 +10,7 @@ pre-commit:
 
 pre-push:
   commands:
-    release-snapshot:
+    release:
       run: make goreleaser
     lint:
       run: make lint

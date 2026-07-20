@@ -2,6 +2,7 @@ package fositeadapter
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"math"
 	"net/http"
@@ -44,6 +45,7 @@ func (p *Provider) newInteractionPage(
 	}
 	page := idpui.InteractionPage{
 		DocumentTitle: title,
+		ClientID:      clientID,
 		Form: idpui.InteractionForm{
 			ActionURL:        p.issuer.Endpoint("/authorize"),
 			RedirectOrigin:   interactionRedirectOrigin(request.Get("redirect_uri")),
@@ -108,6 +110,11 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 	if page.Form.RedirectOrigin != "" {
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' "+page.Form.RedirectOrigin+"; base-uri 'none'")
 	}
+	if err := p.decorateInteractionPage(r.Context(), &page); err != nil {
+		p.recordRenderFailure(r, page, "presentation_policy_failed")
+		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
+		return
+	}
 	if err := page.Validate(); err != nil {
 		p.recordRenderFailure(r, page, "invalid_page")
 		http.Error(w, "authentication page unavailable", http.StatusInternalServerError)
@@ -149,6 +156,68 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 	succeeded = true
 }
 
+// renderWorkflow is the native rendering boundary for a script-selected,
+// provider-validated workflow presentation. Its caller must already have
+// validated the OAuth request and constructed the interaction/CSRF values; the
+// renderer receives no HTTP authority. Phase 3 will call this only after the
+// signup workflow has produced a validated presentation.
+func (p *Provider) renderWorkflow(w http.ResponseWriter, r *http.Request, status int, page idpui.WorkflowPage) {
+	started := time.Now()
+	p.renderMetrics.attempts.Add(1)
+	succeeded := false
+	defer func() {
+		p.renderMetrics.observe(time.Since(started), succeeded)
+	}()
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	if page.Form.RedirectOrigin != "" {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' "+page.Form.RedirectOrigin+"; base-uri 'none'")
+	}
+	if err := page.Validate(); err != nil {
+		p.recordWorkflowRenderFailure(r, "invalid_page")
+		http.Error(w, "workflow page unavailable", http.StatusInternalServerError)
+		return
+	}
+	buffer := &boundedInteractionBuffer{limit: maxInteractionDocumentBytes}
+	if err := p.workflowUI.RenderWorkflow(r.Context(), buffer, page.Clone()); err != nil {
+		reason := "renderer_failed"
+		if errors.Is(err, errInteractionDocumentTooLarge) {
+			reason = "document_too_large"
+			p.renderMetrics.oversizedDocuments.Add(1)
+		}
+		p.recordWorkflowRenderFailure(r, reason)
+		http.Error(w, "workflow page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if buffer.overflowed {
+		p.renderMetrics.oversizedDocuments.Add(1)
+		p.recordWorkflowRenderFailure(r, "document_too_large")
+		http.Error(w, "workflow page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if buffer.Len() == 0 {
+		p.renderMetrics.emptyDocuments.Add(1)
+		p.recordWorkflowRenderFailure(r, "empty_document")
+		http.Error(w, "workflow page unavailable", http.StatusInternalServerError)
+		return
+	}
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if written, err := w.Write(buffer.Bytes()); err != nil || written != buffer.Len() {
+		p.renderMetrics.responseWriteFailures.Add(1)
+		p.recordWorkflowRenderFailure(r, "response_write_failed")
+		return
+	}
+	succeeded = true
+}
+
+func (p *Provider) recordWorkflowRenderFailure(r *http.Request, reason string) {
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.render_failed", Result: "rejected", Reason: reason})
+}
+
 func (p *Provider) recordRenderFailure(r *http.Request, page idpui.InteractionPage, reason string) {
 	clientID := ""
 	if page.Consent != nil {
@@ -164,6 +233,11 @@ func (p *Provider) renderDeviceVerification(w http.ResponseWriter, r *http.Reque
 	defer func() { p.renderMetrics.observe(time.Since(started), succeeded) }()
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
+	if err := p.decorateDeviceVerificationPage(r.Context(), &page); err != nil {
+		p.recordDeviceVerificationRenderFailure(r, page, "presentation_policy_failed")
+		http.Error(w, "device verification page unavailable", http.StatusInternalServerError)
+		return
+	}
 	if err := page.Validate(); err != nil {
 		p.recordDeviceVerificationRenderFailure(r, page, "invalid_page")
 		http.Error(w, "device verification page unavailable", http.StatusInternalServerError)
@@ -203,6 +277,55 @@ func (p *Provider) renderDeviceVerification(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	succeeded = true
+}
+
+// decorateInteractionPage lets a policy choose only a bounded title for a
+// page that the provider has already selected. The stored interaction remains
+// the sole browser continuation; account values, scopes, actions, and OAuth
+// response ownership never cross this boundary.
+func (p *Provider) decorateInteractionPage(ctx context.Context, page *idpui.InteractionPage) error {
+	if p.presentation == nil || page == nil {
+		return nil
+	}
+	var input idp.PresentationInput
+	switch {
+	case page.AccountChooser != nil:
+		input = idp.PresentationInput{Kind: idp.PresentationAccountSelection, ClientID: page.ClientID, AccountCount: len(page.AccountChooser.Entries)}
+	case page.Consent != nil:
+		input = idp.PresentationInput{Kind: idp.PresentationConsent, ClientID: page.Consent.ClientID, RequestedScope: scopeNames(page.Consent.Scopes)}
+	default:
+		return nil
+	}
+	output, err := p.presentation.Present(ctx, input)
+	if err != nil {
+		return err
+	}
+	if output.DocumentTitle != "" {
+		page.DocumentTitle = output.DocumentTitle
+	}
+	return nil
+}
+
+func (p *Provider) decorateDeviceVerificationPage(ctx context.Context, page *idpui.DeviceVerificationPage) error {
+	if p.presentation == nil || page == nil || page.Confirmation == nil {
+		return nil
+	}
+	output, err := p.presentation.Present(ctx, idp.PresentationInput{Kind: idp.PresentationDeviceVerify, ClientID: page.Confirmation.ClientID, RequestedScope: scopeNames(page.Confirmation.Scopes)})
+	if err != nil {
+		return err
+	}
+	if output.DocumentTitle != "" {
+		page.DocumentTitle = output.DocumentTitle
+	}
+	return nil
+}
+
+func scopeNames(scopes []idpui.Scope) []string {
+	result := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		result = append(result, scope.Name)
+	}
+	return result
 }
 
 func (p *Provider) recordDeviceVerificationRenderFailure(r *http.Request, page idpui.DeviceVerificationPage, reason string) {

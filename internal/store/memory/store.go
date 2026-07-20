@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 )
 
@@ -37,11 +38,14 @@ type Store struct {
 	interactions       map[string]idpstore.InteractionRecord
 	deviceGrants       map[string]idpstore.DeviceGrant
 	deviceByUserCode   map[string]string
+	durableInvitations map[string]idpstore.DurableInvitation
 	keys               map[string]idpstore.SigningKey
+	continuations      map[string]idpcontinuation.WorkflowContinuation
 }
 
 var _ idpstore.Store = (*Store)(nil)
 var _ idpstore.MaintenanceStore = (*Store)(nil)
+var _ idpcontinuation.Store = (*Store)(nil)
 
 func New() *Store {
 	return &Store{
@@ -63,7 +67,9 @@ func New() *Store {
 		interactions:       map[string]idpstore.InteractionRecord{},
 		deviceGrants:       map[string]idpstore.DeviceGrant{},
 		deviceByUserCode:   map[string]string{},
+		durableInvitations: map[string]idpstore.DurableInvitation{},
 		keys:               map[string]idpstore.SigningKey{},
+		continuations:      map[string]idpcontinuation.WorkflowContinuation{},
 	}
 }
 
@@ -1213,7 +1219,9 @@ func (s *Store) cloneLocked() *Store {
 		interactions:       cloneInteractionMap(s.interactions),
 		deviceGrants:       cloneDeviceGrantMap(s.deviceGrants),
 		deviceByUserCode:   cloneMap(s.deviceByUserCode),
+		durableInvitations: cloneDurableInvitationMap(s.durableInvitations),
 		keys:               cloneMap(s.keys),
+		continuations:      cloneContinuationMap(s.continuations),
 	}
 }
 
@@ -1236,7 +1244,9 @@ func (s *Store) replaceLocked(next *Store) {
 	s.interactions = next.interactions
 	s.deviceGrants = next.deviceGrants
 	s.deviceByUserCode = next.deviceByUserCode
+	s.durableInvitations = next.durableInvitations
 	s.keys = next.keys
+	s.continuations = next.continuations
 }
 
 func cloneDeviceGrantMap(source map[string]idpstore.DeviceGrant) map[string]idpstore.DeviceGrant {
@@ -1245,6 +1255,27 @@ func cloneDeviceGrantMap(source map[string]idpstore.DeviceGrant) map[string]idps
 		clone[key] = cloneDeviceGrant(value)
 	}
 	return clone
+}
+
+func cloneDurableInvitationMap(source map[string]idpstore.DurableInvitation) map[string]idpstore.DurableInvitation {
+	clone := make(map[string]idpstore.DurableInvitation, len(source))
+	for key, value := range source {
+		clone[key] = cloneDurableInvitation(value)
+	}
+	return clone
+}
+
+func cloneDurableInvitation(value idpstore.DurableInvitation) idpstore.DurableInvitation {
+	value.CodeHash = append([]byte(nil), value.CodeHash...)
+	if value.RevokedAt != nil {
+		at := *value.RevokedAt
+		value.RevokedAt = &at
+	}
+	if value.RedeemedAt != nil {
+		at := *value.RedeemedAt
+		value.RedeemedAt = &at
+	}
+	return value
 }
 
 func cloneInteractionMap(source map[string]idpstore.InteractionRecord) map[string]idpstore.InteractionRecord {

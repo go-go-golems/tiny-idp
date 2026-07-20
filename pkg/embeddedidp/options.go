@@ -11,6 +11,11 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/keys"
 	"github.com/go-go-golems/tiny-idp/internal/oidcmeta"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
+	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
 )
@@ -36,7 +41,27 @@ type TokenConfig struct {
 
 type UIConfig struct {
 	Renderer                   idpui.InteractionRenderer
+	WorkflowRenderer           idpui.WorkflowRenderer
 	DeviceVerificationRenderer idpui.DeviceVerificationRenderer
+}
+
+// ScriptedSignupConfig threads an activated, bounded signup generation and
+// its continuation store into the embedded provider. It has no listener,
+// TLS, OAuth, cookie, key, or general storage authority.
+type ScriptedSignupConfig struct {
+	Executor           *idpsignup.Executor
+	GenerationManager  *idpsignup.GenerationManager
+	Continuations      idpcontinuation.Store
+	DurableInvitations *idpinvite.DurableService
+	EmailChallenges    *idpemailchallenge.Service
+}
+
+// RegistrationConfig enables provider-owned self-registration as a continuation
+// of an already-validated authorization request. The provider remains the only
+// component with access to the password/account-creation service.
+type RegistrationConfig struct {
+	Enabled  bool
+	Accounts *idpaccounts.Service
 }
 
 // AccountChooserConfig opts a host into provider-owned remembered-account
@@ -69,6 +94,9 @@ type Options struct {
 	Token          TokenConfig
 	Audit          idp.Sink
 	Consent        idp.ConsentPolicy
+	Authorization  idp.AuthorizationPolicy
+	Claims         idp.ClaimsPolicy
+	Presentation   idp.PresentationPolicy
 	RateLimiter    idp.RateLimiter
 	ClientAddress  idp.ClientAddressResolver
 	Authenticator  idp.PasswordAuthenticator
@@ -77,6 +105,8 @@ type Options struct {
 	Maintenance    MaintenanceConfig
 	UI             UIConfig
 	AccountChooser AccountChooserConfig
+	Registration   RegistrationConfig
+	ScriptedSignup ScriptedSignupConfig
 }
 
 func (o Options) Validate(ctx context.Context) error {

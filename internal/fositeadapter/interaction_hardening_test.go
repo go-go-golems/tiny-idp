@@ -2,6 +2,7 @@ package fositeadapter_test
 
 import (
 	"context"
+	"encoding/json"
 	"html"
 	"io"
 	"net/http"
@@ -104,12 +105,70 @@ func TestAuthorizationSecurityTraceSatisfiesOfflineMonitor(t *testing.T) {
 	recorder := &securitytrace.Recorder{}
 	fixture := newInteractionFixtureConfigured(t, nil, nil, recorder)
 	fixture.login()
+	assertBoundedTerminalTrace(t, recorder.Events(), "approved", true)
 	monitor := securitytrace.NewMonitor()
 	for _, event := range recorder.Events() {
 		monitor.Observe(event)
 	}
 	if violations := monitor.Violations(); len(violations) != 0 {
 		t.Fatalf("security trace violations=%v events=%#v", violations, recorder.Events())
+	}
+}
+
+func TestDeniedAuthorizationSecurityTraceHasTerminalWithoutArtifacts(t *testing.T) {
+	recorder := &securitytrace.Recorder{}
+	fixture := newInteractionFixtureConfigured(t, nil, nil, recorder)
+	request := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	request.Del("login")
+	form, _, status := fixture.begin(request)
+	if status != http.StatusOK {
+		t.Fatalf("begin denial status=%d", status)
+	}
+	form.Set("action", "deny")
+	response := fixture.submit(form)
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusFound && response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("denial status=%d", response.StatusCode)
+	}
+	assertBoundedTerminalTrace(t, recorder.Events(), "denied", false)
+}
+
+func assertBoundedTerminalTrace(t *testing.T, events []securitytrace.Event, terminal string, wantArtifacts bool) {
+	t.Helper()
+	terminalCount := 0
+	artifacts := false
+	for _, event := range events {
+		result, err := event.Result()
+		if err != nil {
+			t.Fatalf("invalid security trace event=%#v err=%v", event, err)
+		}
+		if result.Step == "" || result.Observation == "" || result.Outcome == "" {
+			t.Fatalf("incomplete transition result=%#v", result)
+		}
+		encoded, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{"client_id", "request_id", "grant_type", "alice", "secret", "token"} {
+			if strings.Contains(string(encoded), forbidden) {
+				t.Fatalf("security trace leaked forbidden value %q: %s", forbidden, encoded)
+			}
+		}
+		if event.Kind == securitytrace.InteractionTerminal {
+			terminalCount++
+			if string(event.Outcome) != terminal {
+				t.Fatalf("terminal outcome=%q want %q", event.Outcome, terminal)
+			}
+		}
+		if event.Kind == securitytrace.AuthorizationArtifactsDone {
+			artifacts = true
+		}
+	}
+	if terminalCount != 1 {
+		t.Fatalf("terminal event count=%d want 1 events=%#v", terminalCount, events)
+	}
+	if artifacts != wantArtifacts {
+		t.Fatalf("artifact event=%v want %v events=%#v", artifacts, wantArtifacts, events)
 	}
 }
 

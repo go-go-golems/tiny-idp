@@ -50,7 +50,7 @@ module.exports = V.plan({suites: [{name: "native boundary", scenarios: [{
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := verifyplan.Runner{Driver: recordingDriver{}, Assertions: map[string]verifyplan.AssertionFunc{
+	runner := verifyplan.Runner{Driver: recordingDriver{}, Steps: verifyplan.StepRegistry{"authorize.begin": verifyplan.ExactObjectValidator}, Assertions: map[string]verifyplan.AssertionFunc{
 		"observedKind@v1": func(_ context.Context, config json.RawMessage, observations []verifyplan.Observation) error {
 			var expected struct {
 				Kind string `json:"kind"`
@@ -75,6 +75,13 @@ module.exports = V.plan({suites: [{name: "native boundary", scenarios: [{
 
 func TestCompileRejectsAmbientModules(t *testing.T) {
 	_, err := Compile(context.Background(), `require("fs"); module.exports = {};`, DefaultOptions())
+	if err == nil || !strings.Contains(err.Error(), "ambient module") {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestCompileRejectsProductionScriptingModule(t *testing.T) {
+	_, err := Compile(context.Background(), `require("tinyidp"); module.exports = {};`, DefaultOptions())
 	if err == nil || !strings.Contains(err.Error(), "ambient module") {
 		t.Fatalf("error=%v", err)
 	}
