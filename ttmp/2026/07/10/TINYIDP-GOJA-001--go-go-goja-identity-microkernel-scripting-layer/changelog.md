@@ -621,3 +621,16 @@ only Fosite `NewAuthorizeResponse` call.
 ### Related Files
 
 - internal/fositeadapter/provider.go — Private proof type and sole artifact-issuance sink
+
+## 2026-07-20 - Step 68: catalog-generated analysis and model vocabulary
+
+Completed the deterministic catalog projections. The current authorization
+catalog declares native handler authority and effect summaries, then generates
+static-analysis authority metadata and a finite formal-model vocabulary without
+becoming a runtime dispatcher.
+
+### Related Files
+
+- internal/assurance/catalog.go — Current native catalog and deterministic projections
+- internal/assurance/catalog_test.go — Catalog, artifact-authority, and model-vocabulary proof
+- internal/assurance/schemas.go — Native authority required on every descriptor

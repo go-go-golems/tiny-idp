@@ -6341,3 +6341,60 @@ vet, and the isolated full repository test suite.
   protocol error as before.
 - Repeat the `rg` query above; there must be exactly one Fosite artifact
   creation call in the repository.
+
+## Step 68: Generate static-analysis and formal-model vocabulary from the catalog
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `fed7a32` — "Feat: generate assurance catalog projections"
+
+### What I did
+
+- Required every `TransitionDescriptor` to name at least one stable native
+  `HandlerID`; a descriptor with only a step name and effects now fails schema
+  validation.
+- Added `CurrentAuthorizationCatalog` for the currently implemented native
+  interaction creation, password, consent, denial, account selection, device
+  approval, authorization artifact, and token issuance transitions.
+- Added `GenerateStaticAnalysisMetadata`, which projects each declared handler
+  and step into sorted effects, observations, and an explicit artifact-sink
+  bit. It rejects ambiguous duplicate `(handler, step)` authority pairs.
+- Added `GenerateFormalModelVocabulary`, which derives sorted finite resource,
+  fact, obligation, outcome, and model-action sets. It intentionally erases
+  source symbols, request values, people, credentials, tokens, and runtime
+  objects.
+- Added tests proving the current catalog validates, creates one authority
+  entry per transition, identifies precisely the authorization and token
+  artifact authorities, produces a complete model vocabulary, and rejects a
+  descriptor that names no native authority.
+
+### Why
+
+Static analysis and model checking need the same spelling and effect claims as
+runtime tracing, but neither should parse web-handler control flow ad hoc. The
+catalog is a small shared source of reviewable facts. Generating projections
+from it prevents parallel string lists from drifting, while keeping the actual
+protocol implementation and formal-model abstraction choices in their proper
+native/tool-specific layers.
+
+### What worked
+
+```bash
+go test ./internal/assurance -count=1
+```
+
+The focused suite passed. The commit hook passed lint, analyzers, vet, and the
+isolated full repository test suite.
+
+### Review instructions
+
+- Read `CurrentAuthorizationCatalog` and compare each authority with the
+  corresponding provider method; the catalog is an assertion about existing
+  code, not a new dispatch path.
+- Check `GenerateStaticAnalysisMetadata` for the exact artifact-sink rule:
+  only declared `EffectIssueArtifact` entries become sinks.
+- Check `GenerateFormalModelVocabulary` for data minimization. It returns a
+  finite vocabulary and action summaries, not a misleading claim that Go code
+  has been formally modeled automatically.
