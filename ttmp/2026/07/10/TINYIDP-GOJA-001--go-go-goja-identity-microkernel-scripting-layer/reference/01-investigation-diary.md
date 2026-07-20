@@ -20,6 +20,10 @@ RelatedFiles:
       Note: Pure authorization terminal-ordering model added in a460c83
     - Path: repo://internal/assurance/authorization_kernel_test.go
       Note: Pure-kernel ordering and duplicate-artifact coverage added in a460c83
+    - Path: repo://internal/assurance/lambda_commit_model.go
+      Note: Step 75 constrained declared-outcome/native-commit proof model
+    - Path: repo://internal/assurance/lambda_commit_model_test.go
+      Note: Step 75 nondeterminism and early-completion counterexample tests
     - Path: repo://internal/assurance/lambda_vocabulary.go
       Note: Step 73 typed stable-ID projection for compiled lambda contracts, diagnostics, and authorization evidence
     - Path: repo://internal/assurance/lambda_vocabulary_test.go
@@ -34,6 +38,7 @@ RelatedFiles:
       Note: |-
         Browser proof and delivery lifecycle evidence
         Step 74 end-to-end trace secrecy and monitor coverage
+        Step 75 production trace model replay
     - Path: repo://internal/fositeadapter/scripted_signup.go
       Note: |-
         Native signup commit revalidates optional invitation effect and redeems it inside its transaction (commit 84a9995)
@@ -149,6 +154,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -7091,3 +7097,132 @@ native browser POST
 For present/challenge outcomes, the analogous path records a new continuation
 creation; rejected invocation/evidence/effect/commit paths record only the
 bounded rejected outcome and never include an error string.
+
+## Step 75: Model declared lambda outcomes and native commit safety
+
+This step turns the central lambda-first safety claim into a small executable
+model. A lambda may settle with any outcome declared by its compiled contract;
+the model intentionally does not predict which one. It does require native
+verified evidence and native effect validation before a declared `commit` can
+become a successful identity/session/artifact-relevant completion.
+
+The model was also replayed against the real email-verified signup trace. That
+replay exposed an ordering error in the initial new trace instrumentation: it
+was announcing success after account preparation, before the outer store
+transaction. The trace emission was moved after the transaction returns
+successfully, making the recorded fact match the native atomic boundary.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as earlier `continue` steps)
+
+**Assistant interpretation:** Complete the cross-phase lambda-outcome model
+and prove the native commit precondition for identity-relevant completion.
+
+**Inferred user intent:** Keep JavaScript expressive through declared outcomes
+while proving that it cannot bypass native evidence, effect validation, or
+atomic persistence.
+
+**Commit (code):** `cc401b7` — "Feat: model declared lambda commit safety"
+
+### What I did
+
+- Added `DeclaredLambdaModel`, a pure model with a compiled set of permitted
+  lambda outcomes and no Goja, HTTP, database, clock, or secret dependency.
+- Modeled `present`, `challenge`, and `commit` as possible declared outcomes;
+  only the `commit` branch may proceed to native effect validation and commit.
+- Required verified evidence when configured, an accepted native effect-plan
+  validation, and exactly one successful native signup commit before accepted
+  continuation completion, authorization artifacts, or token lifecycle events.
+- Added counterexample tests for an undeclared lambda result, missing evidence,
+  missing effect validation, and early artifact completion.
+- Replayed every normalized result from the real scripted-signup security trace
+  through the pure model in the end-to-end registration test.
+
+### Why
+
+“Commit” is a script declaration, not an authorization to mutate durable
+state. The model makes that distinction executable: it accepts nondeterminism
+at the declared outcome boundary but rejects every path to identity/session/
+artifact completion without the native proof chain.
+
+### What worked
+
+```bash
+go test ./internal/assurance ./internal/fositeadapter \
+  -run 'TestDeclaredLambdaModel|TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification' -count=1
+GOWORK=off /tmp/golangci-lint-v2.12.2-go1.26.5 run -v
+```
+
+The focused model/replay tests and lint passed. Commit `cc401b7` passed the
+full isolated repository test, lint, analyzer, and vet hook.
+
+### What didn't work
+
+The first real trace replay failed with:
+
+```text
+continuation completed before native signup commit
+```
+
+Inspection showed the success trace events were emitted after
+`PrepareCreate`, not after `store.Update` completed. Moving both success facts
+to after the transaction fixed the first defect. The next replay showed that
+the two post-transaction facts had to be ordered `native_effect.committed`
+before `continuation.terminal`; swapping that order made the real trace satisfy
+the model. The compile hook then required replacing a narrow `StepID` switch
+with explicit equality branches to keep the exhaustive linter satisfied.
+
+### What I learned
+
+- A trace model is valuable even when ordinary functional tests pass: it caught
+  a true observability claim that was ahead of the transactional fact.
+- Nondeterminism belongs at the finite declared-outcome set, not at native
+  persistence/evidence rules.
+- Event order after one transaction still matters to offline consumers; the
+  native commit fact must be emitted before dependent terminal facts.
+
+### What was tricky to build
+
+The model must accept ordinary authorization observations on the same trace
+without becoming a duplicate authorization provider. It therefore enforces
+only the safety conditions after a declared lambda commit request. This makes
+the boundary explicit: the authorization kernel owns consent/login ordering;
+this model owns script-declaration/evidence/effect/native-commit ordering.
+
+### What warrants a second pair of eyes
+
+- Confirm future effect families explicitly choose whether evidence is
+  required before reusing this model.
+- Confirm a rejected native commit never produces a later accepted completion
+  in its trace history.
+- Review the trace emission placement whenever transaction ownership changes.
+
+### What should be done in the future
+
+Use normalized trace records and the existing replay bridge for further
+counterexamples, fuzz the new model/trace conversion, and keep production and
+verification runtime profiles separate.
+
+### Code review instructions
+
+- Read `DeclaredLambdaModel.Apply` and `commitViolations` first.
+- Compare the two model tests with the real replay in
+  `assertScriptedSignupSecurityTrace`.
+- Verify `commitScriptedSignup` emits success facts only after `store.Update`
+  returns nil and in the recorded order described above.
+
+### Technical details
+
+```text
+declared outcomes = finite nondeterministic set
+
+lambda.commit@v1
+  -> evidence.verified (when required)
+  -> effect.validation_completed(applied)
+  -> native_effect.committed(applied after transaction)
+  -> continuation.terminal / authorization artifact / token lifecycle
+```
+
+Any arrow skipped in a commit-relevant trace produces a model violation rather
+than a best-effort warning.

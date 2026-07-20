@@ -697,3 +697,13 @@ Step 74: emitted bounded secret-free scripted-signup traces at lambda invocation
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — End-to-end secret-free trace and offline-monitor proof
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Actual native scripted-signup boundary emissions using HMAC interaction correlation only
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace.go — Closed trace-event contract for lambda and native workflow boundaries
+
+## 2026-07-19
+
+Step 75: modeled declared lambda outcomes as constrained nondeterminism and proved evidence/effect validation plus successful native atomic commit precede continuation, authorization-artifact, and token-relevant completion (commit cc401b7)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_commit_model.go — Pure constrained-lambda safety model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Real signup trace replayed through the pure model
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Commit trace emission moved after successful native transaction
