@@ -6454,3 +6454,58 @@ vet, and the isolated full repository test suite.
   the same stable identifiers, and no legacy alias cases remain.
 - Review the duplicate-terminal HTTP replay observations. It should prove both
   the first successful code issuance and the second terminal rejection.
+
+## Step 70: Materialize a local-web Goja graph through registered descriptors
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `0a708ac` — "Feat: materialize registered local-web graph"
+
+### What I did
+
+- Added a data-only `LocalWebRegistry` with one native local-signup block and
+  three currently supported post-validation/decorative policy families:
+  authorization, claims, and presentation.
+- Added `MaterializeLocalWebGraph`, which receives an already compiled Goja
+  `idpprogram.Program` and its immutable source/program fingerprints. It first
+  validates the program, validates the fingerprint reference, then resolves
+  every declared workflow and provider through the registry.
+- Produced `LocalWebGraph` selections containing only descriptor IDs, workflow
+  and provider IDs, stable transition IDs, provider kinds, and the compiled
+  configuration fingerprint. The output contains no callback, Goja VM, HTTP,
+  Fosite, store, key, credential, capability, or artifact object.
+- Rejected duplicate/invalid registry entries, unknown workflow IDs, and typed
+  providers whose family is absent from the local-web policy registry.
+- Added tests using the actual compiled open-signup Goja source, plus a valid
+  synthetic identity provider to prove that an otherwise valid but unregistered
+  policy family is rejected at materialization instead of earlier validation.
+
+### Why
+
+The compiled Goja program is an excellent configuration source, but it must not
+define a new native block, route, OAuth transition, or host policy family by
+spelling one in JavaScript. The registry is the semantic authority; the graph
+only selects from it. This preserves the existing native Fosite/provider path
+while giving activation, analysis, and review a stable configuration artifact.
+
+### What worked
+
+```bash
+go test ./internal/assurance ./pkg/idpsignup ./pkg/idpscript \\
+  ./internal/gojamodules/tinyidp -count=1
+```
+
+All focused packages passed. The commit hook passed lint, analyzers, vet, and
+the isolated full repository test suite.
+
+### Review instructions
+
+- Start with `DefaultLocalWebRegistry`: it is the complete local-web selection
+  authority for this slice.
+- Follow `MaterializeLocalWebGraph`; it validates a compiled program but never
+  executes it, invokes a callback, or dispatches a native transition.
+- In the tests, compare the compiled `open_signup.js` artifact with the
+  resulting block. Then inspect the valid but unregistered identity-provider
+  case to confirm semantic rejection happens at the registry boundary.

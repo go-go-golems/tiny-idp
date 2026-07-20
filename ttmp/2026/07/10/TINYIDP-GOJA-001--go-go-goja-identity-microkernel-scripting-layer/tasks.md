@@ -137,7 +137,7 @@
 - [x] Introduce unexported authorization proof types and one approved artifact-issuance sink without changing Fosite protocol behavior. <!-- t:uopp -->
 - [x] Generate static-analysis authority/effect metadata and a formal-model vocabulary skeleton from the transition catalog. <!-- t:9zhn -->
 - [x] Replay one normalized model counterexample through registered VerificationPlan codecs without a handwritten action-name adapter. <!-- t:e9p7 -->
-- [ ] Materialize the local-web Goja configuration graph solely from registered native block and policy descriptors. <!-- t:t0q3 -->
+- [x] Materialize the local-web Goja configuration graph solely from registered native block and policy descriptors. <!-- t:t0q3 -->
 - [ ] Evaluate selective pure transition kernels only after the vocabulary, tracing, proof boundary, analyzers, and model replay are stable. <!-- t:qh8f -->
 - [ ] Run differential provider, persistence, trace, monitor, conformance, race, fuzz, failpoint, and performance gates after each refactoring phase. <!-- t:kjlg -->
 

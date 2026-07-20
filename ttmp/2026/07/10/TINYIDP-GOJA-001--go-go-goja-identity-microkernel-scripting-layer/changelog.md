@@ -647,3 +647,15 @@ rejected without a model-action name adapter.
 - internal/assurance/replay.go — Normalized counterexample schema and direct plan projection
 - internal/assurance/replay_test.go — Registry materialization without an adapter
 - internal/fositeadapter/verification_scenario_test.go — Native HTTP duplicate-terminal replay
+
+## 2026-07-20 - Step 70: registered local-web configuration graph
+
+Completed local-web graph materialization. A compiled Goja program now becomes
+a data-only local-web graph only through the small native block/policy registry;
+unknown workflows and provider kinds fail before activation and cannot define
+new host semantics.
+
+### Related Files
+
+- internal/assurance/localweb.go — Registered local-web graph materializer
+- internal/assurance/localweb_test.go — Compiled-Goja materialization and rejection proof
