@@ -1535,3 +1535,68 @@ app POST /auth/logout -> exact public IdP end-session URL
 browser GET end-session -> registered Message Desk redirect + IdP cookie clear
 fresh /auth/login -> password -> registered callback -> new app session
 ```
+
+## Step 19 — Phase 3 consumed-signup continuation replay
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Add concrete adversarial continuation evidence
+without prematurely completing the broader expiry/concurrency task.
+
+**Inferred user intent:** A consumed signup form must not become an account or
+session creation primitive when replayed.
+
+**Commit:** `97a4ede` — "Test: reject replayed two-process signup continuation"
+
+### What I did
+
+- Re-posted the exact successful signup form (interaction, workflow
+  continuation, CSRF token, and submitted fields) before continuing to consent.
+- Asserted `400 Bad Request`, then re-read Tiny-IDP SQLite and verified it still
+  contains exactly one user and exactly one provider browser session.
+
+### Why
+
+The replay is the highest-value continuation property of the open-signup path:
+it proves one atomic commit cannot be repeated by a retained browser request.
+
+### What worked
+
+- Focused harness passed in 8.38 seconds. `97a4ede` passed full repository
+  tests, lint, Glazed validation, and IdP UI analysis.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- A consumed continuation is rejected before another durable identity/session
+  commit, while the original authorization path can still proceed to consent.
+
+### What was tricky to build
+
+- The replay must happen before provider logout/re-login, when the durable
+  count is unambiguously one, rather than after later session policy changes.
+
+### What warrants a second pair of eyes
+
+- This is only replay evidence. Expiration and simultaneous submission remain
+  required before checking the full continuation task.
+
+### What should be done in the future
+
+- Add expiry and concurrency, then restart behavior and public-error cases.
+
+### Code review instructions
+
+- Review the replay immediately after `assertSingleProviderIdentityAndSession`.
+
+### Technical details
+
+```text
+first signed form POST -> user=1, provider sessions=1
+identical second POST  -> 400, user=1, provider sessions=1
+```
