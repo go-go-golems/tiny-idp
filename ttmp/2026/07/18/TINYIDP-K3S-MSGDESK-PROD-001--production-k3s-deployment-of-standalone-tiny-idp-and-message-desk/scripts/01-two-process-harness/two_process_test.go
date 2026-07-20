@@ -127,6 +127,27 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	if !sessionBody.Authenticated || sessionBody.Subject == "" || sessionBody.CSRFToken == "" {
 		t.Fatalf("application session after signup = %#v", sessionBody)
 	}
+	messageText := "Hello from the real two-process harness."
+	created := browser.postJSON(t, messagePublicOrigin+"/api/messages", map[string]string{"body": messageText}, http.Header{"X-CSRF-Token": []string{sessionBody.CSRFToken}})
+	requireStatus(t, created, http.StatusCreated)
+	var createdBody struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(created.Body).Decode(&createdBody); err != nil {
+		created.Body.Close()
+		t.Fatalf("decode created message: %v", err)
+	}
+	created.Body.Close()
+	if createdBody.Body != messageText {
+		t.Fatalf("created message body = %q, want %q", createdBody.Body, messageText)
+	}
+	assertMessageListContains(t, browser, messageText)
+
+	rejected := browser.postJSON(t, messagePublicOrigin+"/api/messages", map[string]string{"body": "must not persist"}, nil)
+	requireStatus(t, rejected, http.StatusForbidden)
+	rejected.Body.Close()
+	assertMessageListContains(t, browser, messageText)
+	assertMessageListExcludes(t, browser, "must not persist")
 }
 
 type harness struct {
@@ -390,7 +411,24 @@ func (b *publicBrowser) postForm(t *testing.T, rawURL string, form url.Values) *
 	return response
 }
 
+func (b *publicBrowser) postJSON(t *testing.T, rawURL string, value any, headers http.Header) *http.Response {
+	t.Helper()
+	body, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("encode JSON request: %v", err)
+	}
+	response, err := b.doWithHeaders(http.MethodPost, rawURL, bytes.NewReader(body), "application/json", headers)
+	if err != nil {
+		t.Fatalf("POST JSON %s: %v", rawURL, err)
+	}
+	return response
+}
+
 func (b *publicBrowser) do(method, rawURL string, body io.Reader, contentType string) (*http.Response, error) {
+	return b.doWithHeaders(method, rawURL, body, contentType, nil)
+}
+
+func (b *publicBrowser) doWithHeaders(method, rawURL string, body io.Reader, contentType string, headers http.Header) (*http.Response, error) {
 	publicURL, err := url.Parse(rawURL)
 	if err != nil || publicURL.Scheme != "https" || publicURL.Host == "" {
 		return nil, fmt.Errorf("invalid public browser URL %q", rawURL)
@@ -411,6 +449,11 @@ func (b *publicBrowser) do(method, rawURL string, body io.Reader, contentType st
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
+	for key, values := range headers {
+		for _, value := range values {
+			request.Header.Add(key, value)
+		}
+	}
 	if method != http.MethodGet && method != http.MethodHead {
 		request.Header.Set("Origin", publicURL.Scheme+"://"+publicURL.Host)
 	}
@@ -427,6 +470,34 @@ func (b *publicBrowser) do(method, rawURL string, body io.Reader, contentType st
 	}
 	b.storeCookies(publicURL.Host, response.Cookies())
 	return response, nil
+}
+
+func assertMessageListContains(t *testing.T, browser *publicBrowser, message string) {
+	t.Helper()
+	response := browser.get(t, messagePublicOrigin+"/api/messages")
+	requireStatus(t, response, http.StatusOK)
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatalf("read message list: %v", err)
+	}
+	if !strings.Contains(string(body), message) {
+		t.Fatalf("message list does not contain %q: %s", message, body)
+	}
+}
+
+func assertMessageListExcludes(t *testing.T, browser *publicBrowser, message string) {
+	t.Helper()
+	response := browser.get(t, messagePublicOrigin+"/api/messages")
+	requireStatus(t, response, http.StatusOK)
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatalf("read message list: %v", err)
+	}
+	if strings.Contains(string(body), message) {
+		t.Fatalf("message list unexpectedly contains %q: %s", message, body)
+	}
 }
 
 func mapPublicHost(harness *harness, host string) (string, bool) {
