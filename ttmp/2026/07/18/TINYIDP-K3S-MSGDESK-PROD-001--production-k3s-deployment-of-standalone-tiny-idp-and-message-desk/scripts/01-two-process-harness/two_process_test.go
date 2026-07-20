@@ -305,6 +305,10 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	if loggedOutBody.Authenticated || len(browser.cookies["idp.example.test"]) == 0 {
 		t.Fatalf("local logout did not leave only the provider browser context: session=%#v idpCookies=%d", loggedOutBody, len(browser.cookies["idp.example.test"]))
 	}
+	harness.assertNoSensitiveArtifacts(browser, []string{
+		"correct horse battery staple 2026", "too-short", strings.Repeat("B", 32),
+		callback.Query().Get("code"), sessionBody.CSRFToken, restartedSession.CSRFToken,
+	})
 }
 
 type applicationSession struct {
@@ -456,6 +460,28 @@ func (h *harness) assertProviderCounts(users, sessions int) {
 		}
 		if got != want {
 			h.t.Fatalf("Tiny-IDP %s count = %d, want %d", table, got, want)
+		}
+	}
+}
+
+func (h *harness) assertNoSensitiveArtifacts(browser *publicBrowser, values []string) {
+	h.t.Helper()
+	for _, byName := range browser.cookies {
+		for _, cookie := range byName {
+			values = append(values, cookie.Value)
+		}
+	}
+	artifacts := map[string]string{
+		"Tiny-IDP log":       readFile(h.idpLog),
+		"Message Desk log":   readFile(h.messageLog),
+		"Tiny-IDP audit":     readFile(h.idpAudit),
+		"Message Desk audit": readFile(filepath.Join(h.messageState, "audit", "events.jsonl")),
+	}
+	for name, artifact := range artifacts {
+		for _, value := range values {
+			if value != "" && strings.Contains(artifact, value) {
+				h.t.Fatalf("%s contains sensitive runtime value %q", name, value)
+			}
 		}
 	}
 }
