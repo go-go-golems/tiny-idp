@@ -2026,3 +2026,74 @@ signup + message
   -> Tiny-IDP ready -> Message Desk ready
   -> user/session counts + app session + prior message all available
 ```
+
+## Step 26 — Phase 3 process-log and durable-audit secret scan
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Inspect concrete product artifacts from the real
+two-process run for sensitive runtime material, not merely source-level log
+format assumptions.
+
+**Inferred user intent:** Passwords, cookies, codes, CSRF/tokens, and secret
+file material must not be emitted to process logs or durable audit sinks.
+
+**Commit:** `91d252e` — "Test: scan two-process artifacts for secret leaks"
+
+### What I did
+
+- Collected Tiny-IDP and Message Desk process logs plus their separate durable
+  JSONL audit outputs from the live harness state roots.
+- Scanned them for the known valid/weak passwords, exact test token-secret file
+  bytes, authorization callback code, app CSRF values, and all surviving
+  captured browser-cookie values.
+- Failed the test if any non-empty observed sensitive runtime value appeared in
+  any artifact; the scan passed.
+
+### Why
+
+Audits are durable production records, while process logs are frequently
+exported. Testing the emitted artifacts makes the non-leak requirement
+observable across both process boundaries.
+
+### What worked
+
+- Focused harness passed in 11.97 seconds. `91d252e` passed full repository
+  tests, lint, Glazed validation, and IdP UI analysis.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- The configured audit events retain operational metadata without the observed
+  raw secret values needed to reproduce the browser or token exchange.
+
+### What was tricky to build
+
+- Cookie values are dynamic and host-scoped; the scan gathers them from the
+  explicit public-origin browser model rather than guessing cookie names.
+
+### What warrants a second pair of eyes
+
+- This dynamic scan covers the exercised values. A future audit-schema change
+  should retain both its structured validation and this product-level scan.
+
+### What should be done in the future
+
+- Finish continuation expiry/concurrency, then run focused/race/final gates
+  and close the Phase 3 diary task.
+
+### Code review instructions
+
+- Review `assertNoSensitiveArtifacts` and its call after the local logout flow.
+
+### Technical details
+
+```text
+Tiny-IDP log + Message Desk log + both JSONL audits
+  must not contain known password / secret file / code / CSRF / cookie values
+```
