@@ -70,6 +70,13 @@ func initializeStateRoot(ctx context.Context, root, rawPublicBaseURL string, now
 		}
 		// #nosec G302 -- directories need owner search permission; 0700 is owner-only.
 		if err := os.Chmod(directory, 0o700); err != nil {
+			// Kubernetes owns the root of a mounted PVC. With an fsGroup the
+			// application user can create its own child directories and owner-only
+			// files, but cannot chmod that mount root. Do not weaken child paths:
+			// they are still created and protected by this loop.
+			if directory == paths.Root && os.IsPermission(err) {
+				continue
+			}
 			return stateManifest{}, errors.Wrapf(err, "protect state directory %s", directory)
 		}
 	}
