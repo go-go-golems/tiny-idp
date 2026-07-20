@@ -132,3 +132,15 @@ green: build, full tests, lint, auditlint, gosec, and govulncheck all pass.
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpcontinuation/service.go — Per-success cleanup metric accounting
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Bounded email challenge limit conversion
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/reference/01-production-deployment-implementation-diary.md — Final Phase 3 verification evidence
+
+## 2026-07-20
+
+Phase 4 checkpoint: added separate hardened OCI build targets for the
+production Tiny-IDP host and external Message Desk (`e6f558f`), including
+pinned frontend construction, direct non-root entrypoints, fixed runtime
+paths, `SIGTERM`, OCI metadata, and local Docker build/inspection evidence.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/images/Dockerfile.tinyidp — Provider production image contract
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/images/Dockerfile.message-desk — Deterministic Message Desk UI and runtime image contract

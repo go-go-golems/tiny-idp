@@ -83,10 +83,10 @@ item has concrete evidence.
 
 ## Phase 4: Build and publish immutable application images
 
-- [ ] Define separate production image targets and runtime entrypoints for Tiny-IDP and Message Desk <!-- t:ftd8 -->
-- [ ] Build Message Desk frontend assets deterministically before Go compilation <!-- t:p4i2 -->
-- [ ] Use multi-stage builds, non-root users, fixed work/state paths, and minimal runtime contents <!-- t:p4i3 -->
-- [ ] Add OCI source, revision, version, and creation metadata to both images <!-- t:p4i4 -->
+- [x] Define separate production image targets and runtime entrypoints for Tiny-IDP and Message Desk <!-- t:ftd8 -->
+- [x] Build Message Desk frontend assets deterministically before Go compilation <!-- t:p4i2 -->
+- [x] Use multi-stage builds, non-root users, fixed work/state paths, and minimal runtime contents <!-- t:p4i3 -->
+- [x] Add OCI source, revision, version, and creation metadata to both images <!-- t:p4i4 -->
 - [ ] Mount the reviewed signup program as read-only non-secret input <!-- t:img1 -->
 - [ ] Mount native-provider and token credentials through owner-only secret files <!-- t:p4s1 -->
 - [ ] Verify read-only root filesystem compatibility and explicitly writable state/audit paths <!-- t:p4s2 -->

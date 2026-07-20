@@ -18,6 +18,12 @@ RelatedFiles:
       Note: Canonical source-to-GHCR-to-GitOps-to-Argo release path
     - Path: abs:///home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/argocd-app-setup.md
       Note: Argo project, sync-wave, and first-bootstrap requirements
+    - Path: repo://Makefile
+      Note: Repeatable local OCI image targets (e6f558f)
+    - Path: repo://deploy/images/Dockerfile.message-desk
+      Note: Production Message Desk OCI image contract and deterministic UI build (e6f558f)
+    - Path: repo://deploy/images/Dockerfile.tinyidp
+      Note: Production Tiny-IDP OCI image contract (e6f558f)
     - Path: repo://internal/cmds/serve_production.go
       Note: |-
         Explicit listener modes and exact Message Desk bootstrap
@@ -40,6 +46,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 
@@ -2408,4 +2415,112 @@ Phase 3 final gate
   + build + full repository tests + lint
   + auditlint + gosec + govulncheck
   = pass (make verify exit 0)
+```
+
+## Step 30 — Phase 4 production image construction contract
+
+Phase 4 begins by separating the production artifacts from the older
+development Compose demo. The new targets build the standalone Tiny-IDP host
+and the external Message Desk relying party from the same source revision, but
+their runtime images contain only their respective executable and public CA
+roots.
+
+### Prompt Context
+
+**User prompt (verbatim):** "phase 4"
+
+**Assistant interpretation:** Implement the ticket's immutable-image phase
+with reviewable build checkpoints, then prove the images before publishing.
+
+**Inferred user intent:** The already-tested two-process topology must become
+two production-grade OCI artifacts rather than relying on an old local demo
+container setup.
+
+**Commit (code):** `e6f558f` — "Feat: add production OCI image targets"
+
+### What I did
+
+- Added `deploy/images/Dockerfile.tinyidp` and
+  `deploy/images/Dockerfile.message-desk`, each with a direct binary
+  entrypoint and `SIGTERM` stop signal.
+- Made the Message Desk image build its React assets with the package-pinned
+  `pnpm@10.15.1`, `pnpm install --frozen-lockfile`, and `pnpm build` before
+  the Go compiler embeds `static/app`.
+- Added OCI title, description, source, revision, and version labels; the
+  Make targets derive the default revision/version from the checked-out Git
+  commit and accept explicit CI build arguments.
+- Added owner-controlled fixed paths: Tiny-IDP uses `/var/lib/tinyidp`,
+  `/var/log/tinyidp`, `/etc/tinyidp/signup`, and `/run/tinyidp-secrets`; the
+  Message Desk uses `/var/lib/tinyidp-message-desk` and
+  `/run/tinyidp-secrets`. Both run as UID/GID `65532`.
+- Added root `.dockerignore` and `make image-tinyidp`,
+  `make image-message-desk`, and `make image-build` targets.
+
+### Why
+
+The production command must receive configuration from the eventual workload,
+not from an image layer. In particular, the signup program is an explicit
+read-only non-secret mount, while token credentials remain owner-only mounted
+files. The image's role is to define a minimal, reproducible process contract.
+
+### What worked
+
+- `make image-build` built both images successfully. The Tiny-IDP image was
+  created as `tinyidp:sha-f157d96`; the Message Desk image was created as
+  `tinyidp-message-desk:sha-f157d96`.
+- Docker inspection confirmed direct entrypoints, `SIGTERM`, UID/GID 65532,
+  fixed work directories, and all five expected OCI labels on each image.
+- Both images ran `--help` under `--read-only`; Tiny-IDP exposes
+  `serve-production` and Message Desk exposes `serve`.
+- A shell-level runtime check confirmed the work directory is writable for the
+  non-root user and no signup program or secret file is baked into either
+  image.
+
+### What didn't work
+
+- Nothing failed. The first cold Go builds took about 105 seconds for
+  Tiny-IDP and 86 seconds for Message Desk; later layers will be cacheable in
+  CI.
+
+### What I learned
+
+- The committed Message Desk UI assets are not sufficient evidence of the
+  production bundle: building in the image pins and validates the frontend
+  dependency graph that the Go embed actually receives.
+
+### What was tricky to build
+
+- The Vite output lives outside the UI working directory
+  (`../static/app`). The Node stage must therefore copy that exact output
+  directory into the Go build stage after the full source tree is present; a
+  simple binary-only build would otherwise embed the stale checked-in assets.
+
+### What warrants a second pair of eyes
+
+- Review the runtime path comments in both Dockerfiles with the Phase 5
+  volume/secret manifests. The images deliberately create paths but do not
+  invent an init or secret-copy policy ahead of those manifests.
+
+### What should be done in the future
+
+- Add a repeatable image-level smoke harness for readiness, non-root ownership,
+  read-only-root behavior, and the two-image external OIDC flow.
+
+### Code review instructions
+
+- Read `deploy/images/Dockerfile.tinyidp` and
+  `deploy/images/Dockerfile.message-desk`, then run `make image-build`.
+- Inspect with `docker image inspect` and run each image with `--help` under a
+  read-only root filesystem.
+
+### Technical details
+
+```text
+node:22 + pinned pnpm build
+  -> examples/tinyidp-message-app/static/app
+  -> Go Message Desk binary with embedded UI
+
+Go source -> Tiny-IDP production binary
+
+both -> Debian runtime, CA roots, UID/GID 65532, immutable metadata
 ```
