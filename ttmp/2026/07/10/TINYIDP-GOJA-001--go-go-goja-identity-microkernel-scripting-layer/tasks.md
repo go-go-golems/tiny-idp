@@ -130,7 +130,7 @@
 - [x] Synthesize the Goja graph, model-checking, static-analysis, runtime-monitoring, and current-code designs into one assurance-oriented refactoring proposal. <!-- t:d10n -->
 - [x] Inventory and crosswalk every current required-action bit, state-model action, VerificationPlan step, assertion ID, security event, model action, and static property ID. <!-- t:agxk -->
 - [x] Define stable versioned identifiers for resources, facts, obligations, steps, effects, outcomes, observations, and properties in a dependency-neutral internal package. <!-- t:buxx -->
-- [ ] Define and validate the three-schema boundary: configuration graph, native transition catalog, and scenario/trace records. <!-- t:7r8d -->
+- [x] Define and validate the three-schema boundary: configuration graph, native transition catalog, and scenario/trace records. <!-- t:7r8d -->
 - [ ] Add lossless fail-closed codecs between InteractionRequiredAction bits and obligation IDs. <!-- t:mdhf -->
 - [ ] Add typed VerificationPlan step codecs and reject unknown kinds/parameters during plan materialization. <!-- t:vpdm -->
 - [ ] Map current authorization events to transition results and prove complete secret-free terminal-path instrumentation. <!-- t:0zlh -->

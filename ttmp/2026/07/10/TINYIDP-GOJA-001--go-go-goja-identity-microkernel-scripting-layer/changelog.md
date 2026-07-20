@@ -559,3 +559,14 @@ outcomes, observations, and properties, plus grammar and duplicate guards.
 
 - internal/assurance/vocabulary.go — Shared versioned identifier families
 - internal/assurance/vocabulary_test.go — Identifier validity and uniqueness guard
+
+## 2026-07-20 - Step 63: assurance configuration, transition, and trace schemas
+
+Completed the three-schema boundary. Configuration references, native transition
+catalog descriptors, and scenario/trace records validate independently and do
+not confer one another's authority.
+
+### Related Files
+
+- internal/assurance/schemas.go — Three schema contracts and validators
+- internal/assurance/schemas_test.go — Cross-boundary acceptance/rejection tests

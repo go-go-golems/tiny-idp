@@ -6126,3 +6126,35 @@ enforce lowercase would have been an unnecessary compatibility break.
 
 `go test ./internal/assurance -count=1` passed. The commit hook also passed the
 full isolated-workspace test suite, lint, custom UI analysis, and vet.
+
+## Step 63: Define the three assurance schemas
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `23305d6` — "Feat: define assurance schema boundaries"
+
+### What I did
+
+- Added `ConfigurationReference`: identifies an already compiled program/source
+  generation but makes no claim about a native transition having executed.
+- Added `TransitionCatalog`: declarative host-owned transition descriptors with
+  resource reads/writes, facts, obligations, effects, allowed outcomes, and
+  required observations.
+- Added separate `ScenarioRecord` and `TraceRecord` codecs. Scenarios can name
+  only registered transition steps with valid JSON parameters. Traces record
+  actual step/observation/outcome triples; they do not infer facts merely from a
+  descriptor.
+
+### Why
+
+One universal graph would let configuration data, analysis metadata, and runtime
+evidence blur together. The separate validators make that confusion impossible
+at the data boundary, before the later VerificationPlan and trace integration
+work begins.
+
+### What worked
+
+`go test ./internal/assurance -count=1` passed. The code commit hook passed the
+isolated full suite, lint, custom UI analysis, and vet.
