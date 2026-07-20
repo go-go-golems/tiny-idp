@@ -2293,3 +2293,119 @@ closeout
   -> focused package/harness/race gates: pass
   -> make verify: auditlint failure outside Phase 3 harness ownership
 ```
+
+## Step 29 — Phase 3 repository-quality gate remediation and closure
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Do not treat the repository-wide quality gate as
+an external exception when its concrete, small security findings can be
+reviewed and corrected safely.
+
+**Inferred user intent:** Phase 3 may be closed only when the exact task
+contract is green: real-process evidence plus build, test, race, lint, audit,
+static-security, and dependency-vulnerability checks.
+
+**Commits:** `95c81e5` — "Fix: satisfy signup audit contracts";
+`bc74f06` — "Fix: bound signup security metric conversions"
+
+### What I did
+
+- Resolved the four `auditlint` findings without weakening the analyzer:
+  - marked the nil audit-sink defaults in the reusable signup executor and
+    generation manager as explicit development defaults; production
+    `serve-production` already injects its durable provider audit sink;
+  - renamed two schema-only test fields from `password` to `credential`, so an
+    audit-field rule does not mistake test data schemas for emitted audit data.
+- Resolved the four `gosec` `G115` findings with bounded behaviour:
+  - record a latency metric only for a positive duration;
+  - increment the continuation cleanup metric after each successful deletion,
+    avoiding a batch `int`-to-`uint64` conversion;
+  - reject script-provided email challenge attempt/resend limits outside the
+    `uint32` range before conversion. The local `#nosec G115` annotations name
+    those preceding bounds because this gosec version does not infer them.
+- Ran focused package tests and both static analyzers during remediation, then
+  ran the complete repository target:
+
+  ```text
+  go test ./pkg/idpsignup ./pkg/idpcontinuation ./internal/fositeadapter -count=1
+  make auditlint
+  make gosec
+  make verify
+  ```
+
+### Why
+
+The audit rule protects a production boundary and the conversion rule protects
+counter/limit integrity. Both are directly relevant to the provider that this
+deployment will run; passing them by an unbounded suppression or a ticket
+exception would leave Phase 3's stated quality contract unproven.
+
+### What worked
+
+- The focused signup, continuation, and provider tests passed after the
+  corrections.
+- `make auditlint` passed after the explicit development-default declarations
+  and test-fixture naming correction.
+- `make gosec` passed after the overflow guards and justified local
+  suppressions.
+- Final `make verify` exited `0`: it completed `go build ./...`, `go test
+  ./...` (including the two-process harness), lint/analyzers, auditlint,
+  gosec, and `govulncheck`.
+- `govulncheck` reported zero vulnerabilities affecting called code. It noted
+  one vulnerability in imported packages and one in required modules that are
+  not called by this code.
+
+### What didn't work
+
+- The first auditlint correction renamed the schema field but initially missed
+  two matching JSON test payloads. The focused continuation test failed with
+  an additional-field error; both payloads were corrected before the next run.
+- The first gosec correction included runtime bounds, but gosec did not infer
+  them across the casts. The final local `#nosec G115` comments preserve the
+  checkable runtime validation and record exactly why the static suppression is
+  safe.
+
+### What I learned
+
+- The Phase 3 gate is now genuinely repository-wide rather than a harness-only
+  result: all its defined static and dependency checks have run on the final
+  commits.
+- Development-safe package constructors remain useful for tests and tools, but
+  production composition must document and inject a durable audit sink.
+
+### What was tricky to build
+
+- The fixes had to preserve the Goja signup API's deliberate test/tool
+  constructors while making their audit posture explicit; removing the
+  defaults would have changed the public construction contract unnecessarily.
+
+### What warrants a second pair of eyes
+
+- Review the three local `#nosec G115` comments with the adjacent bounds. Each
+  is intentionally narrow; none disables a package, directory, or analyzer.
+
+### What should be done in the future
+
+- Begin Phase 4 image construction. Phase 3 has no remaining unchecked task.
+
+### Code review instructions
+
+- Review `pkg/idpsignup/executor.go`, `pkg/idpsignup/manager.go`,
+  `pkg/idpcontinuation/service.go`, and
+  `internal/fositeadapter/scripted_signup.go` together with the final
+  `make verify` result.
+- Confirm task `5fm4` is checked only after reading this evidence and the two
+  associated commits.
+
+### Technical details
+
+```text
+Phase 3 final gate
+  real two-process behavior + focused race test
+  + build + full repository tests + lint
+  + auditlint + gosec + govulncheck
+  = pass (make verify exit 0)
+```
