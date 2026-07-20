@@ -74,7 +74,7 @@ item has concrete evidence.
 - [x] Test duplicate identity, weak password, malformed input, and generic non-enumerating public errors <!-- t:p3n1 -->
 - [ ] Test expired, replayed, and concurrently submitted signup continuations <!-- t:p3n2 -->
 - [x] Restart Tiny-IDP during a pending continuation and prove pinned resume or an explicit safe failure <!-- t:p3r1 -->
-- [ ] Restart Message Desk during a pending OIDC transaction and prove the declared durable-state behavior <!-- t:p3r2 -->
+- [x] Restart Message Desk during a pending OIDC transaction and prove the declared durable-state behavior <!-- t:p3r2 -->
 - [ ] Restart both processes after signup and prove users, key, client, sessions-by-policy, and messages persist <!-- t:mbvy -->
 - [ ] Scan logs and audits for passwords, cookies, authorization codes, raw tokens, and secret material <!-- t:p3s1 -->
 - [ ] Run generation and focused package tests once after the complete harness slice <!-- t:p3g1 -->

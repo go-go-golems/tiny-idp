@@ -1882,3 +1882,72 @@ render signup form (durable continuation + fingerprint)
   -> /readyz
   -> original form POST -> one normal signup commit
 ```
+
+## Step 24 — Phase 3 Message Desk restart with pending OIDC transaction
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Prove the relying party's declared durable OIDC
+attempt behavior during process restart.
+
+**Inferred user intent:** A Message Desk restart must not lose PKCE, nonce,
+state, or the safe callback contract after it initiated registration.
+
+**Commit:** `75f56cf` — "Test: resume two-process callback after Message Desk restart"
+
+### What I did
+
+- Started `/auth/register` and captured its public authorization URL, which
+  means Message Desk had persisted its opaque OIDC login attempt.
+- Gracefully stopped and restarted only Message Desk on the same state root,
+  external issuer, backchannel route, and listener address; waited for ready.
+- Continued the existing Tiny-IDP signup/consent sequence and verified the
+  original callback produces the authenticated Message Desk session.
+
+### Why
+
+PKCE verifier, nonce, state, and return path are relying-party state. Persisting
+them is necessary for a safe callback after a one-replica process replacement.
+
+### What worked
+
+- Focused harness passed in 15.56 seconds. `75f56cf` passed full repository
+  tests, lint, Glazed validation, and IdP UI analysis.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- Message Desk's SQLite login-attempt store is sufficient for the declared
+  restart behavior; the external OIDC backchannel reconstructs correctly on
+  the new process.
+
+### What was tricky to build
+
+- Restart occurs after the browser redirect but before fetching the IdP form,
+  which isolates relying-party transaction durability from provider behavior.
+
+### What warrants a second pair of eyes
+
+- Combined post-signup restart persistence remains separately required.
+
+### What should be done in the future
+
+- Restart both processes after signup, scan logs/audits, and finish remaining
+  continuation expiry/concurrency checks.
+
+### Code review instructions
+
+- Review the Message Desk restart directly after authorization URL validation.
+
+### Technical details
+
+```text
+Message Desk persists PKCE/state/nonce -> redirects browser
+  -> Message Desk restart -> IdP signup + callback
+  -> original SQLite attempt consumed -> authenticated app session
+```
