@@ -581,3 +581,17 @@ duplicates fail closed.
 
 - internal/assurance/obligations.go — Codec implementation
 - internal/assurance/obligations_test.go — Round-trip and rejection coverage
+
+## 2026-07-20 - Step 65: registered VerificationPlan step codecs
+
+Completed the Phase 9 verification-plan materialization boundary. Every runner
+now receives an explicit registry of accepted step kinds. A plan fails before
+the driver can observe it when a step kind is unknown, its JSON is malformed,
+or its parameters do not conform to the registered codec.
+
+### Related Files
+
+- pkg/verifyplan/registry.go — Step registry and fail-closed JSON validators
+- pkg/verifyplan/plan.go — Registry-aware plan and runner validation
+- internal/fositeadapter/verification_scenario_test.go — Strict native scenario parameter codecs
+- internal/gojaverify/compiler_test.go — Registered native Goja verification step

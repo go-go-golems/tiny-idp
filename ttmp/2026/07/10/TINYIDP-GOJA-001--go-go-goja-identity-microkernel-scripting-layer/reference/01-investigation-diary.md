@@ -6167,3 +6167,56 @@ Mapped every `InteractionRequiredAction` bit to one stable obligation ID and
 implemented both directions. The decoder rejects unknown future bits; the
 encoder rejects unknown or duplicate IDs. Round-trip tests prove no supported
 bit is lost. Focused and full-hook validation passed.
+
+## Step 65: Materialize VerificationPlan steps through registered codecs
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `6b1bf11` — "Feat: validate registered verification steps"
+
+### What I did
+
+- Added `verifyplan.StepRegistry`, keyed by the stable string step kind already
+  carried in a plan. A registry entry owns validation of that step's JSON
+  parameter value.
+- Added `ExactObjectValidator` for parameter-free steps. It requires a JSON
+  object and rejects unknown fields, non-object values, malformed JSON, and
+  trailing JSON input.
+- Made `Plan.ValidateWithSteps` and `Runner.Run` materialize each plan against
+  a non-empty registry before the scenario driver is called.
+- Registered concrete codecs for the strict Fosite scenario steps and the
+  Goja verification compiler test. `clock.advance` additionally rejects a
+  negative duration.
+- Added tests proving unknown kinds and malformed parameters fail before any
+  driver invocation.
+
+### Why
+
+A plain string `kind` plus arbitrary JSON `params` is an unbounded execution
+  language. It lets a typo silently reach a driver and makes scenario replay
+  depend on ad-hoc action-name parsing. The registry makes the accepted
+  language finite and reviewable: adding a step requires naming it at the
+  runner boundary and providing its exact parameter decoder.
+
+### What worked
+
+```bash
+go test ./pkg/verifyplan ./internal/gojaverify ./internal/fositeadapter \\
+  -run 'Test(Runner|Plan|CompiledPlanRuns|VerificationPlanRuns|StrictScenarioDriver)' -count=1
+go test ./pkg/verifyplan ./internal/gojaverify ./internal/fositeadapter -count=1
+```
+
+Both focused and package suites passed. The commit hook also passed the
+isolated full repository test suite, lint, custom UI analysis, and vet.
+
+### Review instructions
+
+- Read `pkg/verifyplan/registry.go` first: it is the sole generic decoding
+  seam; it never guesses a kind or accepts unknown parameter fields.
+- Confirm each `verifyplan.Runner` construction provides a deliberately small
+  registry. The API intentionally has no fallback registry.
+- In `internal/fositeadapter/verification_scenario_test.go`, compare the
+  registered struct codecs with the driver operations to verify that the
+  accepted plan grammar matches the native test harness exactly.
