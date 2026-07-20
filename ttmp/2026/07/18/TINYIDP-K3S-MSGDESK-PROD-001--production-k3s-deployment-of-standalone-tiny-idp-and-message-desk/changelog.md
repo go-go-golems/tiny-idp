@@ -180,3 +180,13 @@ and scoped cross-repository credential.
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/publish-production-images.yml — Same-SHA immutable two-image publisher
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/gitops-targets.json — Multi-image GitOps container mapping
+
+## 2026-07-20
+
+Phase 4 closed: PR #7 merged as 3d92b34; the same-SHA Tiny-IDP and Message Desk GHCR tags were pulled and OCI revision/digest verified.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/publish-production-images.yml — Main-branch immutable two-image publisher verified by Actions run 29779935831
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/gitops-targets.json — Exact future consumer image/container mapping
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/lefthook.yml — Aligned exactly with go-template in 3ecb480

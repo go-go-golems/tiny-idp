@@ -19,13 +19,17 @@ RelatedFiles:
     - Path: abs:///home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/argocd-app-setup.md
       Note: Argo project, sync-wave, and first-bootstrap requirements
     - Path: repo://.github/workflows/publish-production-images.yml
-      Note: Calls the shared GHCR publisher for both production images with a same-SHA release contract
+      Note: |-
+        Calls the shared GHCR publisher for both production images with a same-SHA release contract
+        Phase 4 main publisher and CI evidence
     - Path: repo://Makefile
       Note: |-
         Repeatable local OCI image targets (e6f558f)
         Provides image-smoke and image-flow entrypoints (d850185)
     - Path: repo://deploy/gitops-targets.json
-      Note: Maps both future deployment containers to immutable GHCR repositories in the actual k3s repository
+      Note: |-
+        Maps both future deployment containers to immutable GHCR repositories in the actual k3s repository
+        Same-SHA image consumer mapping
     - Path: repo://deploy/images/Dockerfile.message-desk
       Note: Production Message Desk OCI image contract and deterministic UI build (e6f558f)
     - Path: repo://deploy/images/Dockerfile.tinyidp
@@ -42,6 +46,8 @@ RelatedFiles:
         Scripted signup account-service composition
     - Path: repo://internal/fositeadapter/registration_test.go
       Note: End-to-end PKCE signup and replay evidence in d5927e8
+    - Path: repo://lefthook.yml
+      Note: Exact go-template hook alignment recorded in Step 34
     - Path: repo://pkg/idpui/types.go
       Note: Typed registration presentation contract in d5927e8
     - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/02-production-image-smoke.sh
@@ -56,6 +62,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 
@@ -2907,4 +2914,155 @@ main @ GITHUB_SHA
   -> (Phase 5 enables shared GitOps updater)
      deployment/tinyidp      = ghcr.io/go-go-golems/tiny-idp:sha-<SHA>
      deployment/message-desk = ghcr.io/go-go-golems/tiny-idp-message-desk:sha-<SHA>
+```
+
+## Step 34 — Phase 4 source merge and immutable registry proof
+
+Phase 4 is now closed with evidence from the actual merged source revision,
+rather than only local Docker builds or pull-request builds. PR #7 merged
+cleanly as `3d92b34f57053d8a3b705c0924bcedbb2e1d1ac9`; its main-branch
+publisher then produced both runtime images under the same `sha-3d92b34` tag.
+
+The final registry verification pulls each image and reads its OCI labels. This
+proves the image consumers will receive the intended source revision, while
+the separately recorded index digests make the result independently
+reviewable. The GitOps update jobs remained skipped by design: their Phase 5
+manifest and credential prerequisites still do not exist.
+
+### Prompt Context
+
+**User prompt (verbatim):** "can you update the local lefthook.yml to match ~/code/wesen/go-go-golems/go-template which I think should have that test in it"
+
+**Assistant interpretation:** Make the local hook configuration exactly match
+the shared project template, then continue Phase 4 through its source and
+registry release evidence.
+
+**Inferred user intent:** Keep repository automation conventional while
+finishing a verifiable, immutable two-image publication checkpoint.
+
+**Commit (code):** `3ecb480` — "CI: align lefthook with project template"
+
+### What I did
+
+- Compared `lefthook.yml` with
+  `/home/manuel/code/wesen/go-go-golems/go-template/lefthook.yml`, then made
+  it byte-for-byte equivalent: the template uses `release` and does not add a
+  separate `logcopter-check` hook.
+- Validated the resulting file with `lefthook validate`, committed it as
+  `3ecb480`, and pushed it to PR #7.
+- Verified every PR gate passed: CI build/test/vet/smokes, pinned lint,
+  reachable vulnerability gate, and both non-pushing image builds.
+- Merged [PR #7](https://github.com/go-go-golems/tiny-idp/pull/7) as
+  `3d92b34f57053d8a3b705c0924bcedbb2e1d1ac9`.
+- Verified successful main publication run
+  [29779935831](https://github.com/go-go-golems/tiny-idp/actions/runs/29779935831),
+  including both authenticated GHCR pushes.
+- Inspected and pulled both public image tags, recording their OCI index
+  digests and their full `org.opencontainers.image.revision` labels.
+
+### Why
+
+The template must be the local source of truth for developer hooks. Phase 4,
+meanwhile, requires stronger evidence than workflow success: tags must resolve
+in the registry and their immutable metadata must identify the exact merged
+source revision.
+
+### What worked
+
+- `diff -u /home/manuel/code/wesen/go-go-golems/go-template/lefthook.yml lefthook.yml`
+  returned no differences and `lefthook validate` reported `All good`.
+- The source PR's seven applicable jobs passed; the two GitOps jobs were
+  correctly `skipped` because `open_gitops_pr: false` is the intentional Phase
+  4/5 boundary.
+- `docker buildx imagetools inspect` and `docker pull` proved both tags:
+
+  | image | immutable tag | OCI index digest |
+  | --- | --- | --- |
+  | `ghcr.io/go-go-golems/tiny-idp-message-desk` | `sha-3d92b34` | `sha256:081e4cd274296be007e0eb42a132222932d768e5e02a6ec08be5c1b7c7c94d3e` |
+  | `ghcr.io/go-go-golems/tiny-idp` | `sha-3d92b34` | `sha256:f03fa55b57b248459690781b7285badbd30e695a94b54689ec8e228b911f1e57` |
+
+- Both pulled image configurations contain:
+
+  ```text
+  org.opencontainers.image.revision=3d92b34f57053d8a3b705c0924bcedbb2e1d1ac9
+  org.opencontainers.image.source=https://github.com/go-go-golems/tiny-idp
+  org.opencontainers.image.version=sha-3d92b34
+  ```
+
+### What didn't work
+
+- `gh api /orgs/go-go-golems/packages/container/.../versions` returned
+  `You need at least read:packages scope to get a package's versions. (HTTP 403)`.
+  The existing GitHub CLI token intentionally lacks that scope. No credential
+  was broadened; unauthenticated `docker buildx imagetools inspect` and
+  `docker pull` supplied stronger public-registry evidence instead.
+- The first `git push` observer returned before Lefthook's parallel
+  `goreleaser` and test subprocesses had completed. Process inspection showed
+  the hook was still running; the remote advanced normally after those checks
+  finished. No hook behavior was changed to work around the observation.
+
+### What I learned
+
+- The shared publisher generates a multi-platform OCI index plus an
+  attestation manifest. Record the index digest (the tag's resolved digest),
+  not only the platform-specific `linux/amd64` manifest digest.
+- A PR run proves reproducible builds without registry writes; only the
+  main-branch run proves publication. Both are necessary evidence for this
+  phase.
+
+### What was tricky to build
+
+- The phase has two independent image consumers but one source revision.
+  Publication is deliberately sequential, which makes the main workflow take
+  longer but prevents a future GitOps handoff from referring to Tiny-IDP
+  before Message Desk's matching image has been produced. Registry checks
+  therefore had to wait for the complete dependent workflow rather than infer
+  Tiny-IDP availability from Message Desk's success.
+
+### What warrants a second pair of eyes
+
+- Before enabling automatic GitOps PR creation in Phase 5, compare the two
+  exact image repository/container mappings in `deploy/gitops-targets.json`
+  to the final Deployment. The immutable tag is shared, but the index digests
+  are intentionally distinct because these are different images.
+- Confirm the cluster's package-pull policy can fetch the public GHCR tags;
+  add image-pull credentials only if the package visibility changes.
+
+### What should be done in the future
+
+- Begin Phase 5 from the recorded `sha-3d92b34` tags and index digests: add
+  the real k3s manifests, scoped GitOps credential, and then enable the
+  currently disabled GitOps PR jobs.
+
+### Code review instructions
+
+- Inspect PR #7 and Actions run 29779935831; verify its two `publish` jobs
+  passed and both `Open GitOps PR` jobs were intentionally skipped.
+- Run:
+
+  ```bash
+  docker buildx imagetools inspect ghcr.io/go-go-golems/tiny-idp:sha-3d92b34
+  docker buildx imagetools inspect ghcr.io/go-go-golems/tiny-idp-message-desk:sha-3d92b34
+  docker image inspect ghcr.io/go-go-golems/tiny-idp:sha-3d92b34
+  docker image inspect ghcr.io/go-go-golems/tiny-idp-message-desk:sha-3d92b34
+  ```
+
+- Compare the `org.opencontainers.image.revision` label in each result to
+  merge commit `3d92b34f57053d8a3b705c0924bcedbb2e1d1ac9`.
+
+### Technical details
+
+```text
+PR #7 source head: 3ecb480
+        │  green PR checks; builds only
+        ▼
+main merge commit: 3d92b34f57053d8a3b705c0924bcedbb2e1d1ac9
+        │  Actions run 29779935831
+        ├── ghcr.io/go-go-golems/tiny-idp-message-desk:sha-3d92b34
+        │   index sha256:081e…c94d3e
+        └── ghcr.io/go-go-golems/tiny-idp:sha-3d92b34
+            index sha256:f03f…1e57
+
+Each image config: OCI revision = full merge SHA
+Phase 5: consumes these tags in the k3s desired-state PR
 ```
