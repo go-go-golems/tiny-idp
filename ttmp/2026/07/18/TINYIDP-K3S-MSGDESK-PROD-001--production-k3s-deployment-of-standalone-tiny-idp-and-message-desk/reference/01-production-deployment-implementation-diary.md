@@ -19,7 +19,9 @@ RelatedFiles:
     - Path: abs:///home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/argocd-app-setup.md
       Note: Argo project, sync-wave, and first-bootstrap requirements
     - Path: repo://Makefile
-      Note: Repeatable local OCI image targets (e6f558f)
+      Note: |-
+        Repeatable local OCI image targets (e6f558f)
+        Provides image-smoke and image-flow entrypoints (d850185)
     - Path: repo://deploy/images/Dockerfile.message-desk
       Note: Production Message Desk OCI image contract and deterministic UI build (e6f558f)
     - Path: repo://deploy/images/Dockerfile.tinyidp
@@ -40,6 +42,8 @@ RelatedFiles:
       Note: Typed registration presentation contract in d5927e8
     - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/02-production-image-smoke.sh
       Note: Repeatable non-root, read-only-root, owner-only-secret, and readiness OCI smoke (cc99a15)
+    - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/03-production-image-flow/main.go
+      Note: Runs both immutable images through a TLS-terminating trusted-proxy topology and browser signup flow (d850185)
     - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/tasks.md
       Note: Authoritative phased production task ledger
 ExternalSources: []
@@ -48,6 +52,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 
@@ -2630,4 +2635,147 @@ image (read-only root, UID 65532)
 image (read-only root, UID 65532)
   + initialized tmpfs state root
   -> Message Desk /readyz
+```
+
+## Step 32 — Phase 4 container-level external OIDC image flow
+
+The image contract is now proven in the deployment-shaped topology that Phase
+5 will declare. The new harness runs separate Tiny-IDP and Message Desk
+images, keeps both private listeners in `trusted-proxy-http` mode, and puts a
+real TLS-terminating Nginx proxy in front of their public HTTPS origins. It is
+not an in-process substitute: Docker DNS service names stand in for the later
+Kubernetes Service names and the provider only accepts proxy traffic from the
+test network CIDR.
+
+The browser model performs the smallest end-user-critical sequence: Message
+Desk starts provider-owned signup, Tiny-IDP renders and completes the checked
+open-signup workflow, the provider consent redirects through the exact public
+callback, and the signed-in user creates a Message Desk message. The successful
+run printed `production image flow passed` and exited zero.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 30)
+
+**Assistant interpretation:** Prove that the separately built production
+images work together through the trusted TLS topology rather than only proving
+their standalone readiness.
+
+**Inferred user intent:** Catch incorrect assumptions about origins, proxy
+trust, backchannel routing, startup ordering, secret ownership, and browser
+cookies before publishing immutable images for cluster deployment.
+
+**Commit (code):** `d850185` — "Test: prove production images through trusted proxy"
+
+### What I did
+
+- Added `scripts/03-production-image-flow/main.go` and `make image-flow`.
+- Built both local immutable candidate images under the same `phase4-flow`
+  version, created a private Docker network, and constrained Tiny-IDP and
+  Message Desk to the network CIDR through `--trusted-proxy-cidrs`.
+- Started Tiny-IDP as UID/GID 65532 with a read-only root, tmpfs-owned state,
+  audit, and owner-only token locations, plus a read-only bind mount of the
+  reviewed `pkg/idpsignup/open_signup.js` source.
+- Started Nginx with a generated one-hour test certificate. Its public `443`
+  routes retain canonical host/scheme headers and its internal `8080` IdP
+  route gives the Message Desk backchannel the same trusted boundary.
+- Started Message Desk as UID/GID 65532 with read-only root and initialized
+  tmpfs state, its public issuer unchanged, and its backchannel at the Nginx
+  service address.
+- Added runtime-resolved Docker aliases and cleanup ordering so the proxy does
+  not rely on generated container names or depend on Message Desk existing at
+  proxy boot.
+
+### Why
+
+Tiny-IDP cannot safely trust a direct HTTP backchannel from the application
+network; that would bypass the explicitly trusted TLS-termination seam. The
+test must show that browser and internal requests both reach Tiny-IDP through a
+recognized proxy, while the issuer remains the public HTTPS URL.
+
+### What worked
+
+- `go test ./ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/03-production-image-flow`
+  passed.
+- The complete container harness passed from a tmux-controlled execution and
+  recorded `production image flow passed` with `EXIT=0`.
+- The commit hook ran `go test ./...` and the pinned lint suite successfully.
+- The earlier image smoke remains the focused evidence that the mount source
+  is absent from the image, is supplied read-only at runtime, and that the
+  owner-only token fixture is readable by UID 65532 only.
+
+### What didn't work
+
+- Nginx initially failed with `host not found in upstream "tinyidp"` because
+  Docker had assigned a generated container name rather than a stable service
+  alias.
+- After adding aliases, static Nginx upstream resolution failed with `host not
+  found in upstream "message-desk"` because Message Desk starts after the
+  proxy. The final configuration uses Docker DNS (`127.0.0.11`) and
+  runtime-resolved upstream variables, matching service discovery semantics.
+- Direct command-runner invocations released the shell while BuildKit was
+  still active. A tmux-owned run with retained temporary output provided the
+  authoritative final result; no source or runtime secret was written to it.
+
+### What I learned
+
+- A trusted-proxy listener makes the internal backchannel topology explicit:
+  the app must use the proxy's private IdP route, not the provider Pod/service
+  directly, unless the final cluster design declares a separate trusted
+  internal listener.
+- Stable service discovery must be modelled before application startup;
+  generated container identity is not a valid approximation of a Kubernetes
+  Service contract.
+
+### What was tricky to build
+
+- Nginx resolves normal upstream names during configuration parsing. The proxy
+  needed a runtime resolver and variable `proxy_pass` targets because its
+  Message Desk upstream is intentionally absent until discovery can proceed.
+  Docker aliases `tinyidp`, `edge-proxy`, and `message-desk` then make every
+  expected private address stable without altering the application code.
+- The Go browser client uses loopback TLS with certificate verification disabled
+  only for the generated test certificate, while preserving the original
+  public Host header and Secure-cookie origin. Thus it tests public-origin
+  behavior without pretending the TLS public origin is development HTTP.
+
+### What warrants a second pair of eyes
+
+- Phase 5 must retain the explicit proxy-only backchannel route or document a
+  separately trusted internal listener; substituting the Tiny-IDP service
+  directly would fail its trusted-proxy validation.
+- Review the final Traefik configuration to ensure it overwrites—not merely
+  forwards—`X-Forwarded-Proto` and `X-Forwarded-Host` in the same way this
+  proof does.
+
+### What should be done in the future
+
+- Publish both images from the same commit with immutable GHCR tags, then add
+  their GitOps target metadata and shared update-workflow caller.
+
+### Code review instructions
+
+- Read `scripts/03-production-image-flow/main.go`, especially `startTinyIDP`,
+  `startProxy`, `startMessageDesk`, and `exerciseSignupAndMessage`.
+- Run `make image-flow` (Docker and port 18443 must be available) and confirm
+  `production image flow passed`.
+- Review the generated Nginx forwarding headers and verify there is no direct
+  Message Desk-to-Tiny-IDP bypass in the harness.
+
+### Technical details
+
+```text
+browser HTTPS (idp.example.test / message.example.test)
+                 |
+                 v
+   TLS Nginx proxy :443 -- X-Forwarded-* canonicalization
+        |                                      |
+        v                                      v
+ Tiny-IDP :8081 trusted-proxy          Message Desk :8080 trusted-proxy
+        ^
+        |
+ Nginx private :8080 <--- OIDC discovery/token/JWKS backchannel
+
+Tiny-IDP: read-only checked signup source + owner-only token tmpfs
+Message Desk: separate owner-only initialized state tmpfs
 ```

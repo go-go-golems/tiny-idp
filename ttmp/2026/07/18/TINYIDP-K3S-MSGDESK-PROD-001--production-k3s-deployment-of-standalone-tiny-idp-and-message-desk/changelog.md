@@ -155,3 +155,16 @@ Message Desk readiness.
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/02-production-image-smoke.sh — Executable OCI runtime security and readiness gate
+
+## 2026-07-20
+
+Phase 4 external image-flow checkpoint: proved the two images through a real
+TLS-terminating trusted proxy, provider-owned signup, OIDC callback, secure
+application session, and message creation (`d850185`). The evidence also
+closes the reviewed read-only signup-program and owner-only token-file mount
+contracts.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/03-production-image-flow/main.go — Executable image topology and browser-flow proof
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/Makefile — Repeatable `image-smoke` and `image-flow` entrypoints
