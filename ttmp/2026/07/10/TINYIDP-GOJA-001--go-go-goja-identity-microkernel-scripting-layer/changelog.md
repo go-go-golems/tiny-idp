@@ -726,3 +726,7 @@ Step 77: audited the lambda-first completion gate; aligned the normative API ref
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp/typescript_test.go — Guards implementation/declaration surface
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — Normative API source alignment
+
+## 2026-07-20
+
+Closed: the superseding lambda-first implementation ledger (lf00–lf92) is complete and validated; remaining unchecked graph-first tasks are explicitly deprecated historical planning, not open scope.
