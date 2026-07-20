@@ -1,0 +1,20 @@
+{
+  "targets": [
+    {
+      "name": "tiny-message-desk-prod",
+      "gitops_repo": "wesen/2026-03-27--hetzner-k3s",
+      "gitops_branch": "main",
+      "manifest_path": "gitops/kustomize/tiny-message-desk/deployment.yaml",
+      "images": [
+        {
+          "container_name": "tinyidp",
+          "image_name": "ghcr.io/go-go-golems/tiny-idp"
+        },
+        {
+          "container_name": "message-desk",
+          "image_name": "ghcr.io/go-go-golems/tiny-idp-message-desk"
+        }
+      ]
+    }
+  ]
+}
