@@ -60,10 +60,10 @@ turn test credentials into repository files. The `p3d1` diary task is the
 phase-close record and therefore remains open until every preceding Phase 3
 item has concrete evidence.
 
-- [ ] Design the harness lifecycle, temporary directory layout, port allocation, and cleanup contract <!-- t:783q -->
-- [ ] Start the real Tiny-IDP production command with separate durable state and a checked signup program <!-- t:p3h2 -->
-- [ ] Start the real external Message Desk command with its own database/audit state and Tiny-IDP backchannel URL <!-- t:p3h3 -->
-- [ ] Wait on readiness endpoints and capture both process logs and durable audit output <!-- t:p3h4 -->
+- [x] Design the harness lifecycle, temporary directory layout, port allocation, and cleanup contract <!-- t:783q -->
+- [x] Start the real Tiny-IDP production command with separate durable state and a checked signup program <!-- t:p3h2 -->
+- [x] Start the real external Message Desk command with its own database/audit state and Tiny-IDP backchannel URL <!-- t:p3h3 -->
+- [x] Wait on readiness endpoints and capture both process logs and durable audit output <!-- t:p3h4 -->
 - [ ] Drive `/auth/register` and assert the authorization request retains client, redirect URI, PKCE, nonce, scope, and signup intent <!-- t:p3f1 -->
 - [ ] Submit the scripted signup form and assert exactly one identity and provider session are created <!-- t:p3f2 -->
 - [ ] Complete the authorization callback and assert a Message Desk application session is created <!-- t:p3f3 -->

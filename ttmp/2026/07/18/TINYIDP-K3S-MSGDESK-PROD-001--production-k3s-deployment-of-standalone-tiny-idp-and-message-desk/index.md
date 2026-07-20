@@ -13,13 +13,16 @@ Topics:
 DocType: index
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go
+      Note: Real Tiny-IDP and external Message Desk executable lifecycle proof
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-18T20:32:19.726134487-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Production k3s deployment of standalone tiny-idp and Message Desk
 

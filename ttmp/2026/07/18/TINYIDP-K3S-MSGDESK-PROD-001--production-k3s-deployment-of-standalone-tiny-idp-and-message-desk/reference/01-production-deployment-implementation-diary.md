@@ -1111,3 +1111,118 @@ unchecked task
   -> diary records command + result + commit
   -> docmgr task check
 ```
+
+## Step 14 — Phase 3 two-process lifecycle harness
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Begin Phase 3 product evidence, retaining the
+ticket as a precise ledger rather than relying on in-process unit coverage.
+
+**Inferred user intent:** Prove the real standalone IdP and external Message
+Desk executable topology before moving to containers and GitOps.
+
+**Commit:** `3cc6f38` — "Test: add two-process production lifecycle harness"
+
+### What I did
+
+- Added `scripts/01-two-process-harness/two_process_test.go`, a root-module Go
+  integration test which builds `./cmd/tinyidp` and
+  `./examples/tinyidp-message-app` into a test-only directory.
+- Initialized a separate owner-only Message Desk state root, then started
+  `tinyidp serve-production` with its own SQLite database, file audit sink,
+  owner-only 32-byte test secret, and the checked embedded open-signup source.
+- Started the external Message Desk process with its own application database
+  and audit file, public issuer `https://idp.example.test/idp`, and an explicit
+  backchannel destination.
+- Added a deliberately narrow in-test Traefik-equivalent reverse proxy. It
+  preserves the public IdP Host and supplies `X-Forwarded-Proto: https` and
+  `X-Forwarded-Host` only while forwarding to the private IdP listener. Browser
+  readiness requests use the same trusted-forwarding contract directly.
+- Waited for `/idp/readyz` and `/readyz`, retained both child-process logs,
+  checked Tiny-IDP's durable bootstrap audit, and gracefully terminates all
+  child processes during test cleanup.
+
+### Why
+
+The external OIDC client correctly rewrites the network destination but keeps
+the issuer identity. A direct service request cannot impersonate Traefik at a
+listener that trusts only Traefik forwarding metadata. Modeling that proxy
+boundary makes the harness honest: neither production binary is weakened to a
+plain-development origin and neither shares process memory or SQLite state.
+
+### What worked
+
+- `go test ./ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness -count=1 -v`
+  passed in 10.23 seconds.
+- The `3cc6f38` pre-commit gate passed `golangci-lint`, the Glazed and IdP UI
+  analyzers, and `go test ./...`; the new harness itself passed in 11.214
+  seconds inside that complete suite.
+
+### What didn't work
+
+- The first external Message Desk startup attempted direct backchannel
+  discovery against Tiny-IDP's trusted-proxy listener. Tiny-IDP rejected it
+  with `400 Bad Request: trusted proxy must forward HTTPS transport`, which is
+  the desired protection. The test now models the terminating proxy rather
+  than bypassing or relaxing that guard.
+- The initial assertion expected an activation audit event. Initial generation
+  warming does not emit that event; the harness instead verifies the durable
+  `identity.bootstrap.client_created` event and readiness, which are the
+  observable production-startup contract.
+
+### What I learned
+
+- `external-backchannel-url` is a destination rewrite, not authority rewrite:
+  discovery, JWKS, and token validation still see the canonical public issuer.
+- A final k3s design must route the IdP backchannel through the same
+  Traefik-style trusted boundary or introduce a separately designed and
+  authenticated internal listener. Merely allowing the Message Desk Pod to
+  send forwarded headers to the public listener would incorrectly grant it
+  proxy authority.
+
+### What was tricky to build
+
+- Secure cookies cannot be accepted by Go's ordinary cookie jar over the
+  plaintext loopback transport. The subsequent browser-flow slice therefore
+  needs an explicit public-origin cookie model; this lifecycle slice avoids
+  concealing the issue by turning off Secure cookies.
+
+### What warrants a second pair of eyes
+
+- Confirm the selected production routing choice for IdP backchannel traffic:
+  service-to-Traefik-to-IdP versus a separate authenticated internal endpoint.
+  The current ticket wording says direct Service backchannel, but the tested
+  trusted-listener invariant demonstrates that this is not yet a valid direct
+  route.
+
+### What should be done in the future
+
+- Add the browser-equivalent `/auth/register` PKCE/nonce/redirect assertion,
+  then form submission, callback, session, message, CSRF, and restart cases.
+
+### Code review instructions
+
+- Review the harness source from `TestTwoProcessLifecycle` downward. The
+  lifecycle contract is in `newHarness`, `startTinyIDP`, `startIDPProxy`,
+  `startMessageDesk`, `waitReady`, and `startedProcess.stop`.
+- Re-run the focused command above. It leaves no durable test state outside
+  Go's test temporary directory.
+
+### Technical details
+
+```text
+Browser test request                OIDC server-side request
+  HTTPS public origin                 public issuer identity
+      |                                      |
+      v                                      v
+test forwarded request             external-backchannel destination
+      |                                      |
+      +----------> trusted proxy <----------+
+                           |
+                           v
+                    Tiny-IDP HTTP listener
+                    (only forwarded HTTPS)
+```

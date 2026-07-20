@@ -76,3 +76,13 @@ focused passing command, diary entry, and commit are present.
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/tasks.md — Phase 3 execution order and completion rule
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/reference/01-production-deployment-implementation-diary.md — Tracking rationale and harness boundary
+
+## 2026-07-20
+
+Step 14: Added and verified the real two-process Tiny-IDP/Message Desk
+lifecycle harness (`3cc6f38`): isolated durable state, trusted-proxy boundary,
+readiness, process logs, and durable audit evidence.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go — Real executable lifecycle and trusted-proxy topology proof
