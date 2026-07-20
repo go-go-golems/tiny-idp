@@ -148,6 +148,23 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	rejected.Body.Close()
 	assertMessageListContains(t, browser, messageText)
 	assertMessageListExcludes(t, browser, "must not persist")
+
+	localLogout := browser.postEmpty(t, messagePublicOrigin+"/auth/logout/local", http.Header{"X-CSRF-Token": []string{sessionBody.CSRFToken}})
+	requireStatus(t, localLogout, http.StatusNoContent)
+	localLogout.Body.Close()
+	loggedOut := browser.get(t, messagePublicOrigin+"/api/session")
+	requireStatus(t, loggedOut, http.StatusOK)
+	var loggedOutBody struct {
+		Authenticated bool `json:"authenticated"`
+	}
+	if err := json.NewDecoder(loggedOut.Body).Decode(&loggedOutBody); err != nil {
+		loggedOut.Body.Close()
+		t.Fatalf("decode local logout session: %v", err)
+	}
+	loggedOut.Body.Close()
+	if loggedOutBody.Authenticated || len(browser.cookies["idp.example.test"]) == 0 {
+		t.Fatalf("local logout did not leave only the provider browser context: session=%#v idpCookies=%d", loggedOutBody, len(browser.cookies["idp.example.test"]))
+	}
 }
 
 type harness struct {
@@ -420,6 +437,15 @@ func (b *publicBrowser) postJSON(t *testing.T, rawURL string, value any, headers
 	response, err := b.doWithHeaders(http.MethodPost, rawURL, bytes.NewReader(body), "application/json", headers)
 	if err != nil {
 		t.Fatalf("POST JSON %s: %v", rawURL, err)
+	}
+	return response
+}
+
+func (b *publicBrowser) postEmpty(t *testing.T, rawURL string, headers http.Header) *http.Response {
+	t.Helper()
+	response, err := b.doWithHeaders(http.MethodPost, rawURL, nil, "", headers)
+	if err != nil {
+		t.Fatalf("POST %s: %v", rawURL, err)
 	}
 	return response
 }
