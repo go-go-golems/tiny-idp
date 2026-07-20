@@ -1665,3 +1665,74 @@ confirms the scripted workflow does not create partial account state first.
 ```text
 weak password form POST -> 400, no password reflection, users=0, sessions=0
 ```
+
+## Step 21 — Phase 3 duplicate identity non-enumeration
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Test an existing identity from an independent
+browser and distinguish generic rejection from an impermissible enumeration
+response.
+
+**Inferred user intent:** Public signup errors should not disclose whether an
+account already exists, and must not create another provider identity/session.
+
+**Commit:** `7a4ec1b` — "Test: reject duplicate two-process signup identity"
+
+### What I did
+
+- Opened a clean second registration browser after the valid Ada account was
+  committed; submitted the same email with otherwise valid fields.
+- Asserted `400`, the generic `This value could not be accepted.` error, no
+  `already exists`/`duplicate` disclosure, and unchanged one-user/one-session
+  Tiny-IDP state.
+
+### Why
+
+The UI deliberately redisplays user-entered public fields (including email) so
+the form remains usable. Non-enumeration means error semantics do not reveal
+which field or account is already registered—not that a submitted public value
+is erased from the form.
+
+### What worked
+
+- Focused harness passed in 6.75 seconds. `7a4ec1b` passed full repository
+  tests, lint, Glazed validation, and IdP UI analysis.
+
+### What didn't work
+
+- The first assertion incorrectly treated redisplayed public email as account
+  enumeration. The observed renderer contract safely redisplays it, while the
+  public error stays generic; the assertion was corrected and passed.
+
+### What I learned
+
+- Secret fields remain blank, public fields can be redisplayed, and the generic
+  error boundary is the meaningful privacy/UX contract for duplicate signup.
+
+### What was tricky to build
+
+- It was necessary to use a browser without the original app/IdP cookies so the
+  duplicate request did not inherit an authenticated registration shortcut.
+
+### What warrants a second pair of eyes
+
+- Malformed-input proof is still needed before checking the full public-error
+  task.
+
+### What should be done in the future
+
+- Add malformed input, then expiry/concurrency and restart cases.
+
+### Code review instructions
+
+- Review the `duplicateBrowser` block and its generic-error assertions.
+
+### Technical details
+
+```text
+duplicate submitted email -> 400 + generic field error + redisplayed public email
+                         -> no duplicate/existence text + users=1 + sessions=1
+```
