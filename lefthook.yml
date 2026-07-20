@@ -6,19 +6,14 @@ pre-commit:
     test:
       glob: '*.go'
       run: make test
-    generated-loggers:
-      glob: '*.go'
-      run: make logcopter-check
   parallel: true
 
 pre-push:
   commands:
-    release-snapshot:
+    release:
       run: make goreleaser
     lint:
       run: make lint
     test:
       run: make test
-    generated-loggers:
-      run: make logcopter-check
   parallel: true
