@@ -21,6 +21,7 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/go-go-golems/tiny-idp/examples/tinyidp-message-app/loginui"
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
@@ -186,6 +187,13 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		}
 		addressResolver = proxyResolver
 	}
+	interactionUI, err := loginui.New()
+	if err != nil {
+		_ = signupManager.Close(context.Background())
+		_ = audit.Close()
+		_ = store.Close()
+		return fmt.Errorf("create Message Desk interaction renderer: %w", err)
+	}
 	provider, err := embeddedidp.New(ctx, embeddedidp.Options{
 		Issuer:        settings.Issuer,
 		Mode:          embeddedidp.ProductionMode,
@@ -199,6 +207,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 			GenerationManager: signupManager,
 		},
 		Maintenance: embeddedidp.MaintenanceConfig{Interval: maintenanceInterval},
+		UI:          embeddedidp.UIConfig{Renderer: interactionUI},
 	})
 	clearProductionSecret(secret)
 	if err != nil {
@@ -214,7 +223,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		_ = store.Close()
 		return fmt.Errorf("initial maintenance: %w", err)
 	}
-	handler := http.Handler(http.MaxBytesHandler(provider.Handler(), int64(settings.MaxRequestBytes)))
+	handler := productionHTTPHandler(provider.Handler(), interactionUI.AssetsHandler(), settings.MaxRequestBytes)
 	if listenerMode == productionListenerTrustedProxyHTTP {
 		publicOrigin, originErr := issuerOrigin(settings.Issuer)
 		if originErr != nil {
@@ -279,6 +288,16 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	runErr := group.Wait()
 	closeErr := errors.Join(provider.Close(context.Background()), signupManager.Close(context.Background()), audit.Close(), store.Close())
 	return errors.Join(runErr, closeErr)
+}
+
+// productionHTTPHandler keeps the Message Desk interaction presentation on the
+// provider's own origin. The renderer only owns the static stylesheet; every
+// OAuth/OIDC and form route remains owned by the embedded provider handler.
+func productionHTTPHandler(providerHandler, assetsHandler http.Handler, maxRequestBytes int) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/static/tinyidp/", assetsHandler)
+	mux.Handle("/", providerHandler)
+	return http.MaxBytesHandler(mux, int64(maxRequestBytes))
 }
 
 func clearProductionSecret(secret []byte) {
