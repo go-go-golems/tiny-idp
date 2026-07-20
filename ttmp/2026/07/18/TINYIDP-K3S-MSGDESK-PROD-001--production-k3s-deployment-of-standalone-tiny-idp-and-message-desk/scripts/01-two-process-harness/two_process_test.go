@@ -149,7 +149,53 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	assertMessageListContains(t, browser, messageText)
 	assertMessageListExcludes(t, browser, "must not persist")
 
-	localLogout := browser.postEmpty(t, messagePublicOrigin+"/auth/logout/local", http.Header{"X-CSRF-Token": []string{sessionBody.CSRFToken}})
+	providerLogout := browser.postEmpty(t, messagePublicOrigin+"/auth/logout", http.Header{"X-CSRF-Token": []string{sessionBody.CSRFToken}})
+	requireStatus(t, providerLogout, http.StatusOK)
+	var providerLogoutBody struct {
+		EndSessionURL string `json:"endSessionUrl"`
+	}
+	if err := json.NewDecoder(providerLogout.Body).Decode(&providerLogoutBody); err != nil {
+		providerLogout.Body.Close()
+		t.Fatalf("decode provider logout response: %v", err)
+	}
+	providerLogout.Body.Close()
+	if providerLogoutBody.EndSessionURL != idpIssuer+"/end-session?client_id=tinyidp-message-app&post_logout_redirect_uri="+url.QueryEscape(messagePublicOrigin+"/") {
+		t.Fatalf("provider logout URL = %q", providerLogoutBody.EndSessionURL)
+	}
+	providerEnd := browser.get(t, providerLogoutBody.EndSessionURL)
+	requireStatus(t, providerEnd, http.StatusFound)
+	if location := requiredLocation(t, providerEnd); location != messagePublicOrigin+"/" {
+		t.Fatalf("provider logout redirect = %q, want %q", location, messagePublicOrigin+"/")
+	}
+	if len(browser.cookies["idp.example.test"]) != 0 {
+		t.Fatalf("provider logout left IdP cookies: %#v", browser.cookies["idp.example.test"])
+	}
+
+	loginStart := browser.get(t, messagePublicOrigin+"/auth/login?return_to=/messages")
+	requireStatus(t, loginStart, http.StatusSeeOther)
+	loginPage := browser.get(t, requiredLocation(t, loginStart))
+	requireStatus(t, loginPage, http.StatusOK)
+	loginHTML, err := io.ReadAll(loginPage.Body)
+	loginPage.Body.Close()
+	if err != nil {
+		t.Fatalf("read fresh provider login: %v", err)
+	}
+	loginApproval := browser.postForm(t, idpIssuer+"/authorize", url.Values{
+		"action":      {"approve"},
+		"interaction": {hiddenFormValue(t, loginHTML, "interaction")},
+		"csrf_token":  {hiddenFormValue(t, loginHTML, "csrf_token")},
+		"login":       {"ada@example.test"},
+		"password":    {"correct horse battery staple 2026"},
+	})
+	requireStatus(t, loginApproval, http.StatusSeeOther)
+	reloggedCallback := browser.get(t, requiredLocation(t, loginApproval))
+	requireStatus(t, reloggedCallback, http.StatusSeeOther)
+	if location := requiredLocation(t, reloggedCallback); location != "/messages" {
+		t.Fatalf("fresh-login return location = %q, want /messages", location)
+	}
+	reloggedSession := readAuthenticatedSession(t, browser)
+
+	localLogout := browser.postEmpty(t, messagePublicOrigin+"/auth/logout/local", http.Header{"X-CSRF-Token": []string{reloggedSession.CSRFToken}})
 	requireStatus(t, localLogout, http.StatusNoContent)
 	localLogout.Body.Close()
 	loggedOut := browser.get(t, messagePublicOrigin+"/api/session")
@@ -165,6 +211,28 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	if loggedOutBody.Authenticated || len(browser.cookies["idp.example.test"]) == 0 {
 		t.Fatalf("local logout did not leave only the provider browser context: session=%#v idpCookies=%d", loggedOutBody, len(browser.cookies["idp.example.test"]))
 	}
+}
+
+type applicationSession struct {
+	Authenticated bool   `json:"authenticated"`
+	Subject       string `json:"subject"`
+	CSRFToken     string `json:"csrfToken"`
+}
+
+func readAuthenticatedSession(t *testing.T, browser *publicBrowser) applicationSession {
+	t.Helper()
+	response := browser.get(t, messagePublicOrigin+"/api/session")
+	requireStatus(t, response, http.StatusOK)
+	var value applicationSession
+	if err := json.NewDecoder(response.Body).Decode(&value); err != nil {
+		response.Body.Close()
+		t.Fatalf("decode application session: %v", err)
+	}
+	response.Body.Close()
+	if !value.Authenticated || value.Subject == "" || value.CSRFToken == "" {
+		t.Fatalf("application session = %#v", value)
+	}
+	return value
 }
 
 type harness struct {
