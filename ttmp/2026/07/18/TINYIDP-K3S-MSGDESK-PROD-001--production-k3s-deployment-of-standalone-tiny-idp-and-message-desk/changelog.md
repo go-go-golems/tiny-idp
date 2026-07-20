@@ -55,3 +55,13 @@ Step 11: Expanded every remaining delivery phase into dependency-ordered, indepe
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/tasks.md — Precise progress ledger
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/reference/01-production-deployment-implementation-diary.md — Task decomposition rationale and continuation instructions
+
+## 2026-07-20
+
+Step 12: Completed Phase 2: replaced the legacy production registration flag with required checked Goja signup-program activation, an explicit initial native-service policy, scripted-provider composition, focused proxy/readiness coverage, and command/documentation regressions (`5546ac5`, `241f928`, `936705e`, `8a2f01f`).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Required bounded program loading and activation before production listening
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Scripted signup derives its canonical account service without the legacy production flag
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production_test.go — Production startup-contract coverage

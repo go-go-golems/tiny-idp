@@ -19,9 +19,15 @@ RelatedFiles:
     - Path: abs:///home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/argocd-app-setup.md
       Note: Argo project, sync-wave, and first-bootstrap requirements
     - Path: repo://internal/cmds/serve_production.go
-      Note: Explicit listener modes and exact Message Desk bootstrap
+      Note: |-
+        Explicit listener modes and exact Message Desk bootstrap
+        Production Goja signup program loading and lifecycle
+    - Path: repo://internal/cmds/serve_production_test.go
+      Note: Production program contract tests
     - Path: repo://internal/fositeadapter/provider.go
-      Note: Provider-owned signup intent, action validation, account creation, session binding, and consent continuation in d5927e8
+      Note: |-
+        Provider-owned signup intent, action validation, account creation, session binding, and consent continuation in d5927e8
+        Scripted signup account-service composition
     - Path: repo://internal/fositeadapter/registration_test.go
       Note: End-to-end PKCE signup and replay evidence in d5927e8
     - Path: repo://pkg/idpui/types.go
@@ -34,6 +40,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 
@@ -889,4 +896,132 @@ Phase 4  immutable same-commit images
 Phase 5  GitOps desired state and PR
 Phase 6  public reconciliation and acceptance
 Phase 7  restored-state proof and closure
+```
+
+## Step 12: Compose checked scripted signup into the production host
+
+The production server now uses one signup path. It no longer accepts the
+legacy `--registration-enabled` switch or constructs a production
+`RegistrationConfig`; instead it requires a non-secret JavaScript program,
+checks it, warms a generation, and passes that generation to the embedded
+provider before the listener can start.
+
+This first production policy is deliberately narrow: the shipped open-signup
+program is accepted. A program requiring an unbound native capability, email
+challenge, or another native effect fails during startup. That is the correct
+initial fail-closed boundary while Phase 2 has not yet supplied deliberate
+provider bindings for those workflows.
+
+### Prompt Context
+
+**User prompt (verbatim):** "phase 2"
+
+**Assistant interpretation:** Implement the detailed Phase 2 production
+composition tasks, with reviewable commits and ticket evidence.
+
+**Inferred user intent:** Make the completed Goja workflow system the actual
+Message Desk production signup mechanism before pursuing images or GitOps.
+
+**Commit (code):** `5546ac5` — "Feat: activate scripted signup in production host"
+
+### What I did
+
+- Removed `RegistrationEnabled` and `--registration-enabled` from the
+  production command.
+- Added required `--signup-program-file` loading with a 256 KiB regular-file
+  bound and no source-content logging.
+- Checked the source before bootstrap/listening and warmed a one-worker,
+  one-retained-generation manager audited through the durable production sink.
+- Passed the manager through `embeddedidp.ScriptedSignupConfig` and closed it
+  on all startup failures and normal shutdown.
+- Changed the internal provider composition so scripted signup derives the
+  canonical account service from the password authenticator without requiring
+  legacy registration to be enabled.
+- Added the program-contract tests and documentation in `241f928` and
+  `936705e`.
+
+### Why
+
+- A production caller must have one explicit workflow owner, not a hidden
+  legacy flag which happens to create a default executor.
+- Checking and warming before listening converts source/configuration errors
+  into a safe rollout failure rather than a browser-time failure.
+- The account service remains Go-owned; JavaScript still receives only the
+  atomic effect protocol and secret handles.
+
+### What worked
+
+- `go test ./internal/cmds ./internal/fositeadapter ./pkg/embeddedidp -count=1`
+  passed during implementation.
+- `go test ./pkg/idp ./internal/cmds ./examples/tinyidp-message-app
+  ./internal/fositeadapter -count=1` passed after the production-manager
+  composition was in place.
+- The pre-commit hook for `241f928` and `936705e` passed repository lint,
+  Glazed lint, the idpui analyzer, and `go test ./...`.
+- `8a2f01f` adds the missing-program-source regression and its pre-commit hook
+  passed the same repository-wide gates.
+- The new integration regression proves a `tinyidp_signup=1` request reaches a
+  scripted form with no legacy `RegistrationConfig` enabled.
+
+### What didn't work
+
+- The first native-service validator build failed with exactly
+  `too many return values; have (nil, error) want (error)` in
+  `validateProductionSignupProgram`. The helper returns one `error`; replacing
+  `return nil, fmt.Errorf(...)` with `return fmt.Errorf(...)` fixed it. The
+  immediately repeated focused test passed.
+
+### What I learned
+
+- The SQLite store already implements the durable workflow-continuation store;
+  `fositeadapter.NewProvider` uses it when an activated scripted generation is
+  supplied in production.
+- `Provider.Readiness` already reports the generation manager as
+  `scripted_signup`, alongside store/schema/signing-key/audit checks. The host
+  composition therefore needed to supply the manager, not invent a second
+  readiness endpoint.
+
+### What was tricky to build
+
+- The old registration option did more than advertise a UI choice: it supplied
+  the account service used at the atomic commit boundary and gated signup
+  intent. The replacement preserves that Go-owned account service by deriving
+  it from the normal authenticator only when scripted signup is present; it
+  does not make JavaScript an account-store owner.
+
+### What warrants a second pair of eyes
+
+- Review the intentional initial capability policy. It accepts the open-signup
+  contract and rejects unbound capabilities/challenges/effects at startup.
+  Email-verified public signup requires a subsequent deliberate mail-provider
+  binding, not merely mounting `email_verified_signup.js`.
+- Review the one-worker generation-pool choice against expected signup volume
+  before public rollout.
+
+### What should be done in the future
+
+- Finish the remaining Phase 2 capability/provider-binding decision and
+  add startup tests for every failure mode.
+- Build the real two-process harness only after the production contract is
+  settled; containers and GitOps remain out of scope until then.
+
+### Code review instructions
+
+- Start at `internal/cmds/serve_production.go`, then follow
+  `pkg/embeddedidp/provider.go` into `internal/fositeadapter/provider.go` and
+  `internal/fositeadapter/scripted_signup.go`.
+- Run `go test ./internal/cmds ./internal/fositeadapter ./pkg/embeddedidp -count=1`;
+  the repository hook additionally ran `go test ./...`.
+
+### Technical details
+
+```text
+signup.js
+  -> bounded read
+  -> compile/check static program contract
+  -> reject unbound capability/challenge/effect
+  -> warm active GenerationManager
+  -> Bootstrap exact client/key state
+  -> embeddedidp.ScriptedSignupConfig
+  -> /readyz includes scripted_signup
 ```

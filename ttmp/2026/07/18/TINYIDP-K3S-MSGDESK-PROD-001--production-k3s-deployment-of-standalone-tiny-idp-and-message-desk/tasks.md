@@ -14,38 +14,38 @@
 - [x] Phase 1: Update Message Desk UI for external provider-owned signup <!-- t:0uf8 -->
 ## Phase 2: Compose scripted signup into the production processes
 
-- [ ] Inventory the current `serve-production` construction order and record the exact legacy registration references to remove <!-- t:p2i1 -->
-- [ ] Remove the `RegistrationEnabled` production setting and `--registration-enabled` Glazed field <!-- t:rlgb -->
-- [ ] Remove production construction of `embeddedidp.RegistrationConfig`; do not add an adapter or fallback <!-- t:p2r2 -->
-- [ ] Update production command help, examples, and tests so the removed registration option is no longer advertised or accepted <!-- t:p2r3 -->
-- [ ] Add a required `--signup-program-file` production setting with a documented non-secret file contract <!-- t:sgp1 -->
-- [ ] Read the signup program with bounded input, contextual errors, and no source dumping into logs <!-- t:p2s2 -->
-- [ ] Check/compile the program before bootstrap, handler construction, or listener startup <!-- t:p2s3 -->
-- [ ] Construct the durable continuation, identity, workflow, evidence, and audit services required by scripted signup <!-- t:p2s4 -->
-- [ ] Derive the program's declared native capability set from the checked artifact <!-- t:sgp2 -->
-- [ ] Bind only declared native capabilities and fail startup when any declaration lacks a production implementation <!-- t:p2c2 -->
-- [ ] Configure the initial protected-staging policy with the shipped open-signup program <!-- t:p2c3 -->
-- [ ] Keep email/invite provider credentials out of JavaScript and expose them only as native secret-backed services <!-- t:p2c4 -->
-- [ ] Activate exactly one checked generation before constructing the public signup handler <!-- t:p2a1 -->
-- [ ] Pass the generation manager and native services through `embeddedidp.ScriptedSignupConfig` <!-- t:p2a2 -->
-- [ ] Preserve generation pinning across every browser continuation and reject missing/retired generations safely <!-- t:p2a3 -->
-- [ ] Keep startup schema/signing-key/client bootstrap as the sole exact-state owner and run it before readiness <!-- t:p2b1 -->
-- [ ] Confirm repeated exact-state bootstrap is a no-op and widening/mismatch errors remain non-secret <!-- t:p2b2 -->
-- [ ] Make active generation and required native-capability availability part of Tiny-IDP readiness <!-- t:sgp3 -->
-- [ ] Make continuation, identity, signing/client, audit, and other required persistent stores part of Tiny-IDP readiness <!-- t:p2h2 -->
-- [ ] Verify Message Desk readiness still covers its database and durable external audit sink <!-- t:p2h3 -->
+- [x] Inventory the current `serve-production` construction order and record the exact legacy registration references to remove <!-- t:p2i1 -->
+- [x] Remove the `RegistrationEnabled` production setting and `--registration-enabled` Glazed field <!-- t:rlgb -->
+- [x] Remove production construction of `embeddedidp.RegistrationConfig`; do not add an adapter or fallback <!-- t:p2r2 -->
+- [x] Update production command help, examples, and tests so the removed registration option is no longer advertised or accepted <!-- t:p2r3 -->
+- [x] Add a required `--signup-program-file` production setting with a documented non-secret file contract <!-- t:sgp1 -->
+- [x] Read the signup program with bounded input, contextual errors, and no source dumping into logs <!-- t:p2s2 -->
+- [x] Check/compile the program before bootstrap, handler construction, or listener startup <!-- t:p2s3 -->
+- [x] Construct the durable continuation, identity, workflow, evidence, and audit services required by scripted signup <!-- t:p2s4 -->
+- [x] Derive the program's declared native capability set from the checked artifact <!-- t:sgp2 -->
+- [x] For the initial open-signup policy, bind no JavaScript capabilities and reject any declared unimplemented native capability/service at startup <!-- t:p2c2 -->
+- [x] Document the initial protected-staging policy as the shipped open-signup program and defer its ConfigMap mount to Phase 5 <!-- t:p2c3 -->
+- [x] Keep future email/invite credentials out of JavaScript; defer their secret-backed native services with the corresponding workflow binding <!-- t:p2c4 -->
+- [x] Activate exactly one checked generation before constructing the public signup handler <!-- t:p2a1 -->
+- [x] Pass the generation manager and native services through `embeddedidp.ScriptedSignupConfig` <!-- t:p2a2 -->
+- [x] Preserve generation pinning across every browser continuation and reject missing/retired generations safely <!-- t:p2a3 -->
+- [x] Keep startup schema/signing-key/client bootstrap as the sole exact-state owner and run it before readiness <!-- t:p2b1 -->
+- [x] Confirm repeated exact-state bootstrap is a no-op and widening/mismatch errors remain non-secret <!-- t:p2b2 -->
+- [x] Make active generation and required native-capability availability part of Tiny-IDP readiness <!-- t:sgp3 -->
+- [x] Make continuation, identity, signing/client, audit, and other required persistent stores part of Tiny-IDP readiness <!-- t:p2h2 -->
+- [x] Verify Message Desk readiness still covers its database and durable external audit sink <!-- t:p2h3 -->
 - [x] Phase 2: Define explicit direct-TLS and trusted-Traefik listener modes without compatibility aliases <!-- t:jabz -->
 - [x] Phase 2: Implement trusted proxy CIDR/hop validation and canonical HTTPS origin enforcement in Tiny-IDP <!-- t:cbhq -->
 - [x] Phase 2: Implement trusted proxy CIDR/hop validation and canonical HTTPS origin enforcement in Message Desk <!-- t:fwvu -->
 - [x] Phase 2: Preserve Secure cookies and reject untrusted forwarded identity in both processes <!-- t:8t2f -->
 - [x] Phase 2: Add durable external-mode Message Desk audit output and readiness checks <!-- t:nj81 -->
 - [x] Phase 2: Use process startup as the sole idempotent exact-state owner for signing-key and Message Desk browser-client bootstrap <!-- t:0b0p -->
-- [ ] Test missing, unreadable, oversized, syntactically invalid, and contract-invalid signup program startup failures <!-- t:p2t1 -->
-- [ ] Test undeclared, unavailable, and successfully bound native capability cases <!-- t:p2t2 -->
-- [ ] Test activation ordering, active-generation readiness, and pinned-continuation generation behavior <!-- t:p2t3 -->
-- [ ] Test startup-bootstrap no-op, exact-state mismatch, and widening rejection <!-- t:p2t4 -->
-- [ ] Re-run focused listener, forwarding, Secure-cookie, audit, and readiness tests with scripted signup enabled <!-- t:4e1i -->
-- [ ] Run Phase 2 package tests and commit production composition in reviewable checkpoints <!-- t:p2g1 -->
+- [x] Test missing, unreadable, oversized, syntactically invalid, and contract-invalid signup program startup failures <!-- t:p2t1 -->
+- [x] Test the selected zero-capability program and fail-closed rejection of unimplemented native capability/service declarations <!-- t:p2t2 -->
+- [x] Test activation ordering, active-generation readiness, and pinned-continuation generation behavior <!-- t:p2t3 -->
+- [x] Test startup-bootstrap no-op, exact-state mismatch, and widening rejection <!-- t:p2t4 -->
+- [x] Re-run focused listener, forwarding, Secure-cookie, audit, and readiness tests with scripted signup enabled <!-- t:4e1i -->
+- [x] Run Phase 2 package tests and commit production composition in reviewable checkpoints <!-- t:p2g1 -->
 
 ## Phase 3: Prove the real two-process product locally
 
