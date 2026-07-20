@@ -20,6 +20,10 @@ RelatedFiles:
       Note: Pure authorization terminal-ordering model added in a460c83
     - Path: repo://internal/assurance/authorization_kernel_test.go
       Note: Pure-kernel ordering and duplicate-artifact coverage added in a460c83
+    - Path: repo://internal/assurance/lambda_vocabulary.go
+      Note: Step 73 typed stable-ID projection for compiled lambda contracts, diagnostics, and authorization evidence
+    - Path: repo://internal/assurance/lambda_vocabulary_test.go
+      Note: Step 73 contract projection, bounded diagnostic, and evidence tests
     - Path: repo://internal/cmds/script.go
       Note: |-
         Operator test command and Glazed row command construction
@@ -140,6 +144,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -6820,3 +6825,130 @@ script/UI boundary -> idpscript, Goja module, workflow, UI conformance + race
 The matrix is additive: it does not attempt a false single "differential"
 oracle. Memory/SQLite conformance suites and strict-provider scenario replay
 remain the repository's concrete cross-implementation comparisons.
+
+## Step 73: Bind compiled lambda contracts to typed stable assurance IDs
+
+The shared assurance vocabulary already named native handlers, observations,
+facts, obligations, and transition effects. This step closes the remaining
+cross-phase drift point: a compiled Goja program now has a validated typed
+projection for its declared schemas, capabilities, wire outcomes, effects,
+compiler diagnostics, and authorization-policy evidence.
+
+The projection is intentionally analysis-only. JavaScript still returns the
+documented wire outcomes such as `present` and `commit`; the versioned names
+such as `lambda.present@v1` are what analysis, model records, and trace design
+use. No configuration value gains native handler authority, and no evidence
+payload is introduced.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as earlier `continue` steps)
+
+**Assistant interpretation:** Continue the normative lambda-first ticket and
+finish the stable-ID cross-phase assurance requirement.
+
+**Inferred user intent:** Make all contracts that analysis depends on explicit,
+bounded, and mechanically checked without breaking the public scripting API.
+
+**Commit (code):** `b2c1608` — "Feat: project lambda contracts into assurance vocabulary"; `37c8bfb` — "Feat: project evidence and diagnostics into assurance IDs"
+
+### What I did
+
+- Added `ProgramVocabulary` and `VocabularyForProgram`, which first runs the
+  existing deterministic `idpprogram.Validate` grammar and then projects
+  declared schema and capability names plus lambda outcomes/effects into typed
+  assurance IDs.
+- Added a closed mapping from every `idpprogram.OutcomeKind` and `EffectKind`
+  to a versioned `OutcomeID` or `EffectID`; unknown values fail closed.
+- Added typed projections for deterministic compiler diagnostics and validated
+  authorization evidence. Both reject free text and preserve only bounded,
+  stable metadata IDs.
+- Added tests using a valid compiled-program-shaped configuration and negative
+  unknown/raw-text cases.
+
+### Why
+
+The native catalog already distinguishes host `HandlerID` authority from
+configuration. Leaving program contracts as untyped strings would mean a model
+or static analyzer still needs to know unrelated wire spellings. The projection
+creates one reviewed conversion point while preserving the public API and the
+package boundary that prevents `pkg/idpprogram` from importing internal code.
+
+### What worked
+
+```bash
+go test ./internal/assurance ./pkg/idp ./pkg/idpprogram -count=1
+```
+
+The focused suites passed. Both code commits passed the complete repository
+pre-commit hook: `GOWORK=off go test ./...`, lint, Glazed checks, and vet.
+
+### What didn't work
+
+The first new test used the old/nonexistent type name `idpprogram.LambdaBudget`:
+
+```text
+undefined: idpprogram.LambdaBudget
+```
+
+The actual public type is `idpprogram.InvocationBudget`; correcting the
+test fixture made the focused suite pass. A later test similarly needed its
+explicit `pkg/idp` import for the policy evidence fixture. Neither issue
+changed production behavior.
+
+### What I learned
+
+- Versioned assurance IDs can coexist with stable public wire values when the
+  conversion point is explicit and one-way.
+- Configuration IDs may be typed analysis data, but they must never become
+  `HandlerID` authority; that stays exclusively in the native transition
+  catalog.
+- Policy evidence can be useful for proof/analysis only as bounded metadata,
+  not as a path for a policy to return credentials or mutable proof objects.
+
+### What was tricky to build
+
+`internal/assurance` can depend on public `pkg` contracts, but those public
+packages cannot import `internal/assurance`. Moving the types would either
+reverse a deliberate dependency boundary or require a compatibility layer.
+The explicit projection preserves that architecture: the compiler remains
+runtime-independent and the internal package owns the analysis vocabulary.
+
+### What warrants a second pair of eyes
+
+- Review all new mappings in `LambdaOutcomeID` and `LambdaEffectID`; a future
+  public enum addition must require an intentional assurance mapping.
+- Confirm diagnostics/evidence IDs remain opaque bounded metadata in traces;
+  never put their associated messages, claims, or secret proof values there.
+- Confirm no caller treats `ProgramVocabulary` as an activation or dispatch
+  plan; it is only an analysis artifact.
+
+### What should be done in the future
+
+Use these typed projections to record the remaining lambda/continuation/effect
+trace boundaries and to build the constrained-lambda model. Do not alter the
+public JavaScript outcome spellings without a separately approved API change.
+
+### Code review instructions
+
+- Start with `VocabularyForProgram`, then review the two closed mapping
+  switches.
+- Read `AuthorizationEvidenceIDs` with `pkg/idp.AuthorizationDecision.Validate`
+  to confirm both layers reject unbounded values.
+- Run the focused command above and inspect the full-hook result on both code
+  commits.
+
+### Technical details
+
+```text
+compiled Program --validate--> finite declarations
+  schemas/capabilities  -> typed configuration IDs
+  lambda wire outcome   -> lambda.*@v1 outcome ID
+  declared effect       -> native effect *@v1 ID
+  compiler diagnostic   -> bounded DiagnosticID
+  policy evidence       -> bounded EvidenceID
+```
+
+This is a projection, not a callback bridge: no VM, HTTP request, persistence
+row, credential, browser state, or native effect implementation enters the
+result.

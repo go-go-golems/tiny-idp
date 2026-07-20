@@ -492,7 +492,7 @@ presentation; full Phase 7 regression and conformance gate.
 These checks apply to the implementation above; they are not a separate feature
 track and must not delay the Phase 0 vertical spike with unrelated refactoring.
 
-- [ ] Assign stable IDs to handlers, outcomes, schemas, capabilities, effects, evidence, observations, and validation diagnostics as each Phase 0–7 contract lands <!-- t:lf87 -->
+- [x] Assign stable IDs to handlers, outcomes, schemas, capabilities, effects, evidence, observations, and validation diagnostics as each Phase 0–7 contract lands <!-- t:lf87 -->
 - [ ] Emit secret-free traces at native invocation, continuation, evidence, effect-validation, commit, and terminal boundaries using only bounded stable dimensions <!-- t:lf88 -->
 - [ ] Model declared lambda outcomes as constrained nondeterministic transitions and prove that native evidence plus an approved atomic commit is required before identity/session/token-relevant completion <!-- t:lf89 -->
 - [ ] Add property, fuzz, race, replay, and normalized-trace tests at the phase that introduces each codec, transition, store, worker lifecycle, or effect boundary <!-- t:lf90 -->

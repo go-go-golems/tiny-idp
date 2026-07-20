@@ -678,3 +678,12 @@ Step 72: completed the available Phase 9 provider, persistence, trace, conforman
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/authorization_kernel_test.go — Pure transition-kernel regression coverage included in the Phase 9 validation matrix
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/sqlstore_test.go — Existing SQLite authorization and device failpoint atomicity coverage exercised by the provider package gate
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace_test.go — Property and fuzz coverage for normalized secret-free trace monitoring
+
+## 2026-07-19
+
+Step 73: completed cross-phase stable assurance ID bindings for native handlers/observations and compiled program outcomes, effects, schemas, capabilities, diagnostics, and policy evidence (commits b2c1608, 37c8bfb)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_vocabulary.go — Validated projection of compiled program and policy metadata into typed assurance IDs
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/vocabulary.go — Closed typed stable identifier families and native handler/observation IDs
