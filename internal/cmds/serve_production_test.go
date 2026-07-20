@@ -2,6 +2,8 @@ package cmds
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +31,37 @@ func TestReadOwnerOnlySecret(t *testing.T) {
 	}
 	if _, err := readOwnerOnlySecret(path); err == nil {
 		t.Fatal("expected permissive secret file rejection")
+	}
+}
+
+func TestProductionHTTPHandlerServesOnlyTheRendererAssetsBelowStaticTinyIDP(t *testing.T) {
+	assets := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/static/tinyidp/login.css" {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/css; charset=utf-8")
+		_, _ = writer.Write([]byte("/* Message Desk */"))
+	})
+	provider := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = writer.Write([]byte("provider route: " + request.URL.Path))
+	})
+	handler := productionHTTPHandler(provider, assets, 1024)
+
+	stylesheet := httptest.NewRecorder()
+	handler.ServeHTTP(stylesheet, httptest.NewRequest(http.MethodGet, "https://idp.example.test/static/tinyidp/login.css", nil))
+	if stylesheet.Code != http.StatusOK || stylesheet.Body.String() != "/* Message Desk */" {
+		t.Fatalf("stylesheet response = %d %q", stylesheet.Code, stylesheet.Body.String())
+	}
+	if got := stylesheet.Header().Get("Content-Type"); got != "text/css; charset=utf-8" {
+		t.Fatalf("stylesheet content type = %q", got)
+	}
+
+	providerResponse := httptest.NewRecorder()
+	handler.ServeHTTP(providerResponse, httptest.NewRequest(http.MethodGet, "https://idp.example.test/authorize", nil))
+	if providerResponse.Code != http.StatusOK || providerResponse.Body.String() != "provider route: /authorize" {
+		t.Fatalf("provider response = %d %q", providerResponse.Code, providerResponse.Body.String())
 	}
 }
 
