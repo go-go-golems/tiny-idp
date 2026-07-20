@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -131,6 +132,9 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 		"password":              {"correct horse battery staple 2026"},
 		"password_confirmation": {"correct horse battery staple 2026"},
 	}
+	harness.stop("tinyidp")
+	harness.startTinyIDP()
+	harness.waitReady(harness.idpAddress, idpPublicOrigin, "/idp/readyz")
 	completed := browser.postForm(t, idpIssuer+"/authorize", form)
 	requireStatus(t, completed, http.StatusOK)
 	harness.assertSingleProviderIdentityAndSession()
@@ -514,6 +518,17 @@ func (h *harness) start(name, logPath, binary string, args ...string) {
 	h.t.Cleanup(func() { process.stop(h.t) })
 }
 
+func (h *harness) stop(name string) {
+	h.t.Helper()
+	for _, process := range h.processes {
+		if process.name == name {
+			process.stop(h.t)
+			return
+		}
+	}
+	h.t.Fatalf("process %q is not running", name)
+}
+
 func (h *harness) waitReady(address, publicOrigin, path string) {
 	h.t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
@@ -805,13 +820,19 @@ func (h *harness) runForeground(label, binary string, args ...string) {
 }
 
 type startedProcess struct {
-	name    string
-	command *exec.Cmd
-	logFile *os.File
-	logPath string
+	name     string
+	command  *exec.Cmd
+	logFile  *os.File
+	logPath  string
+	stopOnce sync.Once
 }
 
 func (p *startedProcess) stop(t *testing.T) {
+	t.Helper()
+	p.stopOnce.Do(func() { p.stopOnceOnly(t) })
+}
+
+func (p *startedProcess) stopOnceOnly(t *testing.T) {
 	t.Helper()
 	if p == nil || p.command == nil || p.command.Process == nil {
 		return
