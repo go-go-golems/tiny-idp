@@ -97,6 +97,30 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 		t.Fatalf("weak-password rejection reflects password: %s", weakBody)
 	}
 	harness.assertProviderCounts(0, 0)
+	expiredBrowser := newPublicBrowser(harness)
+	expiredStart := expiredBrowser.get(t, messagePublicOrigin+"/auth/register")
+	requireStatus(t, expiredStart, http.StatusSeeOther)
+	expiredPage := expiredBrowser.get(t, requiredLocation(t, expiredStart))
+	requireStatus(t, expiredPage, http.StatusOK)
+	expiredHTML, err := io.ReadAll(expiredPage.Body)
+	expiredPage.Body.Close()
+	if err != nil {
+		t.Fatalf("read expired-continuation signup form: %v", err)
+	}
+	harness.expireWorkflowContinuations()
+	expiredSubmission := expiredBrowser.postForm(t, idpIssuer+"/authorize", url.Values{
+		"action":                {"submit"},
+		"interaction":           {hiddenFormValue(t, expiredHTML, "interaction")},
+		"workflow_continuation": {hiddenFormValue(t, expiredHTML, "workflow_continuation")},
+		"csrf_token":            {hiddenFormValue(t, expiredHTML, "csrf_token")},
+		"display_name":          {"Expired Continuation"},
+		"email":                 {"expired@example.test"},
+		"password":              {"correct horse battery staple 2026"},
+		"password_confirmation": {"correct horse battery staple 2026"},
+	})
+	requireStatus(t, expiredSubmission, http.StatusBadRequest)
+	expiredSubmission.Body.Close()
+	harness.assertProviderCounts(0, 0)
 	malformedBrowser := newPublicBrowser(harness)
 	malformed := malformedBrowser.get(t, messagePublicOrigin+"/auth/register?return_to=%2F%2Fattacker.example.test")
 	requireStatus(t, malformed, http.StatusBadRequest)
@@ -483,6 +507,47 @@ func (h *harness) assertNoSensitiveArtifacts(browser *publicBrowser, values []st
 				h.t.Fatalf("%s contains sensitive runtime value %q", name, value)
 			}
 		}
+	}
+}
+
+func (h *harness) expireWorkflowContinuations() {
+	h.t.Helper()
+	database, err := sql.Open("sqlite3", h.idpDatabase)
+	if err != nil {
+		h.t.Fatalf("open Tiny-IDP continuation database: %v", err)
+	}
+	defer database.Close()
+	rows, err := database.Query(`SELECT handle_hash, data FROM workflow_continuations WHERE status='active'`)
+	if err != nil {
+		h.t.Fatalf("list active workflow continuations: %v", err)
+	}
+	defer rows.Close()
+	expired := time.Now().UTC().Add(-time.Minute)
+	count := 0
+	for rows.Next() {
+		var handleHash, encoded []byte
+		if err := rows.Scan(&handleHash, &encoded); err != nil {
+			h.t.Fatalf("read workflow continuation: %v", err)
+		}
+		var record map[string]any
+		if err := json.Unmarshal(encoded, &record); err != nil {
+			h.t.Fatalf("decode workflow continuation: %v", err)
+		}
+		record["expiresAt"] = expired.Format(time.RFC3339Nano)
+		updated, err := json.Marshal(record)
+		if err != nil {
+			h.t.Fatalf("encode expired workflow continuation: %v", err)
+		}
+		if _, err := database.Exec(`UPDATE workflow_continuations SET expires_at_ns=?, data=? WHERE handle_hash=?`, expired.UnixNano(), updated, handleHash); err != nil {
+			h.t.Fatalf("expire workflow continuation: %v", err)
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		h.t.Fatalf("iterate workflow continuations: %v", err)
+	}
+	if count == 0 {
+		h.t.Fatal("no active workflow continuation to expire")
 	}
 }
 
