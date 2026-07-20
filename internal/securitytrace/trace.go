@@ -158,6 +158,8 @@ func (r *Recorder) Events() []Event {
 	return append([]Event(nil), r.events...)
 }
 
+// Test fixtures use the persisted required-action bit layout. Production
+// monitoring decodes these values through assurance.NewAuthorizationKernel.
 const (
 	requireLogin      uint32 = 1 << 0
 	requireFreshLogin uint32 = 1 << 1
@@ -165,11 +167,7 @@ const (
 )
 
 type interactionState struct {
-	required uint32
-	authed   bool
-	consent  bool
-	terminal string
-	artifact bool
+	kernel *assurance.AuthorizationKernel
 }
 
 type Monitor struct {
@@ -196,7 +194,12 @@ func (m *Monitor) Observe(event Event) {
 			m.violate(event, "interaction was created more than once")
 			return
 		}
-		m.interactions[event.InteractionID] = &interactionState{required: event.RequiredActions}
+		kernel, err := assurance.NewAuthorizationKernel(event.RequiredActions)
+		if err != nil {
+			m.violate(event, "%s", err)
+			return
+		}
+		m.interactions[event.InteractionID] = &interactionState{kernel: kernel}
 		return
 	case AuthenticationSatisfied, ConsentApproved, ConsentDenied, InteractionTerminal, AuthorizationArtifactsDone:
 		if state == nil {
@@ -207,37 +210,13 @@ func (m *Monitor) Observe(event Event) {
 		return
 	}
 
-	switch event.Kind {
-	case AuthenticationSatisfied:
-		state.authed = true
-	case ConsentApproved:
-		state.consent = true
-	case ConsentDenied:
-		state.consent = false
-	case InteractionTerminal:
-		if state.terminal != "" {
-			m.violate(event, "interaction has multiple terminal outcomes (%s then %s)", state.terminal, event.Outcome)
-			return
-		}
-		if event.Outcome == assurance.TransitionApproved {
-			if state.required&(requireLogin|requireFreshLogin) != 0 && !state.authed {
-				m.violate(event, "approved terminal outcome lacks required authentication")
-			}
-			if state.required&requireConsent != 0 && !state.consent {
-				m.violate(event, "approved terminal outcome lacks required consent")
-			}
-		}
-		state.terminal = string(event.Outcome)
-	case AuthorizationArtifactsDone:
-		if state.terminal != string(assurance.TransitionApproved) {
-			m.violate(event, "authorization artifacts committed before approved terminal outcome")
-		}
-		if state.artifact {
-			m.violate(event, "authorization artifacts committed more than once")
-		}
-		state.artifact = true
-	case InteractionCreated, TokenLifecycleDone:
+	result, err := event.Result()
+	if err != nil {
+		m.violate(event, "%s", err)
 		return
+	}
+	for _, violation := range state.kernel.Apply(result.Observation, result.Outcome) {
+		m.violate(event, "%s", violation)
 	}
 }
 
