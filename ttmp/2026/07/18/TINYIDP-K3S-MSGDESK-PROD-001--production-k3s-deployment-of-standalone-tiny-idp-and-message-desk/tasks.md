@@ -93,8 +93,8 @@ item has concrete evidence.
 - [x] Add image-level health/readiness and non-root ownership smoke tests <!-- t:6m3o -->
 - [x] Run both images together and repeat the essential signup/login/message smoke path <!-- t:p4t1 -->
 - [ ] Publish Tiny-IDP and Message Desk with immutable `sha-<commit>` tags from the same source commit <!-- t:tbv9 -->
-- [ ] Add `deploy/gitops-targets.json` for both image consumers <!-- t:cs2l -->
-- [ ] Add and validate the shared GitOps update workflow caller <!-- t:p4c1 -->
+- [x] Add `deploy/gitops-targets.json` for both image consumers <!-- t:cs2l -->
+- [x] Add and validate the shared GitOps update workflow caller <!-- t:p4c1 -->
 - [ ] Open the source PR and record image names, tags/digests, CI jobs, and review URL <!-- t:p4p1 -->
 - [ ] Resolve CI/review findings, obtain green checks, and merge the source PR <!-- t:7viy -->
 

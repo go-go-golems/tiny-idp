@@ -18,10 +18,14 @@ RelatedFiles:
       Note: Canonical source-to-GHCR-to-GitOps-to-Argo release path
     - Path: abs:///home/manuel/code/wesen/2026-03-27--hetzner-k3s/docs/argocd-app-setup.md
       Note: Argo project, sync-wave, and first-bootstrap requirements
+    - Path: repo://.github/workflows/publish-production-images.yml
+      Note: Calls the shared GHCR publisher for both production images with a same-SHA release contract
     - Path: repo://Makefile
       Note: |-
         Repeatable local OCI image targets (e6f558f)
         Provides image-smoke and image-flow entrypoints (d850185)
+    - Path: repo://deploy/gitops-targets.json
+      Note: Maps both future deployment containers to immutable GHCR repositories in the actual k3s repository
     - Path: repo://deploy/images/Dockerfile.message-desk
       Note: Production Message Desk OCI image contract and deterministic UI build (e6f558f)
     - Path: repo://deploy/images/Dockerfile.tinyidp
@@ -52,6 +56,7 @@ LastUpdated: 2026-07-18T20:32:21.050406937-04:00
 WhatFor: Preserve exact decisions, commands, failures, commits, review instructions, and production receipts across the multi-repository rollout.
 WhenToUse: Read before resuming the ticket, reviewing a checkpoint, changing production, or executing rollback/recovery.
 ---
+
 
 
 
@@ -2778,4 +2783,128 @@ browser HTTPS (idp.example.test / message.example.test)
 
 Tiny-IDP: read-only checked signup source + owner-only token tmpfs
 Message Desk: separate owner-only initialized state tmpfs
+```
+
+## Step 33 — Phase 4 immutable publication and GitOps handoff contract
+
+The source repository now has a single workflow contract for producing both
+production images from one GitHub revision. The workflow calls the established
+shared GHCR publisher twice in sequence: Message Desk first and Tiny-IDP
+second. Both receive the same GitHub SHA, so each shared invocation creates an
+immutable `sha-<short-commit>` tag from the exact same source revision.
+
+The GitOps metadata is intentionally complete enough for the shared updater to
+patch both images in one deployment file, but automated PR opening remains
+disabled. The target manifest and the scoped GitHub-App credential do not
+exist yet in the k3s repository; they are explicit Phase 5 tasks. Enabling an
+otherwise correct caller before those prerequisites would cause successful
+source merges to fail in a different repository rather than create a valid
+deployment change.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 30)
+
+**Assistant interpretation:** Complete Phase 4’s CI publication and GitOps
+handoff work with real cluster coordinates, preserving the phase boundary
+between source artifacts and uncreated GitOps resources.
+
+**Inferred user intent:** Immutable production artifacts should be published
+repeatably from CI and carry enough metadata for a safe GitOps handoff without
+inventing unreviewed cluster resources or credentials.
+
+**Commit (code):** `b967bf4` — "CI: publish immutable production images"
+
+### What I did
+
+- Added `deploy/gitops-targets.json` with the actual GitOps repository
+  `wesen/2026-03-27--hetzner-k3s`, branch `main`, planned
+  `gitops/kustomize/tiny-message-desk/deployment.yaml`, and both runtime
+  container/image mappings.
+- Added `.github/workflows/publish-production-images.yml`, which uses
+  `go-go-golems/infra-tooling/.github/workflows/publish-ghcr-image.yml@main`
+  for the Message Desk image and, after it succeeds, the Tiny-IDP image.
+- Set the two image repositories explicitly to
+  `ghcr.io/go-go-golems/tiny-idp-message-desk` and
+  `ghcr.io/go-go-golems/tiny-idp`; the shared publisher creates matching
+  immutable SHA tags from `GITHUB_SHA`.
+- Validated the target metadata with the shared infra-tooling validator and
+  validated the workflow with Actionlint.
+- Confirmed that the planned target manifest and `tiny-idp-gitops-pr` Vault
+  role do not yet exist in the k3s worktree; retained `open_gitops_pr: false`
+  with an explicit Phase 5 explanation.
+
+### Why
+
+The deployer must be able to identify both image repositories and apply the
+same source tag without parsing a source repository convention. A target with
+an `images` list gives the shared updater the two concrete container names and
+lets it derive each image’s immutable tag from one supplied source image.
+
+### What worked
+
+- `python3 /home/manuel/code/wesen/go-go-golems/infra-tooling/scripts/gitops/validate_gitops_targets.py deploy/gitops-targets.json`
+  reported `OK (1 target(s))`.
+- `GOWORK=off go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.10 .github/workflows/publish-production-images.yml`
+  passed.
+- The commit hook found no applicable Go files and completed successfully.
+
+### What didn't work
+
+- The intended Phase 5 deployment file and Vault GitHub-App role are absent
+  from `/home/manuel/code/wesen/2026-03-27--hetzner-k3s`; this is an expected
+  phase dependency, not a configuration failure. No cross-repository branch,
+  secret, or placeholder manifest was created during Phase 4.
+
+### What I learned
+
+- The shared `open-gitops-pr` action accepts an `images` target list. Each
+  entry can declare `image_name`; it uses the immutable source tag from the
+  caller but preserves the image repository for that specific container.
+- Sequential reusable-workflow jobs make publication ordering explicit: Tiny
+  IDP’s eventual GitOps handoff cannot run until the Message Desk image from
+  the same SHA has been published.
+
+### What was tricky to build
+
+- The shared publisher is single-image by design, whereas this deployment has
+  two independently built images. Calling it twice and using one multi-image
+  target preserves its standardized publication behavior without a local
+  fork, while the `needs: message-desk` relation establishes the same-SHA
+  publication invariant before any future handoff.
+
+### What warrants a second pair of eyes
+
+- In Phase 5, review the final `deployment.yaml` container names against this
+  metadata exactly: `tinyidp` and `message-desk` are part of the source-to-
+  GitOps contract.
+- Enable `open_gitops_pr` only in the change that adds both the actual
+  manifest and the least-privilege `tiny-idp-gitops-pr` Vault role/secret.
+
+### What should be done in the future
+
+- Push this source branch, open the source PR, obtain green CI, merge it, and
+  verify both GHCR `sha-<commit>` tags and OCI revision labels. Then Phase 5
+  can supply the GitOps manifest/credential and enable the caller’s PR job.
+
+### Code review instructions
+
+- Read `.github/workflows/publish-production-images.yml` top-to-bottom;
+  verify both reusable calls use the same triggering SHA and neither can
+  publish during a pull-request event.
+- Run the target validator and Actionlint commands above.
+- Compare `deploy/gitops-targets.json` to the future Phase 5 deployment file
+  before enabling automated GitOps PR creation.
+
+### Technical details
+
+```text
+PR: build both images, no registry push, no GitOps PR
+
+main @ GITHUB_SHA
+  -> publish ghcr.io/go-go-golems/tiny-idp-message-desk:sha-<SHA>
+  -> publish ghcr.io/go-go-golems/tiny-idp:sha-<SHA>
+  -> (Phase 5 enables shared GitOps updater)
+     deployment/tinyidp      = ghcr.io/go-go-golems/tiny-idp:sha-<SHA>
+     deployment/message-desk = ghcr.io/go-go-golems/tiny-idp-message-desk:sha-<SHA>
 ```

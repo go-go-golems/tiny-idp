@@ -168,3 +168,15 @@ contracts.
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/03-production-image-flow/main.go — Executable image topology and browser-flow proof
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/Makefile — Repeatable `image-smoke` and `image-flow` entrypoints
+
+## 2026-07-20
+
+Phase 4 publication-handoff checkpoint: added validated two-image shared GHCR
+publisher calls and actual k3s GitOps target metadata (`b967bf4`). GitOps PR
+opening remains explicitly disabled until Phase 5 creates the target manifest
+and scoped cross-repository credential.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/.github/workflows/publish-production-images.yml — Same-SHA immutable two-image publisher
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/gitops-targets.json — Multi-image GitOps container mapping
