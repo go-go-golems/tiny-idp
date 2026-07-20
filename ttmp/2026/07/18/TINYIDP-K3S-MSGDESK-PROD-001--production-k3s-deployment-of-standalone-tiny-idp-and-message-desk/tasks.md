@@ -64,9 +64,9 @@ item has concrete evidence.
 - [x] Start the real Tiny-IDP production command with separate durable state and a checked signup program <!-- t:p3h2 -->
 - [x] Start the real external Message Desk command with its own database/audit state and Tiny-IDP backchannel URL <!-- t:p3h3 -->
 - [x] Wait on readiness endpoints and capture both process logs and durable audit output <!-- t:p3h4 -->
-- [ ] Drive `/auth/register` and assert the authorization request retains client, redirect URI, PKCE, nonce, scope, and signup intent <!-- t:p3f1 -->
-- [ ] Submit the scripted signup form and assert exactly one identity and provider session are created <!-- t:p3f2 -->
-- [ ] Complete the authorization callback and assert a Message Desk application session is created <!-- t:p3f3 -->
+- [x] Drive `/auth/register` and assert the authorization request retains client, redirect URI, PKCE, nonce, scope, and signup intent <!-- t:p3f1 -->
+- [x] Submit the scripted signup form and assert exactly one identity and provider session are created <!-- t:p3f2 -->
+- [x] Complete the authorization callback and assert a Message Desk application session is created <!-- t:p3f3 -->
 - [ ] Create and read a message as the signed-in subject <!-- t:p3f4 -->
 - [ ] Prove missing/invalid message CSRF is rejected without durable mutation <!-- t:p3f5 -->
 - [ ] Prove local logout revokes only the Message Desk session <!-- t:p3f6 -->

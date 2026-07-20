@@ -1226,3 +1226,108 @@ test forwarded request             external-backchannel destination
                     Tiny-IDP HTTP listener
                     (only forwarded HTTPS)
 ```
+
+## Step 15 — Phase 3 real signup, consent, callback, and app-session proof
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Extend the process harness from startup proof to
+the real provider-owned registration and relying-party login transaction.
+
+**Inferred user intent:** Verify that Goja signup replaces the old hardcoded
+path in the deployable two-process product, not merely in isolated provider
+tests.
+
+**Commit:** `bfda128` — "Test: cover two-process signup callback flow"
+
+### What I did
+
+- Added a public-origin browser model to the harness. It maps public HTTPS
+  origins to loopback listeners while explicitly storing Secure cookies per
+  public host; it never downgrades either server's cookie configuration.
+- Drove Message Desk `GET /auth/register?return_to=/messages` and asserted the
+  resulting authorization URL contains the exact client ID and callback URI,
+  S256 PKCE, opaque state and nonce, `openid profile`, and
+  `tinyidp_signup=1`.
+- Loaded the real scripted signup page, posted the interaction, continuation,
+  CSRF token, display name, email, and password fields, and then explicitly
+  approved the regular OIDC consent page.
+- Read Tiny-IDP's live SQLite database in read-only mode immediately after the
+  signup commit and asserted exactly one `users` row and exactly one `sessions`
+  row exist.
+- Followed the authorization-code callback through the external Message Desk
+  backchannel and asserted the resulting Message Desk session is authenticated
+  with a subject and CSRF token.
+
+### Why
+
+The registration URL is the critical seam: the relying party must retain all
+OAuth/OIDC transaction material while Tiny-IDP, not the app, receives the
+password and creates the identity. The explicit consent response demonstrates
+that registration has not accidentally bypassed normal authorization policy.
+
+### What worked
+
+- `go test ./ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness -run TestTwoProcessRegistrationRedirectAndSignup -count=1 -v`
+  passed in 10.79 seconds.
+- The `bfda128` pre-commit gate passed the full `go test ./...`, linter, Glazed
+  CLI analyzer, and IdP UI analyzer.
+
+### What didn't work
+
+- The first form-completion expectation assumed a direct callback. The provider
+  returned its normal `Approve access` page after creating the account, which
+  is correct for the existing consent policy. The harness now submits that
+  explicit approval before following the callback.
+- The first commit attempt was stopped by `golangci-lint` because a local
+  variable named `copy` shadows Go's predeclared `copy`. Renaming it to
+  `cookieCopy` fixed the lint failure; the repeated focused test and complete
+  commit gate passed.
+
+### What I learned
+
+- The external application preserves its PKCE verifier and nonce in its own
+  durable login-attempt store; the provider only returns the code and original
+  opaque state to the registered callback.
+- The initial open-signup script atomically creates the identity and provider
+  browser session before consent, so the two row-count assertions are made at
+  the correct lifecycle boundary.
+
+### What was tricky to build
+
+- A test must treat `Set-Cookie; Secure` as belonging to the public HTTPS host,
+  even when its bytes travel over a loopback trusted-proxy connection. Letting
+  Go's default cookie jar observe the loopback HTTP URL would silently discard
+  the cookies and test the wrong topology.
+
+### What warrants a second pair of eyes
+
+- Review whether first-party Message Desk should require explicit provider
+  consent for `openid profile`; the harness reflects the current policy rather
+  than changing it.
+
+### What should be done in the future
+
+- Add message creation/listing plus CSRF rejection, then logout, duplicate and
+  continuation-negative cases, and process restart cases.
+
+### Code review instructions
+
+- Review `TestTwoProcessRegistrationRedirectAndSignup`, `publicBrowser`, and
+  `assertSingleProviderIdentityAndSession` in the two-process harness.
+- Run the focused command above; then run the entire harness package to include
+  the lifecycle test.
+
+### Technical details
+
+```text
+Message Desk /auth/register
+  -> authorization URL (state + nonce + PKCE + tinyidp_signup)
+  -> Tiny-IDP scripted signup form
+  -> atomic user + provider-session commit
+  -> provider consent
+  -> code callback
+  -> Message Desk token exchange and app session
+```

@@ -86,3 +86,13 @@ readiness, process logs, and durable audit evidence.
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go — Real executable lifecycle and trusted-proxy topology proof
+
+## 2026-07-20
+
+Step 15: Extended the two-process harness through provider-owned scripted
+signup, explicit consent, authorization-code callback, and Message Desk
+session (`bfda128`), including exact durable IdP user/session row assertions.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go — Browser-equivalent registration and callback evidence
