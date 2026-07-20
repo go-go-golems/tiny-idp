@@ -717,3 +717,12 @@ Step 76: added bounded lambda-model fuzzing and explicit bidirectional productio
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/lambda_commit_model_test.go — Bounded malformed-sequence fuzz coverage for the pure lambda safety model
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojaverify/compiler_test.go — Verification runtime explicitly rejects production tinyidp
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpscript/invoke_test.go — Production scripting runtime explicitly rejects tinyidp/verify
+
+## 2026-07-20
+
+Step 77: audited the lambda-first completion gate; aligned the normative API reference with the implemented v1 surface and passed direct, race, fuzz, and GOWORK=off validation (commit d927f4e)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/gojamodules/tinyidp/typescript_test.go — Guards implementation/declaration surface
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/design-doc/03-lambda-first-tiny-idp-javascript-api-with-explicit-browser-continuations.md — Normative API source alignment

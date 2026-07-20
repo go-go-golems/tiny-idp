@@ -53,7 +53,11 @@ RelatedFiles:
         Optional invite code can only become declared consumeInvitation plan (commit 84a9995)
         Typed ctx.challenge.emailCode outcome builder (commit 2e8a517)
     - Path: repo://internal/gojamodules/tinyidp/typescript.go
-      Note: JavaScript and TypeScript test fakes API
+      Note: |-
+        JavaScript and TypeScript test fakes API
+        Maintained implemented v1 TypeScript declaration
+    - Path: repo://internal/gojamodules/tinyidp/typescript_test.go
+      Note: Regression guard for the implemented declaration surface
     - Path: repo://internal/gojaverify/compiler_test.go
       Note: Step 76 verification module-isolation test
     - Path: repo://internal/securitytrace/trace.go
@@ -102,6 +106,8 @@ RelatedFiles:
       Note: Invocation-scoped evidence projection (commit c14d70f)
     - Path: repo://pkg/idpscript/invoke_test.go
       Note: Step 76 production scripting module-isolation test
+    - Path: repo://pkg/idpsignup/email_verified_signup.js
+      Note: Checked-in executable browser-continuation workflow
     - Path: repo://pkg/idpsignup/executor.go
       Note: Fixed test-only deterministic capability catalog
     - Path: repo://pkg/idpsignup/executor_test.go
@@ -112,6 +118,8 @@ RelatedFiles:
         Atomic activation, retention, draining, and bounded metrics
     - Path: repo://pkg/idpsignup/manager_test.go
       Note: Reload, closure, retention, and metrics proof
+    - Path: repo://pkg/idpsignup/open_signup.js
+      Note: Checked-in executable baseline workflow
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Durable invitation lifecycle operations available on the caller-owned transaction (commit 21c7c4c)
     - Path: repo://pkg/idpui/templates/workflow.html
@@ -148,6 +156,7 @@ RelatedFiles:
       Note: |-
         Normative design produced and recorded in Step 7
         Normative continuation and generation design governing Step 14
+        Corrected normative API reference
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/reference/02-security-verification-scripting-plane-assessment.md
       Note: Step 4 focused verification-plane design
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/sources/01-colleague-identity-microkernel-research.md
@@ -160,6 +169,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -7340,4 +7350,162 @@ production Compile -> RuntimeFactory -> require("tinyidp") only
 verification Compile -> isolated registry -> require("tinyidp/verify") only
 
 normalized bytes -> pure model Apply -> violations or state; never panic
+```
+
+## Step 77: Audit the normative lambda-first completion gate
+
+The lambda-first ledger has reached its final gate. This audit checked the
+actual repository rather than relying on checked task boxes: it aligned the
+public design reference with the implemented v1 TypeScript surface, reran the
+required direct, workspace-independent, targeted race, and fuzz checks, and
+verified that the executable examples remain covered by the runtime tests.
+
+The audit found one documentation defect rather than a runtime defect. The
+earlier architectural narrative used convenient conceptual spellings such as
+`ctx.present.signupForm` and direct handler maps, but the production v1 API is
+the deliberately smaller builder surface (`ctx.present.form`, explicit
+`A.lambda`, and `program.workflow({ version, entry, handlers, edges })`). The
+normative section now names the maintained declaration and executable examples;
+the added declaration test makes that supported surface reviewable.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as earlier `all the ticket` steps)
+
+**Assistant interpretation:** Prove that every requirement in the normative
+lambda-first implementation ledger is complete, fix any discrepancy discovered
+during that proof, and leave a reviewer-readable record.
+
+**Inferred user intent:** Finish the ticket as a reliable, internally coherent
+implementation and design deliverable rather than treating an almost-complete
+task checklist as sufficient evidence.
+
+**Commit (code):** `d927f4e` — "Test: guard implemented Tiny-IDP TypeScript API"
+
+### What I did
+
+- Inspected the normative task ledger: `lf01` through `lf91` are checked; the
+  audit was the only remaining lambda-first task, `lf92`.
+- Compared the normative public API reference with
+  `internal/gojamodules/tinyidp/typescript.go`, the module implementation, and
+  the checked-in open-signup and email-verified-signup programs.
+- Replaced the stale copy-and-paste API reference in design 03 with the actual
+  v1 types and established an explicit distinction between conceptual
+  architecture notation and the implemented API.
+- Expanded the TypeScript declaration regression test to require the supported
+  outcomes, effects, presentation, challenge, commit, workflow, provider, and
+  embedded-program-test declarations.
+- Ran the complete validation evidence below and checked ticket documentation
+  hygiene with `docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30`.
+
+### Why
+
+The final gate explicitly requires normative examples and TypeScript
+declarations to match implementation. A design that describes an unimplemented
+ergonomic API is more dangerous than a missing feature: an intern can write a
+plausible-looking program that cannot compile. Correcting the document is the
+right fix because widening runtime behavior merely to preserve an old design
+sketch would create an unrequested compatibility surface and weaken the
+deliberately closed API.
+
+### What worked
+
+```bash
+go test ./internal/gojamodules/tinyidp ./pkg/idpscript ./pkg/idpsignup -count=1
+go test ./... -count=1
+go test -race ./pkg/idpprogram ./pkg/idpscript ./internal/gojamodules/tinyidp ./pkg/idpcontinuation ./pkg/memorystore ./pkg/sqlitestore ./pkg/idpworkflow ./pkg/idpsignup ./pkg/idpinvite ./pkg/idppolicy ./internal/fositeadapter ./pkg/embeddedidp ./internal/securitytrace ./internal/assurance ./internal/gojaverify -count=1
+go test ./internal/assurance -run '^$' -fuzz=FuzzDeclaredLambdaModelNeverPanics -fuzztime=500x -parallel=1
+GOWORK=off go test ./... -count=1
+go run ./cmd/tinyidp script validate --help
+go run ./cmd/tinyidp script test --help
+go run ./cmd/tinyidp script explain --help
+docmgr doctor --ticket TINYIDP-GOJA-001 --stale-after 30
+```
+
+All commands passed. The fuzz run completed 500 generated executions after its
+four-case seed corpus. The direct code commit hook also passed the full
+`GOWORK=off` test, lint, Glazed analyzer, and vet gates.
+
+The phase-to-commit evidence ledger is:
+
+| Phase | Primary implementation evidence | Diary gate evidence |
+|---|---|---|
+| 0: isolated compiler/runtime | `0e0a4b0`, `1b8cb17`, `10cd9e6` | Steps 10--13 |
+| 1: durable continuations | `1765f61` | Steps 14--15 |
+| 2: provider-owned presentations | `f645f0c`, `7f1497e`, `dac2aa3` | Steps 16--23 |
+| 3: scripted atomic signup | `a1890d2`, `e222675`, `c10b9ff` | Steps 21--23 |
+| 4: providers and invitations | `414cfb4`, `95dc662`, `40e7747`, `21c7c4c`, `84a9995` | Steps 24--32 and 60 |
+| 5: verified-email continuation | `01882e0`, `9a970d5`, `2e8a517`, `348df6e`, `1799362` | Steps 33--36 |
+| 6: operations and activation | `c390379`, `f28041d`, `eff4573`, `39bf84d` | Steps 37--48 |
+| 7: authorization, claims, existing flows | `45e8eff`, `fc2721e`, `c112bf5`, `28ed348` | Steps 49--58 |
+| Cross-phase assurance | `b2c1608`, `34758c1`, `cc401b7`, `c6ff3dc` | Steps 73--76 |
+
+### What didn't work
+
+The first API comparison did not support treating every older JavaScript block
+in the design narrative as current executable syntax. For example, the
+implemented module exposes `ctx.present.form`, not `ctx.present.signupForm`,
+and `field`/`action` builders take no metadata or display-label argument. No
+test failed; the mismatch was caught by direct source comparison during this
+audit. It was resolved in documentation, not by adding a second runtime API.
+
+### What I learned
+
+- A TypeScript declaration test needs to name the actual operational surface,
+  not just a historical "Phase 0" subset, when it is used as completion-gate
+  evidence.
+- Architectural pseudocode remains useful for explaining authority boundaries,
+  but it must be visibly non-normative when the runtime intentionally exposes a
+  narrower API.
+- The phase diary already contains per-phase commits and gates; a compact final
+  crosswalk makes that evidence practical for a reviewer to trace.
+
+### What was tricky to build
+
+The design document serves two different jobs: it teaches the idealized
+architecture and it supplies copy-and-paste API material. Those jobs drifted
+when the implementation selected a closed v1 builder API. The symptom was
+apparently reasonable JavaScript that had method names and shapes absent from
+the module. The solution was to preserve explanatory sketches as conceptual
+notation while making Section 17 explicitly authoritative and tying it to the
+declaration source, executable examples, and a regression test.
+
+### What warrants a second pair of eyes
+
+- Review the distinction between conceptual sections 1--16 and the normative
+  Section 17; future API additions must update all three of declaration,
+  executable example, and public reference together.
+- Review that the smaller v1 surface is intentional: do not reintroduce generic
+  identity, invitation, effect, or response-writing builders without a new
+  capability/authority design.
+- Confirm the final reMarkable bundle renders the amended TypeScript reference
+  and phase evidence table legibly.
+
+### What should be done in the future
+
+N/A. Any new public scripting API requires a new ticket or an explicitly
+approved follow-up phase; it is not part of this completed ledger.
+
+### Code review instructions
+
+- Start with the implementation declaration in
+  `internal/gojamodules/tinyidp/typescript.go`, then compare it with Section 17
+  of design 03 and the two `pkg/idpsignup/*.js` examples.
+- Read `TestTypeScriptDeclarationsCoverImplementedV1Surface` as the small
+  surface regression guard.
+- Re-run the commands in **What worked**. The race command deliberately spans
+  every phase-owned runtime, store, workflow, provider, protocol, trace, and
+  verification package rather than only the package changed in this step.
+
+### Technical details
+
+```text
+authoring source
+  -> require("tinyidp").v1
+  -> A.lambda + program.workflow({version, entry, handlers, edges})
+  -> checked compiler artifact / owned worker
+  -> native presentation, continuation, challenge, evidence, and commit seams
+
+architectural sketches (Sections 1--16)  !=  executable compatibility API
+Section 17 + typescript.go + executable examples = normative v1 API
 ```

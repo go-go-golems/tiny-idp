@@ -500,4 +500,4 @@ track and must not delay the Phase 0 vertical spike with unrelated refactoring.
 
 ### Overall completion gate
 
-- [ ] Every Phase 0–7 gate passes in order, all normative examples and TypeScript declarations match the implementation, `go test ./...`, targeted race suites, and `GOWORK=off` checks pass, and the implementation diary identifies the exact commits and validation evidence for each phase <!-- t:lf92 -->
+- [x] Every Phase 0–7 gate passes in order, all normative examples and TypeScript declarations match the implementation, `go test ./...`, targeted race suites, and `GOWORK=off` checks pass, and the implementation diary identifies the exact commits and validation evidence for each phase <!-- t:lf92 -->
