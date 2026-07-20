@@ -133,7 +133,7 @@
 - [x] Define and validate the three-schema boundary: configuration graph, native transition catalog, and scenario/trace records. <!-- t:7r8d -->
 - [x] Add lossless fail-closed codecs between InteractionRequiredAction bits and obligation IDs. <!-- t:mdhf -->
 - [x] Add typed VerificationPlan step codecs and reject unknown kinds/parameters during plan materialization. <!-- t:vpdm -->
-- [ ] Map current authorization events to transition results and prove complete secret-free terminal-path instrumentation. <!-- t:0zlh -->
+- [x] Map current authorization events to transition results and prove complete secret-free terminal-path instrumentation. <!-- t:0zlh -->
 - [ ] Introduce unexported authorization proof types and one approved artifact-issuance sink without changing Fosite protocol behavior. <!-- t:uopp -->
 - [ ] Generate static-analysis authority/effect metadata and a formal-model vocabulary skeleton from the transition catalog. <!-- t:9zhn -->
 - [ ] Replay one normalized model counterexample through registered VerificationPlan codecs without a handwritten action-name adapter. <!-- t:e9p7 -->

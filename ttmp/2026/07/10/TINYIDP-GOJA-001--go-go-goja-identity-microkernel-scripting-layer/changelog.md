@@ -595,3 +595,18 @@ or its parameters do not conform to the registered codec.
 - pkg/verifyplan/plan.go — Registry-aware plan and runner validation
 - internal/fositeadapter/verification_scenario_test.go — Strict native scenario parameter codecs
 - internal/gojaverify/compiler_test.go — Registered native Goja verification step
+
+## 2026-07-20 - Step 66: secret-free authorization transition traces
+
+Completed the current authorization trace migration. Each recorded event now
+names a permitted native transition and a closed outcome; the event schema no
+longer admits client IDs, request IDs, grant values, handles, credentials, or
+tokens. The approval, denial, account-selection, scripted-signup, device, and
+SQL terminal paths emit a validated terminal result.
+
+### Related Files
+
+- internal/securitytrace/trace.go — Bounded event contract and event-to-transition mapping
+- internal/fositeadapter/provider.go — Browser authorization terminal instrumentation
+- internal/fositeadapter/scripted_signup.go — Scripted-signup deny/commit terminal instrumentation
+- internal/fositeadapter/interaction_hardening_test.go — Approved and denied terminal-path proof

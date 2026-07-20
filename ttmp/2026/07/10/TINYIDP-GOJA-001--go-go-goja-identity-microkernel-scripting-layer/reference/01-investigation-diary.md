@@ -6220,3 +6220,68 @@ isolated full repository test suite, lint, custom UI analysis, and vet.
 - In `internal/fositeadapter/verification_scenario_test.go`, compare the
   registered struct codecs with the driver operations to verify that the
   accepted plan grammar matches the native test harness exactly.
+
+## Step 66: Bind authorization traces to bounded transition results
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `0eb0e70` — "Feat: bind authorization traces to transitions"
+
+### What I did
+
+- Replaced the open-ended security-event fields for client ID, request ID, and
+  grant type with a required stable native transition ID and stable outcome ID.
+  The trace wire type therefore has no field in which request/client/subject
+  identifiers, handles, credentials, codes, or tokens can be recorded.
+- Added `Event.Validate` and `Event.Result`. Validation accepts only the
+  documented `(event kind, transition, outcome)` combinations; `Result` maps a
+  validated event to one `StepID`, `ObservationID`, and `OutcomeID` triple for
+  the assurance schemas.
+- Required interaction correlation references to be 64-character lowercase
+  HMAC digest values, rather than arbitrary strings. Token lifecycle events
+  intentionally carry no interaction reference.
+- Added stable transition identifiers for account selection and token issue,
+  and made every existing authorization security emission state its transition
+  explicitly.
+- Filled terminal-path gaps discovered during the audit: the last remembered
+  account removal, scripted-signup denial, and scripted-signup commit now emit
+  terminal events. Existing browser, SQL, device, consent, and account-choice
+  paths were converted as well.
+- Added approved and denied HTTP-flow tests. They require exactly one terminal
+  result, validate every event-to-transition mapping, and reject serialized
+  client/request/grant identifiers and representative sensitive values.
+
+### Why
+
+The old event kind could be read as an implementation hint but not as a
+reviewable native transition result; it also had unbounded identifier fields
+that violated the ticket's secret-free telemetry rule. The new event type
+creates a narrow data boundary: monitoring sees a correlation digest and the
+finite vocabulary needed to check ordering, while full audit records remain in
+the separate audit system that owns access-controlled identifiers.
+
+### What worked
+
+```bash
+go test ./internal/securitytrace ./internal/fositeadapter \\
+  -run 'Test(AuthorizationSecurityTrace|DeniedAuthorizationSecurityTrace|Monitor)' -count=1
+go test ./internal/assurance ./internal/securitytrace ./internal/fositeadapter -count=1
+go test -race ./internal/securitytrace ./internal/fositeadapter -count=1
+```
+
+The focused suites passed. The commit hook passed repository lint, the UI
+analyzer, vet, and its isolated full test gate.
+
+### Review instructions
+
+- Start with `securitytrace.Event.Validate` and `Event.Result`; each case in
+  `transitionResults` is the complete supported trace vocabulary.
+- Confirm `Event` has no client, request, subject, secret, grant, handle, or
+  token field. `InteractionID` is retained solely as an HMAC-derived
+  per-interaction correlation reference and is format-checked.
+- Follow the `InteractionTerminal` emit sites in `provider.go`,
+  `scripted_signup.go`, and `device_verification.go`. Each appears immediately
+  after the native durable consume/commit that makes that terminal outcome
+  true.
