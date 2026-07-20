@@ -105,3 +105,17 @@ missing-CSRF no-mutation proof (`4daf974`).
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go — Authenticated application message and CSRF evidence
+
+## 2026-07-20
+
+Phase 3 behaviour evidence is complete: the two-process harness now proves
+signup, callback, message/CSRF, local/provider logout, negative registration,
+continuation replay/expiry/concurrency, restarts, and artifact secret scanning.
+Focused and race harness gates pass. The repository-wide `make verify` target
+remains red only at auditlint due to four current-main signup findings outside
+the deployment-harness change set; task `5fm4` is deliberately left open.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go — Executable Phase 3 production-process evidence
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/reference/01-production-deployment-implementation-diary.md — Exact gate outcomes and auditlint boundary

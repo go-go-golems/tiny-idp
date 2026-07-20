@@ -2166,3 +2166,130 @@ same continuation + same cookie state, submitted concurrently
   -> one 200 consent page + one 400 rejection
   -> users=1, provider sessions=1
 ```
+
+## Step 28 — Phase 3 expiry evidence and closeout-gate boundary
+
+### Prompt Context
+
+**User prompt (verbatim):** "Create detailed tasks in the ticket if you don't
+already, so we can precisely track your progress"
+
+**Assistant interpretation:** Retain the existing independently checkable
+Phase 3 ledger, record the last continuation behaviour, and close only the
+tasks supported by current evidence.
+
+**Inferred user intent:** The ticket must distinguish proven deployment-harness
+behaviour from unrelated repository-wide quality findings instead of reporting
+a misleading all-green completion.
+
+**Commits:** `fb2076e` — "Test: reject expired two-process signup
+continuation"; `09b181f` — "Docs: record Phase 3 concurrent continuation
+evidence"
+
+### What I did
+
+- Added the expired-continuation proof: the harness creates a normal signup
+  continuation, changes only its isolated temporary SQLite expiration values,
+  submits the formerly valid form, and expects `400` with no durable user or
+  provider-session creation.
+- Confirmed the ticket already has a dependency-ordered checklist covering
+  every Phase 3 lifecycle, browser, negative, restart, artifact-scan, and
+  closeout task. No duplicate tasks were added.
+- Ran the final focused gates serially:
+
+  ```text
+  go test ./pkg/idpsignup ./internal/fositeadapter ./examples/tinyidp-message-app -count=1
+  go test ./ttmp/.../scripts/01-two-process-harness -count=1
+  go test -race ./ttmp/.../scripts/01-two-process-harness -count=1
+  ```
+
+  The package gate passed (`pkg/idpsignup` 0.273s); the complete real-process
+  harness passed in 13.551s; its race-detector run passed in 16.234s.
+- Ran the repository-defined closeout command, `make verify`. Its build,
+  full `go test ./...`, harness test, and Go/lint checks reached the
+  `auditlint` target. `auditlint` then failed on four pre-existing current-main
+  findings: two production-package `idp.NoopSink{}` defaults and two test
+  fixture fields named `password`.
+
+### Why
+
+An expired continuation must be rejected by the durable workflow service,
+even when the form itself still has the correct CSRF and cookies. The final
+gate must also be reported exactly: Phase 3 has complete harness evidence,
+but its repository-wide quality task cannot be checked while the defined
+verification target is red.
+
+### What worked
+
+- The expiration proof passed before it was committed.
+- The focused package, normal harness, and race harness closeout gates passed.
+- `make verify` successfully completed build, repository tests, `golangci-lint`
+  (zero issues), and the repository's analyzer setup before reaching auditlint.
+
+### What didn't work
+
+- `make verify` exited `2` because `auditlint` reported:
+
+  ```text
+  pkg/idpsignup/executor.go:107  NoopSink silently discards security audit events
+  pkg/idpsignup/manager.go:66   NoopSink silently discards security audit events
+  pkg/idpcontinuation/service_test.go:148  audit field "password"
+  pkg/idpprogram/value_test.go:18          audit field "password"
+  ```
+
+  `git blame` attributes these lines to current-main signup work (`e1309004`,
+  `a92339e6`, and their associated test commits), not to the Phase 3
+  deployment-harness commits. They require an audit-policy decision in the
+  signup implementation ticket; this ticket does not change that product
+  architecture merely to make a broad gate green.
+
+### What I learned
+
+- The real two-process slice now covers continuation expiry, replay, and
+  concurrent consumption with durable-state assertions.
+- The precise task ledger makes a partial closeout legible: `p3g1` and `p3d1`
+  can be completed from evidence, while `5fm4` remains open as the explicit
+  repository-wide auditlint blocker.
+
+### What was tricky to build
+
+- The expiry proof updates both the indexed expiry column and the serialized
+  continuation expiry in the isolated test database. This avoids testing a
+  malformed storage representation rather than the intended expired workflow.
+- A prior combined closeout shell was accidentally launched twice after the
+  command runner returned early. I stopped only those two exact test shells
+  and repeated the gates serially; no product process or durable test state was
+  removed.
+
+### What warrants a second pair of eyes
+
+- Decide whether a nil audit sink is ever valid outside development/test
+  construction, and whether auditlint should recognize deliberately named
+  test-only fixtures. That decision belongs with the authored signup API,
+  rather than this deployment proof.
+
+### What should be done in the future
+
+- Resolve the four auditlint findings in their owning signup work, rerun
+  `make verify`, then check `5fm4` and declare Phase 3 fully closed.
+
+### Code review instructions
+
+- Review `TestTwoProcessExpiredSignupContinuation` alongside the continuation
+  replay and concurrency tests in `scripts/01-two-process-harness/two_process_test.go`.
+- Review `tasks.md`: all Phase 3 behaviour tasks are checked; `5fm4` remains
+  intentionally unchecked with this diary entry as evidence.
+
+### Technical details
+
+```text
+valid rendered signup form
+  -> expire isolated durable continuation (database + serialized payload)
+  -> POST form
+  -> 400 safe rejection
+  -> users = 0; provider sessions = 0
+
+closeout
+  -> focused package/harness/race gates: pass
+  -> make verify: auditlint failure outside Phase 3 harness ownership
+```

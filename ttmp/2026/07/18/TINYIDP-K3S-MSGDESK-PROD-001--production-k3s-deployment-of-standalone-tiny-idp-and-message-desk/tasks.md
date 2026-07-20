@@ -77,9 +77,9 @@ item has concrete evidence.
 - [x] Restart Message Desk during a pending OIDC transaction and prove the declared durable-state behavior <!-- t:p3r2 -->
 - [x] Restart both processes after signup and prove users, key, client, sessions-by-policy, and messages persist <!-- t:mbvy -->
 - [x] Scan logs and audits for passwords, cookies, authorization codes, raw tokens, and secret material <!-- t:p3s1 -->
-- [ ] Run generation and focused package tests once after the complete harness slice <!-- t:p3g1 -->
+- [x] Run generation and focused package tests once after the complete harness slice <!-- t:p3g1 -->
 - [ ] Run `go test ./...`, race tests for changed packages, lint, build, and repository security checks <!-- t:5fm4 -->
-- [ ] Record exact commands, results, failures, and review instructions in the diary <!-- t:p3d1 -->
+- [x] Record exact commands, results, failures, and review instructions in the diary <!-- t:p3d1 -->
 
 ## Phase 4: Build and publish immutable application images
 
