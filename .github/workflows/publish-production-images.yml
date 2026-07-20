@@ -53,8 +53,8 @@ jobs:
       platforms: linux/amd64
       gitops_target_config: deploy/gitops-targets.json
       push_image: ${{ github.event_name != 'pull_request' }}
-      # Phase 5 creates the target manifest and its least-privilege GitHub App
-      # credential. Keep the source-release workflow green until then.
+      # Tiny-IDP waits for this job and writes the two-image desired state only
+      # after both matching immutable images are available.
       open_gitops_pr: false
       tooling_repository: go-go-golems/infra-tooling
       tooling_ref: main
@@ -73,10 +73,13 @@ jobs:
       platforms: linux/amd64
       gitops_target_config: deploy/gitops-targets.json
       push_image: ${{ github.event_name != 'pull_request' }}
-      # Both jobs use the same GITHUB_SHA. When Phase 5 supplies the actual
-      # manifest plus scoped Vault credential, enable this shared GitOps PR
-      # caller; its multi-image target applies that one immutable SHA tag to
-      # both image repositories atomically in the generated GitOps change.
-      open_gitops_pr: false
+      # This job waits for the matching Message Desk image. It is therefore
+      # the single writer of the two-image desired-state update.
+      open_gitops_pr: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+      gitops_pr_token_source: github_app
+      vault_role: tiny-idp-gitops-pr
+      gitops_app_secret_path: kv/data/ci/github/tiny-idp/gitops-pr-app
+      gitops_app_owner: wesen
+      gitops_app_repositories: 2026-03-27--hetzner-k3s
       tooling_repository: go-go-golems/infra-tooling
       tooling_ref: main
