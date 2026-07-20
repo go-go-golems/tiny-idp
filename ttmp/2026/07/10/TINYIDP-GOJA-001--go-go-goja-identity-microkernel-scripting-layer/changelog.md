@@ -537,3 +537,14 @@ authority from native host signing, storage, credential, and commit authority.
 
 - examples/tinyidp-script/provider-patterns.md — Supported provider authoring patterns
 - pkg/idpinvite/provider_matrix_test.go — Success/failure/replay/protected-claim/atomicity matrix
+
+## 2026-07-20 - Step 61: assurance vocabulary crosswalk
+
+Completed the Phase 9 vocabulary inventory. The crosswalk records every
+persisted interaction obligation/outcome, private model action, verification
+step/observation/assertion, security trace event, monitor property, and
+diagnostic boundary before shared identifiers or codecs change behavior.
+
+### Related Files
+
+- reference/03-current-assurance-vocabulary-crosswalk.md — Source-backed vocabulary and migration map

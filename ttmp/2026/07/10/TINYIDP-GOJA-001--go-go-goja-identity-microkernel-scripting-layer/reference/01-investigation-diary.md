@@ -6067,3 +6067,34 @@ The outcome matrix intentionally checks the common acceptance/rejection contract
 and leaves exact wire/error identities to the existing focused tests in
 `signed_test.go`, `durable_test.go`, `computed_test.go`, and `virtual_test.go`.
 This keeps the matrix legible while retaining strict package-level checks.
+
+## Step 61: Inventory the current assurance vocabulary
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+### What I did
+
+Created `reference/03-current-assurance-vocabulary-crosswalk.md` from the
+current implementation. It maps all six persisted interaction-required-action
+bits, three terminal outcomes, six private state-model actions, all
+strict-provider verification steps/observations/assertions, seven security
+trace event kinds, and six current monitor properties to versioned target IDs.
+
+### Why
+
+The existing names are individually useful but live in separate packages. A
+shared identifier package or codec written without this inventory could silently
+drop a bit, create an accidental synonym, or turn sensitive data into a metric
+dimension. The crosswalk is the reviewable migration contract for Phase 9.
+
+### Review instructions
+
+- Compare the first table with `pkg/idpstore/types.go`.
+- Compare model rows with `internal/fositeadapter/state_model_test.go`.
+- Compare scenario/trace rows with `pkg/verifyplan/plan.go`,
+  `internal/fositeadapter/verification_scenario_test.go`, and
+  `internal/securitytrace/trace.go`.
+- Confirm the non-mappings exclude client/user IDs, email, handles, codes, and
+  tokens from assurance vocabulary and metric dimensions.
