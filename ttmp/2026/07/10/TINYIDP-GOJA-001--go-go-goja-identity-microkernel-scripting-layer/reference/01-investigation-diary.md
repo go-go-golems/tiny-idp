@@ -162,13 +162,16 @@ RelatedFiles:
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/sources/01-colleague-identity-microkernel-research.md
       Note: Verbatim source moved from /tmp and analyzed in Steps 1 and 2
     - Path: repo://ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md
-      Note: Normative Phase 0-7 lambda-first implementation ledger expanded in Step 9 (commit c84bcaa).
+      Note: |-
+        Normative Phase 0-7 lambda-first implementation ledger expanded in Step 9 (commit c84bcaa).
+        Historical-plan closure annotation and normative ledger distinction
 ExternalSources: []
 Summary: Chronological record of the repository investigation and design work for the tiny-idp go-go-goja scripting layer.
 LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -7508,4 +7511,94 @@ authoring source
 
 architectural sketches (Sections 1--16)  !=  executable compatibility API
 Section 17 + typescript.go + executable examples = normative v1 API
+```
+
+## Step 78: Close the retired graph-first ledger without rewriting history
+
+The user asked for every remaining box to be crossed out. Those remaining
+boxes belonged exclusively to the graph-first plan that design 03 explicitly
+superseded; the lambda-first ledger had already passed its final gate and the
+ticket was already complete. I checked the retired boxes while adding a
+prominent annotation that distinguishes plan retirement from implementation.
+
+This makes the ticket mechanically complete for task-list readers without
+misrepresenting the work: the evidence for actual implementation remains the
+lambda-first ledger, its phase diary, commits, and validation records.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok cross them all out."
+
+**Assistant interpretation:** Mark every remaining historical task as closed,
+while preserving an accurate explanation of why those tasks are closed.
+
+**Inferred user intent:** Leave no visually open tasks in a ticket that is
+complete, without losing the distinction between a superseded plan and shipped
+work.
+
+**Commit (code):** N/A — ticket bookkeeping only
+
+### What I did
+
+- Confirmed all 77 remaining unchecked IDs were in the historical graph-first
+  Phases 0–8, not the completed lambda-first ledger.
+- Used `docmgr task check` to mark those exact historical IDs complete.
+- Added a closure annotation immediately before historical Phase 0 explaining
+  that checked status means retired/superseded, not implemented.
+- Updated the changelog and this diary’s task-file relation.
+
+### Why
+
+Task checkboxes should communicate current planning state. Leaving a retired
+plan visibly open obscured the already-complete normative work and caused the
+ticket summary to report misleading open-task counts.
+
+### What worked
+
+```bash
+docmgr task check --ticket TINYIDP-GOJA-001 --id <77 historical IDs>
+rg -c '^- \[ \]' ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md
+```
+
+`docmgr` confirmed all historical IDs were checked and reported that all ticket
+tasks are complete.
+
+### What didn't work
+
+N/A. The task list was unambiguous: every remaining unchecked item fell before
+the lambda-first superseding-design section.
+
+### What I learned
+
+Retiring a large historical plan needs an adjacent closure annotation. A bare
+checked box is otherwise easy to misread as implementation evidence.
+
+### What was tricky to build
+
+The operation is mechanically simple but semantically sensitive. The explicit
+annotation solves the risk by making the meaning of the new checked state
+local, visible, and consistent with the supersession notice later in the file.
+
+### What warrants a second pair of eyes
+
+- Confirm the annotation is sufficiently prominent for someone opening only
+  the beginning of `tasks.md`.
+- Do not use the historical graph-first boxes as evidence for feature delivery;
+  use the lambda-first section and Steps 10–77 instead.
+
+### What should be done in the future
+
+N/A.
+
+### Code review instructions
+
+- Read the closure annotation before historical Phase 0 in `tasks.md`.
+- Confirm no unchecked task remains with `rg '^- \[ \]' tasks.md`.
+- Compare the annotation with the `Lambda-first superseding design` heading.
+
+### Technical details
+
+```text
+historical graph-first boxes: checked = retired/superseded
+lambda-first boxes:           checked = implemented and validated
 ```

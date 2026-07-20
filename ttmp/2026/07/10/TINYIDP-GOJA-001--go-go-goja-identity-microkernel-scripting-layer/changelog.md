@@ -730,3 +730,11 @@ Step 77: audited the lambda-first completion gate; aligned the normative API ref
 ## 2026-07-20
 
 Closed: the superseding lambda-first implementation ledger (lf00–lf92) is complete and validated; remaining unchecked graph-first tasks are explicitly deprecated historical planning, not open scope.
+
+## 2026-07-20
+
+Step 78: marked the retired graph-first task ledger closed at user request, with an explicit annotation that it is superseded rather than implemented
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/10/TINYIDP-GOJA-001--go-go-goja-identity-microkernel-scripting-layer/tasks.md — Historical-plan closure annotation and checked retired tasks

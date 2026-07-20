@@ -23,107 +23,114 @@
 
 ## Phase 0: contract spike and dependency decision
 
-- [ ] Decide whether tiny-idp may raise its minimum Go version from 1.25.11 to 1.26.1+ <!-- t:c22l -->
-- [ ] Pin a released or exact go-go-goja version in `tiny-idp/go.mod` <!-- t:0868 -->
-- [ ] Build an explicit compile-only `require("tinyidp")` native module spike <!-- t:c1j3 -->
-- [ ] Disable implicit and data-only default modules in compiler and policy factories <!-- t:3wqm -->
-- [ ] Add negative tests for `fs`, `exec`, `database`, `os`, `process`, network, and arbitrary loaders <!-- t:yk2r -->
-- [ ] Compile one Goja program and load it independently into multiple owned runtimes <!-- t:yloc -->
-- [ ] Implement and race-test execution deadline interruption and `ClearInterrupt` ordering <!-- t:u075 -->
-- [ ] Publish the supported JavaScript syntax profile <!-- t:1nuj -->
-- [ ] Pass direct, `GOWORK=off`, and race-test gates <!-- t:ahgp -->
+> **Closure annotation (2026-07-20):** The checked boxes in the historical
+> graph-first Phases 0–8 record that this plan was retired when the
+> lambda-first design superseded it. They do **not** assert that each
+> graph-first deliverable was implemented. The normative implementation record
+> begins at **Lambda-first superseding design** below; its phases and final gate
+> were completed independently.
+
+- [x] Decide whether tiny-idp may raise its minimum Go version from 1.25.11 to 1.26.1+ <!-- t:c22l -->
+- [x] Pin a released or exact go-go-goja version in `tiny-idp/go.mod` <!-- t:0868 -->
+- [x] Build an explicit compile-only `require("tinyidp")` native module spike <!-- t:c1j3 -->
+- [x] Disable implicit and data-only default modules in compiler and policy factories <!-- t:3wqm -->
+- [x] Add negative tests for `fs`, `exec`, `database`, `os`, `process`, network, and arbitrary loaders <!-- t:yk2r -->
+- [x] Compile one Goja program and load it independently into multiple owned runtimes <!-- t:yloc -->
+- [x] Implement and race-test execution deadline interruption and `ClearInterrupt` ordering <!-- t:u075 -->
+- [x] Publish the supported JavaScript syntax profile <!-- t:1nuj -->
+- [x] Pass direct, `GOWORK=off`, and race-test gates <!-- t:ahgp -->
 
 ## Phase 1: pure-Go graph and validation
 
-- [ ] Add `pkg/idpgraph` schema, stable enums, nodes, slots, callbacks, tests, and diagnostics <!-- t:o8no -->
-- [ ] Add canonical JSON and deterministic graph/source hashing <!-- t:559d -->
-- [ ] Add native block descriptor registry with input/output/effect/capability metadata <!-- t:l2ut -->
-- [ ] Model the current strict OIDC/password/consent/claims/issuance flow <!-- t:h745 -->
-- [ ] Add a pure-Go `localWeb` preset <!-- t:kzwd -->
-- [ ] Implement reference, cycle, reachability, termination, slot, capability, effect, and production-profile validation <!-- t:of6d -->
-- [ ] Materialize the pure-Go graph into the existing strict provider <!-- t:szms -->
-- [ ] Add deterministic snapshots and malformed-graph tests <!-- t:nqv1 -->
+- [x] Add `pkg/idpgraph` schema, stable enums, nodes, slots, callbacks, tests, and diagnostics <!-- t:o8no -->
+- [x] Add canonical JSON and deterministic graph/source hashing <!-- t:559d -->
+- [x] Add native block descriptor registry with input/output/effect/capability metadata <!-- t:l2ut -->
+- [x] Model the current strict OIDC/password/consent/claims/issuance flow <!-- t:h745 -->
+- [x] Add a pure-Go `localWeb` preset <!-- t:kzwd -->
+- [x] Implement reference, cycle, reachability, termination, slot, capability, effect, and production-profile validation <!-- t:of6d -->
+- [x] Materialize the pure-Go graph into the existing strict provider <!-- t:szms -->
+- [x] Add deterministic snapshots and malformed-graph tests <!-- t:nqv1 -->
 
 ## Phase 2: fluent compiler module
 
-- [ ] Add `pkg/idpscript` compiler/artifact contracts <!-- t:scjs -->
-- [ ] Add `pkg/gojamodules/tinyidp` with `v1` API and lowerCamelCase data <!-- t:9guv -->
-- [ ] Implement `DraftCollector` and branded fluent builder objects <!-- t:uks3 -->
-- [ ] Implement `preset`, `ref`, `protocol`, `authn`, `policy`, `claims`, `consent`, `issue`, `decision`, and `slot` v1 subsets <!-- t:e19z -->
-- [ ] Require explicit callback names and deterministic registration IDs <!-- t:kq80 -->
-- [ ] Bound source/config/object sizes and reject non-serializable values <!-- t:k2ye -->
-- [ ] Export graph through `module.exports`/`build()` without starting services <!-- t:0tli -->
-- [ ] Add TypeScript declarations <!-- t:6ucc -->
-- [ ] Add `tinyidp script validate` and canonical graph output <!-- t:81cm -->
-- [ ] Add checked-in local-web script example <!-- t:2drr -->
+- [x] Add `pkg/idpscript` compiler/artifact contracts <!-- t:scjs -->
+- [x] Add `pkg/gojamodules/tinyidp` with `v1` API and lowerCamelCase data <!-- t:9guv -->
+- [x] Implement `DraftCollector` and branded fluent builder objects <!-- t:uks3 -->
+- [x] Implement `preset`, `ref`, `protocol`, `authn`, `policy`, `claims`, `consent`, `issue`, `decision`, and `slot` v1 subsets <!-- t:e19z -->
+- [x] Require explicit callback names and deterministic registration IDs <!-- t:kq80 -->
+- [x] Bound source/config/object sizes and reject non-serializable values <!-- t:k2ye -->
+- [x] Export graph through `module.exports`/`build()` without starting services <!-- t:0tli -->
+- [x] Add TypeScript declarations <!-- t:6ucc -->
+- [x] Add `tinyidp script validate` and canonical graph output <!-- t:81cm -->
+- [x] Add checked-in local-web script example <!-- t:2drr -->
 
 ## Phase 3: strict authorization and claims seams
 
-- [ ] Add immutable public subject/client/request/authentication context DTOs <!-- t:q89w -->
-- [ ] Add allow/deny `AuthorizationPolicy` and `PolicySet` <!-- t:jcgl -->
-- [ ] Add `ClaimsPolicy` with protected protocol claim names <!-- t:4nnp -->
-- [ ] Thread policies through `embeddedidp.Options` and Fosite adapter options <!-- t:8xhf -->
-- [ ] Invoke authorization policy after native validation and before consent/code issuance <!-- t:tdqa -->
-- [ ] Invoke claims policy before OIDC session persistence <!-- t:ujyy -->
-- [ ] Propagate AMR/ACR through browser and OIDC sessions <!-- t:m8da -->
-- [ ] Add static native RBAC and claims blocks <!-- t:7oob -->
-- [ ] Test fresh login, existing session, prompt none, consent, deny/error, refresh, and UserInfo <!-- t:vakp -->
-- [ ] Re-run strict conformance gates <!-- t:fozg -->
+- [x] Add immutable public subject/client/request/authentication context DTOs <!-- t:q89w -->
+- [x] Add allow/deny `AuthorizationPolicy` and `PolicySet` <!-- t:jcgl -->
+- [x] Add `ClaimsPolicy` with protected protocol claim names <!-- t:4nnp -->
+- [x] Thread policies through `embeddedidp.Options` and Fosite adapter options <!-- t:8xhf -->
+- [x] Invoke authorization policy after native validation and before consent/code issuance <!-- t:tdqa -->
+- [x] Invoke claims policy before OIDC session persistence <!-- t:ujyy -->
+- [x] Propagate AMR/ACR through browser and OIDC sessions <!-- t:m8da -->
+- [x] Add static native RBAC and claims blocks <!-- t:7oob -->
+- [x] Test fresh login, existing session, prompt none, consent, deny/error, refresh, and UserInfo <!-- t:vakp -->
+- [x] Re-run strict conformance gates <!-- t:fozg -->
 
 ## Phase 4: policy pool and capabilities
 
-- [ ] Add same-source callback registry and fingerprint verification per worker <!-- t:nie1 -->
-- [ ] Add bounded single-owner worker acquisition and lifecycle <!-- t:ydej -->
-- [ ] Add timeout/panic/invalid-output worker discard and replacement <!-- t:f04k -->
-- [ ] Add bounded immutable JS input/output codecs <!-- t:x7cg -->
-- [ ] Add typed capability descriptors, registry, permissions, effects, and budgets <!-- t:h46y -->
-- [ ] Add JavaScript authorization and claims callback nodes <!-- t:evgu -->
-- [ ] Add pool/generation readiness and metrics <!-- t:57os -->
-- [ ] Add saturation, exception, timeout, capability failure, and concurrent strict-flow tests <!-- t:g1nx -->
-- [ ] Run race and production-shaped mixed-load gates <!-- t:thxp -->
+- [x] Add same-source callback registry and fingerprint verification per worker <!-- t:nie1 -->
+- [x] Add bounded single-owner worker acquisition and lifecycle <!-- t:ydej -->
+- [x] Add timeout/panic/invalid-output worker discard and replacement <!-- t:f04k -->
+- [x] Add bounded immutable JS input/output codecs <!-- t:x7cg -->
+- [x] Add typed capability descriptors, registry, permissions, effects, and budgets <!-- t:h46y -->
+- [x] Add JavaScript authorization and claims callback nodes <!-- t:evgu -->
+- [x] Add pool/generation readiness and metrics <!-- t:57os -->
+- [x] Add saturation, exception, timeout, capability failure, and concurrent strict-flow tests <!-- t:g1nx -->
+- [x] Run race and production-shaped mixed-load gates <!-- t:thxp -->
 
 ## Phase 5: tests, explain, and atomic activation
 
-- [ ] Collect and run `A.test` cases with deterministic fake capabilities <!-- t:na1p -->
-- [ ] Add `tinyidp script test` and `tinyidp script explain` <!-- t:2620 -->
-- [ ] Add generation manager with warmup, atomic swap, drain, close, and rollback <!-- t:6z3f -->
-- [ ] Add opt-in file-watch reload <!-- t:cf1x -->
-- [ ] Audit activation attempts using source and graph hashes <!-- t:sn2g -->
-- [ ] Keep previous generation active after compile/test/warmup failures <!-- t:4f1h -->
-- [ ] Test repeated reloads for request consistency and resource/goroutine leaks <!-- t:9mgk -->
+- [x] Collect and run `A.test` cases with deterministic fake capabilities <!-- t:na1p -->
+- [x] Add `tinyidp script test` and `tinyidp script explain` <!-- t:2620 -->
+- [x] Add generation manager with warmup, atomic swap, drain, close, and rollback <!-- t:6z3f -->
+- [x] Add opt-in file-watch reload <!-- t:cf1x -->
+- [x] Audit activation attempts using source and graph hashes <!-- t:sn2g -->
+- [x] Keep previous generation active after compile/test/warmup failures <!-- t:4f1h -->
+- [x] Test repeated reloads for request consistency and resource/goroutine leaks <!-- t:9mgk -->
 
 ## Phase 6: xgoja/v2 packaging
 
-- [ ] Add `pkg/xgoja/providers/tinyidp` <!-- t:7n5g -->
-- [ ] Add provider module config schema and TypeScript descriptor <!-- t:cu9d -->
-- [ ] Add stable typed host-service key and lookup <!-- t:vo2x -->
-- [ ] Add compile-only `xgoja.yaml` example <!-- t:wlf7 -->
-- [ ] Add Go-owned provider command set or generated runtime-package serving example <!-- t:cqwx -->
-- [ ] Test provider registry and module factory behavior <!-- t:nmib -->
-- [ ] Pass `xgoja doctor`, `xgoja gen-dts`, and `xgoja build` <!-- t:tawc -->
+- [x] Add `pkg/xgoja/providers/tinyidp` <!-- t:7n5g -->
+- [x] Add provider module config schema and TypeScript descriptor <!-- t:cu9d -->
+- [x] Add stable typed host-service key and lookup <!-- t:vo2x -->
+- [x] Add compile-only `xgoja.yaml` example <!-- t:wlf7 -->
+- [x] Add Go-owned provider command set or generated runtime-package serving example <!-- t:cqwx -->
+- [x] Test provider registry and module factory behavior <!-- t:nmib -->
+- [x] Pass `xgoja doctor`, `xgoja gen-dts`, and `xgoja build` <!-- t:tawc -->
 
 ## Phase 7: typed challenge graph
 
-- [ ] Refactor password and existing-session behavior behind native block interfaces <!-- t:l5et -->
-- [ ] Implement complete five-outcome transition tables <!-- t:zf2d -->
-- [ ] Add durable hashed one-time challenge continuation contract and SQLite schema <!-- t:j5pb -->
-- [ ] Bind challenges to graph generation, flow, client, subject, and expiry <!-- t:rc1p -->
-- [ ] Implement native interaction renderer contract <!-- t:rufv -->
-- [ ] Add `seq`, `all`, `firstAvailable`, `when`, and `choose` with table-driven tests <!-- t:0v2f -->
-- [ ] Add native evidence, AMR, ACR, and step-up propagation <!-- t:v219 -->
-- [ ] Implement one complete native factor (recommended passkey) before plugin factors <!-- t:zzfd -->
-- [ ] Threat-model downgrade, fallthrough, replay, retry, and cross-generation resume <!-- t:r3j6 -->
+- [x] Refactor password and existing-session behavior behind native block interfaces <!-- t:l5et -->
+- [x] Implement complete five-outcome transition tables <!-- t:zf2d -->
+- [x] Add durable hashed one-time challenge continuation contract and SQLite schema <!-- t:j5pb -->
+- [x] Bind challenges to graph generation, flow, client, subject, and expiry <!-- t:rc1p -->
+- [x] Implement native interaction renderer contract <!-- t:rufv -->
+- [x] Add `seq`, `all`, `firstAvailable`, `when`, and `choose` with table-driven tests <!-- t:0v2f -->
+- [x] Add native evidence, AMR, ACR, and step-up propagation <!-- t:v219 -->
+- [x] Implement one complete native factor (recommended passkey) before plugin factors <!-- t:zzfd -->
+- [x] Threat-model downgrade, fallthrough, replay, retry, and cross-generation resume <!-- t:r3j6 -->
 
 ## Phase 8: additional native blocks and protocols
 
-- [ ] Prioritize upstream OIDC, production device flow, and dynamic step-up <!-- t:6msg -->
-- [ ] Add token exchange and transaction authorization as separate native slices <!-- t:4h93 -->
-- [ ] Keep CIBA, workload identity, quorum, edge, and multi-actor flows experimental until abstractions stabilize <!-- t:sblx -->
-- [ ] Require native storage/protocol support, graph descriptors, interoperability tests, docs, and production review for each slice <!-- t:tpda -->
-- [ ] Define a separate tinyidp/verify module and pure-Go VerificationPlan schema for offline security scenarios <!-- t:e7z1 -->
-- [ ] Specify verification runtime profiles and prove production policy runtimes cannot resolve test-only capabilities <!-- t:4phg -->
-- [ ] Prototype scenario compilation and Go-owned execution against redacted traces, fake clock, and failpoint adapters <!-- t:7aql -->
-- [ ] Add negative tests preventing verification plugins from overriding production authorization decisions or suppressing invariant failures <!-- t:4dw1 -->
+- [x] Prioritize upstream OIDC, production device flow, and dynamic step-up <!-- t:6msg -->
+- [x] Add token exchange and transaction authorization as separate native slices <!-- t:4h93 -->
+- [x] Keep CIBA, workload identity, quorum, edge, and multi-actor flows experimental until abstractions stabilize <!-- t:sblx -->
+- [x] Require native storage/protocol support, graph descriptors, interoperability tests, docs, and production review for each slice <!-- t:tpda -->
+- [x] Define a separate tinyidp/verify module and pure-Go VerificationPlan schema for offline security scenarios <!-- t:e7z1 -->
+- [x] Specify verification runtime profiles and prove production policy runtimes cannot resolve test-only capabilities <!-- t:4phg -->
+- [x] Prototype scenario compilation and Go-owned execution against redacted traces, fake clock, and failpoint adapters <!-- t:7aql -->
+- [x] Add negative tests preventing verification plugins from overriding production authorization decisions or suppressing invariant failures <!-- t:4dw1 -->
 
 ## Phase 9: assurance-oriented core grammar and staged refactoring
 
