@@ -1671,6 +1671,18 @@ func (p *Provider) emit(ctx context.Context, e idp.Event, ar fosite.AuthorizeReq
 	p.recordAudit(ctx, e)
 }
 
+// approvedAuthorizationProof is an unforgeable-outside-this-package witness
+// that native client, policy, consent, claims, and lifecycle checks completed.
+// It is intentionally not a protocol response and cannot be supplied by an
+// HTTP caller or JavaScript provider.
+type approvedAuthorizationProof struct {
+	protocolContext context.Context
+	request         fosite.AuthorizeRequester
+	session         *openid.DefaultSession
+	interaction     *idpstore.InteractionRecord
+	finishLifecycle func(bool) error
+}
+
 func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fosite.AuthorizeRequester, u idpstore.User, authTime time.Time, consentApproved bool, interaction *idpstore.InteractionRecord) {
 	client, err := p.store.GetClient(r.Context(), ar.GetClient().GetID())
 	if err != nil || client.Disabled {
@@ -1723,35 +1735,49 @@ func (p *Provider) finishAuthorize(w http.ResponseWriter, r *http.Request, ar fo
 			return
 		}
 	}
-	response, err := p.oauth2.NewAuthorizeResponse(protocolContext, ar, session)
+	proof := approvedAuthorizationProof{
+		protocolContext: protocolContext,
+		request:         ar,
+		session:         session,
+		interaction:     interaction,
+		finishLifecycle: finishLifecycle,
+	}
+	p.issueApprovedAuthorizationArtifacts(w, r, proof)
+}
+
+// issueApprovedAuthorizationArtifacts is the sole Fosite artifact-issuance
+// sink. Its private proof parameter prevents policy code, workflow scripts,
+// and HTTP inputs from reaching NewAuthorizeResponse directly.
+func (p *Provider) issueApprovedAuthorizationArtifacts(w http.ResponseWriter, r *http.Request, proof approvedAuthorizationProof) {
+	response, err := p.oauth2.NewAuthorizeResponse(proof.protocolContext, proof.request, proof.session)
 	if err != nil {
-		if finishLifecycle != nil {
-			_ = finishLifecycle(false)
+		if proof.finishLifecycle != nil {
+			_ = proof.finishLifecycle(false)
 		}
-		p.emit(r.Context(), idp.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
-		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, err)
+		p.emit(r.Context(), idp.New("authorize.request.rejected"), proof.request, "rejected", auditReason(err))
+		p.oauth2.WriteAuthorizeError(r.Context(), w, proof.request, err)
 		return
 	}
-	if finishLifecycle != nil {
-		if err := finishLifecycle(true); err != nil {
-			p.emit(r.Context(), idp.New("authorize.request.rejected"), ar, "rejected", auditReason(err))
+	if proof.finishLifecycle != nil {
+		if err := proof.finishLifecycle(true); err != nil {
+			p.emit(r.Context(), idp.New("authorize.request.rejected"), proof.request, "rejected", auditReason(err))
 			http.Error(w, "authorization persistence failed", http.StatusInternalServerError)
 			return
 		}
 	}
-	if interaction != nil {
-		traceID := interactionTraceID(*interaction)
+	if proof.interaction != nil {
+		traceID := interactionTraceID(*proof.interaction)
 		if p.sqlStore != nil {
 			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.InteractionTerminal, InteractionID: traceID, Transition: assurance.StepInteractionApprove, Outcome: assurance.TransitionApproved})
 		}
 		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.AuthorizationArtifactsDone, InteractionID: traceID, Transition: assurance.StepAuthorizationCommit, Outcome: assurance.TransitionApplied})
 	}
-	p.emit(r.Context(), idp.New("authorize.request.accepted"), ar, "accepted", "")
+	p.emit(r.Context(), idp.New("authorize.request.accepted"), proof.request, "accepted", "")
 	responseWriter := w
 	if r.Method == http.MethodPost {
 		responseWriter = seeOtherRedirectWriter{ResponseWriter: w}
 	}
-	p.oauth2.WriteAuthorizeResponse(r.Context(), responseWriter, ar, response)
+	p.oauth2.WriteAuthorizeResponse(r.Context(), responseWriter, proof.request, response)
 }
 
 func (p *Provider) authorizePolicy(ctx context.Context, user idpstore.User, client idpstore.Client, ar fosite.AuthorizeRequester, authTime time.Time) (idp.AuthorizationDecision, error) {
