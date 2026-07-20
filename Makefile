@@ -1,4 +1,4 @@
-.PHONY: test build lint lintmax fmt fmt-check gosec vuln verify auditlint logcopter-generate logcopter-check docs-export goreleaser tag-major tag-minor tag-patch release install glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems
+.PHONY: test build lint lintmax fmt fmt-check gosec vuln verify auditlint logcopter-generate logcopter-check docs-export goreleaser tag-major tag-minor tag-patch release install glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems image-tinyidp image-message-desk image-build
 
 GO_PACKAGES ?= ./...
 LOGCOPTER_PACKAGES ?= ./cmd/... ./internal/... ./pkg/...
@@ -9,6 +9,12 @@ VERSION ?= dev
 GORELEASER_ARGS ?= --skip=sign --snapshot --clean
 GORELEASER_TARGET ?= --single-target
 DOCSCTL_OUTPUT ?= .docsctl/tinyidp-help.sqlite
+CONTAINER_RUNTIME ?= docker
+IMAGE_SOURCE ?= https://github.com/go-go-golems/tiny-idp
+IMAGE_REVISION ?= $(shell git rev-parse HEAD)
+IMAGE_VERSION ?= sha-$(shell git rev-parse --short=7 HEAD)
+TINYIDP_IMAGE ?= tinyidp:$(IMAGE_VERSION)
+MESSAGE_DESK_IMAGE ?= tinyidp-message-desk:$(IMAGE_VERSION)
 
 GOLANGCI_LINT_VERSION ?= $(shell cat .golangci-lint-version 2>/dev/null || echo v2.12.2)
 GO_TOOLCHAIN_VERSION ?= $(shell GOWORK=off go env GOVERSION)
@@ -110,6 +116,14 @@ release:
 
 install:
 	GOWORK=off go install ./cmd/tinyidp
+
+image-tinyidp:
+	$(CONTAINER_RUNTIME) build --file deploy/images/Dockerfile.tinyidp --tag $(TINYIDP_IMAGE) --build-arg IMAGE_SOURCE=$(IMAGE_SOURCE) --build-arg IMAGE_REVISION=$(IMAGE_REVISION) --build-arg VERSION=$(IMAGE_VERSION) .
+
+image-message-desk:
+	$(CONTAINER_RUNTIME) build --file deploy/images/Dockerfile.message-desk --tag $(MESSAGE_DESK_IMAGE) --build-arg IMAGE_SOURCE=$(IMAGE_SOURCE) --build-arg IMAGE_REVISION=$(IMAGE_REVISION) --build-arg VERSION=$(IMAGE_VERSION) .
+
+image-build: image-tinyidp image-message-desk
 
 glazed-lint-build:
 	@if [ -n "$(GLAZED_VERSION)" ] && [ "$(GLAZED_VERSION)" != "(devel)" ]; then \

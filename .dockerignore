@@ -1,0 +1,12 @@
+.git
+.github
+.docsctl
+dist
+ttmp
+**/node_modules
+**/.pnpm-store
+**/playwright-report
+**/test-results
+*.test
+*.out
+
