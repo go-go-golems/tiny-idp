@@ -1,9 +1,14 @@
 package cmds
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 )
 
 func TestReadOwnerOnlySecret(t *testing.T) {
@@ -59,5 +64,57 @@ func TestProductionListenerModesAreExplicitAndMutuallyExclusive(t *testing.T) {
 	}
 	if err := validateProductionListenerSettings(proxy, &serveProductionSettings{Issuer: "http://idp.example.test", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
 		t.Fatal("trusted proxy accepted HTTP issuer")
+	}
+}
+
+func TestReadProductionSignupProgramRequiresBoundedRegularSource(t *testing.T) {
+	if _, err := readProductionSignupProgram(""); err == nil {
+		t.Fatal("empty program path accepted")
+	}
+	directory := t.TempDir()
+	if _, err := readProductionSignupProgram(directory); err == nil {
+		t.Fatal("directory accepted as program source")
+	}
+	path := filepath.Join(directory, "signup.js")
+	if err := os.WriteFile(path, []byte(idpsignup.DefaultSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	source, err := readProductionSignupProgram(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != idpsignup.DefaultSource {
+		t.Fatal("program source changed while reading")
+	}
+	oversized := filepath.Join(directory, "oversized.js")
+	if err := os.WriteFile(oversized, make([]byte, maxProductionSignupProgramBytes+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readProductionSignupProgram(oversized); err == nil {
+		t.Fatal("oversized program accepted")
+	}
+}
+
+func TestNewProductionSignupManagerChecksAndActivatesOnlySupportedPrograms(t *testing.T) {
+	manager, err := newProductionSignupManager(context.Background(), idpsignup.DefaultSource, idp.NewMemorySink())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close(context.Background())
+	if err := manager.Ready(); err != nil {
+		t.Fatalf("activated program not ready: %v", err)
+	}
+	if _, err := newProductionSignupManager(context.Background(), "not javascript", idp.NewMemorySink()); err == nil {
+		t.Fatal("invalid program accepted")
+	}
+	capabilityProgram := `const A = require("tinyidp").v1;
+module.exports = A.program("unsupported-capability", p => {
+  p.capabilities({"clock.now": {version:1}});
+  const start = A.lambda("signup.start", { input:"signupStartInput", output:"signupResult", outcomes:["complete"], effects:[], capabilities:["clock.now"], timeoutMs:250, maxCapabilityCalls:1, maxOutputBytes:1024, run: async ctx => { await ctx.cap.clock.now({}); return A.result.complete(); } });
+  p.workflow("signup", { version:1, entry:"start", handlers:{start}, edges:[] });
+});`
+	_, err = newProductionSignupManager(context.Background(), capabilityProgram, idp.NewMemorySink())
+	if err == nil || !strings.Contains(err.Error(), "unsupported native capabilities: clock.now") {
+		t.Fatalf("unsupported capability error = %v", err)
 	}
 }

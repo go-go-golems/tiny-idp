@@ -6,9 +6,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
@@ -34,7 +37,7 @@ type serveProductionSettings struct {
 	ListenerMode        string   `glazed:"listener-mode"`
 	Issuer              string   `glazed:"issuer"`
 	MessageDeskOrigin   string   `glazed:"message-desk-origin"`
-	RegistrationEnabled bool     `glazed:"registration-enabled"`
+	SignupProgramFile   string   `glazed:"signup-program-file"`
 	DBPath              string   `glazed:"db"`
 	AuditPath           string   `glazed:"audit-path"`
 	TokenSecretFile     string   `glazed:"token-secret-file"`
@@ -52,6 +55,8 @@ type serveProductionSettings struct {
 	ShutdownTimeout     string   `glazed:"shutdown-timeout"`
 	MaxRequestBytes     int      `glazed:"max-request-bytes"`
 }
+
+const maxProductionSignupProgramBytes = 256 << 10
 
 func NewServeProductionCommand() (*ServeProductionCommand, error) {
 	commandSettings, err := cli.NewCommandSettingsSection()
@@ -80,7 +85,7 @@ Example:
 			fields.New("listener-mode", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Required listener mode: direct-tls or trusted-proxy-http")),
 			fields.New("issuer", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Canonical HTTPS issuer URL")),
 			fields.New("message-desk-origin", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Canonical HTTPS Message Desk public origin for the exact browser client")),
-			fields.New("registration-enabled", fields.TypeBool, fields.WithDefault(false), fields.WithHelp("Enable provider-owned signup for the Message Desk authorization client")),
+			fields.New("signup-program-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Reviewed non-secret JavaScript signup program; checked and activated before listening")),
 			fields.New("db", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Provisioned SQLite database path")),
 			fields.New("audit-path", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Synchronous JSONL audit path")),
 			fields.New("token-secret-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Owner-only file containing at least 32 random bytes")),
@@ -133,6 +138,11 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	if err != nil {
 		return err
 	}
+	defer clearProductionSecret(secret)
+	signupSource, err := readProductionSignupProgram(settings.SignupProgramFile)
+	if err != nil {
+		return err
+	}
 	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(settings.DBPath))
 	if err != nil {
 		return err
@@ -142,13 +152,21 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		_ = store.Close()
 		return err
 	}
+	signupManager, err := newProductionSignupManager(ctx, signupSource, audit)
+	if err != nil {
+		_ = audit.Close()
+		_ = store.Close()
+		return err
+	}
 	messageDeskOrigin, originErr := issuerOrigin(settings.MessageDeskOrigin)
 	if originErr != nil {
+		_ = signupManager.Close(context.Background())
 		_ = audit.Close()
 		_ = store.Close()
 		return fmt.Errorf("message desk origin: %w", originErr)
 	}
 	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{Mode: idpstore.ProductionMode, Audit: audit, Clients: []embeddedidp.ClientSpec{embeddedidp.BrowserClient("tinyidp-message-app", []string{messageDeskOrigin + "/auth/callback"}, []string{messageDeskOrigin + "/"}, []string{"openid", "profile"})}}); err != nil {
+		_ = signupManager.Close(context.Background())
 		_ = audit.Close()
 		_ = store.Close()
 		return fmt.Errorf("bootstrap Message Desk browser client: %w", err)
@@ -158,6 +176,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	if listenerMode == productionListenerTrustedProxyHTTP {
 		proxyResolver, err = idp.NewTrustedProxyResolver(idp.TrustedProxyConfig{TrustedCIDRs: settings.TrustedProxyCIDRs, MaxHops: settings.MaxProxyHops})
 		if err != nil {
+			_ = signupManager.Close(context.Background())
 			_ = audit.Close()
 			_ = store.Close()
 			return err
@@ -173,19 +192,21 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		Audit:         audit,
 		RateLimiter:   idp.NewFixedWindowRateLimiter(settings.RateLimit, rateWindow),
 		ClientAddress: addressResolver,
-		Registration:  embeddedidp.RegistrationConfig{Enabled: settings.RegistrationEnabled},
-		Maintenance:   embeddedidp.MaintenanceConfig{Interval: maintenanceInterval},
+		ScriptedSignup: embeddedidp.ScriptedSignupConfig{
+			GenerationManager: signupManager,
+		},
+		Maintenance: embeddedidp.MaintenanceConfig{Interval: maintenanceInterval},
 	})
-	for i := range secret {
-		secret[i] = 0
-	}
+	clearProductionSecret(secret)
 	if err != nil {
+		_ = signupManager.Close(context.Background())
 		_ = audit.Close()
 		_ = store.Close()
 		return err
 	}
 	if _, err := provider.RunMaintenance(ctx); err != nil {
 		_ = provider.Close(context.Background())
+		_ = signupManager.Close(context.Background())
 		_ = audit.Close()
 		_ = store.Close()
 		return fmt.Errorf("initial maintenance: %w", err)
@@ -195,6 +216,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		publicOrigin, originErr := issuerOrigin(settings.Issuer)
 		if originErr != nil {
 			_ = provider.Close(context.Background())
+			_ = signupManager.Close(context.Background())
 			_ = audit.Close()
 			_ = store.Close()
 			return originErr
@@ -252,8 +274,71 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		return httpServer.Shutdown(shutdownCtx)
 	})
 	runErr := group.Wait()
-	closeErr := errors.Join(provider.Close(context.Background()), audit.Close(), store.Close())
+	closeErr := errors.Join(provider.Close(context.Background()), signupManager.Close(context.Background()), audit.Close(), store.Close())
 	return errors.Join(runErr, closeErr)
+}
+
+func clearProductionSecret(secret []byte) {
+	for i := range secret {
+		secret[i] = 0
+	}
+}
+
+func readProductionSignupProgram(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("--signup-program-file is required")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open signup program file: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("stat signup program file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("signup program file must be a regular file")
+	}
+	if info.Size() > maxProductionSignupProgramBytes {
+		return "", fmt.Errorf("signup program file exceeds %d bytes", maxProductionSignupProgramBytes)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxProductionSignupProgramBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("read signup program file: %w", err)
+	}
+	if len(data) > maxProductionSignupProgramBytes {
+		return "", fmt.Errorf("signup program file exceeds %d bytes", maxProductionSignupProgramBytes)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return "", fmt.Errorf("signup program file must not be empty")
+	}
+	return string(data), nil
+}
+
+func newProductionSignupManager(ctx context.Context, source string, audit idp.Sink) (*idpsignup.GenerationManager, error) {
+	artifact, err := idpsignup.Compile(ctx, source)
+	if err != nil {
+		return nil, fmt.Errorf("check signup program: %w", err)
+	}
+	capabilities := artifact.Program().Capabilities
+	if len(capabilities) != 0 {
+		ids := make([]string, 0, len(capabilities))
+		for id := range capabilities {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		return nil, fmt.Errorf("signup program declares unsupported native capabilities: %s", strings.Join(ids, ", "))
+	}
+	manager, err := idpsignup.NewGenerationManagerWithOptions(ctx, source, 1, 1, idpsignup.GenerationManagerOptions{Audit: audit})
+	if err != nil {
+		return nil, fmt.Errorf("activate signup program: %w", err)
+	}
+	if err := manager.Ready(); err != nil {
+		_ = manager.Close(context.Background())
+		return nil, fmt.Errorf("active signup program is unavailable: %w", err)
+	}
+	return manager, nil
 }
 
 type productionListenerMode string

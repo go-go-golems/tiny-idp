@@ -290,6 +290,16 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		}
 		opts.Authenticator = authenticator
 	}
+	// Scripted signup is an independent production workflow. It uses the same
+	// canonical account service as password login, but must not require callers
+	// to enable the legacy RegistrationConfig path just to reach that service.
+	if (opts.ScriptedSignup != nil || opts.ScriptedSignupManager != nil) && opts.Registration.Accounts == nil {
+		accounts, ok := opts.Authenticator.(*idpaccounts.Service)
+		if !ok {
+			return nil, fmt.Errorf("scripted signup requires an idpaccounts service")
+		}
+		opts.Registration.Accounts = accounts
+	}
 	if opts.Registration.Enabled && opts.Registration.Accounts == nil {
 		accounts, ok := opts.Authenticator.(*idpaccounts.Service)
 		if !ok {
@@ -366,7 +376,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		return nil, err
 	}
 	registration := opts.Registration.Accounts
-	if !opts.Registration.Enabled {
+	if !opts.Registration.Enabled && opts.ScriptedSignup == nil && opts.ScriptedSignupManager == nil {
 		registration = nil
 	}
 	if opts.ScriptedSignup == nil && opts.ScriptedSignupManager == nil && registration != nil {

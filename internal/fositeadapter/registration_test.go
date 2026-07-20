@@ -150,6 +150,61 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 	}
 }
 
+func TestScriptedSignupDoesNotRequireLegacyRegistrationOption(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	requireRegistrationClient(t, ctx, store)
+	key, err := keys.GenerateRSA("scripted-signup-without-legacy-registration", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	audit := idp.NewMemorySink()
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: audit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.DefaultSource, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close(context.Background())
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+		Issuer:                "http://127.0.0.1:5556",
+		Store:                 store,
+		SecretKey:             []byte("scripted-signup-without-legacy-key"),
+		Audit:                 audit,
+		Authenticator:         accounts,
+		Consent:               fositeadapter.AlwaysSkipConsent{},
+		ScriptedSignupManager: manager,
+		WorkflowContinuations: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	request := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	request.Del("login")
+	request.Set("client_id", "message-desk")
+	request.Set("scope", "openid profile")
+	request.Set("tinyidp_signup", "1")
+	response, err := server.Client().Get(server.URL + "/authorize?" + request.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="`+idpui.WorkflowContinuationFieldName+`"`) {
+		t.Fatalf("scripted signup status=%d body=%s", response.StatusCode, body)
+	}
+}
+
 type signupEmailCapture struct {
 	requests []idpemailchallenge.MailRequest
 	err      error
