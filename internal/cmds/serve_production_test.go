@@ -73,6 +73,9 @@ func TestReadProductionSignupProgramRequiresBoundedRegularSource(t *testing.T) {
 		t.Fatal("empty program path accepted")
 	}
 	directory := t.TempDir()
+	if _, err := readProductionSignupProgram(filepath.Join(directory, "missing.js")); err == nil {
+		t.Fatal("missing program source accepted")
+	}
 	if _, err := readProductionSignupProgram(directory); err == nil {
 		t.Fatal("directory accepted as program source")
 	}
