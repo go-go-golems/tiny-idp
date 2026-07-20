@@ -1,4 +1,4 @@
-.PHONY: test build lint lintmax fmt fmt-check gosec vuln verify auditlint logcopter-generate logcopter-check docs-export goreleaser tag-major tag-minor tag-patch release install glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems image-tinyidp image-message-desk image-build
+.PHONY: test build lint lintmax fmt fmt-check gosec vuln verify auditlint logcopter-generate logcopter-check docs-export goreleaser tag-major tag-minor tag-patch release install glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems image-tinyidp image-message-desk image-build image-smoke image-flow
 
 GO_PACKAGES ?= ./...
 LOGCOPTER_PACKAGES ?= ./cmd/... ./internal/... ./pkg/...
@@ -124,6 +124,12 @@ image-message-desk:
 	$(CONTAINER_RUNTIME) build --file deploy/images/Dockerfile.message-desk --tag $(MESSAGE_DESK_IMAGE) --build-arg IMAGE_SOURCE=$(IMAGE_SOURCE) --build-arg IMAGE_REVISION=$(IMAGE_REVISION) --build-arg VERSION=$(IMAGE_VERSION) .
 
 image-build: image-tinyidp image-message-desk
+
+image-smoke:
+	bash ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/02-production-image-smoke.sh
+
+image-flow:
+	GOWORK=off go run ./ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/03-production-image-flow
 
 glazed-lint-build:
 	@if [ -n "$(GLAZED_VERSION)" ] && [ "$(GLAZED_VERSION)" != "(devel)" ]; then \
