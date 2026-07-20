@@ -548,3 +548,14 @@ diagnostic boundary before shared identifiers or codecs change behavior.
 ### Related Files
 
 - reference/03-current-assurance-vocabulary-crosswalk.md — Source-backed vocabulary and migration map
+
+## 2026-07-20 - Step 62: versioned assurance identifier families
+
+Completed the dependency-free assurance vocabulary with closed versioned IDs
+for resources, facts, obligations, steps, effects, transition and lambda
+outcomes, observations, and properties, plus grammar and duplicate guards.
+
+### Related Files
+
+- internal/assurance/vocabulary.go — Shared versioned identifier families
+- internal/assurance/vocabulary_test.go — Identifier validity and uniqueness guard

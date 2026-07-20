@@ -6098,3 +6098,31 @@ dimension. The crosswalk is the reviewable migration contract for Phase 9.
   `internal/securitytrace/trace.go`.
 - Confirm the non-mappings exclude client/user IDs, email, handles, codes, and
   tokens from assurance vocabulary and metric dimensions.
+
+## Step 62: Define versioned assurance identifier families
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `c5d2c98` — "Feat: define versioned assurance identifiers"
+
+### What I did
+
+Extended `internal/assurance` with closed, versioned identifiers for all three
+assurance consumers: runtime configuration/host transitions, scenario/trace
+records, and static/model properties. The package intentionally imports only
+the standard library. Its tests reject malformed or duplicate contract IDs.
+
+### Important compatibility decision
+
+Existing effect identifiers use camel case, such as `createLocalIdentity`.
+The stable-ID grammar therefore permits camel case while still allowing `@` only
+as a terminal `@vN` version suffix. It rejects email-shaped values and all
+whitespace/control characters; changing existing wire identifiers merely to
+enforce lowercase would have been an unnecessary compatibility break.
+
+### What worked
+
+`go test ./internal/assurance -count=1` passed. The commit hook also passed the
+full isolated-workspace test suite, lint, custom UI analysis, and vet.
