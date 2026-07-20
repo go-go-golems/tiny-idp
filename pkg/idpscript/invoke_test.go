@@ -271,6 +271,7 @@ func TestCompilerRejectsAllAmbientModuleFamilies(t *testing.T) {
 		"fs", "node:fs", "exec", "database", "db", "os", "node:os",
 		"process", "node:process", "fetch", "http", "https", "net",
 		"child_process", "arbitrary/project/module",
+		"tinyidp/verify",
 	}
 	for _, moduleName := range forbidden {
 		moduleName := moduleName
