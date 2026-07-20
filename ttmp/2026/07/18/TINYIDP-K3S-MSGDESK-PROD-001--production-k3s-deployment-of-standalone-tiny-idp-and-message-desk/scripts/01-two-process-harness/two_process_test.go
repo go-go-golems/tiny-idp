@@ -90,6 +90,10 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	completed := browser.postForm(t, idpIssuer+"/authorize", form)
 	requireStatus(t, completed, http.StatusOK)
 	harness.assertSingleProviderIdentityAndSession()
+	replayed := browser.postForm(t, idpIssuer+"/authorize", form)
+	requireStatus(t, replayed, http.StatusBadRequest)
+	replayed.Body.Close()
+	harness.assertSingleProviderIdentityAndSession()
 	consentPage, err := io.ReadAll(completed.Body)
 	completed.Body.Close()
 	if err != nil {
