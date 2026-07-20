@@ -6398,3 +6398,59 @@ isolated full repository test suite.
 - Check `GenerateFormalModelVocabulary` for data minimization. It returns a
   finite vocabulary and action summaries, not a misleading claim that Go code
   has been formally modeled automatically.
+
+## Step 69: Replay a normalized model counterexample through registered codecs
+
+### Prompt Context
+
+**User prompt (verbatim):** "all the ticket"
+
+**Commit:** `fe42269` — "Feat: replay normalized model counterexamples"
+
+### What I did
+
+- Added `NormalizedCounterexample`, whose steps are `assurance.ScenarioStep`
+  records and therefore already carry versioned native `StepID` values.
+- Made `VerificationPlan` validate the counterexample against the transition
+  catalog, then copy `string(step.Step)` directly into `verifyplan.Step.Kind`.
+  The bridge has no switch, alias table, action-name parser, or model-tool
+  spelling conversion.
+- Migrated the strict provider verification grammar from unversioned ad-hoc
+  names to registered stable IDs such as `interaction.create@v1` and
+  `interaction.approve@v1`.
+- Added a real HTTP replay of the normalized sequence
+  `create → approve → approve`. The first approval receives an authorization
+  code; the second receives `400 Bad Request` with no code, demonstrating the
+  one-terminal interaction invariant at the native boundary.
+- Added an assurance-package replay test whose driver records the exact kinds
+  it receives, proving the copied stable IDs arrive unchanged after registry
+  materialization.
+
+### Why
+
+A counterexample that needs a bespoke model-action translator is fragile: a
+rename can silently turn it into a different browser action, and the registry
+cannot prove what was intended. Stable `StepID` values are now the shared
+boundary between catalog/model records and VerificationPlan codecs. Unknown
+steps or parameters still fail closed at the runner before a native driver is
+called.
+
+### What worked
+
+```bash
+go test ./internal/assurance ./internal/fositeadapter \\
+  -run 'Test(Normalized|VerificationPlanRuns|CurrentAuthorizationCatalog)' -count=1
+go test ./internal/assurance ./internal/fositeadapter -count=1
+```
+
+Both focused and package suites passed. The commit hook passed lint, analyzers,
+vet, and the isolated full repository test suite.
+
+### Review instructions
+
+- Read `NormalizedCounterexample.VerificationPlan`; its append loop is the
+  entire bridge. It must remain a direct `StepID` to plan-kind copy.
+- Compare `strictScenarioSteps` with the strict driver's `switch`: both use
+  the same stable identifiers, and no legacy alias cases remain.
+- Review the duplicate-terminal HTTP replay observations. It should prove both
+  the first successful code issuance and the second terminal rejection.

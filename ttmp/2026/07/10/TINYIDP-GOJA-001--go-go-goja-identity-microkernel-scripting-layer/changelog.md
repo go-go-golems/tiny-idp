@@ -634,3 +634,16 @@ becoming a runtime dispatcher.
 - internal/assurance/catalog.go — Current native catalog and deterministic projections
 - internal/assurance/catalog_test.go — Catalog, artifact-authority, and model-vocabulary proof
 - internal/assurance/schemas.go — Native authority required on every descriptor
+
+## 2026-07-20 - Step 69: direct normalized-counterexample replay
+
+Completed the model-to-native replay bridge. A normalized counterexample holds
+stable `StepID` values and copies them directly to registered VerificationPlan
+kinds; the strict provider replay proves a duplicate terminal approval is
+rejected without a model-action name adapter.
+
+### Related Files
+
+- internal/assurance/replay.go — Normalized counterexample schema and direct plan projection
+- internal/assurance/replay_test.go — Registry materialization without an adapter
+- internal/fositeadapter/verification_scenario_test.go — Native HTTP duplicate-terminal replay
