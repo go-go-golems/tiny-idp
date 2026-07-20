@@ -4,7 +4,7 @@ import "testing"
 
 func TestThreeSchemasValidateOnlyTheirOwnAuthority(t *testing.T) {
 	catalog := TransitionCatalog{SchemaVersion: TransitionSchemaVersion, Transitions: []TransitionDescriptor{{
-		ID: StepAuthorizationCommit, Reads: []ResourceID{ResourceInteraction, ResourceConsent}, Writes: []ResourceID{ResourceAuthorizationCode}, Requires: []FactID{FactRequestValidated, FactConsentGranted}, Effects: []EffectID{EffectIssueArtifact, EffectEmitSecurityObservation}, Outcomes: []OutcomeID{TransitionApplied, TransitionDenied}, Observations: []ObservationID{ObservationAuthorizationArtifacts},
+		ID: StepAuthorizationCommit, Authorities: []HandlerID{HandlerAuthorizationArtifact}, Reads: []ResourceID{ResourceInteraction, ResourceConsent}, Writes: []ResourceID{ResourceAuthorizationCode}, Requires: []FactID{FactRequestValidated, FactConsentGranted}, Effects: []EffectID{EffectIssueArtifact, EffectEmitSecurityObservation}, Outcomes: []OutcomeID{TransitionApplied, TransitionDenied}, Observations: []ObservationID{ObservationAuthorizationArtifacts},
 	}}}
 	if err := catalog.Validate(); err != nil {
 		t.Fatal(err)
@@ -21,7 +21,7 @@ func TestThreeSchemasValidateOnlyTheirOwnAuthority(t *testing.T) {
 }
 
 func TestScenarioAndTraceRejectUnregisteredOrMalformedValues(t *testing.T) {
-	catalog := TransitionCatalog{SchemaVersion: TransitionSchemaVersion, Transitions: []TransitionDescriptor{{ID: StepAuthorizationBegin, Outcomes: []OutcomeID{TransitionApplied}}}}
+	catalog := TransitionCatalog{SchemaVersion: TransitionSchemaVersion, Transitions: []TransitionDescriptor{{ID: StepAuthorizationBegin, Authorities: []HandlerID{HandlerAuthorizeBegin}, Outcomes: []OutcomeID{TransitionApplied}}}}
 	if err := (ScenarioRecord{SchemaVersion: ScenarioTraceSchemaVersion, Steps: []ScenarioStep{{Step: "unknown@v1"}}}).Validate(catalog); err == nil {
 		t.Fatal("unregistered scenario step accepted")
 	}

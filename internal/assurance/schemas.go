@@ -34,6 +34,7 @@ func (r ConfigurationReference) Validate() error {
 // production HTTP requests or grants script authority.
 type TransitionDescriptor struct {
 	ID           StepID          `json:"id"`
+	Authorities  []HandlerID     `json:"authorities"`
 	Reads        []ResourceID    `json:"reads,omitempty"`
 	Writes       []ResourceID    `json:"writes,omitempty"`
 	Requires     []FactID        `json:"requires,omitempty"`
@@ -63,7 +64,10 @@ func (c TransitionCatalog) Validate() error {
 			return errors.Errorf("transition descriptor %q is duplicated", transition.ID)
 		}
 		seen[transition.ID] = struct{}{}
-		if err := validateIDs(stringIDs(transition.Reads), stringIDs(transition.Writes), stringIDs(transition.Requires), stringIDs(transition.Produces), stringIDs(transition.Discharges), stringIDs(transition.MayCreate), stringIDs(transition.Effects), stringIDs(transition.Outcomes), stringIDs(transition.Observations)); err != nil {
+		if len(transition.Authorities) == 0 {
+			return errors.Errorf("transition descriptor %q has no native authority", transition.ID)
+		}
+		if err := validateIDs(stringIDs(transition.Authorities), stringIDs(transition.Reads), stringIDs(transition.Writes), stringIDs(transition.Requires), stringIDs(transition.Produces), stringIDs(transition.Discharges), stringIDs(transition.MayCreate), stringIDs(transition.Effects), stringIDs(transition.Outcomes), stringIDs(transition.Observations)); err != nil {
 			return errors.Wrapf(err, "transition descriptor %q", transition.ID)
 		}
 	}

@@ -111,6 +111,12 @@ const (
 	PropertyArtifactsAfterApproval            PropertyID = "authorization.artifacts_after_approval@v1"
 	PropertyArtifactsOnce                     PropertyID = "authorization.artifacts_once@v1"
 	PropertyAuthorizationRequiresNativeCommit PropertyID = "authorization.requires_native_commit@v1"
+
+	HandlerAuthorizeBegin        HandlerID = "handler.authorize.begin@v1"
+	HandlerAuthorizeResume       HandlerID = "handler.authorize.resume@v1"
+	HandlerDeviceVerification    HandlerID = "handler.device.verification@v1"
+	HandlerAuthorizationArtifact HandlerID = "handler.authorization.artifact@v1"
+	HandlerTokenIssue            HandlerID = "handler.token.issue@v1"
 )
 
 // ValidStableID accepts the bounded ASCII identifier vocabulary used in
