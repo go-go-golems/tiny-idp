@@ -1951,3 +1951,78 @@ Message Desk persists PKCE/state/nonce -> redirects browser
   -> Message Desk restart -> IdP signup + callback
   -> original SQLite attempt consumed -> authenticated app session
 ```
+
+## Step 25 — Phase 3 combined durable-state restart
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Prove persistent product state after both
+production binaries restart following completed signup and message use.
+
+**Inferred user intent:** The one-replica SQLite deployment must preserve the
+identity, provider session policy, relying-party session policy, and message
+data through normal process replacement.
+
+**Commit:** `2593865` — "Test: preserve two-process state across restart"
+
+### What I did
+
+- After successful signup, callback, message creation, and CSRF-negative
+  check, stopped Message Desk and Tiny-IDP, then restarted Tiny-IDP followed by
+  Message Desk against the same state paths.
+- Waited on both readiness endpoints, asserted Tiny-IDP still has exactly one
+  user and provider session, read the existing authenticated Message Desk
+  session, and read the already-created message.
+- Updated process selection to stop the latest instance of a named process;
+  this makes repeated-restart scenarios target the live replacement rather
+  than an earlier stopped process.
+
+### Why
+
+Both executable boundaries and both SQLite stores are production state owners.
+This is the minimum durable-state acceptance test before containerization.
+
+### What worked
+
+- Focused harness passed in 16.03 seconds. `2593865` passed full repository
+  tests, lint, Glazed validation, and IdP UI analysis.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- The current declared app-session policy is durable: a valid unexpired
+  Message Desk session survives its process restart, independently of the
+  provider's durable browser session.
+
+### What was tricky to build
+
+- Restart order matters: Tiny-IDP must be ready before the external Message
+  Desk process performs discovery through its backchannel.
+
+### What warrants a second pair of eyes
+
+- Confirm that durable app sessions are the intended product policy; this test
+  records the existing behavior rather than introducing it.
+
+### What should be done in the future
+
+- Complete continuation expiry/concurrency and scan all durable logs/audits
+  for secrets, then run final Phase 3 gates.
+
+### Code review instructions
+
+- Review the combined restart block after the message CSRF assertions.
+
+### Technical details
+
+```text
+signup + message
+  -> stop Message Desk + Tiny-IDP
+  -> Tiny-IDP ready -> Message Desk ready
+  -> user/session counts + app session + prior message all available
+```
