@@ -1025,3 +1025,89 @@ signup.js
   -> embeddedidp.ScriptedSignupConfig
   -> /readyz includes scripted_signup
 ```
+
+## Step 13 — Phase 3 tracking contract and two-process harness start
+
+### Prompt Context
+
+**User prompt (verbatim):** "Create detailed tasks in the ticket if you don't already, so we can precisely track your progress"
+
+**Assistant interpretation:** Verify that the ticket contains an independently
+checkable Phase 3 ledger before starting the real two-process assurance work,
+and make the completion rule explicit rather than treating checkboxes as a
+plan-only list.
+
+**Inferred user intent:** Be able to see exactly what is done, what remains,
+and what proof is required for every product-level behavior.
+
+### What I did
+
+- Verified the ticket already has dependency-ordered Phase 3 tasks covering
+  process lifecycle, browser signup, OAuth/OIDC state propagation, application
+  sessions/messages, negative cases, restarts, leak scanning, and final gates.
+- Added the Phase 3 tracking contract to `tasks.md`: each check requires a
+  real assertion, a passing focused run, and diary evidence naming the command
+  and commit.
+- Left every Phase 3 box open. No process-level behavior has yet been proven
+  by a two-process harness, so marking a planning task complete early would be
+  misleading.
+
+### Why
+
+The source tests prove individual construction paths, but Phase 3 must prove
+the deployable product boundary: two separately started binaries, independent
+durable state, public HTTPS origins behind trusted proxy listeners, and a
+browser-equivalent redirect/cookie flow. The ledger distinguishes those claims
+from implementation intent.
+
+### What worked
+
+- The current tasks enumerate each acceptance behavior independently and have
+  stable `docmgr` task identifiers, so progress can be checked through the
+  ticket rather than inferred from prose or commits.
+
+### What didn't work
+
+- Nothing was executed in this planning checkpoint; the first actual harness
+  assertion is intentionally still pending.
+
+### What I learned
+
+- The appropriate first Phase 3 implementation boundary is a ticket-scoped Go
+  harness which builds and launches `tinyidp serve-production` and the external
+  Message Desk command as separate child processes. It must emulate the
+  trusted Traefik request identity while retaining canonical public HTTPS
+  origins.
+
+### What was tricky to build
+
+- A normal Go cookie jar will not retain `Secure` cookies received over the
+  local plaintext test transport. The harness must model the reverse-proxy
+  browser boundary deliberately instead of weakening either process into a
+  development-origin listener.
+
+### What warrants a second pair of eyes
+
+- Review that the tracking rule is strict enough for product evidence but does
+  not require committing temporary test state or secrets.
+
+### What should be done in the future
+
+- Implement and prove `t:783q` through `t:p3h4` first, then check them with
+  `docmgr task check` as each focused assertion passes.
+
+### Code review instructions
+
+- Start with Phase 3 in `tasks.md`; its order is the review and execution
+  order. The next source addition will be under this ticket's `scripts/`
+  directory and will be related to the ticket when it exists.
+
+### Technical details
+
+```text
+unchecked task
+  -> focused harness assertion implemented
+  -> command passes against two subprocesses
+  -> diary records command + result + commit
+  -> docmgr task check
+```

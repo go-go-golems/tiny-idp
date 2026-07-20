@@ -65,3 +65,14 @@ Step 12: Completed Phase 2: replaced the legacy production registration flag wit
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Required bounded program loading and activation before production listening
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Scripted signup derives its canonical account service without the legacy production flag
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production_test.go — Production startup-contract coverage
+
+## 2026-07-20
+
+Step 13: Confirmed the detailed Phase 3 ledger and added an evidence-based
+tracking contract: a task is checked only after its real harness assertion,
+focused passing command, diary entry, and commit are present.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/tasks.md — Phase 3 execution order and completion rule
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/reference/01-production-deployment-implementation-diary.md — Tracking rationale and harness boundary

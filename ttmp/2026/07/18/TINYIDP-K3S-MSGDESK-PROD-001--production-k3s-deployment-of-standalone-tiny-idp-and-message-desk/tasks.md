@@ -49,6 +49,17 @@
 
 ## Phase 3: Prove the real two-process product locally
 
+### Tracking contract
+
+Work through this phase in the listed order. A checkbox is evidence, not an
+intention: check it only after the harness assertion exists, its focused run
+has passed, and the diary names the command and commit. Keep all transient
+state, process logs, browser fixtures, and generated signup programs beneath
+the ticket's `scripts/` harness temporary root; do not add a second module or
+turn test credentials into repository files. The `p3d1` diary task is the
+phase-close record and therefore remains open until every preceding Phase 3
+item has concrete evidence.
+
 - [ ] Design the harness lifecycle, temporary directory layout, port allocation, and cleanup contract <!-- t:783q -->
 - [ ] Start the real Tiny-IDP production command with separate durable state and a checked signup program <!-- t:p3h2 -->
 - [ ] Start the real external Message Desk command with its own database/audit state and Tiny-IDP backchannel URL <!-- t:p3h3 -->
