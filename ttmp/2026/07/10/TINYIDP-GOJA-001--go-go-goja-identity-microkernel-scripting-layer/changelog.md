@@ -659,3 +659,12 @@ new host semantics.
 
 - internal/assurance/localweb.go — Registered local-web graph materializer
 - internal/assurance/localweb_test.go — Compiled-Goja materialization and rejection proof
+
+## 2026-07-19
+
+Step 71: extracted a pure authorization transition kernel from the monitor (commit a460c83)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/assurance/authorization_kernel.go — Pure terminal-ordering kernel; no HTTP, Fosite, store, Goja, clock, or secret dependency
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/securitytrace/trace.go — Monitor now maps validated trace events then delegates ordering invariants to the kernel

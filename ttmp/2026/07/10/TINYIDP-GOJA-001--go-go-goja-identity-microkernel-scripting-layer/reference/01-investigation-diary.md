@@ -16,6 +16,10 @@ Owners: []
 RelatedFiles:
     - Path: repo://go.mod
       Note: Phase 0 baseline source for the Go 1.26 toolchain and pinned go-go-goja dependency recorded in Step 10.
+    - Path: repo://internal/assurance/authorization_kernel.go
+      Note: Pure authorization terminal-ordering model added in a460c83
+    - Path: repo://internal/assurance/authorization_kernel_test.go
+      Note: Pure-kernel ordering and duplicate-artifact coverage added in a460c83
     - Path: repo://internal/cmds/script.go
       Note: |-
         Operator test command and Glazed row command construction
@@ -34,6 +38,8 @@ RelatedFiles:
         Typed ctx.challenge.emailCode outcome builder (commit 2e8a517)
     - Path: repo://internal/gojamodules/tinyidp/typescript.go
       Note: JavaScript and TypeScript test fakes API
+    - Path: repo://internal/securitytrace/trace.go
+      Note: Trace monitor delegates to pure kernel in a460c83
     - Path: repo://lefthook.yml
       Note: Step 17 exact pre-commit test and lint policy whose runner orphaned children
     - Path: repo://pkg/embeddedidp/options.go
@@ -128,6 +134,7 @@ LastUpdated: 2026-07-10T11:11:55.464532318-04:00
 WhatFor: Resuming the scripting-layer design or reviewing which evidence and commands produced the implementation guide.
 WhenToUse: Read before continuing TINYIDP-GOJA-001 or reviewing the design assumptions and validation evidence.
 ---
+
 
 
 
@@ -6509,3 +6516,144 @@ the isolated full repository test suite.
 - In the tests, compare the compiled `open_signup.js` artifact with the
   resulting block. Then inspect the valid but unregistered identity-provider
   case to confirm semantic rejection happens at the registry boundary.
+
+## Step 71: Extract the pure authorization transition kernel
+
+The authorization trace monitor had grown a compact but semantically important
+state machine: it remembered authentication and consent evidence, accepted one
+terminal result, and permitted the artifact commit only after approval. This
+step makes that state machine a separately testable, deliberately pure kernel
+without changing the protocol provider's artifact authority.
+
+The monitor still owns trace-schema validation, HMAC-derived correlation, and
+diagnostic recording. After it maps a validated event to its declared
+observation/outcome pair, it delegates only the ordering invariant to the
+kernel. This means the same constrained transition semantics can be reused by
+model/replay work without importing HTTP, Fosite, persistence, Goja, clocks,
+or secrets.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as earlier `continue` steps)
+
+**Assistant interpretation:** Complete the next in-scope Phase 9 task and
+record the work in the ticket diary.
+
+**Inferred user intent:** Make the scripting/identity microkernel project
+reviewable and verifiable incrementally, rather than leaving authorization
+ordering hidden inside an operational trace monitor.
+
+**Commit (code):** `a460c83` — "Feat: extract pure authorization transition kernel"
+
+### What I did
+
+- Added `internal/assurance.AuthorizationKernel`, a state machine constructed
+  from the persisted required-action bitset through the existing fail-closed
+  obligation codec.
+- Made `Apply` consume only a declared `ObservationID` and `OutcomeID`; it
+  checks required login/fresh-login and consent before approval, rejects a
+  second terminal result, and rejects artifact commits before approval or more
+  than once.
+- Returned all violations produced by one observation. This preserves the
+  monitor's useful ability to report both missing authentication and missing
+  consent on a malformed approval.
+- Replaced the monitor's duplicate local fields and switch with kernel
+  construction and delegation after `Event.Result()` validation.
+- Added pure-kernel tests for valid ordering, missing evidence, and a duplicate
+  artifact commit.
+
+### Why
+
+The authorization provider and trace monitor need a small common semantic core,
+but neither should become the de facto formal model. A pure transition kernel
+gives future replay and model checks an exact native contract while preserving
+the one private Fosite artifact sink established in Step 67.
+
+### What worked
+
+```bash
+go test ./internal/assurance ./internal/securitytrace -count=1
+go test ./internal/fositeadapter -run 'TestAuthorizationSecurityTrace|TestDeniedAuthorizationSecurityTrace' -count=1
+go test ./internal/assurance ./internal/securitytrace ./internal/fositeadapter -count=1
+GOWORK=off /tmp/golangci-lint-v2.12.2-go1.26.5 run -v
+```
+
+The focused assurance, monitor, and provider suites passed. The commit hook
+also passed the isolated full `GOWORK=off go test ./...`, repository lint, and
+the configured Glazed analyzers/vet checks.
+
+### What didn't work
+
+The first commit-hook attempt failed only lint because the new `ObservationID`
+switch omitted explicit cases required by the repository's `exhaustive` linter:
+
+```text
+internal/assurance/authorization_kernel.go:42:2: missing cases in switch of type assurance.ObservationID: assurance.ObservationInteractionCreated, assurance.ObservationTokenLifecycle, assurance.ObservationLambdaStarted, assurance.ObservationLambdaCompleted, assurance.ObservationLambdaRejected, assurance.ObservationContinuationCreated, assurance.ObservationContinuationTerminal, assurance.ObservationEvidenceVerified, assurance.ObservationNativeEffectCommitted (exhaustive)
+```
+
+I added an explicit grouped rejection branch for every out-of-scope observation
+and reran the focused suites and linter successfully. No protocol behavior or
+stored data format changed.
+
+### What I learned
+
+- A finite, versioned observation vocabulary makes the pure-kernel boundary
+  enforceable by the compiler/linter as well as by tests.
+- Mapping runtime events to the declared transition result before entering the
+  kernel prevents arbitrary trace text from becoming state-machine input.
+- Keeping the kernel diagnostic-complete avoids a subtle regression where a
+  malformed terminal transition would hide one independent violated obligation.
+
+### What was tricky to build
+
+The original monitor emitted multiple errors for a single approved terminal
+event with both login and consent missing. An initial scalar-error shape would
+have forced a choice between violating the existing diagnostic contract and
+inventing a combined string error. The kernel instead returns a deterministic
+ordered slice of independent errors, and the monitor emits each one exactly as
+before. The exhaustive linter then required intentional treatment of every
+non-authorization observation; the grouped rejection branch makes that scope
+boundary visible in code.
+
+### What warrants a second pair of eyes
+
+- Confirm the `TransitionResult` mapping remains the only route from a trace
+  event to the kernel; callers must not send arbitrary observations directly in
+  operational code.
+- Confirm future interaction obligations are added to
+  `ObligationsFromActions` and this kernel deliberately rather than treated as
+  implicit approvals.
+- Confirm model/replay users preserve the kernel's multiple-diagnostic order
+  where diagnostic parity matters.
+
+### What should be done in the future
+
+Run the Phase 9 differential and resilience gate matrix, then use the kernel
+as evidence for the cross-phase model/replay assurance tasks; do not expand it
+into an HTTP or Fosite dispatcher.
+
+### Code review instructions
+
+- Start at `internal/assurance/authorization_kernel.go`; inspect the small
+  state vector and the explicit closed observation switch.
+- Then read `internal/securitytrace/trace.go` from `Monitor.Observe` to see
+  validation, correlation, mapping, and kernel delegation stay separate.
+- Run the commands listed under **What worked**. To inspect the provider
+  behavior specifically, run the two security-trace tests named above.
+
+### Technical details
+
+```text
+validated Event
+  -> Event.Result() = (stable step, stable observation, stable outcome)
+  -> AuthorizationKernel.Apply(observation, outcome)
+  -> zero or more invariant diagnostics
+
+kernel state = { required obligations, authenticated, consented,
+                 terminal outcome, artifact committed }
+```
+
+The kernel accepts only authentication, consent, terminal, and artifact
+observations. It rejects every other member of the closed observation enum;
+that is a scope guard, not a claim that lambda or continuation observations are
+invalid in their own dedicated models.
