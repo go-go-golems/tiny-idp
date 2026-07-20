@@ -108,6 +108,9 @@ func TestNewProductionSignupManagerChecksAndActivatesOnlySupportedPrograms(t *te
 	if _, err := newProductionSignupManager(context.Background(), "not javascript", idp.NewMemorySink()); err == nil {
 		t.Fatal("invalid program accepted")
 	}
+	if _, err := newProductionSignupManager(context.Background(), idpsignup.EmailVerifiedSource, idp.NewMemorySink()); err == nil || !strings.Contains(err.Error(), "unsupported native services: email_challenge") {
+		t.Fatalf("unsupported email challenge error = %v", err)
+	}
 	capabilityProgram := `const A = require("tinyidp").v1;
 module.exports = A.program("unsupported-capability", p => {
   p.capabilities({"clock.now": {version:1}});

@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
@@ -323,14 +324,8 @@ func newProductionSignupManager(ctx context.Context, source string, audit idp.Si
 	if err != nil {
 		return nil, fmt.Errorf("check signup program: %w", err)
 	}
-	capabilities := artifact.Program().Capabilities
-	if len(capabilities) != 0 {
-		ids := make([]string, 0, len(capabilities))
-		for id := range capabilities {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		return nil, fmt.Errorf("signup program declares unsupported native capabilities: %s", strings.Join(ids, ", "))
+	if err := validateProductionSignupProgram(artifact.Program()); err != nil {
+		return nil, err
 	}
 	manager, err := idpsignup.NewGenerationManagerWithOptions(ctx, source, 1, 1, idpsignup.GenerationManagerOptions{Audit: audit})
 	if err != nil {
@@ -341,6 +336,40 @@ func newProductionSignupManager(ctx context.Context, source string, audit idp.Si
 		return nil, fmt.Errorf("active signup program is unavailable: %w", err)
 	}
 	return manager, nil
+}
+
+func validateProductionSignupProgram(program idpprogram.Program) error {
+	capabilities := program.Capabilities
+	if len(capabilities) != 0 {
+		ids := make([]string, 0, len(capabilities))
+		for id := range capabilities {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		return fmt.Errorf("signup program declares unsupported native capabilities: %s", strings.Join(ids, ", "))
+	}
+	unsupported := map[string]struct{}{}
+	for _, lambda := range program.Lambdas {
+		for _, outcome := range lambda.AllowedOutcomes {
+			if outcome == idpprogram.OutcomeChallenge {
+				unsupported["email_challenge"] = struct{}{}
+			}
+		}
+		for _, effect := range lambda.AllowedEffects {
+			if effect != idpprogram.EffectCreateLocalIdentity && effect != idpprogram.EffectAttachPasswordCredential {
+				unsupported["effect:"+string(effect)] = struct{}{}
+			}
+		}
+	}
+	if len(unsupported) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(unsupported))
+	for id := range unsupported {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return fmt.Errorf("signup program declares unsupported native services: %s", strings.Join(ids, ", "))
 }
 
 type productionListenerMode string

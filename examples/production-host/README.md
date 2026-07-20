@@ -32,6 +32,16 @@ openssl rand -out ./var/token-secret 32
 chmod 600 ./var/token-secret
 ```
 
+Choose the reviewed signup policy. The initial Message Desk staging policy is
+the repository's open-signup program. It is configuration, not a secret; the
+host checks and warms it before opening a listener. Programs that declare a
+native capability, email challenge, or non-local-account effect are rejected
+until that service has a deliberate production binding.
+
+```bash
+cp pkg/idpsignup/open_signup.js ./var/signup.js
+```
+
 Use a certificate whose SAN covers the issuer hostname, then run:
 
 ```bash
@@ -41,13 +51,15 @@ go run ./cmd/tinyidp serve-production \
   --db ./var/idp.db \
   --audit-path ./var/audit.jsonl \
   --token-secret-file ./var/token-secret \
+  --signup-program-file ./var/signup.js \
   --tls-cert ./var/tls.crt \
   --tls-key ./var/tls.key
 ```
 
 The liveness endpoint answers when the process is functioning. Readiness also
 checks SQLite/schema access, active signing-key validity, token-secret policy,
-audit delivery, rate limiting, and maintenance recency. A reverse proxy may
+the active scripted-signup generation, audit delivery, rate limiting, and
+maintenance recency. A reverse proxy may
 route only to a ready instance; it should restart on liveness failure, not on a
 temporary readiness failure.
 
