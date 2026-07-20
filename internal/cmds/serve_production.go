@@ -72,12 +72,14 @@ bounded requests, an explicit listener mode, maintenance, and graceful shutdown.
 This command intentionally reads no token secret from an environment variable
 or command-line value. Put at least 32 random bytes in an owner-only file and
 pass its path with --token-secret-file. Provision the database with the admin
-commands before startup.
+commands before startup. The required --signup-program-file is reviewed,
+non-secret JavaScript; startup checks and warms it before accepting traffic.
 
 Example:
   tinyidp serve-production --addr :8443 --issuer https://idp.example.test \
     --db /var/lib/tinyidp/idp.db --audit-path /var/log/tinyidp/audit.jsonl \
     --token-secret-file /run/secrets/tinyidp-token \
+    --signup-program-file /etc/tinyidp/signup.js \
     --tls-cert /run/tls/tls.crt --tls-key /run/tls/tls.key
 `),
 		cmds.WithFlags(

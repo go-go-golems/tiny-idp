@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-go-golems/glazed/pkg/cmds/schema"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 )
@@ -116,5 +117,23 @@ module.exports = A.program("unsupported-capability", p => {
 	_, err = newProductionSignupManager(context.Background(), capabilityProgram, idp.NewMemorySink())
 	if err == nil || !strings.Contains(err.Error(), "unsupported native capabilities: clock.now") {
 		t.Fatalf("unsupported capability error = %v", err)
+	}
+}
+
+func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t *testing.T) {
+	command, err := NewServeProductionCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	section, ok := command.Schema.Get(schema.DefaultSlug)
+	if !ok {
+		t.Fatal("default command section is unavailable")
+	}
+	program, ok := section.GetDefinitions().Get("signup-program-file")
+	if !ok || !program.Required {
+		t.Fatal("signup-program-file is not a required production flag")
+	}
+	if _, legacy := section.GetDefinitions().Get("registration-enabled"); legacy {
+		t.Fatal("legacy registration-enabled production flag is still exposed")
 	}
 }
