@@ -233,8 +233,17 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	rejected.Body.Close()
 	assertMessageListContains(t, browser, messageText)
 	assertMessageListExcludes(t, browser, "must not persist")
+	harness.stop("message-desk")
+	harness.stop("tinyidp")
+	harness.startTinyIDP()
+	harness.waitReady(harness.idpAddress, idpPublicOrigin, "/idp/readyz")
+	harness.startMessageDesk()
+	harness.waitReady(harness.messageAddress, messagePublicOrigin, "/readyz")
+	harness.assertSingleProviderIdentityAndSession()
+	restartedSession := readAuthenticatedSession(t, browser)
+	assertMessageListContains(t, browser, messageText)
 
-	providerLogout := browser.postEmpty(t, messagePublicOrigin+"/auth/logout", http.Header{"X-CSRF-Token": []string{sessionBody.CSRFToken}})
+	providerLogout := browser.postEmpty(t, messagePublicOrigin+"/auth/logout", http.Header{"X-CSRF-Token": []string{restartedSession.CSRFToken}})
 	requireStatus(t, providerLogout, http.StatusOK)
 	var providerLogoutBody struct {
 		EndSessionURL string `json:"endSessionUrl"`
@@ -523,7 +532,8 @@ func (h *harness) start(name, logPath, binary string, args ...string) {
 
 func (h *harness) stop(name string) {
 	h.t.Helper()
-	for _, process := range h.processes {
+	for index := len(h.processes) - 1; index >= 0; index-- {
+		process := h.processes[index]
 		if process.name == name {
 			process.stop(h.t)
 			return
