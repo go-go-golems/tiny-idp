@@ -5,19 +5,25 @@ package twoprocessharness
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 )
@@ -47,6 +53,82 @@ func TestTwoProcessLifecycle(t *testing.T) {
 	harness.requireLog("message-desk", "message application listening")
 }
 
+func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
+	t.Parallel()
+	harness := newHarness(t)
+	harness.build()
+	harness.initializeMessageDesk()
+	harness.startTinyIDP()
+	harness.waitReady(harness.idpAddress, idpPublicOrigin, "/idp/readyz")
+	harness.startIDPProxy()
+	harness.startMessageDesk()
+	harness.waitReady(harness.messageAddress, messagePublicOrigin, "/readyz")
+
+	browser := newPublicBrowser(harness)
+	registration := browser.get(t, messagePublicOrigin+"/auth/register?return_to=/messages")
+	requireStatus(t, registration, http.StatusSeeOther)
+	authorizeURL := requiredLocation(t, registration)
+	assertRegistrationAuthorization(t, authorizeURL)
+
+	formPage := browser.get(t, authorizeURL)
+	requireStatus(t, formPage, http.StatusOK)
+	page, err := io.ReadAll(formPage.Body)
+	formPage.Body.Close()
+	if err != nil {
+		t.Fatalf("read signup form: %v", err)
+	}
+	form := url.Values{
+		"action":                {"submit"},
+		"interaction":           {hiddenFormValue(t, page, "interaction")},
+		"workflow_continuation": {hiddenFormValue(t, page, "workflow_continuation")},
+		"csrf_token":            {hiddenFormValue(t, page, "csrf_token")},
+		"display_name":          {"Ada Lovelace"},
+		"email":                 {"ada@example.test"},
+		"password":              {"correct horse battery staple 2026"},
+		"password_confirmation": {"correct horse battery staple 2026"},
+	}
+	completed := browser.postForm(t, idpIssuer+"/authorize", form)
+	requireStatus(t, completed, http.StatusOK)
+	harness.assertSingleProviderIdentityAndSession()
+	consentPage, err := io.ReadAll(completed.Body)
+	completed.Body.Close()
+	if err != nil {
+		t.Fatalf("read authorization consent: %v", err)
+	}
+	approval := browser.postForm(t, idpIssuer+"/authorize", url.Values{
+		"action":      {"approve"},
+		"interaction": {hiddenFormValue(t, consentPage, "interaction")},
+		"csrf_token":  {hiddenFormValue(t, consentPage, "csrf_token")},
+	})
+	requireStatus(t, approval, http.StatusSeeOther)
+	callbackURL := requiredLocation(t, approval)
+	callback, err := url.Parse(callbackURL)
+	if err != nil || callback.Scheme != "https" || callback.Host != "message.example.test" || callback.Path != "/auth/callback" || callback.Query().Get("code") == "" || callback.Query().Get("state") == "" {
+		t.Fatalf("unexpected signup callback %q", callbackURL)
+	}
+
+	finished := browser.get(t, callbackURL)
+	requireStatus(t, finished, http.StatusSeeOther)
+	if location := requiredLocation(t, finished); location != "/messages" {
+		t.Fatalf("signup return location = %q, want /messages", location)
+	}
+	session := browser.get(t, messagePublicOrigin+"/api/session")
+	requireStatus(t, session, http.StatusOK)
+	var sessionBody struct {
+		Authenticated bool   `json:"authenticated"`
+		Subject       string `json:"subject"`
+		CSRFToken     string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(session.Body).Decode(&sessionBody); err != nil {
+		session.Body.Close()
+		t.Fatalf("decode application session: %v", err)
+	}
+	session.Body.Close()
+	if !sessionBody.Authenticated || sessionBody.Subject == "" || sessionBody.CSRFToken == "" {
+		t.Fatalf("application session after signup = %#v", sessionBody)
+	}
+}
+
 type harness struct {
 	t              *testing.T
 	root           string
@@ -57,6 +139,7 @@ type harness struct {
 	idpLog         string
 	messageLog     string
 	idpAudit       string
+	idpDatabase    string
 	messageState   string
 	idpProxy       *httptest.Server
 	processes      []*startedProcess
@@ -72,6 +155,7 @@ func newHarness(t *testing.T) *harness {
 		idpLog:       filepath.Join(root, "logs", "tinyidp.log"),
 		messageLog:   filepath.Join(root, "logs", "message-desk.log"),
 		idpAudit:     filepath.Join(root, "tinyidp", "audit", "events.jsonl"),
+		idpDatabase:  filepath.Join(root, "tinyidp", "state", "tinyidp.sqlite"),
 		messageState: filepath.Join(root, "message-desk"),
 	}
 }
@@ -145,10 +229,30 @@ func (h *harness) startTinyIDP() {
 		"--issuer", idpIssuer,
 		"--message-desk-origin", messagePublicOrigin,
 		"--signup-program-file", program,
-		"--db", filepath.Join(h.root, "tinyidp", "state", "tinyidp.sqlite"),
+		"--db", h.idpDatabase,
 		"--audit-path", h.idpAudit,
 		"--token-secret-file", secret,
 		"--trusted-proxy-cidrs", "127.0.0.1/32")
+}
+
+func (h *harness) assertSingleProviderIdentityAndSession() {
+	h.t.Helper()
+	database, err := sql.Open("sqlite3", "file:"+h.idpDatabase+"?mode=ro")
+	if err != nil {
+		h.t.Fatalf("open Tiny-IDP assertion database: %v", err)
+	}
+	defer database.Close()
+	context, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	for table, want := range map[string]int{"users": 1, "sessions": 1} {
+		var got int
+		if err := database.QueryRowContext(context, "SELECT COUNT(*) FROM "+table).Scan(&got); err != nil {
+			h.t.Fatalf("count Tiny-IDP %s: %v", table, err)
+		}
+		if got != want {
+			h.t.Fatalf("Tiny-IDP %s count = %d, want %d", table, got, want)
+		}
+	}
 }
 
 func (h *harness) startMessageDesk() {
@@ -256,6 +360,152 @@ func (h *harness) proxyRequest(method, address, publicOrigin, requestPath string
 	request.Header.Set("X-Forwarded-Proto", "https")
 	request.Header.Set("X-Forwarded-Host", publicURL)
 	return (&http.Client{Timeout: 2 * time.Second}).Do(request)
+}
+
+type publicBrowser struct {
+	harness *harness
+	cookies map[string]map[string]*http.Cookie
+	client  *http.Client
+}
+
+func newPublicBrowser(harness *harness) *publicBrowser {
+	return &publicBrowser{harness: harness, cookies: map[string]map[string]*http.Cookie{}, client: &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+}
+
+func (b *publicBrowser) get(t *testing.T, rawURL string) *http.Response {
+	t.Helper()
+	response, err := b.do(http.MethodGet, rawURL, nil, "")
+	if err != nil {
+		t.Fatalf("GET %s: %v", rawURL, err)
+	}
+	return response
+}
+
+func (b *publicBrowser) postForm(t *testing.T, rawURL string, form url.Values) *http.Response {
+	t.Helper()
+	response, err := b.do(http.MethodPost, rawURL, strings.NewReader(form.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		t.Fatalf("POST form %s: %v", rawURL, err)
+	}
+	return response
+}
+
+func (b *publicBrowser) do(method, rawURL string, body io.Reader, contentType string) (*http.Response, error) {
+	publicURL, err := url.Parse(rawURL)
+	if err != nil || publicURL.Scheme != "https" || publicURL.Host == "" {
+		return nil, fmt.Errorf("invalid public browser URL %q", rawURL)
+	}
+	address, ok := mapPublicHost(b.harness, publicURL.Host)
+	if !ok {
+		return nil, fmt.Errorf("unmapped public host %q", publicURL.Host)
+	}
+	target := *publicURL
+	target.Scheme, target.Host = "http", address
+	request, err := http.NewRequest(method, target.String(), body)
+	if err != nil {
+		return nil, err
+	}
+	request.Host = publicURL.Host
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Forwarded-Host", publicURL.Host)
+	if contentType != "" {
+		request.Header.Set("Content-Type", contentType)
+	}
+	if method != http.MethodGet && method != http.MethodHead {
+		request.Header.Set("Origin", publicURL.Scheme+"://"+publicURL.Host)
+	}
+	if values := b.cookies[publicURL.Host]; len(values) > 0 {
+		cookies := make([]string, 0, len(values))
+		for _, cookie := range values {
+			cookies = append(cookies, cookie.Name+"="+cookie.Value)
+		}
+		request.Header.Set("Cookie", strings.Join(cookies, "; "))
+	}
+	response, err := b.client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	b.storeCookies(publicURL.Host, response.Cookies())
+	return response, nil
+}
+
+func mapPublicHost(harness *harness, host string) (string, bool) {
+	switch host {
+	case "idp.example.test":
+		return harness.idpAddress, true
+	case "message.example.test":
+		return harness.messageAddress, true
+	default:
+		return "", false
+	}
+}
+
+func (b *publicBrowser) storeCookies(host string, cookies []*http.Cookie) {
+	if b.cookies[host] == nil {
+		b.cookies[host] = map[string]*http.Cookie{}
+	}
+	for _, cookie := range cookies {
+		if cookie.MaxAge < 0 {
+			delete(b.cookies[host], cookie.Name)
+			continue
+		}
+		cookieCopy := *cookie
+		b.cookies[host][cookie.Name] = &cookieCopy
+	}
+}
+
+func assertRegistrationAuthorization(t *testing.T, rawURL string) {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "idp.example.test" || parsed.Path != "/idp/authorize" {
+		t.Fatalf("registration authorize URL = %q", rawURL)
+	}
+	query := parsed.Query()
+	if query.Get("client_id") != "tinyidp-message-app" || query.Get("redirect_uri") != messagePublicOrigin+"/auth/callback" || query.Get("code_challenge_method") != "S256" || query.Get("tinyidp_signup") != "1" {
+		t.Fatalf("registration authorization contract = %s", query.Encode())
+	}
+	for _, required := range []string{"state", "nonce", "code_challenge"} {
+		if query.Get(required) == "" {
+			t.Fatalf("registration authorization missing %s: %s", required, query.Encode())
+		}
+	}
+	scopes := map[string]bool{}
+	for _, scope := range strings.Fields(query.Get("scope")) {
+		scopes[scope] = true
+	}
+	if !scopes["openid"] || !scopes["profile"] {
+		t.Fatalf("registration scopes = %q", query.Get("scope"))
+	}
+}
+
+func requireStatus(t *testing.T, response *http.Response, want int) {
+	t.Helper()
+	if response.StatusCode == want {
+		return
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	t.Fatalf("response status = %d, want %d: %s", response.StatusCode, want, body)
+}
+
+func requiredLocation(t *testing.T, response *http.Response) string {
+	t.Helper()
+	defer response.Body.Close()
+	location := response.Header.Get("Location")
+	if location == "" {
+		t.Fatalf("response %d has no Location", response.StatusCode)
+	}
+	return location
+}
+
+func hiddenFormValue(t *testing.T, page []byte, name string) string {
+	t.Helper()
+	re := regexp.MustCompile(`name="` + regexp.QuoteMeta(name) + `" value="([^"]+)"`)
+	matches := re.FindStringSubmatch(string(page))
+	if len(matches) != 2 {
+		t.Fatalf("hidden %q not found in signup page: %s", name, page)
+	}
+	return matches[1]
 }
 
 func neturl(origin string) (string, error) {
