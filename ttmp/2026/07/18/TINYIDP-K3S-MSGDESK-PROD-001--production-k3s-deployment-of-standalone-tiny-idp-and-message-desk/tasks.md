@@ -71,7 +71,7 @@ item has concrete evidence.
 - [x] Prove missing/invalid message CSRF is rejected without durable mutation <!-- t:p3f5 -->
 - [x] Prove local logout revokes only the Message Desk session <!-- t:p3f6 -->
 - [x] Prove provider logout and subsequent re-login follow the registered redirect contract <!-- t:hv5c -->
-- [ ] Test duplicate identity, weak password, malformed input, and generic non-enumerating public errors <!-- t:p3n1 -->
+- [x] Test duplicate identity, weak password, malformed input, and generic non-enumerating public errors <!-- t:p3n1 -->
 - [ ] Test expired, replayed, and concurrently submitted signup continuations <!-- t:p3n2 -->
 - [ ] Restart Tiny-IDP during a pending continuation and prove pinned resume or an explicit safe failure <!-- t:p3r1 -->
 - [ ] Restart Message Desk during a pending OIDC transaction and prove the declared durable-state behavior <!-- t:p3r2 -->

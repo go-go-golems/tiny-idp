@@ -1736,3 +1736,70 @@ is erased from the form.
 duplicate submitted email -> 400 + generic field error + redisplayed public email
                          -> no duplicate/existence text + users=1 + sessions=1
 ```
+
+## Step 22 — Phase 3 malformed registration target
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Finish the listed malformed public-input case at
+the relying-party boundary and close the public-error task with prior weak and
+duplicate evidence.
+
+**Inferred user intent:** An attacker-controlled redirect target must be
+rejected before it becomes an OAuth/OIDC or persistence operation.
+
+**Commit:** `3b94555` — "Test: reject malformed two-process registration return"
+
+### What I did
+
+- Requested `/auth/register` with `return_to=//attacker.example.test` from a
+  clean browser, asserted `400`, and verified the public response does not
+  reflect the attacker hostname.
+- Verified Tiny-IDP still has zero users and sessions in the negative prelude.
+
+### Why
+
+The relying party owns its local return path. Rejecting an ambiguous external
+target before issuing any authorization request prevents open redirects and
+unneeded durable protocol state.
+
+### What worked
+
+- Focused harness passed in 13.65 seconds. `3b94555` passed full tests, lint,
+  Glazed validation, and the IdP UI analyzer.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- The two-process harness now has concrete evidence for all three public error
+  categories named by `p3n1`: weak password, duplicate identity, and malformed
+  input, with generic/non-reflecting behavior as applicable.
+
+### What was tricky to build
+
+- This is intentionally tested at Message Desk rather than Tiny-IDP: a local
+  return target is relying-party state and must be rejected there.
+
+### What warrants a second pair of eyes
+
+- Continuation expiry/concurrency and process restarts remain separately open.
+
+### What should be done in the future
+
+- Implement continuation expiry/concurrency, restarts, and audit leak scan.
+
+### Code review instructions
+
+- Review the `malformedBrowser` request before the valid registration flow.
+
+### Technical details
+
+```text
+GET /auth/register?return_to=//attacker.example.test
+  -> 400, no attacker reflection, no IdP user/session state
+```
