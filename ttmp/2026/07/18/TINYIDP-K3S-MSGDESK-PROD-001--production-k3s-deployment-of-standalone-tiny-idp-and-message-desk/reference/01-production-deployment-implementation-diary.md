@@ -1462,3 +1462,76 @@ to end the separate IdP browser session.
 POST /auth/logout/local + app CSRF -> app session revoked
 IdP public-host cookie remains -> provider session unchanged
 ```
+
+## Step 18 — Phase 3 provider logout and fresh login
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Complete the provider-wide logout/re-login task
+using the real two-process browser path.
+
+**Inferred user intent:** Confirm that provider logout follows the exact
+registered redirect contract and cannot be confused with local app logout.
+
+**Commit:** `2e46b16` — "Test: cover two-process provider logout and relogin"
+
+### What I did
+
+- Posted authenticated Message Desk `/auth/logout`, decoded the returned
+  end-session URL, and asserted its exact Tiny-IDP issuer, client ID, and
+  registered post-logout redirect URI.
+- Followed it as a browser request; asserted Tiny-IDP redirects only to the
+  registered Message Desk origin and clears IdP-host cookies.
+- Started a new `/auth/login` transaction, supplied the existing account
+  credentials to the provider, followed the registered callback, and confirmed
+  a fresh authenticated application session.
+
+### Why
+
+Provider logout has a different authority boundary: it ends Tiny-IDP context
+and must use an exact pre-registered redirect, while local logout must not.
+
+### What worked
+
+- Focused harness passed in 6.34 seconds. `2e46b16` passed full repository
+  tests, lint, Glazed CLI validation, and the IdP UI analyzer.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- Consent previously granted to this client remains policy state, so the fresh
+  credential login can return directly to the registered callback.
+
+### What was tricky to build
+
+- The provider end-session URL is browser-facing and must retain the public
+  HTTPS issuer even though the test's internal discovery/token traffic uses the
+  trusted proxy boundary.
+
+### What warrants a second pair of eyes
+
+- Review the explicit exact-string redirect assertion whenever registered
+  logout URI handling changes.
+
+### What should be done in the future
+
+- Continue with malformed/duplicate/replay continuation cases, restarts, and
+  secret-leak scanning.
+
+### Code review instructions
+
+- Review provider logout through `readAuthenticatedSession` in the two-process
+  registration harness test.
+
+### Technical details
+
+```text
+app POST /auth/logout -> exact public IdP end-session URL
+browser GET end-session -> registered Message Desk redirect + IdP cookie clear
+fresh /auth/login -> password -> registered callback -> new app session
+```
