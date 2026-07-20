@@ -1398,3 +1398,67 @@ Desk's own app session and CSRF defense. This validates both process boundaries.
 valid app session + Origin + X-CSRF-Token -> 201 -> durable message
 valid app session + Origin without token  -> 403 -> no durable message
 ```
+
+## Step 17 — Phase 3 local logout boundary
+
+### Prompt Context
+
+**User prompt (verbatim):** "track it and phase 3"
+
+**Assistant interpretation:** Prove local logout ends the relying-party session
+without clearing Tiny-IDP's separate browser context.
+
+**Inferred user intent:** Preserve the intentional distinction between an app
+logout and provider-wide logout in the deployable topology.
+
+**Commit:** `c7f6a28` — "Test: cover two-process local logout"
+
+### What I did
+
+- Posted `/auth/logout/local` with the authenticated application CSRF token.
+- Asserted `204`, then observed an unauthenticated Message Desk session while
+  the browser still retains a Tiny-IDP-hosted cookie.
+
+### Why
+
+Local logout must revoke only the application session; it is not an authority
+to end the separate IdP browser session.
+
+### What worked
+
+- The focused harness passed in 6.35 seconds; `c7f6a28` passed the full test,
+  lint, Glazed, and IdP UI analyzer pre-commit gate.
+
+### What didn't work
+
+- Nothing failed.
+
+### What I learned
+
+- The public-origin cookie model can distinguish cookies by host, making this
+  two-session policy directly observable.
+
+### What was tricky to build
+
+- The assertion deliberately checks both postconditions; an app-only logout
+  test that checked only `/api/session` could miss accidental provider logout.
+
+### What warrants a second pair of eyes
+
+- Provider logout and re-login remain separate pending Phase 3 work.
+
+### What should be done in the future
+
+- Complete provider logout/re-login, negative continuation, restart, and audit
+  leak evidence.
+
+### Code review instructions
+
+- Review the local-logout assertions in `TestTwoProcessRegistrationRedirectAndSignup`.
+
+### Technical details
+
+```text
+POST /auth/logout/local + app CSRF -> app session revoked
+IdP public-host cookie remains -> provider session unchanged
+```
