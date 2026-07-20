@@ -788,3 +788,105 @@ commit request -> native atomic account service -> resume OIDC
 Tiny-IDP startup -> schema + signing key + exact browser client
 Kubernetes       -> no competing bootstrap Job
 ```
+
+## Step 11: Decompose the remaining delivery into precise checkpoints
+
+The re-baselined task list identified the correct phases but still grouped
+several days of implementation and validation into single checkboxes. That
+would make progress ambiguous: for example, program loading, capability
+binding, activation, readiness, and failure tests could not be tracked
+independently.
+
+I expanded every remaining phase into dependency-ordered checkpoints. Existing
+stable IDs were retained for completed work and for the broad milestones they
+still represent; new IDs identify individual construction, security,
+validation, publishing, rollout, and recovery outcomes.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Create detailed tasks in the ticket if you don't already, so we can precisely track your progress"
+
+**Assistant interpretation:** Replace coarse remaining ticket entries with
+small, objective tasks that can be checked immediately after their evidence is
+committed.
+
+**Inferred user intent:** Make future autonomous implementation observable and
+prevent large phases from appearing stalled or complete without proof.
+
+### What I did
+
+- Split production composition into removal, file loading, checking, service
+  construction, capability binding, activation, bootstrap, readiness, and
+  focused-test tasks.
+- Split the two-process proof into lifecycle, happy-path, negative, restart,
+  leakage-scan, and repository-gate tasks.
+- Split image delivery into construction, filesystem security, paired smoke,
+  publishing, GitOps metadata, and source-PR tasks.
+- Split GitOps into each Kubernetes, Vault, network, backup, validation, secret
+  seeding, and PR result.
+- Split live acceptance and recovery into individually observable checks.
+
+### Why
+
+- Each checkbox should correspond to one reviewable outcome and its evidence.
+- Dependency order makes the next safe action obvious without inventing work
+  outside the ticket.
+- Separate negative tests and operational checks prevent a happy-path demo from
+  being mistaken for production completion.
+
+### What worked
+
+- The existing phase gates mapped cleanly onto detailed tasks without changing
+  the approved project scope.
+- Existing task IDs could be preserved while adding stable IDs for the newly
+  exposed substeps.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- The most important tracking boundary is between constructing the Goja runtime
+  and proving its behavior through the actual two-process OIDC flow.
+- Cluster work also needs separate desired-state and live-acceptance tasks;
+  manifest rendering is not production evidence.
+
+### What was tricky to build
+
+- Granularity had to improve without expanding scope. I therefore decomposed
+  only work already implied by the approved design and acceptance matrix; I did
+  not add device authorization, multi-app support, password recovery, or new
+  product capabilities.
+
+### What warrants a second pair of eyes
+
+- Review Phase 2 ordering around bootstrap versus generation activation when
+  implementation starts; both must complete before readiness, but constructors
+  may impose a more precise internal order.
+- Review the eventual production policy choice before the public acceptance
+  tasks are run.
+
+### What should be done in the future
+
+- Check tasks immediately after the corresponding code/test commit and cite the
+  commit in the diary and changelog.
+- Begin with `t:p2i1`; do not start images or GitOps before Phase 3 passes.
+
+### Code review instructions
+
+- Read `tasks.md` from Phase 2 through Phase 7 and verify each entry has an
+  observable completion criterion.
+- Run `docmgr task list --ticket TINYIDP-K3S-MSGDESK-PROD-001` and
+  `docmgr doctor --ticket TINYIDP-K3S-MSGDESK-PROD-001 --stale-after 30`.
+
+### Technical details
+
+```text
+Phase 2  production composition and focused contracts
+Phase 3  real two-process behavioral proof
+Phase 4  immutable same-commit images
+Phase 5  GitOps desired state and PR
+Phase 6  public reconciliation and acceptance
+Phase 7  restored-state proof and closure
+```
