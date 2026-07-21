@@ -38,3 +38,11 @@ Completed Phases 1–5: activated TinyIDP durable signup invitations, added atom
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py — Executable seven-stage local product contract
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml — Shared HTTPS local deployment topology
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/go-go-goja/pkg/gojahttp/auth/membershipinvite/sqlstore/sqlstore.go — Atomic application membership and invitation transaction
+
+## 2026-07-21
+
+Phase 6 design: specified the transactional, idempotent, conflict-safe, audited production administrator bootstrap and generated-host operator CLI contract.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/21/TINYIDP-INVITES-001--professional-signup-invitations-and-application-membership-invitations/design-doc/02-production-administrator-bootstrap-design-and-implementation-guide.md — Follow-on design and implementation sequence

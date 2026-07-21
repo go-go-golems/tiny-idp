@@ -1,7 +1,7 @@
 ---
 Title: Professional signup invitations and application membership invitations
 Ticket: TINYIDP-INVITES-001
-Status: complete
+Status: active
 Topics:
     - oidc
     - identity
@@ -29,13 +29,14 @@ The design reuses existing durable TinyIDP invitation and go-go-goja capability 
 ## Key documents
 
 - [Professional invitation core and application membership invitation design and implementation guide](./design-doc/01-professional-invitation-core-and-application-membership-invitation-design-and-implementation-guide.md)
+- [Production administrator bootstrap design and implementation guide](./design-doc/02-production-administrator-bootstrap-design-and-implementation-guide.md)
 - [Investigation diary](./reference/01-investigation-diary.md)
 - [Implementation tasks](./tasks.md)
 - [Changelog](./changelog.md)
 
 ## Current status
 
-All ticket tasks through local Phase 5 are complete. TinyIDP production invitation activation, the concrete per-client signup workflow, atomic go-go-goja membership acceptance, safe OIDC continuation, deterministic local bootstrap, and the full browser acceptance suite are implemented and passing. k3s and GitOps remain deliberately outside this ticket's completed scope.
+All original ticket tasks through local Phase 5 are complete. Phase 6 replaces the deterministic raw-SQL application bootstrap with a transactional, audited, idempotent generated-host operator command. k3s and GitOps remain outside this follow-on phase.
 
 ## Core decision
 

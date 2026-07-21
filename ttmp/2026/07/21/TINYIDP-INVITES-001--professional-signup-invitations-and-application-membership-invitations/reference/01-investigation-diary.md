@@ -122,6 +122,76 @@ create browser session
 consume authorization interaction
 ```
 
+## Step 8: Specify the production administrator bootstrap
+
+I reopened the completed invitation ticket with a narrowly scoped Phase 6. The earlier local deployment bootstrap proved the authorization topology, but it did so with a PostgreSQL script that knew internal table names and a precomputed application user ID. The new design makes that desired state a typed, transactional application operation and exposes it through an explicitly mounted generated-host operator command.
+
+The design requires the OIDC issuer and immutable subject as the authority key, treats email and display name as metadata, forbids reassignment on conflicts, and commits the appauth state and audit event together. It also keeps k3s, GitOps, general user administration, and TinyIDP account creation outside this phase.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, add a design/implementation guide for the bootstrap part and the relevant tasks, into the ticket (no need for an extravagant implementation doc), and then implement it, keeping a detailed diary and committing at appropriate interval."
+
+**Assistant interpretation:** Add a concise implementation-grade bootstrap design and precise Phase 6 tasks to the existing invitation ticket, then replace raw SQL with a tested operator command in coherent commits while maintaining the diary.
+
+**Inferred user intent:** Turn the locally proven first-administrator fixture into a safe repeatable operation suitable for a later production deployment.
+
+**Commit (documentation):** pending
+
+### What I did
+
+- Read the ticket's existing Phase 3 and Phase 5 bootstrap evidence.
+- Inspected the generated host command-provider architecture, appauth stores, audit store, runtime plan, Compose service, and raw `bootstrap.sql`.
+- Added a focused design document and five Phase 6 tasks.
+- Marked the ticket active while preserving all completed historical tasks.
+
+### Why
+
+- Raw deployment SQL duplicates domain rules and can silently drift from the Go identity normalization contract.
+- The first administrator is an application authorization concern, not a TinyIDP account-creation side effect.
+- A production bootstrap must be retry-safe, conflict-safe, secret-safe, and auditable.
+
+### What worked
+
+- The existing provider command-set mechanism offers an explicit way for generated binaries to opt into an operator command.
+- The appauth and audit schemas can share one SQL transaction in a small native reconciler.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The current Compose bootstrap hardcodes the deterministic `appauth.OIDCUserID`, so replacing it also removes a fragile cross-repository calculation from deployment configuration.
+- Building the entire HTTP auth service graph is unnecessary for this offline operation; the command can open only its declared appauth database.
+
+### What was tricky to build
+
+- The design had to distinguish useful reconciliation of mutable metadata from forbidden reassignment of immutable identity ownership.
+- Audit atomicity requires the reconciler to own the transaction rather than chaining existing store methods that each execute independently.
+
+### What warrants a second pair of eyes
+
+- Review the decision to reconcile mutable organization metadata while rejecting tenant/resource ownership conflicts.
+- Review which database failures should be returned as stable typed conflicts versus ordinary wrapped SQL errors.
+
+### What should be done in the future
+
+- Translate the command invocation into a Vault-backed k3s Job only in the later deployment ticket.
+
+### Code review instructions
+
+- Start with `design-doc/02-production-administrator-bootstrap-design-and-implementation-guide.md`.
+- Compare its invariants with `examples/tinyidp-shared-two-apps/bootstrap.sql` and `appauth.OIDCUserID`.
+
+### Technical details
+
+```text
+(issuer, subject) --immutable--> application user
+application user + organization --reconciled--> active admin membership
+all desired rows + audit event --one transaction--> commit or rollback
+```
+
 The proposed application commit order is:
 
 ```text
