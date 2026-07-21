@@ -55,3 +55,14 @@ Fixed remembered-session signup continuation loading (c7a2cb7) and added the ini
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Initial real-browser UX journeys
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Preserves authoritative interaction bindings
 
+
+## 2026-07-21
+
+Explained duplicate-email signup failures with a themed workflow-level recovery error and verified it through the Playwright duplicate-email journey (21456f9).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Live duplicate-email browser regression
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Maps duplicate commit failures to safe user guidance
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/workflow.go — Closed global workflow-error contract
+

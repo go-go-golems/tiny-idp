@@ -14,7 +14,9 @@ RelatedFiles:
     - Path: repo://examples/tinyidp-message-app/ui/src/App.tsx
       Note: Separated account action navigation (commit 4b15802)
     - Path: repo://examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts
-      Note: Playwright journeys (commit 34959ea)
+      Note: |-
+        Playwright journeys (commit 34959ea)
+        Playwright duplicate-email regression (commit 21456f9)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
@@ -26,11 +28,15 @@ RelatedFiles:
     - Path: repo://internal/fositeadapter/rendering.go
       Note: Terminal browser error response boundary (commit dffc6c4)
     - Path: repo://internal/fositeadapter/scripted_signup.go
-      Note: Remembered-session continuation fix (commit c7a2cb7)
+      Note: |-
+        Remembered-session continuation fix (commit c7a2cb7)
+        Duplicate commit mapping (commit 21456f9)
     - Path: repo://internal/productionui/renderer.go
       Note: Per-client error theme selection (commit dffc6c4)
     - Path: repo://pkg/idpui/browser_error.go
       Note: Bounded terminal error model (commit dffc6c4)
+    - Path: repo://pkg/idpui/workflow.go
+      Note: Global duplicate-identity error model (commit 21456f9)
     - Path: repo://pkg/idpworkflow/descriptors.go
       Note: Production-aligned public password bounds (commit 2c136ee)
     - Path: repo://pkg/idpworkflow/submission.go
@@ -41,6 +47,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -957,4 +964,110 @@ interaction.SessionIDHash = empty (intentional add-account behavior)
 old loader expectation    = hash(current tinyidp_session) (incorrect)
 new loader expectation    = interaction.SessionIDHash (empty, authoritative)
 browser CSRF binding      = interaction.BrowserBindingHash (still required)
+```
+
+## Step 11: Distinguish duplicate identity from password rejection
+
+The reported password submission used a 19-character value and the browser
+received a correctly themed retry page. The TinyIDP audit record established
+that the password was not rejected: the native commit failed with
+`duplicate_login` because the submitted email already belongs to an account.
+
+The workflow had already advanced past its email page, so attaching that
+failure to the visible password field would mislead the user. I added a small,
+closed global workflow-error model for this specific case. It renders fixed
+public copy and a return link to the already-validated relying-application
+origin, without echoing an account record or exposing a backend error.
+
+### Prompt Context
+
+**User prompt (verbatim):** A password submission was reported as rejected;
+the supplied password value is deliberately omitted from the diary because it
+is credential material.
+
+**Assistant interpretation:** Determine whether the password policy rejected
+the submitted value and fix the misleading UX if another validation boundary
+was responsible.
+
+**Inferred user intent:** Signup feedback must identify the actual correction
+the user can make rather than applying generic password copy to every failed
+commit.
+
+**Commit (code):** `21456f9` — "fix: explain duplicate signup identities"
+
+### What I did
+
+- Inspected the local IDP audit log for the exact request time.
+- Confirmed `account.self_registration` was rejected with reason
+  `duplicate_login`, not `password_rejected`.
+- Added `WorkflowGlobalError` with the closed
+  `duplicate_identity` public error code.
+- Rendered the global alert in the default and themed production workflow
+  templates, with an application-return link only when a validated redirect
+  origin is available.
+- Mapped `idpstore.ErrDuplicate` at the native signup commit boundary to that
+  global error, and updated the Playwright duplicate-email assertion.
+
+### Why
+
+- The password fields are the only fields on the final signup page. A field
+  error there would falsely say that a valid password was invalid.
+- The email was explicitly submitted as part of signup, so direct
+  duplicate-email guidance is appropriate in this context; login errors remain
+  generic.
+
+### What worked
+
+- Focused `pkg/idpui`, `internal/productionui`, and
+  `internal/fositeadapter` test packages passed.
+- The full pre-commit suite, including `go test ./...`, lint, Glazed lint, and
+  the UI analyzer, passed before the code commit.
+
+### What didn't work
+
+- The first global-error renderer test omitted a redirect origin, so it could
+  not legitimately expect a return link. Adding the validated test origin made
+  the intended conditional behavior explicit.
+
+### What I learned
+
+- The `password_rejected` UI copy was accurate for actual password policy
+  failures, but this request never reached that branch.
+- A workflow can discover a correctable error about data collected on an
+  earlier page. Such an error needs page-level presentation rather than an
+  invented field association.
+
+### What was tricky to build
+
+- Error copy must be both useful and bounded. The global model exposes only a
+  closed provider-owned code and fixed text; neither store errors nor account
+  metadata enter the template.
+
+### What warrants a second pair of eyes
+
+- Review the explicit-signup duplicate disclosure boundary and the wording of
+  the return action for applications whose landing page does not offer login.
+
+### What should be done in the future
+
+- Persist and render the script-selected workflow title, so the password stage
+  says `Choose a password` rather than the current provider default
+  `Create an account`.
+- Complete the remaining Playwright matrix scenarios.
+
+### Code review instructions
+
+- Review `WorkflowGlobalError`, its template use, and the
+  `idpstore.ErrDuplicate` branch in `resumeScriptedSignup`.
+- Run `go test ./pkg/idpui ./internal/productionui ./internal/fositeadapter -count=1`.
+- Rebuild local `idp` and run `pnpm exec playwright test -g 'duplicate email'`
+  from `examples/tinyidp-shared-two-apps/browser-tests`.
+
+### Technical details
+
+```text
+password input --> native commit --> idpstore.ErrDuplicate
+                                  --> audit: duplicate_login
+                                  --> WorkflowGlobalError{duplicate_identity}
+                                  --> themed HTML + validated application return link
 ```
