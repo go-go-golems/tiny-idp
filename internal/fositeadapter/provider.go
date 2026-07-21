@@ -1200,21 +1200,37 @@ func authorizeRegistrationIntent(values url.Values) (bool, error) {
 // sameOriginBrowserPost adds browser-context checks to the interaction's
 // cryptographic CSRF token. It derives the expected origin from the public
 // request Host: the listener/proxy enforces canonical Host handling, while the
-// interaction rejects a cross-site form before account creation. Missing Fetch
-// Metadata is accepted for browser compatibility; a supplied cross-site value
-// is never accepted.
+// interaction rejects a cross-site form before account creation.
+//
+// Browsers serialize Origin as "null" for a basic form POST when the form was
+// served with Referrer-Policy: no-referrer. In that case, accept the request
+// only when browser-controlled Fetch Metadata independently identifies a
+// user-activated, same-origin, top-level document navigation. This deliberately
+// does not accept a generic null origin, which can also be produced by sandboxed
+// or opaque-origin documents.
 func sameOriginBrowserPost(r *http.Request) bool {
 	if r == nil || r.Header.Get("Origin") == "" || r.Host == "" {
 		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "null" {
+		return headerEquals(r, "Sec-Fetch-Site", "same-origin") &&
+			headerEquals(r, "Sec-Fetch-Mode", "navigate") &&
+			headerEquals(r, "Sec-Fetch-Dest", "document") &&
+			headerEquals(r, "Sec-Fetch-User", "?1")
 	}
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if r.Header.Get("Origin") != scheme+"://"+r.Host {
+	if origin != scheme+"://"+r.Host {
 		return false
 	}
 	return strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) != "cross-site"
+}
+
+func headerEquals(r *http.Request, name, expected string) bool {
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get(name)), expected)
 }
 
 func clearBytes(value []byte) {
