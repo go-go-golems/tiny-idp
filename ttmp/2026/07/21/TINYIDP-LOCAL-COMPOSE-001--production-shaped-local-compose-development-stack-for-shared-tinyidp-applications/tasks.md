@@ -12,3 +12,10 @@
 - [x] Route rejected registration POSTs through the client-specific themed error page without changing OAuth redirects. <!-- t:m3o9 -->
 - [x] Add unit, renderer, and provider integration coverage for themed registration rejection pages. <!-- t:x755 -->
 - [x] Rebuild the local stack and validate the themed rejection response over trusted HTTPS. <!-- t:141x -->
+- [x] Define the browser-state, identity-state, application-state, and validation-path test matrix with explicit UI expectations. <!-- t:zpds -->
+- [ ] Add a Playwright test project for the real local HTTPS Compose stack with trusted CA, deterministic fixtures, screenshots, traces, and failure artifacts. <!-- t:c08j -->
+- [ ] Cover signup validation paths: malformed email, duplicate email, short password, password mismatch, email code failures, and invite failures. <!-- t:m17w -->
+- [ ] Cover session navigation paths: first login, remembered-account selection, add-account signup, Message Desk-only logout, TinyIDP logout, and account switching. <!-- t:gix8 -->
+- [ ] Cover both relying applications and assert themed HTML for recoverable and terminal authentication failures. <!-- t:r9rq -->
+- [ ] Classify browser-test failures in the defect ledger and implement the provider or application UX fixes without weakening security checks. <!-- t:8vbu -->
+- [ ] Run the complete Playwright matrix against a fresh and retained local stack, document evidence, and close the discovered defects. <!-- t:1lta -->

@@ -36,3 +36,12 @@ Allowed explicit signup to start from an active remembered TinyIDP session and a
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py — Exact local-logout then signup regression journey
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Explicit registration now creates and switches identity without preemptive logout
 
+
+## 2026-07-21
+
+Defined the Playwright browser-state and authentication UX matrix, phased harness plan, and initial defect ledger.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/21/TINYIDP-LOCAL-COMPOSE-001--production-shaped-local-compose-development-stack-for-shared-tinyidp-applications/design-doc/03-playwright-browser-state-and-authentication-ux-test-matrix.md — Intern implementation and review guide
+
