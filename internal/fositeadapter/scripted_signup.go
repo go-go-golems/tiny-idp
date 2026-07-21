@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
@@ -163,6 +166,21 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	if err != nil || p.workflowContinuations.ValidateResumeInput(r.Context(), continuation, input) != nil {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
+	}
+	if workflowHasField(fields, idpworkflow.FieldInviteCode) {
+		invitationEvidence, invitationErr := p.validateSignupInvitationProviders(r.Context(), executor, input, record.ClientID)
+		if invitationErr != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.invitation_validation", ClientID: record.ClientID, Result: "rejected", Reason: "invitation_rejected"})
+			p.renderScriptedSignupFieldError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpworkflow.FieldInviteCode)
+			return
+		}
+		if evidence == nil {
+			evidence = map[string]json.RawMessage{}
+		}
+		for providerID, value := range invitationEvidence {
+			evidence[providerID] = value
+		}
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.invitation_validation", ClientID: record.ClientID, Result: "accepted"})
 	}
 	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationStarted, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionApplied})
 	outcome, err := executor.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, signupSubmissionSecrets(submission), evidence)
@@ -381,6 +399,7 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 	now := p.now()
 	sessionHash := idpstore.HashSecret(p.csrfKey, sessionHandle)
 	session := idpstore.Session{IDHash: sessionHash, UserID: prepared.User.ID, AuthTime: now, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(p.sessionTTL)}
+	var redeemedInvitation idpinvite.DurableEvidence
 	err = p.store.Update(ctx, func(tx idpstore.TxStore) error {
 		continuationStore, ok := tx.(idpcontinuation.Store)
 		if !ok {
@@ -393,7 +412,9 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 			return err
 		}
 		if len(outcome.Effects) == 3 {
-			if _, err := p.durableInvitations.RedeemInTransaction(ctx, tx, invitation.Code, record.ClientID, now); err != nil {
+			var err error
+			redeemedInvitation, err = p.durableInvitations.RedeemInTransaction(ctx, tx, invitation.Code, record.ClientID, now)
+			if err != nil {
 				return err
 			}
 		}
@@ -409,7 +430,48 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 	}
 	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.NativeEffectCommitted, InteractionID: interactionTraceID(record), Transition: assurance.StepSignupCommit, Outcome: assurance.TransitionApplied})
 	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.ContinuationTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationConsume, Outcome: assurance.TransitionApplied})
+	if redeemedInvitation.InvitationID != "" {
+		p.recordAudit(ctx, idp.Event{Time: now, Name: "signup_invitation.consumed", ClientID: record.ClientID, Subject: prepared.User.Sub, Result: "accepted", Fields: map[string]string{"invitation_id": redeemedInvitation.InvitationID, "policy_version": redeemedInvitation.PolicyVersion}})
+	}
 	return signupCommitResult{User: prepared.User, SessionHandle: sessionHandle, SessionHash: sessionHash}, nil
+}
+
+func (p *Provider) validateSignupInvitationProviders(ctx context.Context, executor *idpsignup.Executor, input json.RawMessage, audience string) (map[string]json.RawMessage, error) {
+	if p.durableInvitations == nil {
+		return nil, errors.New("durable invitation service is unavailable")
+	}
+	providerIDs := make([]string, 0)
+	for id, provider := range executor.Program().Providers {
+		if provider.Kind == idpprogram.ProviderKindInvitation && provider.State == idpprogram.ProviderStateDurable {
+			providerIDs = append(providerIDs, id)
+		}
+	}
+	if len(providerIDs) == 0 {
+		return nil, errors.New("signup form requires an undeclared durable invitation provider")
+	}
+	sort.Strings(providerIDs)
+	capability, err := idpinvite.NewLookupCapability(p.durableInvitations, audience, p.now)
+	if err != nil {
+		return nil, err
+	}
+	evidence := make(map[string]json.RawMessage, len(providerIDs))
+	for _, providerID := range providerIDs {
+		outcome, invokeErr := executor.InvokeProvider(ctx, providerID, idpprogram.InvitationValidateHandler, input, map[string]idpscript.CapabilityBinding{idpinvite.LookupCapabilityID: capability})
+		if invokeErr != nil || outcome.Kind != idpprogram.OutcomeComplete {
+			return nil, errors.New("signup invitation was rejected")
+		}
+		evidence[providerID] = json.RawMessage(`{"accepted":true}`)
+	}
+	return evidence, nil
+}
+
+func workflowHasField(fields []idpworkflow.FieldDescriptor, expected idpworkflow.FieldID) bool {
+	for _, field := range fields {
+		if field.ID == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func submissionSecrets(submission idpworkflow.Submission, passwordToken, confirmationToken string) ([]byte, []byte, bool) {
@@ -444,6 +506,14 @@ func (p *Provider) renderScriptedSignupError(w http.ResponseWriter, r *http.Requ
 	errorField := idpworkflow.FieldEmail
 	if len(fields) > 0 {
 		errorField = fields[0].ID
+	}
+	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: idpworkflow.ErrorRejected}}))
+}
+
+func (p *Provider) renderScriptedSignupFieldError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, errorField idpworkflow.FieldID) {
+	if !workflowHasField(fields, errorField) {
+		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, values)
+		return
 	}
 	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: idpworkflow.ErrorRejected}}))
 }

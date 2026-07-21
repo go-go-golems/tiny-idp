@@ -15,7 +15,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
 
-func NewAdminCommand() *cobra.Command {
+func NewAdminCommand() (*cobra.Command, error) {
 	var dbPath string
 	cmd := &cobra.Command{
 		Use:   "admin",
@@ -34,9 +34,14 @@ throwaway databases only.`,
 	cmd.AddCommand(newAdminClientCommand(&dbPath))
 	cmd.AddCommand(newAdminKeysCommand(&dbPath))
 	cmd.AddCommand(newAdminUserCommand(&dbPath))
+	invitation, err := newAdminInvitationCommand(&dbPath)
+	if err != nil {
+		return nil, err
+	}
+	cmd.AddCommand(invitation)
 	cmd.AddCommand(newAdminBackupCommand(&dbPath))
 	cmd.AddCommand(newAdminExportCommand(&dbPath))
-	return cmd
+	return cmd, nil
 }
 
 func newAdminUserCommand(dbPath *string) *cobra.Command {

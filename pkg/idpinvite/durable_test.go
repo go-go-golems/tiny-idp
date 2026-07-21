@@ -90,3 +90,26 @@ func TestDurableInvitationSurvivesSQLiteRestartAndRemainsOneTime(t *testing.T) {
 	_, err = service.Redeem(context.Background(), "restart", "message-app", now)
 	assert.ErrorIs(t, err, idpstore.ErrAlreadyConsumed)
 }
+
+func TestDurableInvitationRedemptionRollsBackWithCallerTransaction(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	service, err := idpinvite.NewDurableService(store, []byte("0123456789abcdef0123456789abcdef"))
+	require.NoError(t, err)
+	now := time.Date(2026, time.July, 21, 20, 0, 0, 0, time.UTC)
+	require.NoError(t, service.Issue(ctx, idpinvite.DurableIssue{Code: "rollback", ID: "invite-rollback", Audience: "goja-client", PolicyVersion: "v1", ExpiresAt: now.Add(time.Hour)}))
+
+	injected := errors.New("injected account commit failure")
+	err = store.Update(ctx, func(tx idpstore.TxStore) error {
+		if _, redeemErr := service.RedeemInTransaction(ctx, tx, "rollback", "goja-client", now); redeemErr != nil {
+			return redeemErr
+		}
+		return injected
+	})
+	require.ErrorIs(t, err, injected)
+	inspection, err := service.Inspect(ctx, "rollback", "goja-client", now)
+	require.NoError(t, err)
+	assert.Equal(t, "invite-rollback", inspection.InvitationID)
+}

@@ -35,6 +35,17 @@ type DurableEvidence struct {
 	RedeemedAt    time.Time
 }
 
+// DurableInspection is the redacted, read-only projection returned while a
+// signup program is deciding whether to present or commit. Inspection never
+// reserves or redeems the invitation; the native signup transaction must call
+// RedeemInTransaction before relying on it.
+type DurableInspection struct {
+	InvitationID  string    `json:"invitationId"`
+	Audience      string    `json:"audience"`
+	PolicyVersion string    `json:"policyVersion"`
+	ExpiresAt     time.Time `json:"expiresAt"`
+}
+
 // DurableService applies the invitation-code secrecy boundary before asking
 // the shared store to create or consume durable state.
 type DurableService struct {
@@ -63,6 +74,32 @@ func (s *DurableService) Issue(ctx context.Context, issue DurableIssue) error {
 		PolicyVersion: issue.PolicyVersion,
 		ExpiresAt:     issue.ExpiresAt.UTC(),
 	})
+}
+
+// Inspect validates current invitation state without mutating it. A later
+// redemption deliberately repeats every security check inside the caller's
+// transaction, closing the time-of-check/time-of-use window.
+func (s *DurableService) Inspect(ctx context.Context, code, audience string, now time.Time) (DurableInspection, error) {
+	if s == nil || s.store == nil || !validText(code) || !validText(audience) || now.IsZero() {
+		return DurableInspection{}, errors.New("durable invitation inspection request is invalid")
+	}
+	invitation, err := s.store.GetDurableInvitation(ctx, s.codeHash(code))
+	if err != nil {
+		return DurableInspection{}, err
+	}
+	if invitation.Audience != audience {
+		return DurableInspection{}, idpstore.ErrNotFound
+	}
+	if invitation.RevokedAt != nil {
+		return DurableInspection{}, idpstore.ErrInvitationRevoked
+	}
+	if !invitation.ExpiresAt.After(now) {
+		return DurableInspection{}, idpstore.ErrExpired
+	}
+	if invitation.RedeemedAt != nil {
+		return DurableInspection{}, idpstore.ErrAlreadyConsumed
+	}
+	return DurableInspection{InvitationID: invitation.ID, Audience: invitation.Audience, PolicyVersion: invitation.PolicyVersion, ExpiresAt: invitation.ExpiresAt.UTC()}, nil
 }
 
 // Redeem atomically consumes an invitation in its own transaction. Signup

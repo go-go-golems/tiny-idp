@@ -25,6 +25,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/productionui"
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
@@ -46,6 +47,7 @@ type serveProductionSettings struct {
 	DBPath              string   `glazed:"db"`
 	AuditPath           string   `glazed:"audit-path"`
 	TokenSecretFile     string   `glazed:"token-secret-file"`
+	InvitationKeyFile   string   `glazed:"invitation-lookup-key-file"`
 	TLSCertFile         string   `glazed:"tls-cert"`
 	TLSKeyFile          string   `glazed:"tls-key"`
 	TrustedProxyCIDRs   []string `glazed:"trusted-proxy-cidrs"`
@@ -101,6 +103,7 @@ Example:
 			fields.New("db", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Provisioned SQLite database path")),
 			fields.New("audit-path", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Synchronous JSONL audit path")),
 			fields.New("token-secret-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Owner-only file containing at least 32 random bytes")),
+			fields.New("invitation-lookup-key-file", fields.TypeString, fields.WithHelp("Owner-only 32-byte HMAC key; required when the signup program declares a durable invitation provider")),
 			fields.New("tls-cert", fields.TypeString, fields.WithHelp("TLS certificate PEM path; required only for direct-tls")),
 			fields.New("tls-key", fields.TypeString, fields.WithHelp("TLS private-key PEM path; required only for direct-tls")),
 			fields.New("trusted-proxy-cidrs", fields.TypeStringList, fields.WithHelp("Required only for trusted-proxy-http; narrow CIDRs allowed to supply forwarded metadata")),
@@ -155,6 +158,18 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	if err != nil {
 		return err
 	}
+	signupProgram, err := checkProductionSignupProgram(ctx, signupSource)
+	if err != nil {
+		return err
+	}
+	var invitationLookupKey []byte
+	if productionProgramRequiresDurableInvitations(signupProgram) {
+		invitationLookupKey, err = readOwnerOnlySecret(settings.InvitationKeyFile)
+		if err != nil {
+			return fmt.Errorf("read invitation lookup key: %w", err)
+		}
+		defer clearProductionSecret(invitationLookupKey)
+	}
 	clientCatalog, err := productionconfig.LoadClientCatalog(settings.ClientsFile)
 	if err != nil {
 		return err
@@ -170,6 +185,15 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(settings.DBPath))
 	if err != nil {
 		return err
+	}
+	var durableInvitations *idpinvite.DurableService
+	if len(invitationLookupKey) != 0 {
+		durableInvitations, err = idpinvite.NewDurableService(store, invitationLookupKey)
+		if err != nil {
+			_ = store.Close()
+			return fmt.Errorf("construct durable invitation service: %w", err)
+		}
+		clearProductionSecret(invitationLookupKey)
 	}
 	audit, err := idp.NewFileAuditSink(settings.AuditPath)
 	if err != nil {
@@ -210,7 +234,8 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		RateLimiter:   idp.NewFixedWindowRateLimiter(settings.RateLimit, rateWindow),
 		ClientAddress: addressResolver,
 		ScriptedSignup: embeddedidp.ScriptedSignupConfig{
-			GenerationManager: signupManager,
+			GenerationManager:  signupManager,
+			DurableInvitations: durableInvitations,
 		},
 		Maintenance: embeddedidp.MaintenanceConfig{Interval: maintenanceInterval},
 		UI:          embeddedidp.UIConfig{Renderer: interactionUI, WorkflowRenderer: interactionUI},
@@ -345,11 +370,8 @@ func readProductionSignupProgram(path string) (string, error) {
 }
 
 func newProductionSignupManager(ctx context.Context, source string, audit idp.Sink) (*idpsignup.GenerationManager, error) {
-	artifact, err := idpsignup.Compile(ctx, source)
+	_, err := checkProductionSignupProgram(ctx, source)
 	if err != nil {
-		return nil, fmt.Errorf("check signup program: %w", err)
-	}
-	if err := validateProductionSignupProgram(artifact.Program()); err != nil {
 		return nil, err
 	}
 	manager, err := idpsignup.NewGenerationManagerWithOptions(ctx, source, 1, 1, idpsignup.GenerationManagerOptions{Audit: audit})
@@ -363,17 +385,46 @@ func newProductionSignupManager(ctx context.Context, source string, audit idp.Si
 	return manager, nil
 }
 
+func checkProductionSignupProgram(ctx context.Context, source string) (idpprogram.Program, error) {
+	artifact, err := idpsignup.Compile(ctx, source)
+	if err != nil {
+		return idpprogram.Program{}, fmt.Errorf("check signup program: %w", err)
+	}
+	program := artifact.Program()
+	if err := validateProductionSignupProgram(program); err != nil {
+		return idpprogram.Program{}, err
+	}
+	return program, nil
+}
+
 func validateProductionSignupProgram(program idpprogram.Program) error {
-	capabilities := program.Capabilities
-	if len(capabilities) != 0 {
-		ids := make([]string, 0, len(capabilities))
-		for id := range capabilities {
-			ids = append(ids, id)
+	unsupportedCapabilities := make([]string, 0)
+	for id, requirement := range program.Capabilities {
+		if id != idpinvite.LookupCapabilityID || requirement.Version != idpinvite.LookupCapabilityVersion {
+			unsupportedCapabilities = append(unsupportedCapabilities, id)
 		}
-		sort.Strings(ids)
-		return fmt.Errorf("signup program declares unsupported native capabilities: %s", strings.Join(ids, ", "))
+	}
+	if len(unsupportedCapabilities) != 0 {
+		sort.Strings(unsupportedCapabilities)
+		return fmt.Errorf("signup program declares unsupported native capabilities: %s", strings.Join(unsupportedCapabilities, ", "))
+	}
+	durableProvider := false
+	for _, provider := range program.Providers {
+		if provider.Kind != idpprogram.ProviderKindInvitation || provider.State != idpprogram.ProviderStateDurable {
+			continue
+		}
+		durableProvider = true
+		handler, ok := provider.Handlers[idpprogram.InvitationValidateHandler]
+		lambda, lambdaOK := program.Lambdas[handler.LambdaID]
+		if !ok || !lambdaOK || !lambdaRequiresCapability(lambda, idpinvite.LookupCapabilityID, idpinvite.LookupCapabilityVersion) {
+			return fmt.Errorf("durable invitation provider %q must bind validate to invitation.lookup@v1", provider.ID)
+		}
+	}
+	if _, declared := program.Capabilities[idpinvite.LookupCapabilityID]; declared && !durableProvider {
+		return fmt.Errorf("signup program declares invitation.lookup without a durable invitation provider")
 	}
 	unsupported := map[string]struct{}{}
+	usesInvitationEffect := false
 	for _, lambda := range program.Lambdas {
 		for _, outcome := range lambda.AllowedOutcomes {
 			if outcome == idpprogram.OutcomeChallenge {
@@ -381,10 +432,17 @@ func validateProductionSignupProgram(program idpprogram.Program) error {
 			}
 		}
 		for _, effect := range lambda.AllowedEffects {
+			if effect == idpprogram.EffectConsumeInvitation {
+				usesInvitationEffect = true
+				continue
+			}
 			if effect != idpprogram.EffectCreateLocalIdentity && effect != idpprogram.EffectAttachPasswordCredential {
 				unsupported["effect:"+string(effect)] = struct{}{}
 			}
 		}
+	}
+	if usesInvitationEffect && !durableProvider {
+		unsupported["effect:consumeInvitation_without_durable_provider"] = struct{}{}
 	}
 	if len(unsupported) == 0 {
 		return nil
@@ -395,6 +453,24 @@ func validateProductionSignupProgram(program idpprogram.Program) error {
 	}
 	sort.Strings(ids)
 	return fmt.Errorf("signup program declares unsupported native services: %s", strings.Join(ids, ", "))
+}
+
+func productionProgramRequiresDurableInvitations(program idpprogram.Program) bool {
+	for _, provider := range program.Providers {
+		if provider.Kind == idpprogram.ProviderKindInvitation && provider.State == idpprogram.ProviderStateDurable {
+			return true
+		}
+	}
+	return false
+}
+
+func lambdaRequiresCapability(lambda idpprogram.LambdaSpec, id string, version uint32) bool {
+	for _, requirement := range lambda.RequiredCapabilities {
+		if requirement.ID == id && requirement.Version == version {
+			return true
+		}
+	}
+	return false
 }
 
 type productionListenerMode string

@@ -147,6 +147,15 @@ func TestNewProductionSignupManagerChecksAndActivatesOnlySupportedPrograms(t *te
 	if _, err := newProductionSignupManager(context.Background(), idpsignup.EmailVerifiedSource, idp.NewMemorySink()); err == nil || !strings.Contains(err.Error(), "unsupported native services: email_challenge") {
 		t.Fatalf("unsupported email challenge error = %v", err)
 	}
+	inviteManager, err := newProductionSignupManager(context.Background(), idpsignup.InviteRequiredSource, idp.NewMemorySink())
+	if err != nil {
+		t.Fatalf("supported durable invitation program rejected: %v", err)
+	}
+	defer inviteManager.Close(context.Background())
+	inviteArtifact, err := idpsignup.Compile(context.Background(), idpsignup.InviteRequiredSource)
+	if err != nil || !productionProgramRequiresDurableInvitations(inviteArtifact.Program()) {
+		t.Fatalf("durable invitation requirement was not detected: %v", err)
+	}
 	capabilityProgram := `const A = require("tinyidp").v1;
 module.exports = A.program("unsupported-capability", p => {
   p.capabilities({"clock.now": {version:1}});
@@ -171,6 +180,10 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	program, ok := section.GetDefinitions().Get("signup-program-file")
 	if !ok || !program.Required {
 		t.Fatal("signup-program-file is not a required production flag")
+	}
+	lookupKey, ok := section.GetDefinitions().Get("invitation-lookup-key-file")
+	if !ok || lookupKey.Required {
+		t.Fatal("invitation lookup key must be conditionally required by the selected program")
 	}
 	if _, legacy := section.GetDefinitions().Get("registration-enabled"); legacy {
 		t.Fatal("legacy registration-enabled production flag is still exposed")

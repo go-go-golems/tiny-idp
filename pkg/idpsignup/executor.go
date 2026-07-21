@@ -25,6 +25,9 @@ var DefaultSource string
 //go:embed email_verified_signup.js
 var EmailVerifiedSource string
 
+//go:embed invite_required_signup.js
+var InviteRequiredSource string
+
 const (
 	WorkflowID       = "signup"
 	StartHandler     = "start"
@@ -351,6 +354,20 @@ func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input j
 	}
 	e.auditInvocation(ctx, outcome, nil)
 	return outcome, nil
+}
+
+// InvokeProvider routes a declared provider handler through this executor's
+// exact compiled generation. Native callers supply only the capabilities
+// required for this invocation; the provider receives no ambient host service.
+func (e *Executor) InvokeProvider(ctx context.Context, providerID, handlerID string, input json.RawMessage, capabilities map[string]idpscript.CapabilityBinding) (idpprogram.Outcome, error) {
+	if e == nil || e.pool == nil {
+		return idpprogram.Outcome{}, errors.New("signup provider is unavailable")
+	}
+	invoker, err := idpscript.NewProviderInvoker(e.pool)
+	if err != nil {
+		return idpprogram.Outcome{}, err
+	}
+	return invoker.Invoke(ctx, providerID, handlerID, input, capabilities)
 }
 
 func (e *Executor) auditInvocation(ctx context.Context, outcome idpprogram.Outcome, invocationErr error) {
