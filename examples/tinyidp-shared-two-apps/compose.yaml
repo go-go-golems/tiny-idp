@@ -48,7 +48,13 @@ services:
         mkdir -p /state/audit
         if [ ! -s /state/token.key ]; then dd if=/dev/urandom of=/state/token.key bs=32 count=1 status=none; fi
         chmod 0600 /state/token.key
-        exec tinyidp serve-production --addr=:8081 --listener-mode=trusted-proxy-http --issuer=https://idp.localhost:8443 --clients-file=/config/clients.json --theme-dir=/config --theme-catalog-file=/config/themes.json --signup-program-file=/config/open-signup.js --db=/state/tinyidp.sqlite --audit-path=/state/audit/audit.jsonl --token-secret-file=/state/token.key --trusted-proxy-cidrs=172.31.0.0/24
+        if ! tinyidp admin --db=/state/tinyidp.sqlite user get --login=admin@example.test >/dev/null 2>&1; then
+          tinyidp admin --db=/state/tinyidp.sqlite user create --login=admin@example.test --id=local-admin --sub=local-admin --email=admin@example.test --email-verified --name='Local Administrator' --password-from-stdin </state/.secrets/local_admin_password
+        fi
+        if ! tinyidp admin --db=/state/tinyidp.sqlite user get --login=invitee@example.test >/dev/null 2>&1; then
+          tinyidp admin --db=/state/tinyidp.sqlite user create --login=invitee@example.test --id=local-invitee --sub=local-invitee --email=invitee@example.test --email-verified --name='Local Invitee' --password-from-stdin </state/.secrets/local_invitee_password
+        fi
+        exec tinyidp serve-production --addr=:8081 --listener-mode=trusted-proxy-http --issuer=https://idp.localhost:8443 --clients-file=/config/clients.json --theme-dir=/config --theme-catalog-file=/config/themes.json --signup-program-file=/config/open-signup.js --db=/state/tinyidp.sqlite --audit-path=/state/audit/audit.jsonl --token-secret-file=/state/token.key --invitation-lookup-key-file=/state/.secrets/invitation_lookup_key --trusted-proxy-cidrs=172.31.0.0/24
     depends_on:
       ca-export:
         condition: service_completed_successfully
@@ -61,6 +67,7 @@ services:
       - ./goja-auth.css:/config/goja-auth.css:ro
       - ./open-signup.js:/config/open-signup.js:ro
       - local-ca:/trust:ro
+    secrets: [local_admin_password, local_invitee_password, invitation_lookup_key]
     healthcheck:
       test: ["CMD-SHELL", "curl --cacert /trust/caddy-local-root.crt -fsS --resolve idp.localhost:8443:172.31.0.2 https://idp.localhost:8443/readyz >/dev/null"]
       interval: 5s
@@ -113,7 +120,9 @@ services:
       retries: 24
 
   goja-auth:
-    image: ghcr.io/go-go-golems/go-go-goja-auth-host:sha-cd1429f
+    build:
+      context: ../../../go-go-goja
+      dockerfile: Dockerfile.auth-host
     command: ["serve", "sites", "demo"]
     environment:
       XGOJA_OIDC_DEMO_HTTP_LISTEN: :8080
@@ -148,6 +157,31 @@ services:
     # HTTP client. scripts/02-smoke.sh checks readiness through the real TLS
     # proxy instead of weakening the image solely for a container healthcheck.
 
+  goja-bootstrap:
+    image: postgres:17-alpine
+    environment:
+      PGPASSWORD: goja-local-development-only
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        for attempt in $$(seq 1 60); do
+          if psql -h postgres -U goja -d goja_auth -tAc "SELECT to_regclass('public.auth_app_users')" | grep -q auth_app_users; then
+            psql -h postgres -U goja -d goja_auth -v ON_ERROR_STOP=1 -f /bootstrap/bootstrap.sql
+            exit 0
+          fi
+          sleep 1
+        done
+        echo 'goja auth schema did not become available' >&2
+        exit 1
+    volumes:
+      - ./bootstrap.sql:/bootstrap/bootstrap.sql:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+      goja-auth: {condition: service_started}
+    networks: [goja-database]
+    restart: "no"
+
 networks:
   idp-backend: {ipam: {config: [{subnet: 172.31.0.0/24}]}}
   message-backend: {ipam: {config: [{subnet: 172.32.0.0/24}]}}
@@ -161,3 +195,11 @@ volumes:
   caddy-data:
   caddy-config:
   local-ca:
+
+secrets:
+  local_admin_password:
+    file: ./runtime/secrets/local-admin-password.txt
+  local_invitee_password:
+    file: ./runtime/secrets/local-invitee-password.txt
+  invitation_lookup_key:
+    file: ./runtime/secrets/invitation-lookup.key

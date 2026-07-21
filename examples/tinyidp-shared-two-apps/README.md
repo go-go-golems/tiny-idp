@@ -13,14 +13,28 @@ The public endpoints are:
 - `https://idp.localhost:8443` — TinyIDP's canonical issuer. Start login or
   signup from an application, not by opening `/authorize` without parameters.
 
+The local-only, email-verified operator fixtures are:
+
+- `admin@example.test` / `local-admin-password-2026!` — bootstrapped as the
+  administrator of the goja demo organization.
+- `invitee@example.test` / `local-invitee-password-2026!` — has no initial
+  application membership and is used to prove existing-user invitation
+  acceptance.
+
+These credentials are generated only under the gitignored `runtime/secrets/`
+directory and are deliberately unsuitable for any shared or production
+environment.
+
 ## Start and verify
 
 Run from this directory:
 
 ```sh
+./scripts/00-init-secrets.sh
 docker compose up --build -d
 ./scripts/01-export-browser-ca.sh
 ./scripts/02-smoke.sh
+./scripts/03-browser-acceptance.py
 docker compose ps -a
 ```
 
@@ -28,6 +42,21 @@ docker compose ps -a
 not a crashed server. The goja image is distroless, so the project validates
 its readiness from `02-smoke.sh` through the public proxy instead of adding a
 shell or HTTP client to the runtime image.
+
+`03-browser-acceptance.py` uses independent cookie jars and the exported local
+CA to exercise the complete HTTPS/OIDC behavior:
+
+- Message Desk account creation without an invitation;
+- goja account creation with a one-time TinyIDP signup invitation;
+- preservation of an opaque application-invite continuation through OIDC;
+- retryable rejection when that new password-only identity lacks a verified
+  email claim;
+- successful, atomic membership creation for the verified invitee fixture;
+- rejection of both signup-invite and membership-invite replay; and
+- tenant-queryable application audit plus TinyIDP issuance/redemption audit.
+
+The script calls Docker Compose only for operator invitation issuance and
+read-only database/audit assertions. Bearer codes are never written to disk.
 
 ## Trust the local CA in a browser
 
@@ -101,14 +130,17 @@ production secret, Vault token, or live database is read by this project.
 
 ## Local go-go-goja iteration
 
-The base file uses the published immutable goja auth-host image so TinyIDP can
-be cloned and run alone. To rebuild from a sibling go-go-goja checkout, copy
-`compose.goja-local.yaml.example` to `compose.goja-local.yaml`, replace its
-placeholder build context, then run:
+This Phase 5 workspace intentionally builds `goja-auth` from the sibling
+`../../../go-go-goja` checkout. Rebuild only that service after changing the
+auth host or JavaScript routes:
 
 ```sh
-docker compose -f compose.yaml -f compose.goja-local.yaml up --build -d
+docker compose up --build -d goja-auth
 ```
+
+The generated host image is distroless. Inspect it through Compose logs and
+the public readiness/acceptance scripts rather than adding debugging packages
+to the runtime image.
 
 ## Logs and diagnosis
 
