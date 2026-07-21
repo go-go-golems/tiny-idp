@@ -58,10 +58,13 @@ type WorkflowFieldError struct {
 // password selection, where no email input is rendered.
 type WorkflowGlobalErrorCode string
 
-const WorkflowErrorDuplicateIdentity WorkflowGlobalErrorCode = "duplicate_identity"
+const (
+	WorkflowErrorDuplicateIdentity    WorkflowGlobalErrorCode = "duplicate_identity"
+	WorkflowErrorDuplicateDisplayName WorkflowGlobalErrorCode = "duplicate_display_name"
+)
 
 func (c WorkflowGlobalErrorCode) Valid() bool {
-	return c == WorkflowErrorDuplicateIdentity
+	return c == WorkflowErrorDuplicateIdentity || c == WorkflowErrorDuplicateDisplayName
 }
 
 type WorkflowGlobalError struct {
@@ -71,6 +74,9 @@ type WorkflowGlobalError struct {
 func (e WorkflowGlobalError) Summary() string {
 	if e.Code == WorkflowErrorDuplicateIdentity {
 		return "An account already uses this email address. Return to the application to sign in, or restart signup with a different email address."
+	}
+	if e.Code == WorkflowErrorDuplicateDisplayName {
+		return "That display name was claimed while your signup was in progress. Return to the application and restart signup with a different display name."
 	}
 	return "This request could not be completed."
 }
@@ -160,6 +166,9 @@ func (e WorkflowFieldError) Summary() string {
 	case idpworkflow.ErrorRejected:
 		if e.Field == idpworkflow.FieldPassword || e.Field == idpworkflow.FieldPasswordConfirmation {
 			return "Use at least 15 characters and choose a password that is difficult to guess."
+		}
+		if e.Field == idpworkflow.FieldDisplayName {
+			return "That display name is already in use. Choose another."
 		}
 		return "This value could not be accepted."
 	case idpworkflow.ErrorInvalid:

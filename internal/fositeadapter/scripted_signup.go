@@ -183,7 +183,13 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.invitation_validation", ClientID: record.ClientID, Result: "accepted"})
 	}
 	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationStarted, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionApplied})
-	outcome, err := executor.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, signupSubmissionSecrets(submission), evidence)
+	capabilities, capabilityErr := p.signupRuntimeCapabilities(r.Context(), executor, continuation.ResumeHandlerID)
+	if capabilityErr != nil {
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationRejected, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionRejected})
+		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+		return
+	}
+	outcome, err := executor.InvokeSubmissionWithCapabilities(r.Context(), continuation.ResumeHandlerID, input, capabilities, signupSubmissionSecrets(submission), evidence)
 	if err != nil {
 		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationRejected, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionRejected})
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
@@ -221,6 +227,10 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, continuationBindings, record, clientAddress, verifiedEmail)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: signupCommitFailureReason(err)})
+		if errors.Is(err, idpstore.ErrDisplayNameTaken) {
+			p.renderScriptedSignupGlobalError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpui.WorkflowErrorDuplicateDisplayName)
+			return
+		}
 		if errors.Is(err, idpstore.ErrDuplicate) {
 			p.renderScriptedSignupGlobalError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpui.WorkflowErrorDuplicateIdentity)
 			return
@@ -229,6 +239,51 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	p.completeScriptedSignup(w, r, ar, client, record, registered)
+}
+
+func (p *Provider) signupRuntimeCapabilities(_ context.Context, executor *idpsignup.Executor, handler string) (map[string]idpscript.CapabilityBinding, error) {
+	workflow, ok := executor.Program().Workflows[idpsignup.WorkflowID]
+	if !ok {
+		return nil, errors.New("signup workflow is unavailable")
+	}
+	handlerSpec, ok := workflow.Handlers[handler]
+	if !ok {
+		return nil, errors.New("signup handler is unavailable")
+	}
+	lambda, ok := executor.Program().Lambdas[handlerSpec.LambdaID]
+	if !ok {
+		return nil, errors.New("signup handler lambda is unavailable")
+	}
+	bindings := map[string]idpscript.CapabilityBinding{}
+	for _, requirement := range lambda.RequiredCapabilities {
+		if requirement.ID != idpaccounts.DisplayNameLookupCapabilityID || requirement.Version != idpaccounts.DisplayNameLookupCapabilityVersion {
+			return nil, errors.Errorf("signup runtime capability %q is unsupported", requirement.ID)
+		}
+		if p.registration == nil {
+			return nil, errors.New("signup account service is unavailable")
+		}
+		bindings[requirement.ID] = idpscript.CapabilityBinding{
+			Requirement: requirement, MaxInputBytes: 1024, MaxOutputBytes: 128,
+			Invoke: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				var request struct {
+					DisplayName string `json:"displayName"`
+				}
+				decoder := json.NewDecoder(strings.NewReader(string(raw)))
+				decoder.DisallowUnknownFields()
+				if err := decoder.Decode(&request); err != nil {
+					return nil, errors.Wrap(err, "decode display-name lookup request")
+				}
+				available, err := p.registration.DisplayNameAvailable(ctx, request.DisplayName)
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(struct {
+					Available bool `json:"available"`
+				}{Available: available})
+			},
+		}
+	}
+	return bindings, nil
 }
 
 func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Request, executor *idpsignup.Executor, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string, evidenceReferences []idpcontinuation.EvidenceReference) error {
@@ -362,8 +417,9 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 		return signupCommitResult{}, errors.New("signup script emitted an invalid effect sequence")
 	}
 	var identity struct {
-		Login       string `json:"login"`
-		DisplayName string `json:"displayName"`
+		Login                    string `json:"login"`
+		DisplayName              string `json:"displayName"`
+		RequireUniqueDisplayName bool   `json:"requireUniqueDisplayName"`
 	}
 	var credential struct {
 		PasswordHandle             string `json:"passwordHandle"`
@@ -391,7 +447,7 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.EffectValidationCompleted, InteractionID: interactionTraceID(record), Transition: assurance.StepEffectValidate, Outcome: assurance.TransitionApplied})
 	defer clearBytes(password)
 	defer clearBytes(confirmation)
-	prepared, err := p.registration.PrepareCreate(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login, EmailVerified: verifiedEmail != ""})
+	prepared, err := p.registration.PrepareCreate(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login, EmailVerified: verifiedEmail != "", RequireUniqueDisplayName: identity.RequireUniqueDisplayName})
 	if err != nil {
 		p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.NativeEffectCommitted, InteractionID: interactionTraceID(record), Transition: assurance.StepSignupCommit, Outcome: assurance.TransitionRejected})
 		return signupCommitResult{}, err

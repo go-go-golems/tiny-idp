@@ -19,8 +19,12 @@ RelatedFiles:
       Note: Closed JavaScript signup effect boundary.
     - Path: repo://pkg/idpaccounts/accounts.go
       Note: Account preparation and atomic credential commit.
+    - Path: repo://pkg/idpaccounts/display_name_lookup.go
+      Note: Bounded identity display-name lookup contract.
     - Path: repo://pkg/idpstore/interfaces.go
       Note: Durable store contracts.
+    - Path: repo://pkg/idpui/workflow.go
+      Note: Themed field and global recovery messages.
     - Path: repo://pkg/sqlitestore/store.go
       Note: SQLite user storage implementation.
 ExternalSources: []
@@ -29,6 +33,7 @@ LastUpdated: 2026-07-21T19:39:02.099353707-04:00
 WhatFor: Implement optional, production-safe unique display names in scripted TinyIDP signup.
 WhenToUse: Use when a relying application needs display names to act as unique public handles without turning JavaScript into the authority for durable identity state.
 ---
+
 
 
 # Durable unique display names: analysis, design, and implementation guide

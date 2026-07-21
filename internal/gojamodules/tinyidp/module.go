@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"reflect"
 	"time"
 
 	"github.com/dop251/goja"
@@ -543,8 +544,9 @@ func optionalValue(value goja.Value) any {
 func signupEffects(vm *goja.Runtime, spec *goja.Object, password, confirmation idpworkflow.SecretHandle) []map[string]any {
 	effects := []map[string]any{
 		{"kind": idpprogram.EffectCreateLocalIdentity, "payload": map[string]any{
-			"login":       requireString(vm, spec.Get("login"), "signup login"),
-			"displayName": requireString(vm, spec.Get("displayName"), "signup display name"),
+			"login":                    requireString(vm, spec.Get("login"), "signup login"),
+			"displayName":              requireString(vm, spec.Get("displayName"), "signup display name"),
+			"requireUniqueDisplayName": optionalBoolean(vm, spec.Get("uniqueDisplayName"), "signup unique display name"),
 		}},
 		{"kind": idpprogram.EffectAttachPasswordCredential, "payload": map[string]any{
 			"passwordHandle":             password.Token(),
@@ -556,6 +558,16 @@ func signupEffects(vm *goja.Runtime, spec *goja.Object, password, confirmation i
 		effects = append(effects, map[string]any{"kind": idpprogram.EffectConsumeInvitation, "payload": map[string]any{"code": inviteCode}})
 	}
 	return effects
+}
+
+func optionalBoolean(vm *goja.Runtime, value goja.Value, name string) bool {
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
+		return false
+	}
+	if value.ExportType().Kind() != reflect.Bool {
+		panic(vm.NewTypeError("%s must be a boolean", name))
+	}
+	return value.ToBoolean()
 }
 
 func requireSecretHandle(vm *goja.Runtime, secrets *InvocationSecrets, value goja.Value, name string) idpworkflow.SecretHandle {

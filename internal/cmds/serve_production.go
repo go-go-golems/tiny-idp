@@ -25,6 +25,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/productionui"
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge/smtpmailer"
 	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
@@ -228,7 +229,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		_ = store.Close()
 		return err
 	}
-	signupManager, err := newProductionSignupManager(ctx, signupSource, audit, productionSignupServices{EmailChallenges: emailChallenges != nil})
+	signupManager, err := newProductionSignupManager(ctx, signupSource, audit, productionSignupServices{EmailChallenges: emailChallenges != nil, DisplayNameLookup: true})
 	if err != nil {
 		_ = audit.Close()
 		_ = store.Close()
@@ -399,7 +400,8 @@ func readProductionSignupProgram(path string) (string, error) {
 }
 
 type productionSignupServices struct {
-	EmailChallenges bool
+	EmailChallenges   bool
+	DisplayNameLookup bool
 }
 
 func newProductionSignupManager(ctx context.Context, source string, audit idp.Sink, services productionSignupServices) (*idpsignup.GenerationManager, error) {
@@ -433,7 +435,9 @@ func checkProductionSignupProgram(ctx context.Context, source string, services p
 func validateProductionSignupProgram(program idpprogram.Program, services productionSignupServices) error {
 	unsupportedCapabilities := make([]string, 0)
 	for id, requirement := range program.Capabilities {
-		if id != idpinvite.LookupCapabilityID || requirement.Version != idpinvite.LookupCapabilityVersion {
+		supported := id == idpinvite.LookupCapabilityID && requirement.Version == idpinvite.LookupCapabilityVersion ||
+			id == idpaccounts.DisplayNameLookupCapabilityID && requirement.Version == idpaccounts.DisplayNameLookupCapabilityVersion && services.DisplayNameLookup
+		if !supported {
 			unsupportedCapabilities = append(unsupportedCapabilities, id)
 		}
 	}

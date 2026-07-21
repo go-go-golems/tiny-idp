@@ -1,7 +1,10 @@
 const A = require("tinyidp").v1;
 
 module.exports = A.program("shared-verified-open-and-invite-signup", program => {
-  program.capabilities({"invitation.lookup": {version: 1}});
+  program.capabilities({
+    "identity.displayName.lookup": {version: 1},
+    "invitation.lookup": {version: 1},
+  });
 
   const validateInvitation = A.lambda("invitation.signup.validate", {
     kind: "provider",
@@ -42,17 +45,32 @@ module.exports = A.program("shared-verified-open-and-invite-signup", program => 
 
   const submitted = A.lambda("signup.submitted", {
     input: "signupSubmittedInput", output: "signupResult",
-    outcomes: ["challenge"], effects: [], capabilities: [],
-    timeoutMs: 250, maxCapabilityCalls: 0, maxOutputBytes: 4096,
-    run: ctx => ctx.challenge.emailCode({
-      email: ctx.input.email,
-      template: "signup-code",
-      resume: "emailVerified",
-      expiresInSeconds: 900,
-      maximumAttempts: 5,
-      maximumResends: 2,
-      carry: ctx.input,
-    }),
+    outcomes: ["present", "challenge"], effects: [], capabilities: ["identity.displayName.lookup"],
+    timeoutMs: 250, maxCapabilityCalls: 1, maxOutputBytes: 4096,
+    run: async ctx => {
+      const result = await ctx.cap.identity.displayName.lookup({displayName: ctx.input.displayName});
+      if (!result.available) {
+        return ctx.present.form({
+          title: "Create an account",
+          resume: "submitted",
+          fields: [A.field.displayName(), A.field.email()],
+          actions: [A.action.submit(), A.action.deny()],
+          values: ctx.input,
+          errors: [{field: A.field.displayName(), code: "rejected"}],
+          carry: {},
+          expiresInSeconds: 300,
+        });
+      }
+      return ctx.challenge.emailCode({
+        email: ctx.input.email,
+        template: "signup-code",
+        resume: "emailVerified",
+        expiresInSeconds: 900,
+        maximumAttempts: 5,
+        maximumResends: 2,
+        carry: ctx.input,
+      });
+    },
   });
 
   const emailVerified = A.lambda("signup.emailVerified", {
@@ -82,6 +100,7 @@ module.exports = A.program("shared-verified-open-and-invite-signup", program => 
     run: ctx => ctx.commit.signup({
       login: ctx.input.email,
       displayName: ctx.input.displayName,
+      uniqueDisplayName: true,
       password: ctx.secret.password,
       passwordConfirmation: ctx.secret.passwordConfirmation,
       inviteCode: ctx.input.inviteCode || "",
@@ -94,6 +113,7 @@ module.exports = A.program("shared-verified-open-and-invite-signup", program => 
     handlers: {start, submitted, emailVerified, passwordSubmitted},
     edges: [
       {from: "start", outcome: "present", to: "submitted", input: "signupSubmittedInput"},
+      {from: "submitted", outcome: "present", to: "submitted", input: "signupSubmittedInput"},
       {from: "submitted", outcome: "challenge", to: "emailVerified", input: "signupSubmittedInput"},
       {from: "emailVerified", outcome: "present", to: "passwordSubmitted", input: "signupSubmittedInput"},
     ],
@@ -115,5 +135,11 @@ module.exports = A.program("shared-verified-open-and-invite-signup", program => 
     lambda: "signup.start",
     input: {clientId: "tinyidp-message-app", redirectUri: "https://message.example/callback", requestedScope: "openid", interactionId: "message", hasBrowserSession: false},
     expectedKind: "present",
+  });
+  program.test("display-name-collision-represents-signup", {
+    lambda: "signup.submitted",
+    input: {displayName: "Taken", email: "taken@example.test"},
+    expectedKind: "present",
+    fakes: {"identity.displayName.lookup": {available: false}},
   });
 });

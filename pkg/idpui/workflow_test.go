@@ -49,6 +49,12 @@ func TestWorkflowDuplicateIdentityHasSafeGlobalRecoveryCopy(t *testing.T) {
 	assert.Contains(t, output.String(), "Return to application")
 }
 
+func TestWorkflowDuplicateDisplayNameHasSafeRecoveryCopy(t *testing.T) {
+	errorMessage := idpui.WorkflowGlobalError{Code: idpui.WorkflowErrorDuplicateDisplayName}
+	assert.Equal(t, "That display name was claimed while your signup was in progress. Return to the application and restart signup with a different display name.", errorMessage.Summary())
+	assert.Equal(t, "That display name is already in use. Choose another.", (idpui.WorkflowFieldError{Field: idpworkflow.FieldDisplayName, Code: idpworkflow.ErrorRejected}).Summary())
+}
+
 func TestWorkflowPageRejectsRenderedSecretAndInvalidDescriptor(t *testing.T) {
 	page := workflowPage(t)
 	page.Fields[1].Value = "secret-value"

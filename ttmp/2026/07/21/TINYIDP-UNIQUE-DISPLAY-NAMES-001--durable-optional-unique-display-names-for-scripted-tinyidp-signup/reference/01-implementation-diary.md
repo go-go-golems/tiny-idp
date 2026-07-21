@@ -198,3 +198,90 @@ the SQLite table's primary key is the actual conflict authority.
 `NormalizeDisplayName` uses Unicode NFC, case folding, and whitespace
 canonicalization. It intentionally stores the original `User.Name` unchanged
 for OIDC/profile presentation.
+
+## Step 3 — bind the lookup capability, select policy in Goja, and render recovery
+
+### Prompt Context
+
+> ok, Create a new ticket with docmgr and add a design/implementation guide and upload to remarkable, then work on those tasks, commit at appropriate interval, keep a detailed diary as you work.
+
+### Assistant interpretation
+
+Complete the policy-to-browser path without weakening the native transaction:
+the script gets a bounded availability check and selects the commit policy,
+while Go remains responsible for both capability binding and final rejection.
+
+### What I did
+
+- Added `identity.displayName.lookup@v1`, implemented as a request-scoped
+  bounded capability with a 1 KiB input and 128-byte output cap.
+- Extended `idpsignup.Executor` with an explicit host capability injection
+  entry point. Existing callers retain their no-capability behavior.
+- Extended `ctx.commit.signup` and its TypeScript declaration with optional
+  `uniqueDisplayName`; the closed effect payload is decoded by the native
+  signup commit.
+- Updated the shared two-app signup program to preflight names, redisplay the
+  identity form with a display-name error, and request the durable policy at
+  commit time.
+- Added production startup validation for the capability, a themed global
+  race-collision message, and precise field-level copy.
+
+### Why
+
+The early lookup makes the common collision understandable before email
+verification. The exact same name can still be claimed by another request,
+so the final password-page error truthfully describes the rare race rather
+than mislabeling it as a password failure.
+
+### What worked
+
+- `go test ./internal/cmds ./internal/gojamodules/tinyidp ./pkg/idpsignup ./internal/fositeadapter ./pkg/idpui` passed.
+- `go run ./cmd/tinyidp script validate --source examples/tinyidp-shared-two-apps/open-signup.js` succeeded.
+- The declarative program tests passed, including the collision presentation.
+
+### What didn't work
+
+The first command used `tinyidp script check --file`, but the CLI exposes
+`script validate --source`; no source code was changed for that command-line
+mistake. A newly added declarative test initially lacked the deterministic
+fake catalogue entry, then passed after registering the capability's safe
+default output.
+
+### What I learned
+
+Capability IDs become nested JavaScript objects by dot segments, so the
+contract `identity.displayName.lookup` becomes
+`ctx.cap.identity.displayName.lookup(...)`. This is why the identifier uses
+camelCase at its leaf rather than an adapter in the program.
+
+### What was tricky
+
+The invitation lookup is a provider capability, whereas display-name lookup
+is needed by an ordinary workflow handler. The executor therefore needed a
+deliberate invocation seam rather than reusing provider-only plumbing.
+
+### What warrants a second pair of eyes
+
+Review whether `identity.displayName.lookup` needs a rate-limit policy before
+being exposed to a large public signup surface. Its result is deliberately
+coarse, but it still reveals whether a claimed name exists.
+
+### What should be done in the future
+
+Add browser-level Playwright coverage against the local Compose stack and an
+operator reconciliation command for historical identities before enabling the
+policy on an already-populated production database.
+
+### Code review instructions
+
+Check that `signupRuntimeCapabilities` only binds the single declared
+identity lookup contract and that `commitScriptedSignup` forwards the policy
+flag into `idpaccounts.PrepareCreate`; no script-provided normalized key or
+store operation should appear.
+
+### Technical details
+
+The shared program creates a `submitted -> present -> submitted` continuation
+edge for a rejected display name. The final effect contains
+`requireUniqueDisplayName: true`, and `ErrDisplayNameTaken` maps to
+`duplicate_display_name` only after the atomic transaction rejects it.

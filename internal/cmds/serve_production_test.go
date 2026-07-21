@@ -177,6 +177,21 @@ module.exports = A.program("unsupported-capability", p => {
 	if err == nil || !strings.Contains(err.Error(), "unsupported native capabilities: clock.now") {
 		t.Fatalf("unsupported capability error = %v", err)
 	}
+	displayNameCapabilityProgram := `const A = require("tinyidp").v1;
+module.exports = A.program("display-name-capability", p => {
+  p.capabilities({"identity.displayName.lookup": {version:1}});
+  const start = A.lambda("signup.start", { input:"signupStartInput", output:"signupResult", outcomes:["complete"], effects:[], capabilities:["identity.displayName.lookup"], timeoutMs:250, maxCapabilityCalls:1, maxOutputBytes:1024, run: async ctx => { await ctx.cap.identity.displayName.lookup({displayName:"Ada"}); return A.result.complete(); } });
+  p.workflow("signup", { version:1, entry:"start", handlers:{start}, edges:[] });
+});`
+	_, err = newProductionSignupManager(context.Background(), displayNameCapabilityProgram, idp.NewMemorySink(), productionSignupServices{})
+	if err == nil || !strings.Contains(err.Error(), "unsupported native capabilities: identity.displayName.lookup") {
+		t.Fatalf("unavailable display-name capability error = %v", err)
+	}
+	displayNameManager, err := newProductionSignupManager(context.Background(), displayNameCapabilityProgram, idp.NewMemorySink(), productionSignupServices{DisplayNameLookup: true})
+	if err != nil {
+		t.Fatalf("supported display-name capability rejected: %v", err)
+	}
+	defer displayNameManager.Close(context.Background())
 }
 
 func TestProductionEmailChallengesRequireCompleteProgramBoundConfiguration(t *testing.T) {
