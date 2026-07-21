@@ -1,7 +1,7 @@
 ---
 Title: Verified email signup with fake first-deploy delivery
 Ticket: TINYIDP-EMAIL-SIGNUP-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - identity
@@ -13,11 +13,12 @@ Intent: long-term
 Owners: []
 RelatedFiles: []
 ExternalSources: []
-Summary: "Design and implementation plan for durable verified-email signup, initially delivered through a private operator outbox and later switched to the personal SMTP server without changing workflow semantics."
-LastUpdated: 2026-07-21T16:09:42.923879149-04:00
-WhatFor: "Track the minimum work needed to activate TinyIDP's existing durable email-challenge workflow in production while using an explicitly temporary first-deploy delivery mechanism."
-WhenToUse: "Use before changing production signup validation, mail delivery, email challenge construction, the shared two-application signup program, or acceptance tests."
+Summary: Design and implementation plan for durable verified-email signup, initially delivered through a private operator outbox and later switched to the personal SMTP server without changing workflow semantics.
+LastUpdated: 2026-07-21T16:36:49.548420682-04:00
+WhatFor: Track the minimum work needed to activate TinyIDP's existing durable email-challenge workflow in production while using an explicitly temporary first-deploy delivery mechanism.
+WhenToUse: Use before changing production signup validation, mail delivery, email challenge construction, the shared two-application signup program, or acceptance tests.
 ---
+
 
 # Verified email signup with fake first-deploy delivery
 
@@ -34,7 +35,7 @@ The first deployment uses a private operator-only mail catcher. This is a delive
 
 ## Status
 
-Current status: **designed; implementation not started**
+Current status: **complete**. The SMTP adapter, production activation, combined policy, private outbox, and browser acceptance are implemented in commits `9a5605f`, `b79f77d`, and `ef597a1`.
 
 ## Topics
 

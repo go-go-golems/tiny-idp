@@ -1,7 +1,7 @@
 ---
 Title: Verified email signup and first-deploy fake delivery design
 Ticket: TINYIDP-EMAIL-SIGNUP-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - identity
@@ -15,18 +15,20 @@ RelatedFiles:
     - Path: repo://examples/tinyidp-shared-two-apps/open-signup.js
       Note: Deployable two-client policy that must combine invitations with email verification
     - Path: repo://internal/cmds/serve_production.go
-      Note: Contains the fail-closed production validation and future construction seam
+      Note: Contains the completed fail-closed production validation and email challenge construction
     - Path: repo://internal/fositeadapter/scripted_signup.go
       Note: Owns browser transitions evidence rehydration and atomic verified account creation
     - Path: repo://internal/fositeadapter/sqlstore.go
       Note: Implements restart-safe challenge attempts resends expiry evidence and cleanup in SQLite
     - Path: repo://pkg/idpemailchallenge/service.go
       Note: Defines the narrow mailer contract and keyed durable challenge lifecycle
-    - Path: repo://pkg/idpsignup/email_verified_signup.js
-      Note: Provides the existing email-code to password workflow
+    - Path: repo://pkg/idpemailchallenge/smtpmailer/smtpmailer.go
+      Note: Implements fixed-template SMTP delivery with bounded TLS and retry behavior
+    - Path: repo://pkg/idpsignup/verified_invite_signup.js
+      Note: Implements the combined open and invite-gated verified-email policy
 ExternalSources: []
 Summary: Intern-oriented design for combining TinyIDP signup invitations with durable email verification, using a private SMTP-catching outbox for the first deployment and a real SMTP server later.
-LastUpdated: 2026-07-21T16:09:43.297978258-04:00
+LastUpdated: 2026-07-21T16:38:18-04:00
 WhatFor: Define the production activation seam, JavaScript workflow, private fake-delivery constraints, native security boundaries, tests, and transition to real SMTP.
 WhenToUse: Read before implementing any mailer, enabling email challenge outcomes in serve-production, changing signup policy, or asserting email_verified for newly registered users.
 ---
@@ -120,11 +122,11 @@ JavaScript returns challenge.emailCode(...)
 
 The restart test in `internal/fositeadapter/registration_test.go` proves that the workflow and challenge survive closing and reopening SQLite. Other tests cover wrong codes, attempt exhaustion, resend rotation, expiry, binding mismatch, and one-time evidence consumption.
 
-## 4. The actual production gap
+## 4. The production gap that this ticket closed
 
-`serve-production` currently rejects every signup lambda that declares the `challenge` outcome. It reports `unsupported native services: email_challenge`. This rejection is intentional because the production command does not construct an `idpemailchallenge.Service`, does not load a challenge HMAC key, and has no concrete mailer.
+Before this ticket, `serve-production` rejected every signup lambda that declared the `challenge` outcome with `unsupported native services: email_challenge`. That rejection was intentional because the production command did not construct an `idpemailchallenge.Service`, load a challenge HMAC key, or provide a concrete mailer.
 
-The missing work is therefore bounded:
+The completed implementation closed five bounded seams:
 
 1. Implement one concrete SMTP mailer behind the existing `Mailer` interface.
 2. Add file-backed secret inputs for the challenge key and, when applicable, SMTP password.
@@ -132,7 +134,7 @@ The missing work is therefore bounded:
 4. Permit challenge outcomes only when all required native services are configured.
 5. Deploy a combined invitation-plus-email-verification JavaScript program.
 
-No new JavaScript database API, generic outbox API, or verification state machine is required.
+No new JavaScript database API, generic outbox API, or verification state machine was required.
 
 ## 5. First-deploy fake delivery
 
