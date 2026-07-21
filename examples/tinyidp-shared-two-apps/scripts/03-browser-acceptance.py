@@ -367,6 +367,8 @@ def signup(
         {"password", "password_confirmation"}.issubset(password_form.values),
         f"password form is missing after email verification at {password_page.url}",
     )
+    require('minlength="15"' in password_page.body, "password form did not expose the production minimum length")
+    require("Use at least 15 characters." in password_page.body, "password form omitted visible length guidance")
     result = browser.submit_first_form(
         password_page,
         {"password": password, "password_confirmation": password, "action": "submit"},
