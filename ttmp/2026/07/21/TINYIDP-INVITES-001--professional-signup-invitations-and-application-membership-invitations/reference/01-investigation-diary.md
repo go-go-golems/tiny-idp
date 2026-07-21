@@ -680,6 +680,7 @@ The final local PostgreSQL validation ran the operator command twice, observed t
 - `go test ./pkg/gojahttp/auth/appauth/adminbootstrap -count=1` passed.
 - `go test ./pkg/xgoja/providers/hostauth -run TestBootstrapAdminCommand -count=1` passed.
 - `go build ./...` passed before the CLI integration commit.
+- The final repository-wide `go test ./...` passed after all go-go-goja commits.
 - The generated binary displayed the complete `operator bootstrap-admin --help` contract.
 - Two PostgreSQL executions returned `status=reconciled`, the identical deterministic user ID, organization `o1`, and role `admin`.
 - PostgreSQL contained one active matching admin membership after repeat execution.
