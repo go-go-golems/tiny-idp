@@ -3,6 +3,16 @@ set -eu
 
 example_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 secret_dir="$example_dir/runtime/secrets"
+caddy_volume="tinyidp-local-caddy-pki"
+
+if ! docker volume inspect "$caddy_volume" >/dev/null 2>&1; then
+  docker volume create \
+    --label dev.wesen.purpose=local-caddy-pki \
+    --label dev.wesen.retention=manual-delete-only \
+    "$caddy_volume" >/dev/null
+  printf 'Created persistent local Caddy PKI volume %s\n' "$caddy_volume"
+fi
+
 mkdir -p "$secret_dir"
 chmod 0700 "$secret_dir"
 

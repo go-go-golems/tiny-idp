@@ -126,6 +126,43 @@ Compose gates TinyIDP on `service_completed_successfully`; Message Desk and
 goja then wait for TinyIDP readiness. This guarantees that TLS clients never
 race the creation or publication of the local root.
 
+## Persistent protected local CA
+
+The Caddy PKI is stored in the explicitly named external Docker volume:
+
+```text
+tinyidp-local-caddy-pki
+```
+
+`scripts/00-init-secrets.sh` creates this volume when it does not exist and
+labels it `dev.wesen.retention=manual-delete-only`. Compose declares it as an
+external volume, so the volume is not owned by this Compose project and is not
+removed by `docker compose down -v`. This permits the same trusted development
+CA to survive complete application-state resets and to issue certificates for
+additional `*.localhost` sites routed through this Caddy instance.
+
+The protection boundary is Docker daemon access. Caddy mounts the volume
+read-write at `/data`; the one-shot `ca-export` service mounts it read-only and
+copies only `root.crt` to the public trust volume. TinyIDP, Message Desk, goja,
+PostgreSQL, and Mailpit never mount the PKI volume. Inside the volume, Caddy
+keeps `root.key` and `intermediate.key` root-owned with mode `0600`. Do not mount
+this volume into application or build containers and do not copy either private
+key into the repository.
+
+Inspect the volume without printing key material:
+
+```sh
+docker volume inspect tinyidp-local-caddy-pki
+docker compose exec proxy \
+  ls -l /data/caddy/pki/authorities/local
+```
+
+The exported browser trust file remains public-only:
+
+```text
+runtime/caddy-local-root.crt
+```
+
 ## State, reset, and CA lifetime
 
 Normal restarts preserve all named volumes and therefore preserve the same CA:
@@ -135,9 +172,22 @@ docker compose down
 docker compose up -d
 ```
 
-`docker compose down -v` destroys application databases **and** the local CA.
-The next start creates a different root certificate, which must be exported and
-trusted again. Do not use `-v` as a routine restart command.
+`docker compose down -v` destroys the project-owned application volumes, but
+does **not** destroy `tinyidp-local-caddy-pki`. The next start therefore uses
+the same CA and the browser trust remains valid.
+
+CA deletion is a separate, explicit destructive operation:
+
+```sh
+docker compose down
+docker volume rm tinyidp-local-caddy-pki
+```
+
+Do this only when intentionally rotating the local CA. It removes the root and
+intermediate private keys and cannot be undone without a backup. The next
+`scripts/00-init-secrets.sh` creates an empty volume; Caddy then creates a new
+CA whose public root must be exported and trusted again. Remove the old CA from
+Firefox when rotating it.
 
 The committed Postgres password is intentionally local and development-only.
 The TinyIDP token secret is generated inside its owner-only state volume. No

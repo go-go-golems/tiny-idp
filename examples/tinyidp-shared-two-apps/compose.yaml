@@ -211,6 +211,8 @@ volumes:
   message-state:
   goja-postgres:
   caddy-data:
+    external: true
+    name: tinyidp-local-caddy-pki
   caddy-config:
   local-ca:
 
