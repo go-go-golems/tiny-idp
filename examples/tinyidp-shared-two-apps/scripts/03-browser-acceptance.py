@@ -408,6 +408,12 @@ def reject_cross_site_registration_with_themed_page() -> None:
         result.headers.get_content_type() == "text/html",
         f"registration rejection was not HTML: {result.headers.get('Content-Type')}",
     )
+    require(result.headers.get("Cache-Control") == "no-store", "registration rejection was cacheable")
+    require(
+        result.headers.get("Content-Security-Policy")
+        == "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
+        f"registration rejection had unexpected CSP: {result.headers.get('Content-Security-Policy')}",
+    )
     require("/static/themes/message-desk.css" in result.body, "registration rejection did not use Message Desk CSS")
     require("Registration could not be completed" in result.body, "registration rejection omitted safe public guidance")
     for forbidden in ("rejected-cross-site@example.test", "Must Not Persist", "<form", "csrf_token"):
