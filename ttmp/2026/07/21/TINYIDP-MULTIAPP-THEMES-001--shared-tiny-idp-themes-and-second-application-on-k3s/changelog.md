@@ -52,3 +52,12 @@ Merged GitOps PR 191 at 68209d0, reached Synced/Healthy in Argo, and passed publ
 
 - ttmp/2026/07/21/TINYIDP-MULTIAPP-THEMES-001--shared-tiny-idp-themes-and-second-application-on-k3s/reference/02-production-client-and-theme-runbook.md — Client and theme operations and rollback procedures
 - ttmp/2026/07/21/TINYIDP-MULTIAPP-THEMES-001--shared-tiny-idp-themes-and-second-application-on-k3s/reference/03-production-acceptance-evidence.md — Non-secret production delivery and runtime evidence
+
+## 2026-07-21 - Published the production-complete handoff
+
+Pushed TinyIDP documentation PR #13, closed superseded GitOps image PRs #190, #189, and #181, and uploaded the complete ticket bundle to reMarkable as TinyIDP Shared Themes Two App Production Guide.pdf.
+
+### Related Files
+
+- ttmp/2026/07/21/TINYIDP-MULTIAPP-THEMES-001--shared-tiny-idp-themes-and-second-application-on-k3s/reference/01-investigation-diary.md — Complete chronological implementation and production publication record
+- ttmp/2026/07/21/TINYIDP-MULTIAPP-THEMES-001--shared-tiny-idp-themes-and-second-application-on-k3s/reference/02-production-client-and-theme-runbook.md — Operational handoff included in the reMarkable bundle

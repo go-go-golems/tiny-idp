@@ -832,6 +832,103 @@ fresh jar A: MessageDesk -> signup -> TinyIDP -> callback -> app session
 fresh jar B: goja-auth  -> login  -> TinyIDP -> callback -> /me -> logout
 ```
 
+## Step 8: Publish the complete handoff and remove stale rollout paths
+
+### Prompt Context
+
+**User prompt (verbatim):** "(continuation of Step 5)"
+
+**Assistant interpretation:** Make the completed rollout durable in GitHub and
+on reMarkable, and remove automation PRs that could confuse or regress the
+coordinated deployment.
+
+**Inferred user intent:** Leave one authoritative production state and one
+intern-readable handoff rather than a trail of competing partial deployments.
+
+### What I did
+
+- Committed the final guide, runbook, evidence, scripts, task checks, and diary
+  checkpoint as `af94ec7` and pushed TinyIDP documentation PR #13.
+- The pre-commit and pre-push hooks ran the complete Go test, golangci-lint,
+  glazed-lint, and IdP UI analyzer suites successfully.
+- Closed superseded GitOps image automation PRs #190, #189, and #181 with
+  comments pointing to merged combined rollout PR #191.
+- Used the reMarkable upload workflow to bundle the ticket index, primary
+  guide, complete diary, operations runbook, production evidence, tasks, and
+  changelog with a depth-two table of contents.
+- Uploaded it under a new document name rather than forcing replacement of the
+  earlier design upload.
+
+### Why
+
+- A one-image automation PR lacks the coordinated client catalog, theme,
+  second-app image, database migration, and NetworkPolicy. Leaving those PRs
+  open creates an attractive but incomplete future merge path.
+- A new reMarkable document preserves any annotations on the earlier design
+  while making the production-complete handoff unambiguous.
+
+### What worked
+
+- `docmgr doctor --ticket TINYIDP-MULTIAPP-THEMES-001 --fail-on warning`
+  passed with no ticket findings.
+- reMarkable reported:
+  `OK: uploaded TinyIDP Shared Themes Two App Production Guide.pdf`.
+- The final bundle is at
+  `/ai/2026/07/21/TINYIDP-MULTIAPP-THEMES-001`.
+
+### What didn't work
+
+- The first `gh pr create` call completed remotely but its combined shell
+  output ended after the pre-push hook, so it did not display the PR URL. A
+  second create attempt correctly reported that PR #13 already existed; no
+  duplicate PR was created.
+- My first vocabulary edit patch combined two target documents without a
+  second file header, so `apply_patch` rejected it atomically. The corrected
+  multi-file patch used only existing repository vocabulary values, and
+  `docmgr doctor --fail-on warning` then passed.
+
+### What I learned
+
+- The image automation is intentionally component-oriented. Multi-component
+  schema/config rollouts need a combined PR and explicit closure of the
+  generated partial PRs.
+- reMarkable publication can preserve historical annotation state simply by
+  choosing a new document name; `--force` was unnecessary.
+
+### What was tricky to build
+
+- The ticket has a completed deployment track and an intentionally unfinished
+  operator-research track. The task list and index now state that split so open
+  research checkboxes are not mistaken for failed production delivery.
+
+### What warrants a second pair of eyes
+
+- Confirm TinyIDP PR #13 contains only the ticket documentation and acceptance
+  scripts on top of already-merged source PR #12.
+- Treat the older reMarkable PDF as historical design, and the “Two App
+  Production Guide” PDF as the operational handoff.
+
+### What should be done in the future
+
+- Begin the operator research branch only under a separate implementation
+  decision; do not let its unchecked tasks block operation of this deployment.
+
+### Code review instructions
+
+- Start with `reference/03-production-acceptance-evidence.md`, then read the
+  runbook and Step 7 before inspecting the two small scripts.
+- Verify the open tasks are exclusively under the Kubernetes-operator research
+  heading.
+
+### Technical details
+
+```text
+authoritative rollout: GitOps PR #191 -> 68209d0 -> Argo Synced/Healthy
+documentation handoff: TinyIDP PR #13 -> ticket bundle
+reMarkable: /ai/2026/07/21/TINYIDP-MULTIAPP-THEMES-001/
+             TinyIDP Shared Themes Two App Production Guide.pdf
+```
+
 ## Usage Examples
 
 Use the primary design doc for implementation order and `tasks.md` as the
