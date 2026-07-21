@@ -26,3 +26,13 @@ Separated Message Desk account actions vertically and added explicit 15-characte
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/productionui/templates/workflow.html — Production password constraints and guidance
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/submission.go — Server-side sensitive-field length enforcement
 
+
+## 2026-07-21
+
+Allowed explicit signup to start from an active remembered TinyIDP session and added a live Message Desk-only logout regression journey (commit 1a15439).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py — Exact local-logout then signup regression journey
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/provider.go — Explicit registration now creates and switches identity without preemptive logout
+

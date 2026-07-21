@@ -17,6 +17,8 @@ RelatedFiles:
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
       Note: Null-origin guard and registration error routing (commits 924b575 and dffc6c4)
+    - Path: repo://internal/fositeadapter/registration_test.go
+      Note: Active-session second-signup regression coverage (commit 1a15439)
     - Path: repo://internal/fositeadapter/rendering.go
       Note: Terminal browser error response boundary (commit dffc6c4)
     - Path: repo://internal/productionui/renderer.go
@@ -33,6 +35,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -662,6 +665,95 @@ guessing at an opaque policy rejection.
 - The password remains a secret handle and is never redisplayed.
 - HTML validation is advisory; native parsing and account acceptance remain
   authoritative.
+
+## Step 8: Permit explicit signup from a remembered provider session
+
+Message Desk local logout correctly revoked only the relying-party session.
+TinyIDP still remembered the identity, but its authorization handler rejected
+every explicit registration intent when any provider session existed. That
+made the advertised multi-account workflow internally inconsistent.
+
+### Prompt Context
+
+**User prompt (verbatim):** "https://message.localhost:8443/auth/callback?error=invalid_request&error_description=The+request+is+missing+a+required+parameter%2C+includes+an+invalid+parameter+value%2C+includes+a+parameter+more+than+once%2C+or+is+otherwise+malformed.+registration+requires+a+new+browser+session&state=c-Cub8zOZIkcGz9pJht0uSynae4A41daZ78fhR7yop8\n\nidentity login was not accepted\n\n---\n\nThis was after logging out of message-desk (not idp) and clicking \"sign up for a new account\""
+
+**Assistant interpretation:** Reproduce and fix signup after relying-party-only
+logout while preserving TinyIDP's remembered-account behavior.
+
+**Inferred user intent:** Let one browser create and switch between multiple
+TinyIDP identities without requiring a confusing provider-wide logout first.
+
+**Commit (code):** `1a15439` — "fix: allow signup from remembered provider sessions"
+
+### What I did
+
+- Traced the callback error to the explicit `registrationRequested &&
+  hasSession` rejection in `beginAuthorize`.
+- Removed that contradictory precondition while retaining interaction, CSRF,
+  origin, PKCE, client-generation, rate-limit, and native commit validation.
+- Documented the transition: signup is an explicit request to create and
+  switch to a new identity.
+- Added provider coverage proving a second registration page can begin with an
+  active provider session.
+- Added and ran the exact live regression journey: TinyIDP login, Message
+  Desk-only logout, then new-account signup entry.
+
+### Why
+
+- Local RP logout is intentionally not global logout. Requiring a new IdP
+  session made that supported distinction unusable for multi-account signup.
+- Preemptively ending the old session would discard useful remembered-account
+  context even if the user abandoned signup.
+
+### What worked
+
+- The focused registration test passed.
+- The full lint and `go test ./...` pre-commit suite passed.
+- The rebuilt local stack returned the signup identity form after the exact
+  user-reported logout sequence.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The relying app's `identity login was not accepted` text was only a generic
+  projection of the upstream OAuth error. The actionable cause was entirely in
+  TinyIDP's registration/session precondition.
+
+### What was tricky to build
+
+- The previous identity must remain current while signup is pending so an
+  abandoned attempt does not log the browser out. Only a successful atomic
+  signup commit emits the new current-session cookie; the old durable session
+  remains eligible for the account chooser.
+
+### What warrants a second pair of eyes
+
+- Review the intended product language for “create and switch identity.” The
+  security mechanics now support it, but the signup page may eventually state
+  explicitly which remembered account is currently active.
+
+### What should be done in the future
+
+- Give Message Desk's OAuth callback a themed, safe error page for genuinely
+  unrecoverable provider errors rather than its current generic plain text.
+
+### Code review instructions
+
+- Review the registration branch in `beginAuthorize` and the new second-signup
+  assertion in `registration_test.go`.
+- Run the `begin_signup_after_local_logout` acceptance function against the
+  local Compose stack.
+
+### Technical details
+
+- Starting signup does not revoke the old provider session.
+- Successful signup creates a new provider session and replaces the browser's
+  current session cookie.
+- Remembered-account state remains provider-owned and available to
+  `prompt=select_account`.
 
 ## Goal
 
