@@ -415,6 +415,8 @@ working UI change, rather than only an unexplained patch.
 
 **Commit (acceptance):** `0ce1fa6` — "test: cover themed registration rejection in local stack"
 
+**Commit (acceptance hardening):** `c26aa26` — "test: assert rejection response security headers"
+
 ### What I did
 
 - Added the concise implementation guide and five concrete ticket tasks in
@@ -447,6 +449,8 @@ working UI change, rather than only an unexplained patch.
   `text/html`, and `/static/themes/message-desk.css`.
 - The probe verified that submitted identity data, `<form`, and `csrf_token`
   were absent.
+- The hardened probe also verified `Cache-Control: no-store` and the exact
+  restrictive Content Security Policy over the live Caddy route.
 
 ### What didn't work
 
