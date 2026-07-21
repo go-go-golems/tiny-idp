@@ -107,7 +107,7 @@ test("duplicate email produces a themed actionable signup error", async ({ page 
   await submitIdentity(page, "Duplicate Administrator", email);
   await expect(page.getByLabel("Email verification code")).toBeVisible();
   await page.getByLabel("Email verification code").fill(await latestEmailCode(page, email));
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: /create account|continue/i }).click();
   await expect(page.getByRole("heading", { name: "Choose a password" })).toBeVisible();
   await page.getByLabel("Password", { exact: true }).fill("duplicate account password 2026!");
   await page.getByLabel("Confirm password").fill("duplicate account password 2026!");
