@@ -525,7 +525,13 @@ func (p *Provider) signupBindingsFor(record idpstore.InteractionRecord, r *http.
 }
 
 func (p *Provider) signupLoadBindings(record idpstore.InteractionRecord, r *http.Request) idpcontinuation.Bindings {
-	bindings := idpcontinuation.Bindings{WorkflowID: idpsignup.WorkflowID, ClientID: record.ClientID, RedirectURI: record.RedirectURI, ClientGeneration: hex.EncodeToString(record.GenerationHash), RequestDigest: record.RequestDigest, BrowserBindingHash: p.browserBindingHash(r), SessionIDHash: p.browserSessionHash(r), BrowserContextHash: p.browserContextHash(r)}
+	// A signup interaction deliberately clears its session binding so an
+	// explicit add-account flow can proceed without being coupled to the
+	// currently active identity. Preserve the interaction's binding contract
+	// when loading its workflow continuation. Reintroducing cookies from the
+	// current request would make a continuation created with an empty session or
+	// chooser binding reject its own first POST in a remembered browser.
+	bindings := idpcontinuation.Bindings{WorkflowID: idpsignup.WorkflowID, ClientID: record.ClientID, RedirectURI: record.RedirectURI, ClientGeneration: hex.EncodeToString(record.GenerationHash), RequestDigest: record.RequestDigest, BrowserBindingHash: record.BrowserBindingHash, SessionIDHash: record.SessionIDHash, BrowserContextHash: record.BrowserContextHash}
 	if p.scriptedSignupManager == nil && p.scriptedSignup != nil {
 		bindings.ProgramFingerprint = p.scriptedSignup.Fingerprint()
 	}

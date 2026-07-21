@@ -216,12 +216,19 @@ func TestScriptedSignupDoesNotRequireLegacyRegistrationOption(t *testing.T) {
 	}
 	server := httptest.NewServer(provider.Handler())
 	defer server.Close()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := server.Client()
+	client.Jar = jar
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	request := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	request.Del("login")
 	request.Set("client_id", "message-desk")
 	request.Set("scope", "openid profile")
 	request.Set("tinyidp_signup", "1")
-	response, err := server.Client().Get(server.URL + "/authorize?" + request.Encode())
+	response, err := client.Get(server.URL + "/authorize?" + request.Encode())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,6 +239,51 @@ func TestScriptedSignupDoesNotRequireLegacyRegistrationOption(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="`+idpui.WorkflowContinuationFieldName+`"`) {
 		t.Fatalf("scripted signup status=%d body=%s", response.StatusCode, body)
+	}
+	firstForm := parseInteractionInputs(string(body))
+	firstForm.Set(idpui.ActionFieldName, string(idpworkflow.ActionSubmit))
+	firstForm.Set(idpui.DisplayNameFieldName, "First User")
+	firstForm.Set(string(idpworkflow.FieldEmail), "first-user@example.test")
+	firstForm.Set(idpui.PasswordFieldName, "correct horse battery staple 2026")
+	firstForm.Set(idpui.PasswordConfirmationFieldName, "correct horse battery staple 2026")
+	firstResponse := submitRegistration(t, client, server.URL, firstForm)
+	firstResponse.Body.Close()
+	if firstResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("first scripted signup status=%d", firstResponse.StatusCode)
+	}
+
+	request.Set("state", "remembered-browser-signup")
+	response, err = client.Get(server.URL + "/authorize?" + request.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("second scripted signup page status=%d body=%s", response.StatusCode, body)
+	}
+	secondForm := parseInteractionInputs(string(body))
+	secondForm.Set(idpui.ActionFieldName, string(idpworkflow.ActionSubmit))
+	secondForm.Set(idpui.DisplayNameFieldName, "Second User")
+	secondForm.Set(string(idpworkflow.FieldEmail), "second-user@example.test")
+	secondForm.Set(idpui.PasswordFieldName, "correct horse battery staple 2026")
+	secondForm.Set(idpui.PasswordConfirmationFieldName, "different horse battery staple 2026")
+	secondResponse := submitRegistration(t, client, server.URL, secondForm)
+	defer secondResponse.Body.Close()
+	secondBody, err := io.ReadAll(secondResponse.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondResponse.StatusCode != http.StatusBadRequest || !strings.Contains(secondResponse.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(secondBody), `name="`+idpui.WorkflowContinuationFieldName+`"`) {
+		t.Fatalf("remembered-browser signup POST status=%d body=%s", secondResponse.StatusCode, secondBody)
+	}
+	for _, event := range audit.Events() {
+		if event.Name == "workflow.signup.resume_rejected" {
+			t.Fatalf("fresh signup continuation was rejected in remembered browser: %#v", event)
+		}
 	}
 }
 
