@@ -46,3 +46,17 @@ Phase 6 design: specified the transactional, idempotent, conflict-safe, audited 
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/21/TINYIDP-INVITES-001--professional-signup-invitations-and-application-membership-invitations/design-doc/02-production-administrator-bootstrap-design-and-implementation-guide.md — Follow-on design and implementation sequence
+
+## 2026-07-21
+
+Completed Phase 6: replaced raw application bootstrap SQL with the transactional audited generated-host bootstrap-admin operator command; repeat PostgreSQL execution, HTTPS smoke, and all seven browser acceptance stages pass (go-go-goja 7cf50ba, b83206b; tiny-idp 9ec8d26).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/go-go-goja/pkg/gojahttp/auth/appauth/adminbootstrap/adminbootstrap.go — Atomic domain reconciliation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/go-go-goja/pkg/xgoja/providers/hostauth/operator.go — Generated-host CLI
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml — Validated local PostgreSQL deployment
+
+## 2026-07-21
+
+Ticket closed

@@ -23,7 +23,7 @@
 - [x] Documentation — Write the intern-oriented analysis, design, API reference, pseudocode, diagrams, file map, and implementation plan <!-- t:crsf -->
 - [x] Documentation — Relate the decisive source files, validate the ticket, and upload the guide to reMarkable <!-- t:rc3z -->
 - [x] Phase 6 — Specify the production administrator bootstrap identity, idempotency, conflict, transaction, audit, and CLI contracts <!-- t:cvdb -->
-- [ ] Phase 6 — Implement and test an atomic appauth administrator bootstrap reconciler for SQLite and PostgreSQL <!-- t:a345 -->
-- [ ] Phase 6 — Expose the reconciler as a Glazed generated-host operator bootstrap-admin command <!-- t:mhd5 -->
-- [ ] Phase 6 — Replace the local raw bootstrap.sql job with the operator command and validate repeat execution <!-- t:m4v2 -->
-- [ ] Phase 6 — Record implementation evidence, relate files, run docmgr doctor, and close the follow-on phase <!-- t:r2yh -->
+- [x] Phase 6 — Implement and test an atomic appauth administrator bootstrap reconciler for SQLite and PostgreSQL <!-- t:a345 -->
+- [x] Phase 6 — Expose the reconciler as a Glazed generated-host operator bootstrap-admin command <!-- t:mhd5 -->
+- [x] Phase 6 — Replace the local raw bootstrap.sql job with the operator command and validate repeat execution <!-- t:m4v2 -->
+- [x] Phase 6 — Record implementation evidence, relate files, run docmgr doctor, and close the follow-on phase <!-- t:r2yh -->

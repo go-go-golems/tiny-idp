@@ -1,7 +1,7 @@
 ---
 Title: Production administrator bootstrap design and implementation guide
 Ticket: TINYIDP-INVITES-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - identity
@@ -11,20 +11,27 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: repo://examples/tinyidp-shared-two-apps/bootstrap.sql
-      Note: Raw local bootstrap mechanism superseded by Phase 6
+    - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
+      Note: Production-shaped PostgreSQL command invocation and local secret boundary
+    - Path: ws://go-go-goja/examples/xgoja/21-generated-host-auth/xgoja.yaml
+      Note: Explicit operator command-set mount
+    - Path: ws://go-go-goja/pkg/gojahttp/auth/appauth/adminbootstrap/adminbootstrap.go
+      Note: Transactional administrator reconciliation and atomic audit implementation
     - Path: ws://go-go-goja/pkg/gojahttp/auth/appauth/appauth.go
       Note: Defines the immutable OIDC identity key and deterministic application user ID
     - Path: ws://go-go-goja/pkg/gojahttp/auth/appauth/sqlstore/schema.go
       Note: Defines the application authorization records reconciled by bootstrap
     - Path: ws://go-go-goja/pkg/gojahttp/auth/audit/sqlstore/schema.go
       Note: Defines the durable audit row committed by bootstrap
+    - Path: ws://go-go-goja/pkg/xgoja/providers/hostauth/operator.go
+      Note: Glazed generated-host operator command and DSN file boundary
 ExternalSources: []
 Summary: ""
 LastUpdated: 2026-07-21T16:52:09.428709821-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 # Production administrator bootstrap design and implementation guide
@@ -165,7 +172,7 @@ The shared stack replaces the `postgres:17-alpine` SQL utility job with the gene
 - `go-go-goja/pkg/xgoja/providers/hostauth/hostauth.go` — hostauth provider registration seam.
 - `go-go-goja/examples/xgoja/21-generated-host-auth/xgoja.yaml` — explicit generated-command mount.
 - `tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml` — local production-shaped invocation.
-- `tiny-idp/examples/tinyidp-shared-two-apps/bootstrap.sql` — superseded raw mechanism to remove.
+- `tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml` — invokes the operator command; the former raw `bootstrap.sql` has been removed.
 
 ## Executive Summary
 

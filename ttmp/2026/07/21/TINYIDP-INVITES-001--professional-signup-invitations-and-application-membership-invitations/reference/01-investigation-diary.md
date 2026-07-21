@@ -10,13 +10,20 @@ Topics:
 DocType: reference
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
+      Note: Unchanged seven-stage end-to-end product gate
+    - Path: ws://go-go-goja/pkg/gojahttp/auth/appauth/adminbootstrap/adminbootstrap_test.go
+      Note: Focused reconciliation conflict rollback and audit evidence
+    - Path: ws://go-go-goja/pkg/xgoja/providers/hostauth/operator_test.go
+      Note: Command-level repeated SQLite execution evidence
 ExternalSources: []
-Summary: "Chronological evidence and decisions behind the professional TinyIDP signup-invitation and go-go-goja membership-invitation design."
+Summary: Chronological evidence and decisions behind the professional TinyIDP signup-invitation and go-go-goja membership-invitation design.
 LastUpdated: 2026-07-21T15:15:38-04:00
-WhatFor: "Review the evidence, commands, scope choices, and risks that shaped TINYIDP-INVITES-001."
-WhenToUse: "Read before implementing or revising the invitation design, especially when resuming work in a later session."
+WhatFor: Review the evidence, commands, scope choices, and risks that shaped TINYIDP-INVITES-001.
+WhenToUse: Read before implementing or revising the invitation design, especially when resuming work in a later session.
 ---
+
 
 # Investigation diary
 
@@ -629,4 +636,109 @@ verified goja fixture
   -> OIDC login -> app session
   -> atomic membership + capability use + pending use
   -> pending and raw-token replay rejected
+```
+
+## Step 9: Implement and validate the production administrator bootstrap
+
+I implemented Phase 6 in three coherent commits. The go-go-goja domain commit added an atomic SQL reconciler; the second go-go-goja commit exposed it as an explicitly mounted Glazed operator command; and the TinyIDP example commit replaced the raw PostgreSQL script with that generated command. The long-running application remains nonroot and no TinyIDP behavior was added to the application bootstrap.
+
+The final local PostgreSQL validation ran the operator command twice, observed the same deterministic application user and one active admin membership, and observed separate non-secret audit records for each operator execution. The unchanged HTTPS smoke suite and complete seven-stage browser suite then passed, proving that first-administrator login, application invitation issuance, verified signup, membership acceptance, replay denial, and audit retrieval still work together.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue, debug, fix"
+
+**Assistant interpretation:** Resume after the required debugging stop, diagnose the silent Compose failure, correct it, and finish Phase 6 validation and bookkeeping.
+
+**Inferred user intent:** Complete the production-shaped bootstrap replacement rather than leave a working library behind an unvalidated local deployment seam.
+
+**Commits:**
+
+- go-go-goja `7cf50ba` — "feat: add transactional admin bootstrap"
+- go-go-goja `b83206b` — "feat: expose admin bootstrap operator command"
+- tiny-idp `9ec8d26` — "feat: bootstrap local app admin through operator"
+
+### What I did
+
+- Added `adminbootstrap.Reconciler` with typed request/result values, SQLite/PostgreSQL queries, immutable identity conflict checks, organization ownership checks, idempotent desired-state upserts, and an in-transaction audit insert.
+- Added tests for initial creation, exact replay, mutable metadata reconciliation, disabled user and revoked membership restoration, identity conflicts, organization conflicts, pre-transaction validation, and rollback evidence.
+- Registered a hostauth `operator` command-set provider and implemented `bootstrap-admin` as a Glazed command.
+- Required the database DSN to come from a bounded one-line file and made schema application explicit.
+- Mounted the command set in example 21's `xgoja.yaml` and verified generated CLI help.
+- Removed `bootstrap.sql`, added the local DSN secret initializer, and made `goja-bootstrap` run the generated distroless image.
+- Ran the command twice against PostgreSQL, recreated the ordinary one-shot Compose service, and ran smoke plus all seven browser stages.
+
+### Why
+
+- The application package must own its identity and authorization invariants instead of asking deployment SQL to reproduce them.
+- One transaction prevents a crash or audit failure from leaving a partially authoritative first administrator.
+- An explicit command mount prevents every generated auth host from accidentally exposing operational mutation commands.
+- A DSN file avoids publishing database credentials in Kubernetes Job arguments or process listings.
+
+### What worked
+
+- `go test ./pkg/gojahttp/auth/appauth/adminbootstrap -count=1` passed.
+- `go test ./pkg/xgoja/providers/hostauth -run TestBootstrapAdminCommand -count=1` passed.
+- `go build ./...` passed before the CLI integration commit.
+- The generated binary displayed the complete `operator bootstrap-admin --help` contract.
+- Two PostgreSQL executions returned `status=reconciled`, the identical deterministic user ID, organization `o1`, and role `admin`.
+- PostgreSQL contained one active matching admin membership after repeat execution.
+- The normal Compose `goja-bootstrap` service exited with status 0.
+- `scripts/02-smoke.sh` passed all readiness and OIDC redirect checks.
+- `scripts/03-browser-acceptance.py` printed all seven `OK` stages and `PASS: shared TinyIDP Phase 5 browser acceptance completed`.
+
+### What didn't work
+
+- The first Compose build printed `pull access denied for tinyidp-local/goja-auth-host` because `goja-bootstrap` referenced the shared local image tag without declaring the build. Compose attempted the pull before `goja-auth` produced the tag. Adding the identical build definition to both service references made the image locally resolvable.
+- The first rebuilt `goja-bootstrap` container exited with status 1 and no logs. The generated main returned errors only through its exit code, so the immediate error text was unavailable. Running with `--print-parsed-fields` proved command registration and argument parsing but intentionally skipped execution.
+- The actual execution failure was the local Compose secret boundary: `runtime/secrets/goja-appauth-dsn.txt` was owner-only mode `0600`, while the distroless image runs as a different nonroot UID. Local Compose bind mounts preserve host ownership. The one-shot bootstrap service now runs as `0:0` solely to read that mount; the long-running host remains nonroot.
+- A verification wrapper used `status` as a zsh variable and failed with `zsh:1: read-only variable: status` after the container had already exited successfully. Subsequent wrappers used `result_code`.
+
+### What I learned
+
+- Reusing an image tag across Compose services does not make the second service inherit the first service's build definition.
+- Compose secrets do not reproduce Kubernetes projected-secret ownership semantics; local bind-mount UID behavior must be designed explicitly for distroless images.
+- Idempotency means stable authority state, not absence of audit evidence. Repeated successful operator executions intentionally append audit rows.
+
+### What was tricky to build
+
+- Existing store APIs commit independently, so composing them would not make the audit event atomic with membership creation. The reconciler therefore owns one transaction while continuing to use the schemas owned by the appauth and audit packages.
+- Reconciliation must restore mutable desired state without ever converting an identity collision into an ownership transfer. The code locks and checks both normalized-user and external-identity representations before any upsert.
+- PostgreSQL and SQLite differ in placeholders, JSON representation, boolean literals, and row locking. The reconciler keeps two explicit statement forms and tests the SQLite behavior while Compose proves the PostgreSQL form.
+
+### What warrants a second pair of eyes
+
+- Review every `ON CONFLICT` target and confirm no immutable identity field is updated in a conflict branch.
+- Review whether production should use PostgreSQL `SERIALIZABLE` isolation or retry serialization failures when multiple bootstrap Jobs can start concurrently.
+- Review the later Kubernetes projected-secret `runAsUser`, `runAsGroup`, `fsGroup`, and file-mode contract; do not copy the local root workaround into production without that analysis.
+- The generated main's silent error exit is an existing operational diagnostics weakness worth addressing in a separate scope.
+
+### What should be done in the future
+
+- Invoke the same command from a Vault-backed, explicitly permissioned k3s Job in the later GitOps ticket.
+- Consider a separate generated-main diagnostics change that prints a safely wrapped command error before exit.
+
+### Code review instructions
+
+- Start with `pkg/gojahttp/auth/appauth/adminbootstrap/adminbootstrap.go`, especially `checkIdentityConflicts`, `reconcile`, and `insertAudit`.
+- Review `pkg/xgoja/providers/hostauth/operator.go` for secret-file parsing, schema opt-in, cleanup, and Glazed output.
+- Confirm example 21 explicitly mounts the operator provider in `xgoja.yaml`.
+- Review the `goja-bootstrap` service in `compose.yaml` and verify the root exception is isolated to the one-shot local service.
+- Run `go test ./pkg/gojahttp/auth/appauth/adminbootstrap ./pkg/xgoja/providers/hostauth -count=1`, then the two example scripts.
+
+### Technical details
+
+```text
+operator command
+  -> read one-line DSN secret
+  -> open declared SQL dialect
+  -> optional current schema application
+  -> begin transaction
+       validate (issuer, subject) ownership
+       reconcile user + external identity
+       reconcile tenant + org resource
+       reconcile active admin membership
+       insert operator.bootstrap_admin audit
+     commit
+  -> emit stable identifiers, never credentials
 ```
