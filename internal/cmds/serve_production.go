@@ -21,7 +21,8 @@ import (
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/go-go-golems/tiny-idp/examples/tinyidp-message-app/loginui"
+	"github.com/go-go-golems/tiny-idp/internal/productionconfig"
+	"github.com/go-go-golems/tiny-idp/internal/productionui"
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
@@ -38,7 +39,9 @@ type serveProductionSettings struct {
 	Addr                string   `glazed:"addr"`
 	ListenerMode        string   `glazed:"listener-mode"`
 	Issuer              string   `glazed:"issuer"`
-	MessageDeskOrigin   string   `glazed:"message-desk-origin"`
+	ClientsFile         string   `glazed:"clients-file"`
+	ThemeDir            string   `glazed:"theme-dir"`
+	ThemeCatalogFile    string   `glazed:"theme-catalog-file"`
 	SignupProgramFile   string   `glazed:"signup-program-file"`
 	DBPath              string   `glazed:"db"`
 	AuditPath           string   `glazed:"audit-path"`
@@ -81,6 +84,9 @@ Example:
   tinyidp serve-production --addr :8443 --issuer https://idp.example.test \
     --db /var/lib/tinyidp/idp.db --audit-path /var/log/tinyidp/audit.jsonl \
     --token-secret-file /run/secrets/tinyidp-token \
+    --clients-file /etc/tinyidp/catalog/clients.json \
+    --theme-dir /etc/tinyidp/themes \
+    --theme-catalog-file /etc/tinyidp/themes/themes.json \
     --signup-program-file /etc/tinyidp/signup.js \
     --tls-cert /run/tls/tls.crt --tls-key /run/tls/tls.key
 `),
@@ -88,7 +94,9 @@ Example:
 			fields.New("addr", fields.TypeString, fields.WithDefault(":8443"), fields.WithHelp("Listener address")),
 			fields.New("listener-mode", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Required listener mode: direct-tls or trusted-proxy-http")),
 			fields.New("issuer", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Canonical HTTPS issuer URL")),
-			fields.New("message-desk-origin", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Canonical HTTPS Message Desk public origin for the exact browser client")),
+			fields.New("clients-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Reviewed non-secret JSON catalog of exact production browser clients")),
+			fields.New("theme-dir", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Read-only root containing reviewed production theme CSS")),
+			fields.New("theme-catalog-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Reviewed non-secret JSON theme catalog inside --theme-dir")),
 			fields.New("signup-program-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Reviewed non-secret JavaScript signup program; checked and activated before listening")),
 			fields.New("db", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Provisioned SQLite database path")),
 			fields.New("audit-path", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Synchronous JSONL audit path")),
@@ -147,6 +155,18 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	if err != nil {
 		return err
 	}
+	clientCatalog, err := productionconfig.LoadClientCatalog(settings.ClientsFile)
+	if err != nil {
+		return err
+	}
+	themeCatalog, err := productionui.LoadCatalog(settings.ThemeDir, settings.ThemeCatalogFile, clientCatalog)
+	if err != nil {
+		return err
+	}
+	interactionUI, err := productionui.NewRenderer(themeCatalog)
+	if err != nil {
+		return err
+	}
 	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(settings.DBPath))
 	if err != nil {
 		return err
@@ -162,18 +182,11 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		_ = store.Close()
 		return err
 	}
-	messageDeskOrigin, originErr := issuerOrigin(settings.MessageDeskOrigin)
-	if originErr != nil {
+	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{Mode: idpstore.ProductionMode, Audit: audit, Clients: clientCatalog.Specs()}); err != nil {
 		_ = signupManager.Close(context.Background())
 		_ = audit.Close()
 		_ = store.Close()
-		return fmt.Errorf("message desk origin: %w", originErr)
-	}
-	if _, err := embeddedidp.Bootstrap(ctx, store, embeddedidp.BootstrapConfig{Mode: idpstore.ProductionMode, Audit: audit, Clients: []embeddedidp.ClientSpec{embeddedidp.BrowserClient("tinyidp-message-app", []string{messageDeskOrigin + "/auth/callback"}, []string{messageDeskOrigin + "/"}, []string{"openid", "profile"})}}); err != nil {
-		_ = signupManager.Close(context.Background())
-		_ = audit.Close()
-		_ = store.Close()
-		return fmt.Errorf("bootstrap Message Desk browser client: %w", err)
+		return fmt.Errorf("bootstrap production browser clients: %w", err)
 	}
 	addressResolver := idp.ClientAddressResolver(idp.DirectClientAddressResolver{})
 	var proxyResolver *idp.TrustedProxyResolver
@@ -186,13 +199,6 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 			return err
 		}
 		addressResolver = proxyResolver
-	}
-	interactionUI, err := loginui.New()
-	if err != nil {
-		_ = signupManager.Close(context.Background())
-		_ = audit.Close()
-		_ = store.Close()
-		return fmt.Errorf("create Message Desk interaction renderer: %w", err)
 	}
 	provider, err := embeddedidp.New(ctx, embeddedidp.Options{
 		Issuer:        settings.Issuer,
@@ -207,7 +213,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 			GenerationManager: signupManager,
 		},
 		Maintenance: embeddedidp.MaintenanceConfig{Interval: maintenanceInterval},
-		UI:          embeddedidp.UIConfig{Renderer: interactionUI},
+		UI:          embeddedidp.UIConfig{Renderer: interactionUI, WorkflowRenderer: interactionUI},
 	})
 	clearProductionSecret(secret)
 	if err != nil {
@@ -223,7 +229,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		_ = store.Close()
 		return fmt.Errorf("initial maintenance: %w", err)
 	}
-	handler := productionHTTPHandler(provider.Handler(), interactionUI.AssetsHandler(), settings.MaxRequestBytes)
+	handler := productionHTTPHandler(provider.Handler(), themeCatalog.AssetsHandler(), settings.MaxRequestBytes)
 	if listenerMode == productionListenerTrustedProxyHTTP {
 		publicOrigin, originErr := issuerOrigin(settings.Issuer)
 		if originErr != nil {
@@ -290,12 +296,12 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	return errors.Join(runErr, closeErr)
 }
 
-// productionHTTPHandler keeps the Message Desk interaction presentation on the
-// provider's own origin. The renderer only owns the static stylesheet; every
-// OAuth/OIDC and form route remains owned by the embedded provider handler.
+// productionHTTPHandler keeps reviewed interaction assets on the provider's
+// own origin. Every OAuth/OIDC and form route remains owned by the embedded
+// provider handler.
 func productionHTTPHandler(providerHandler, assetsHandler http.Handler, maxRequestBytes int) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/static/tinyidp/", assetsHandler)
+	mux.Handle("/static/themes/", assetsHandler)
 	mux.Handle("/", providerHandler)
 	return http.MaxBytesHandler(mux, int64(maxRequestBytes))
 }

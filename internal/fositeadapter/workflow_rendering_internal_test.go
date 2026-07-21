@@ -47,6 +47,7 @@ func workflowRenderingPage(t *testing.T) idpui.WorkflowPage {
 
 	return idpui.WorkflowPage{
 		DocumentTitle: "Create an account",
+		ClientID:      "example-client",
 		Form: idpui.WorkflowForm{
 			ActionURL:         "https://idp.example/authorize",
 			RedirectOrigin:    "https://app.example",

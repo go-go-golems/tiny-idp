@@ -34,9 +34,9 @@ func TestReadOwnerOnlySecret(t *testing.T) {
 	}
 }
 
-func TestProductionHTTPHandlerServesOnlyTheRendererAssetsBelowStaticTinyIDP(t *testing.T) {
+func TestProductionHTTPHandlerServesOnlyTheRendererAssetsBelowStaticThemes(t *testing.T) {
 	assets := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/static/tinyidp/login.css" {
+		if request.URL.Path != "/static/themes/message-desk.css" {
 			http.NotFound(writer, request)
 			return
 		}
@@ -50,7 +50,7 @@ func TestProductionHTTPHandlerServesOnlyTheRendererAssetsBelowStaticTinyIDP(t *t
 	handler := productionHTTPHandler(provider, assets, 1024)
 
 	stylesheet := httptest.NewRecorder()
-	handler.ServeHTTP(stylesheet, httptest.NewRequest(http.MethodGet, "https://idp.example.test/static/tinyidp/login.css", nil))
+	handler.ServeHTTP(stylesheet, httptest.NewRequest(http.MethodGet, "https://idp.example.test/static/themes/message-desk.css", nil))
 	if stylesheet.Code != http.StatusOK || stylesheet.Body.String() != "/* Message Desk */" {
 		t.Fatalf("stylesheet response = %d %q", stylesheet.Code, stylesheet.Body.String())
 	}
@@ -174,5 +174,14 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	}
 	if _, legacy := section.GetDefinitions().Get("registration-enabled"); legacy {
 		t.Fatal("legacy registration-enabled production flag is still exposed")
+	}
+	for _, required := range []string{"clients-file", "theme-dir", "theme-catalog-file"} {
+		definition, ok := section.GetDefinitions().Get(required)
+		if !ok || !definition.Required {
+			t.Fatalf("%s is not a required production flag", required)
+		}
+	}
+	if _, legacy := section.GetDefinitions().Get("message-desk-origin"); legacy {
+		t.Fatal("legacy message-desk-origin production flag is still exposed")
 	}
 }

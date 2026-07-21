@@ -497,6 +497,8 @@ func (h *harness) startTinyIDP() {
 	h.t.Helper()
 	program := filepath.Join(h.root, "tinyidp", "signup.js")
 	secret := filepath.Join(h.root, "tinyidp", "secrets", "token.key")
+	clients := filepath.Join(h.repo, "examples", "production-host", "catalog", "clients.json")
+	themeDir := filepath.Join(h.repo, "examples", "production-host", "themes")
 	if err := os.MkdirAll(filepath.Dir(program), 0o700); err != nil {
 		h.t.Fatalf("create Tiny-IDP state directory: %v", err)
 	}
@@ -513,7 +515,9 @@ func (h *harness) startTinyIDP() {
 		"--addr", h.idpAddress,
 		"--listener-mode", "trusted-proxy-http",
 		"--issuer", idpIssuer,
-		"--message-desk-origin", messagePublicOrigin,
+		"--clients-file", clients,
+		"--theme-dir", themeDir,
+		"--theme-catalog-file", filepath.Join(themeDir, "themes.json"),
 		"--signup-program-file", program,
 		"--db", h.idpDatabase,
 		"--audit-path", h.idpAudit,

@@ -61,6 +61,8 @@ docker run -d --name "$idp_container" --read-only \
   --tmpfs /var/lib/tinyidp:uid=65532,gid=65532,mode=0750 \
   --tmpfs /var/log/tinyidp:uid=65532,gid=65532,mode=0750 \
   --tmpfs /run/tinyidp-secrets:uid=65532,gid=65532,mode=0700 \
+  -v "$repo_root/examples/production-host/catalog:/etc/tinyidp/catalog:ro" \
+  -v "$repo_root/examples/production-host/themes:/etc/tinyidp/themes:ro" \
   -v "$repo_root/pkg/idpsignup/open_signup.js:/etc/tinyidp/signup/open-signup.js:ro" \
   -p 127.0.0.1:18443:8443 --entrypoint /bin/sh "$idp_image" -ec '
     umask 077
@@ -70,7 +72,9 @@ docker run -d --name "$idp_container" --read-only \
       -subj "/CN=idp.example.test" >/dev/null 2>&1
     exec tinyidp serve-production \
       --addr :8443 --listener-mode direct-tls --issuer https://idp.example.test \
-      --message-desk-origin https://message-desk.example.test \
+      --clients-file /etc/tinyidp/catalog/clients.json \
+      --theme-dir /etc/tinyidp/themes \
+      --theme-catalog-file /etc/tinyidp/themes/themes.json \
       --signup-program-file /etc/tinyidp/signup/open-signup.js \
       --db /var/lib/tinyidp/tinyidp.sqlite --audit-path /var/log/tinyidp/audit.jsonl \
       --token-secret-file /run/tinyidp-secrets/token.key \

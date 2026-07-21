@@ -55,6 +55,7 @@ func workflowPage(t *testing.T) idpui.WorkflowPage {
 	require.True(t, ok)
 	return idpui.WorkflowPage{
 		DocumentTitle: "Create <script> account",
+		ClientID:      "example-client",
 		Form:          idpui.WorkflowForm{ActionURL: "https://idp.example/authorize", InteractionField: idpui.InteractionFieldName, Interaction: strings.Repeat("a", 32), ContinuationField: idpui.WorkflowContinuationFieldName, Continuation: strings.Repeat("c", 32), CSRFField: idpui.CSRFFieldName, CSRFToken: strings.Repeat("b", 32), ActionField: idpui.ActionFieldName},
 		Fields:        []idpui.WorkflowField{{Descriptor: displayName, Value: "Ada"}, {Descriptor: password}},
 		Actions:       []idpui.WorkflowAction{{Descriptor: submit}, {Descriptor: deny}},

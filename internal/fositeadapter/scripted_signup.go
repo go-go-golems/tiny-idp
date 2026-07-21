@@ -483,7 +483,7 @@ func (p *Provider) signupExecutorFor(fingerprint string) (*idpsignup.Executor, e
 }
 
 func workflowPage(p *Provider, record idpstore.InteractionRecord, interactionHandle, csrfToken, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, fieldErrors []idpui.WorkflowFieldError) idpui.WorkflowPage {
-	page := idpui.WorkflowPage{DocumentTitle: "Create an account", Form: idpui.WorkflowForm{ActionURL: p.issuer.Endpoint("/authorize"), RedirectOrigin: interactionRedirectOrigin(record.RedirectURI), InteractionField: idpui.InteractionFieldName, Interaction: interactionHandle, ContinuationField: idpui.WorkflowContinuationFieldName, Continuation: continuationHandle, CSRFField: idpui.CSRFFieldName, CSRFToken: csrfToken, ActionField: idpui.ActionFieldName}, Errors: fieldErrors}
+	page := idpui.WorkflowPage{DocumentTitle: "Create an account", ClientID: record.ClientID, Form: idpui.WorkflowForm{ActionURL: p.issuer.Endpoint("/authorize"), RedirectOrigin: interactionRedirectOrigin(record.RedirectURI), InteractionField: idpui.InteractionFieldName, Interaction: interactionHandle, ContinuationField: idpui.WorkflowContinuationFieldName, Continuation: continuationHandle, CSRFField: idpui.CSRFFieldName, CSRFToken: csrfToken, ActionField: idpui.ActionFieldName}, Errors: fieldErrors}
 	for _, field := range fields {
 		page.Fields = append(page.Fields, idpui.WorkflowField{Descriptor: field, Value: values[field.ID]})
 	}

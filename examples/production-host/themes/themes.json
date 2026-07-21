@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "defaultTheme": "message-desk",
+  "themes": {
+    "message-desk": {
+      "productName": "Message Desk",
+      "stylesheet": "message-desk.css"
+    }
+  },
+  "clientThemes": {
+    "tinyidp-message-app": "message-desk"
+  }
+}
