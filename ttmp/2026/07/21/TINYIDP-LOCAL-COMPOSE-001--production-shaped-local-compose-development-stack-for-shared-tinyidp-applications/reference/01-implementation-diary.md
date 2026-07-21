@@ -11,6 +11,8 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-message-app/ui/src/App.tsx
+      Note: Separated account action navigation (commit 4b15802)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
@@ -21,12 +23,17 @@ RelatedFiles:
       Note: Per-client error theme selection (commit dffc6c4)
     - Path: repo://pkg/idpui/browser_error.go
       Note: Bounded terminal error model (commit dffc6c4)
+    - Path: repo://pkg/idpworkflow/descriptors.go
+      Note: Production-aligned public password bounds (commit 2c136ee)
+    - Path: repo://pkg/idpworkflow/submission.go
+      Note: Native secret-field bounds enforcement (commit 2c136ee)
 ExternalSources: []
 Summary: Chronological implementation and debugging record for the shared TinyIDP local HTTPS Compose stack.
 LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 # Implementation diary
@@ -501,6 +508,160 @@ working UI change, rather than only an unexplained patch.
   strict CSP, and `Content-Type: text/html; charset=utf-8`.
 - The last-resort response is still plain text by design because renderer
   failure cannot safely recurse.
+
+## Step 6: Separate Message Desk account actions
+
+The screenshot confirmed that the two account actions were adjacent inline
+anchors. Their source formatting was not a layout contract, so the browser
+wrapped both labels as one continuous run of linked text.
+
+### Prompt Context
+
+**User prompt (verbatim):** "were you able to figure out the html issues with the mangled links : [Image #1] at https://message.localhost:8443/"
+
+**Assistant interpretation:** Diagnose and correct the visibly merged signup
+and login links in the deployed Message Desk welcome panel.
+
+**Inferred user intent:** Present account creation and existing-account login
+as two clearly distinct, accessible actions.
+
+**Commit (code):** `4b15802` — "fix: separate Message Desk account actions"
+
+### What I did
+
+- Wrapped the anchors in a navigation region labelled `Account actions`.
+- Used the already-loaded Bootstrap flex utilities to create a vertical,
+  start-aligned action list with an explicit gap.
+- Rebuilt the embedded Vite assets and the Message Desk container.
+
+### Why
+
+- Adjacent inline anchors have no reliable visual separation. A semantic
+  navigation region and explicit layout describe both meaning and geometry.
+
+### What worked
+
+- `pnpm run build` and `go test ./examples/tinyidp-message-app -count=1`
+  passed.
+- The live JavaScript bundle contains
+  `d-flex flex-column align-items-start gap-2`, and Message Desk is healthy.
+
+### What didn't work
+
+- The first patch attempted to insert a custom rule into the one-line minified
+  stylesheet and could not match a partial line. The implementation instead
+  reused Bootstrap utilities already imported by the application.
+
+### What I learned
+
+- The issue was neither CSP nor React whitespace handling; it was normal inline
+  anchor layout with no intervening layout container.
+
+### What was tricky to build
+
+- Source CSS and generated CSS are deliberately compact. Reusing checked-in
+  Bootstrap utilities avoided editing generated presentation text by hand.
+
+### What warrants a second pair of eyes
+
+- Confirm the two actions remain visually distinct at narrow viewport widths.
+
+### What should be done in the future
+
+- N/A
+
+### Code review instructions
+
+- Review the `Welcome` component in `ui/src/App.tsx`.
+- Run `pnpm run build` from the UI directory and load the local HTTPS page.
+
+### Technical details
+
+- The navigation uses `flex-column`, `align-items-start`, and `gap-2`; it does
+  not depend on JSX whitespace or `<br>` elements.
+
+## Step 7: Expose and enforce signup password requirements
+
+The password descriptor already carried length bounds, but the workflow HTML
+omitted `minlength` and the secret-submission branch checked only the maximum.
+This created three inconsistent layers: browser presentation, native workflow
+validation, and the 15-character production account policy.
+
+### Prompt Context
+
+**User prompt (verbatim):** "also, when filling the passwor page with a too short password for example, it would be good to have a proper error message (or validation upfront in the HTML / JS), because we just get a \"password could not be accepted\" kind of error (don't remember the exact phrasing)"
+
+**Assistant interpretation:** Add proactive browser constraints and useful safe
+feedback for short passwords while keeping server-side validation authoritative.
+
+**Inferred user intent:** Let users correct ordinary signup mistakes without
+guessing at an opaque policy rejection.
+
+**Commit (code):** `2c136ee` — "fix: expose signup password requirements"
+
+**Commit (acceptance):** `7ebecc3` — "test: verify live password guidance"
+
+### What I did
+
+- Aligned the built-in password and confirmation descriptors with TinyIDP's
+  default production minimum of 15 characters.
+- Added `minlength` to default and production workflow templates.
+- Added visible `Use at least 15 characters.` guidance on secret fields.
+- Enforced minimum and maximum descriptor lengths for secrets in the native
+  submission parser.
+- Replaced generic password-rejection text with safe actionable guidance.
+- Added unit and live HTTPS acceptance checks, rebuilt TinyIDP, and completed a
+  real email-verified signup through Message Desk.
+
+### Why
+
+- Browser validation shortens the feedback loop, but direct HTTP clients can
+  bypass it. Native parsing and account policy must still reject invalid input.
+
+### What worked
+
+- Focused workflow, UI, production renderer, and provider tests passed.
+- The full lint and `go test ./...` pre-commit suite passed.
+- The live password page contains `minlength="15"` and visible guidance, and a
+  valid signup completed successfully.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- Sensitive workflow fields followed a separate parser branch that enforced
+  required and maximum length but accidentally omitted minimum length.
+
+### What was tricky to build
+
+- Client validation must mirror the public portion of server policy without
+  replacing it. Blocklist and context-derived rejection remain server-only;
+  the UI describes only the stable minimum and gives conservative guidance.
+
+### What warrants a second pair of eyes
+
+- The built-in descriptor and default production policy now both use 15.
+  Review future configurable password policies to ensure their public workflow
+  descriptors remain synchronized.
+
+### What should be done in the future
+
+- If deployments receive configurable minimum lengths, construct the workflow
+  registry from the validated password policy rather than changing one default.
+
+### Code review instructions
+
+- Start with `pkg/idpworkflow/descriptors.go` and `submission.go`, then review
+  both workflow templates and `WorkflowFieldError.Summary`.
+- Run `go test ./pkg/idpworkflow ./pkg/idpui ./internal/productionui ./internal/fositeadapter -count=1`.
+
+### Technical details
+
+- The password remains a secret handle and is never redisplayed.
+- HTML validation is advisory; native parsing and account acceptance remain
+  authoritative.
 
 ## Goal
 

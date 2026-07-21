@@ -15,3 +15,14 @@ Added a bounded terminal browser-error contract, client-themed production render
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/rendering.go — Safe buffered browser-error HTTP boundary
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/productionui/renderer.go — Client theme selection for terminal errors
 
+
+## 2026-07-21
+
+Separated Message Desk account actions vertically and added explicit 15-character password constraints, visible guidance, server-side secret length enforcement, and live HTTPS acceptance coverage (commits 4b15802, 2c136ee, 7ebecc3).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/ui/src/App.tsx — Semantic vertically spaced account navigation
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/productionui/templates/workflow.html — Production password constraints and guidance
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/submission.go — Server-side sensitive-field length enforcement
+
