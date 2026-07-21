@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "clients": [
+    {
+      "id": "tinyidp-message-app",
+      "profile": "browser",
+      "redirectURIs": ["https://message.localhost:8443/auth/callback"],
+      "postLogoutRedirectURIs": ["https://message.localhost:8443/"],
+      "allowedScopes": ["openid", "profile"]
+    },
+    {
+      "id": "goja-auth-host-demo",
+      "profile": "browser",
+      "redirectURIs": ["https://goja.localhost:8443/auth/callback"],
+      "postLogoutRedirectURIs": ["https://goja.localhost:8443/"],
+      "allowedScopes": ["email", "openid", "profile"]
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+name: tinyidp-shared-two-apps
+
+services:
+  proxy:
+    image: caddy:2.10.2-alpine
+    ports: ["8443:8443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [idp-backend, message-backend, goja-backend]
+
+  idp:
+    build:
+      context: ../..
+      dockerfile: examples/tinyidp-shared-two-apps/Dockerfile.idp
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        mkdir -p /state/audit
+        if [ ! -s /state/token.key ]; then dd if=/dev/urandom of=/state/token.key bs=32 count=1 status=none; fi
+        chmod 0600 /state/token.key
+        exec tinyidp serve-production --addr=:8081 --listener-mode=trusted-proxy-http --issuer=https://idp.localhost:8443 --clients-file=/config/clients.json --theme-dir=/config --theme-catalog-file=/config/themes.json --signup-program-file=/config/open-signup.js --db=/state/tinyidp.sqlite --audit-path=/state/audit/audit.jsonl --token-secret-file=/state/token.key --trusted-proxy-cidrs=172.31.0.0/24
+    volumes:
+      - idp-state:/state
+      - ./clients.json:/config/clients.json:ro
+      - ./themes.json:/config/themes.json:ro
+      - ./message-desk.css:/config/message-desk.css:ro
+      - ./goja-auth.css:/config/goja-auth.css:ro
+      - ./open-signup.js:/config/open-signup.js:ro
+    depends_on: [proxy]
+    networks: [idp-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS --resolve idp.localhost:8443:172.31.0.2 https://idp.localhost:8443/readyz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  message-desk:
+    build:
+      context: ../..
+      dockerfile: examples/tinyidp-shared-two-apps/Dockerfile.message-desk
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ ! -f /state/state.json ]; then tinyidp-message-desk init --state-root /state --public-base-url https://message.localhost:8443; fi
+        exec tinyidp-message-desk serve --state-root /state --addr :8080 --listener-mode trusted-proxy-http --trusted-proxy-cidrs 172.32.0.0/24 --external-issuer https://idp.localhost:8443 --external-backchannel-url https://idp.localhost:8443
+    volumes: [message-state:/state]
+    extra_hosts: ["idp.localhost:172.31.0.2"]
+    depends_on:
+      idp:
+        condition: service_healthy
+    networks: [idp-backend, message-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS --resolve message.localhost:8443:172.32.0.2 https://message.localhost:8443/readyz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: goja_auth
+      POSTGRES_USER: goja
+      POSTGRES_PASSWORD: goja-local-development-only
+    volumes: [goja-postgres:/var/lib/postgresql/data]
+    networks: [goja-database]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goja -d goja_auth"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  goja-auth:
+    image: ghcr.io/go-go-golems/go-go-goja-auth-host:sha-cd1429f
+    command: ["serve", "sites", "demo"]
+    environment:
+      XGOJA_OIDC_DEMO_HTTP_LISTEN: :8080
+      XGOJA_OIDC_DEMO_AUTH_MODE: oidc
+      XGOJA_OIDC_DEMO_AUTH_DEFAULT_STORE_DRIVER: postgres
+      XGOJA_OIDC_DEMO_AUTH_DEFAULT_STORE_DSN: postgres://goja:goja-local-development-only@postgres:5432/goja_auth?sslmode=disable
+      XGOJA_OIDC_DEMO_AUTH_DEFAULT_STORE_APPLY_SCHEMA: "true"
+      XGOJA_OIDC_DEMO_AUTH_SESSION_COOKIE_ALLOW_INSECURE_HTTP: "false"
+      XGOJA_OIDC_DEMO_AUTH_PROXY_MODE: trusted-forwarded
+      XGOJA_OIDC_DEMO_AUTH_PROXY_TRUSTED_CIDRS: 172.33.0.0/24
+      XGOJA_OIDC_DEMO_AUTH_OIDC_ISSUER_URL: https://idp.localhost:8443
+      XGOJA_OIDC_DEMO_AUTH_OIDC_CLIENT_ID: goja-auth-host-demo
+      XGOJA_OIDC_DEMO_AUTH_OIDC_PUBLIC_BASE_URL: https://goja.localhost:8443
+      XGOJA_OIDC_DEMO_AUTH_OIDC_SCOPES: profile,email
+      XGOJA_OIDC_DEMO_AUTH_OIDC_AFTER_LOGIN_URL: /
+      XGOJA_OIDC_DEMO_AUTH_OIDC_AFTER_LOGOUT_URL: /
+    extra_hosts: ["idp.localhost:172.31.0.2"]
+    depends_on:
+      idp:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks: [idp-backend, goja-backend, goja-database]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --no-check-certificate --header='Host: goja.localhost:8443' --header='X-Forwarded-Host: goja.localhost:8443' --header='X-Forwarded-Proto: https' https://172.33.0.2:8443/auth/readyz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+networks:
+  idp-backend: {ipam: {config: [{subnet: 172.31.0.0/24}]}}
+  message-backend: {ipam: {config: [{subnet: 172.32.0.0/24}]}}
+  goja-backend: {ipam: {config: [{subnet: 172.33.0.0/24}]}}
+  goja-database: {ipam: {config: [{subnet: 172.34.0.0/24}]}}
+
+volumes:
+  idp-state:
+  message-state:
+  goja-postgres:
+  caddy-data:
+  caddy-config:

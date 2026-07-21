@@ -1,0 +1,9 @@
+# Copy this file to compose.goja-local.yaml and replace the placeholder with
+# your checked-out go-go-goja repository. The base Compose file intentionally
+# uses the published immutable image, so cloning tiny-idp alone still works.
+services:
+  goja-auth:
+    image: tinyidp-local/goja-auth-host:dev
+    build:
+      context: /absolute/path/to/go-go-goja
+      dockerfile: Dockerfile.auth-host

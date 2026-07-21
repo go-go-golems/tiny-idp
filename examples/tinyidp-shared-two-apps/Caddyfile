@@ -1,0 +1,16 @@
+# Caddy is the browser-facing TLS boundary. Each backend validates that its
+# immediate peer is this proxy and that the forwarded HTTPS origin is exact.
+https://idp.localhost:8443 {
+	tls internal
+	reverse_proxy idp:8081
+}
+
+https://message.localhost:8443 {
+	tls internal
+	reverse_proxy message-desk:8080
+}
+
+https://goja.localhost:8443 {
+	tls internal
+	reverse_proxy goja-auth:8080
+}
