@@ -15,14 +15,21 @@ Owners: []
 RelatedFiles:
     - Path: repo://internal/cmds/serve_production.go
       Note: Evidence for one-client host gap
+    - Path: repo://internal/productionconfig/clients.go
+      Note: Strict versioned multi-client production catalog
+    - Path: repo://internal/productionui/catalog.go
+      Note: Mounted theme catalog validation and allowlisted assets
+    - Path: repo://internal/productionui/renderer.go
+      Note: Per-client interaction and workflow rendering
     - Path: ws://hetzner-k3s-phase5/gitops/kustomize/tiny-message-desk
       Note: Evidence for current GitOps and trusted-Traefik pattern
 ExternalSources: []
 Summary: Chronological evidence and decisions for the shared TinyIDP themes and second-application design.
-LastUpdated: 2026-07-21T10:52:49.653859502-04:00
+LastUpdated: 2026-07-21T12:16:07-04:00
 WhatFor: Record the evidence used to design the first two-client TinyIDP deployment and operator research branch.
 WhenToUse: Read before continuing implementation or reconsidering the GitOps-only versus operator decision.
 ---
+
 
 
 # Diary
@@ -308,6 +315,220 @@ and diary.
 Bundle destination:
 /ai/2026/07/21/TINYIDP-MULTIAPP-THEMES-001/
   TinyIDP Shared Themes and Second App Guide.pdf
+```
+
+## Step 4: Implement the production client and theme boundaries
+
+This step turns the first two design phases into executable code. The
+production host no longer knows that MessageDesk is special. It accepts a
+strict client catalog and a strict theme catalog, loads both before opening its
+listener, and uses the provider-validated client ID to choose presentation for
+both login/consent pages and scripted-signup continuation pages.
+
+### Prompt Context
+
+**User prompt (verbatim):** "implement and deploy the two app example setup. use existing apps if possible, this is more abut configuration and deployment not the actual apps themselves."
+
+**Assistant interpretation:** Implement the ticket through public production
+deployment, reusing MessageDesk and the existing `goja-auth-host-demo` instead
+of creating another application.
+
+**Inferred user intent:** Concentrate engineering effort on the shared IdP,
+GitOps configuration, isolation, and rollout rather than application feature
+development.
+
+### What I did
+
+- Confirmed the active goal with the goal tracker and selected the already
+  deployed `goja-auth-host-demo` as the second relying party.
+- Replaced the MessageDesk-specific production flag with required
+  `--clients-file`, `--theme-dir`, and `--theme-catalog-file` inputs.
+- Added `internal/productionconfig`, which strictly decodes a bounded,
+  versioned browser-client catalog and produces existing
+  `embeddedidp.ClientSpec` values.
+- Added `internal/productionui`, which preloads reviewed CSS, validates the
+  catalog and its client mappings, renders login/consent/signup pages, and
+  serves only exact same-origin routes below `/static/themes/`.
+- Carried `InteractionRecord.ClientID` into `idpui.WorkflowPage.ClientID`, so a
+  signup continuation cannot lose the original client presentation context.
+- Added checked-in production example catalogs and updated the systemd,
+  two-process, Docker smoke, and production image-flow examples to use the new
+  explicit contract.
+- Added tests for two clients, unsafe URLs and scopes, strict/bounded JSON,
+  missing and escaping theme declarations, duplicate JSON theme keys,
+  per-client interaction/workflow selection, HTML escaping, and asset routes.
+- Committed the implementation as `7d8a19d` (`Add production client and theme
+  catalogs`).
+
+### Why
+
+- TinyIDP's reusable bootstrap layer was already multi-client. The hard-coded
+  single-client production command was the actual blocker.
+- The browser cannot be allowed to supply a stylesheet URL: that would turn an
+  OAuth request parameter into executable presentation authority. The safe
+  selector is the registered client ID, and the safe assets are immutable
+  files reviewed and mounted at deployment time.
+- Signup is a continuation-based workflow. Adding the client ID to its public
+  renderer model preserves the same trusted selection seam across requests
+  without retaining a suspended JavaScript VM.
+
+### What worked
+
+- `go build ./...` passed.
+- `go test ./...` passed, including the real two-process signup lifecycle.
+- The pre-commit hook independently ran the full suite, `golangci-lint`,
+  `glazed-lint`, and the project-specific IDP UI analyzer; all passed.
+- Existing `embeddedidp.Bootstrap` conflict tests still prove that a catalog
+  cannot silently widen an existing durable registration.
+- Strict duplicate-key detection prevents `encoding/json` map overwrite
+  behavior from making a reviewed theme declaration ambiguous.
+
+### What didn't work
+
+- The first patch against
+  `internal/fositeadapter/workflow_rendering_internal_test.go` used stale
+  surrounding text and failed with:
+  `apply_patch verification failed: Failed to find expected lines ...`.
+  No partial change was made; I read the current fixture and applied the
+  one-line client ID addition against its actual layout.
+- An initial inspection command used the old `2026/07/07` ticket path and
+  `sed` reported `No such file or directory`. Repository search established
+  that the production deployment ticket lives under `2026/07/18`, after which
+  all three harnesses were updated.
+- One `rg` invocation placed `--glob` after the pattern and treated the options
+  as file paths. This was an inspection-only failure and did not alter files.
+
+### What I learned
+
+- The existing second app already has an independent namespace, Deployment,
+  Service, Ingress, and PostgreSQL state, which makes it the right reuse target.
+- Its currently deployed image predates public-client PKCE support from merged
+  go-go-goja PR #98. Deployment configuration can be reused, but the image must
+  be refreshed before repointing it to TinyIDP.
+- A theme catalog must cover scripted signup as well as ordinary interaction
+  rendering; otherwise a branded login page falls back to an unstyled signup
+  page during the most important onboarding path.
+
+### What was tricky to build
+
+- Kubernetes ConfigMap projected files are implemented with symlinks. The
+  loader therefore constrains catalog references to CSS basenames and reads
+  resolved regular files, instead of rejecting all symlinks and thereby
+  rejecting normal Kubernetes mounts.
+- Unknown client IDs use the declared default theme defensively, but mappings
+  themselves may name only registered clients. Protocol validation still owns
+  whether the client exists; presentation selection does not become a second
+  client registry.
+
+### What warrants a second pair of eyes
+
+- Review the new HTML templates against the previous MessageDesk presentation
+  for semantic parity of every provider-owned hidden field and submit action.
+- Review the exact goja-auth callback/logout URLs in the GitOps catalog before
+  merging the deployment PR.
+
+### What should be done in the future
+
+- Package the MessageDesk and goja-auth themes with Kustomize, register both
+  clients, and repoint the existing goja-auth deployment.
+- Publish an image containing this commit and complete independent public PKCE
+  flows through both applications.
+
+### Code review instructions
+
+- Start with `internal/productionconfig/clients.go` and its tests.
+- Follow `runProductionHost` through bootstrap, UI construction, and the
+  `/static/themes/` route.
+- Trace signup from `workflowPage` into `productionui.RenderWorkflow` and
+  verify that only `ClientID` affects theme selection.
+- Run `go test ./...`; do not validate only the new packages because the
+  two-process harness is what proves the changed CLI contract.
+
+### Technical details
+
+```text
+clients.json                         themes.json + *.css
+     |                                      |
+     v                                      v
+productionconfig.ClientCatalog       productionui.Catalog
+     |                                      |
+     +--> embeddedidp.Bootstrap              +--> exact static assets
+                                                |
+validated OAuth client_id ---------------------+--> renderer selection
+```
+
+## Step 5: Make progress and evidence persistent at short intervals
+
+### Prompt Context
+
+**User prompt (verbatim):** "keep a detailed diary as you work, update your goal or so, commit at appropriate intervals (read diary skill)"
+
+**Assistant interpretation:** Keep the existing deployment goal active, follow
+the diary skill's exact step structure, and create reviewable commits at phase
+boundaries rather than accumulating one opaque change.
+
+**Inferred user intent:** Make a long autonomous production rollout auditable
+and recoverable without interrupting it for routine status questions.
+
+### What I did
+
+- Reconfirmed that the active goal remains the complete two-app production
+  deployment; it is not complete merely because the source implementation
+  passes tests.
+- Applied the diary skill's required headings and recorded exact prompt,
+  command, failure, test, and commit evidence in Step 4.
+- Migrated the task list to stable IDs and checked all Phase 1 and Phase 2
+  tasks after commit `7d8a19d` and successful validation.
+- Related the new configuration and renderer source files to this diary and
+  added the implementation checkpoint to the ticket changelog.
+
+### Why
+
+- The next work crosses repositories and delivery systems. A source commit is
+  the clean rollback boundary before GitOps manifests and image publication.
+
+### What worked
+
+- The first implementation checkpoint is self-contained and its hooks passed.
+- `docmgr task migrate` stamped 30 stable task IDs, allowing later checks to
+  remain precise even if prose or ordering changes.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- The ticket began as a design deliverable, so task IDs had not yet been
+  stamped. Migrating them before implementation tracking avoided fragile
+  numeric checkbox references.
+
+### What was tricky to build
+
+- The commit hash can only be recorded after the implementation commit exists;
+  this diary update is therefore a separate documentation checkpoint.
+
+### What warrants a second pair of eyes
+
+- Confirm Phase 1 and Phase 2 checkbox evidence against `7d8a19d` during PR
+  review.
+
+### What should be done in the future
+
+- Continue with the GitOps and second-app phases without closing the goal until
+  Argo health and both public flows are captured.
+
+### Code review instructions
+
+- Review the preceding implementation commit first, then this ticket update;
+  the separation is intentional.
+
+### Technical details
+
+```text
+source boundary: 7d8a19d
+validation: go build ./... && go test ./...
+hook validation: golangci-lint + glazed-lint + IDP UI analyzer + go test ./...
 ```
 
 ## Usage Examples
