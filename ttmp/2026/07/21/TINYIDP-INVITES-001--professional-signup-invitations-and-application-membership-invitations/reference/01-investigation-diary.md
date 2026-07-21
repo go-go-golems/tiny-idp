@@ -134,3 +134,74 @@ commit
 ```
 
 The two transactions cannot be one ACID transaction because they belong to separate services and databases. Failure after identity creation leaves the application invite retryable, which is an intended recovery state.
+
+## Step 2: Validate, commit, and deliver the design
+
+I validated the completed ticket as a structured docmgr artifact, reviewed its staged scope, and committed only the new invitation ticket. The unrelated local Compose ticket remained outside the commit.
+
+I then bundled the design guide and this diary into one PDF and uploaded it to the ticket-specific reMarkable directory. The upload completed successfully, leaving the implementation phases intentionally open in `tasks.md`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Complete the ticket-based documentation deliverable and publish it in a form suitable for extended reading and review.
+
+**Inferred user intent:** Have a durable, reviewable plan available both in the repository and on reMarkable before implementation begins.
+
+**Commit (documentation):** `ae1637d` — "docs: design professional invitation core"
+
+### What I did
+
+- Ran `docmgr validate frontmatter` for the design guide.
+- Ran `docmgr doctor --ticket TINYIDP-INVITES-001 --stale-after 30`.
+- Replaced three unknown ticket topics with the established vocabulary values `identity`, `auth`, and `xgoja`.
+- Ran `git diff --check`, staged only `TINYIDP-INVITES-001`, and committed the ticket.
+- Uploaded a bundle named `TinyIDP Professional Invitation Core Design.pdf` to `/ai/2026/07/21/TINYIDP-INVITES-001`.
+
+### Why
+
+- Frontmatter and relationship validation make the document discoverable and resumable through docmgr.
+- A focused commit prevents unrelated work from becoming coupled to the design ticket.
+- The reMarkable bundle provides the requested long-form reading artifact while retaining the source Markdown in Git.
+
+### What worked
+
+- Final docmgr output was `✅ All checks passed`.
+- The commit hook correctly skipped Go test and lint jobs because the staged change contained documentation only.
+- reMarkable delivery returned `OK: uploaded TinyIDP Professional Invitation Core Design.pdf -> /ai/2026/07/21/TINYIDP-INVITES-001`.
+
+### What didn't work
+
+- The first doctor run warned that `authorization`, `goja`, and `tiny-idp` were not registered topic vocabulary values. I used the existing, semantically appropriate values `auth`, `xgoja`, and `identity` rather than expanding global vocabulary for one ticket.
+- The first staged `git diff --cached --check` found `changelog.md:15: new blank line at EOF.` I removed the extra final blank line, restaged, and reran the check successfully before committing.
+
+### What I learned
+
+- The repository vocabulary already has the correct broader categories for this work.
+- Documentation-only commits avoid unnecessary full Go suite execution under the configured pre-commit hook.
+
+### What was tricky to build
+
+- The delivery step had to include useful diary context without staging the neighboring, unrelated Compose ticket. Explicit path staging kept the boundary exact.
+
+### What warrants a second pair of eyes
+
+- Review the substantive architecture decisions in the design rather than treating completed documentation tasks as evidence that any implementation phase is complete.
+
+### What should be done in the future
+
+- Begin Phase 1 from the first unchecked task and keep implementation commits separate from this design baseline.
+
+### Code review instructions
+
+- Review commit `ae1637d` and start with the design's executive summary, Sections 3–7, and the test matrix.
+- Run `docmgr doctor --ticket TINYIDP-INVITES-001 --stale-after 30` to revalidate ticket structure.
+
+### Technical details
+
+The published reMarkable destination is:
+
+```text
+/ai/2026/07/21/TINYIDP-INVITES-001/TinyIDP Professional Invitation Core Design.pdf
+```

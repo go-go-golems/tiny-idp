@@ -21,4 +21,4 @@
 - [ ] Phase 5 — Validate both open-signup Message Desk and invite-gated goja application flows in the local shared Compose stack <!-- t:1jyp -->
 - [ ] Phase 5 — Add browser-level acceptance tests and operational audit/log checks for invitation issuance and redemption <!-- t:b5yp -->
 - [x] Documentation — Write the intern-oriented analysis, design, API reference, pseudocode, diagrams, file map, and implementation plan <!-- t:crsf -->
-- [ ] Documentation — Relate the decisive source files, validate the ticket, and upload the guide to reMarkable <!-- t:rc3z -->
+- [x] Documentation — Relate the decisive source files, validate the ticket, and upload the guide to reMarkable <!-- t:rc3z -->
