@@ -156,6 +156,66 @@ func (p *Provider) renderInteraction(w http.ResponseWriter, r *http.Request, sta
 	succeeded = true
 }
 
+func (p *Provider) renderRegistrationRejected(w http.ResponseWriter, r *http.Request, clientID string) {
+	p.renderBrowserError(w, r, http.StatusForbidden, idpui.BrowserErrorPage{
+		DocumentTitle: "Registration could not be completed",
+		ClientID:      clientID,
+		Heading:       "Registration could not be completed",
+		Summary:       "TinyIDP could not verify that this registration form came from the expected page. Restart registration from the application and try again.",
+	})
+}
+
+func (p *Provider) renderBrowserError(w http.ResponseWriter, r *http.Request, status int, page idpui.BrowserErrorPage) {
+	started := time.Now()
+	p.renderMetrics.attempts.Add(1)
+	succeeded := false
+	defer func() { p.renderMetrics.observe(time.Since(started), succeeded) }()
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	if err := page.Validate(); err != nil {
+		p.recordBrowserErrorRenderFailure(r, page.ClientID, "invalid_page")
+		http.Error(w, "registration request was not accepted", status)
+		return
+	}
+	buffer := &boundedInteractionBuffer{limit: maxInteractionDocumentBytes}
+	if err := p.browserErrorUI.RenderBrowserError(r.Context(), buffer, page); err != nil {
+		reason := "renderer_failed"
+		if errors.Is(err, errInteractionDocumentTooLarge) {
+			reason = "document_too_large"
+			p.renderMetrics.oversizedDocuments.Add(1)
+		}
+		p.recordBrowserErrorRenderFailure(r, page.ClientID, reason)
+		http.Error(w, "registration request was not accepted", status)
+		return
+	}
+	if buffer.overflowed || buffer.Len() == 0 {
+		reason := "document_too_large"
+		if buffer.Len() == 0 {
+			reason = "empty_document"
+		} else {
+			p.renderMetrics.oversizedDocuments.Add(1)
+		}
+		p.recordBrowserErrorRenderFailure(r, page.ClientID, reason)
+		http.Error(w, "registration request was not accepted", status)
+		return
+	}
+	if status == 0 {
+		status = http.StatusBadRequest
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if written, err := w.Write(buffer.Bytes()); err != nil || written != buffer.Len() {
+		p.renderMetrics.responseWriteFailures.Add(1)
+		p.recordBrowserErrorRenderFailure(r, page.ClientID, "response_write_failed")
+		return
+	}
+	succeeded = true
+}
+
+func (p *Provider) recordBrowserErrorRenderFailure(r *http.Request, clientID, reason string) {
+	p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "browser_error.render_failed", ClientID: clientID, Result: "rejected", Reason: reason})
+}
+
 // renderWorkflow is the native rendering boundary for a script-selected,
 // provider-validated workflow presentation. Its caller must already have
 // validated the OAuth request and constructed the interaction/CSRF values; the

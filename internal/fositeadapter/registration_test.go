@@ -110,9 +110,19 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	crossSiteBody, err := io.ReadAll(crossSiteResponse.Body)
 	crossSiteResponse.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if crossSiteResponse.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-site registration status=%d", crossSiteResponse.StatusCode)
+	}
+	if contentType := crossSiteResponse.Header.Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+		t.Fatalf("cross-site registration content type=%q", contentType)
+	}
+	if body := string(crossSiteBody); !strings.Contains(body, "Registration could not be completed") || !strings.Contains(body, "Restart registration from the application") || strings.Contains(body, "new-user@example.test") || strings.Contains(body, "correct horse battery staple") || strings.Contains(body, "<form") {
+		t.Fatalf("unsafe or incomplete themed rejection body=%s", body)
 	}
 	if _, err := store.GetUserByLogin(ctx, "new-user@example.test"); err == nil {
 		t.Fatal("cross-site registration created an account")

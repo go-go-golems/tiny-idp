@@ -134,6 +134,15 @@ func TestRendererUsesClientThemeForInteractionAndWorkflow(t *testing.T) {
 	if output := workflowOutput.String(); !strings.Contains(output, "Goja Auth Lab") || !strings.Contains(output, `/static/themes/goja.css`) || !strings.Contains(output, `name="password" type="password" value=""`) {
 		t.Fatalf("workflow output = %s", output)
 	}
+
+	errorPage := idpui.BrowserErrorPage{DocumentTitle: "Registration rejected", ClientID: "message-desk", Heading: "Registration could not be completed", Summary: "Restart registration from the application."}
+	var errorOutput bytes.Buffer
+	if err := renderer.RenderBrowserError(context.Background(), &errorOutput, errorPage); err != nil {
+		t.Fatal(err)
+	}
+	if output := errorOutput.String(); !strings.Contains(output, "Message Desk") || !strings.Contains(output, `/static/themes/message.css`) || strings.Contains(output, "<form") {
+		t.Fatalf("browser error output = %s", output)
+	}
 }
 
 func TestRendererEscapesCatalogPresentation(t *testing.T) {

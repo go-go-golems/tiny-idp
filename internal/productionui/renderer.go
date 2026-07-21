@@ -16,14 +16,19 @@ var interactionTemplate string
 //go:embed templates/workflow.html
 var workflowTemplate string
 
+//go:embed templates/browser_error.html
+var browserErrorTemplate string
+
 type Renderer struct {
-	catalog     *Catalog
-	interaction *template.Template
-	workflow    *template.Template
+	catalog      *Catalog
+	interaction  *template.Template
+	workflow     *template.Template
+	browserError *template.Template
 }
 
 var _ idpui.InteractionRenderer = (*Renderer)(nil)
 var _ idpui.WorkflowRenderer = (*Renderer)(nil)
+var _ idpui.BrowserErrorRenderer = (*Renderer)(nil)
 
 func NewRenderer(catalog *Catalog) (*Renderer, error) {
 	if catalog == nil {
@@ -37,7 +42,31 @@ func NewRenderer(catalog *Catalog) (*Renderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse production workflow template: %w", err)
 	}
-	return &Renderer{catalog: catalog, interaction: interaction, workflow: workflow}, nil
+	browserError, err := template.New("browser-error").Parse(browserErrorTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("parse production browser error template: %w", err)
+	}
+	return &Renderer{catalog: catalog, interaction: interaction, workflow: workflow, browserError: browserError}, nil
+}
+
+func (r *Renderer) RenderBrowserError(ctx context.Context, destination io.Writer, page idpui.BrowserErrorPage) error {
+	if r == nil || r.browserError == nil || destination == nil {
+		return fmt.Errorf("production browser error renderer is not initialized")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := page.Validate(); err != nil {
+		return fmt.Errorf("validate browser error page: %w", err)
+	}
+	theme, err := r.catalog.Resolve(page.ClientID)
+	if err != nil {
+		return err
+	}
+	if err := r.browserError.ExecuteTemplate(destination, "browser-error", browserErrorView{Page: page, Theme: theme}); err != nil {
+		return fmt.Errorf("render production browser error: %w", err)
+	}
+	return nil
 }
 
 func (r *Renderer) RenderInteraction(ctx context.Context, destination io.Writer, page idpui.InteractionPage) error {
@@ -95,5 +124,10 @@ type interactionView struct {
 
 type workflowView struct {
 	Page  idpui.WorkflowPage
+	Theme Theme
+}
+
+type browserErrorView struct {
+	Page  idpui.BrowserErrorPage
 	Theme Theme
 }
