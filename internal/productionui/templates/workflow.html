@@ -1,0 +1,36 @@
+{{- define "workflow" -}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Page.DocumentTitle}} · {{.Theme.ProductName}}</title>
+  <link rel="stylesheet" href="{{.Theme.StylesheetRoute}}">
+</head>
+<body>
+  <main class="identity workflow">
+    <header>
+      <p class="kicker">{{.Theme.ProductName}} / identity</p>
+      <h1>{{.Page.DocumentTitle}}</h1>
+    </header>
+    <form method="post" action="{{.Page.Form.ActionURL}}">
+      {{range .Page.Fields}}
+      {{$error := $.Page.ErrorFor .Descriptor.ID}}
+      <div class="field-group">
+        <label for="tinyidp-workflow-{{.Descriptor.InputName}}">{{.Descriptor.Label}}</label>
+        <input id="tinyidp-workflow-{{.Descriptor.InputName}}" name="{{.Descriptor.InputName}}" type="{{if .Descriptor.Sensitive}}password{{else}}{{.Descriptor.Kind}}{{end}}" value="{{.Value}}" autocomplete="{{.Descriptor.Autocomplete}}" maxlength="{{.Descriptor.MaxLength}}"{{if .Descriptor.Required}} required{{end}}{{with $error}} aria-invalid="true" aria-describedby="tinyidp-error-{{.Field}}"{{end}}>
+        {{with $error}}<p id="tinyidp-error-{{.Field}}" class="error" role="alert">{{.Summary}}</p>{{end}}
+      </div>
+      {{end}}
+      <input type="hidden" name="{{.Page.Form.InteractionField}}" value="{{.Page.Form.Interaction}}">
+      <input type="hidden" name="{{.Page.Form.ContinuationField}}" value="{{.Page.Form.Continuation}}">
+      <input type="hidden" name="{{.Page.Form.CSRFField}}" value="{{.Page.Form.CSRFToken}}">
+      <div class="actions">
+        {{range .Page.Actions}}<button class="{{if eq .Descriptor.ID "deny"}}deny{{end}}" type="submit" name="{{$.Page.Form.ActionField}}" value="{{.Descriptor.ID}}"{{if .Descriptor.SkipFormValidation}} formnovalidate{{end}}>{{.Descriptor.Label}}</button>{{end}}
+      </div>
+    </form>
+    <footer>Account creation is processed locally by TinyIDP.</footer>
+  </main>
+</body>
+</html>
+{{- end -}}

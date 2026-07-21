@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "clients": [
+    {
+      "id": "tinyidp-message-app",
+      "profile": "browser",
+      "redirectURIs": ["https://message.example.test/auth/callback"],
+      "postLogoutRedirectURIs": ["https://message.example.test/"],
+      "allowedScopes": ["openid", "profile"]
+    }
+  ]
+}

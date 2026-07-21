@@ -16,10 +16,13 @@ type WorkflowRenderer interface {
 
 type WorkflowPage struct {
 	DocumentTitle string
-	Form          WorkflowForm
-	Fields        []WorkflowField
-	Actions       []WorkflowAction
-	Errors        []WorkflowFieldError
+	// ClientID is the validated public OAuth client that owns the pending
+	// workflow. Renderers may use it for presentation selection only.
+	ClientID string
+	Form     WorkflowForm
+	Fields   []WorkflowField
+	Actions  []WorkflowAction
+	Errors   []WorkflowFieldError
 }
 
 type WorkflowForm struct {
@@ -51,6 +54,9 @@ type WorkflowFieldError struct {
 func (p WorkflowPage) Validate() error {
 	if strings.TrimSpace(p.DocumentTitle) == "" {
 		return fmt.Errorf("workflow document title is required")
+	}
+	if strings.TrimSpace(p.ClientID) == "" {
+		return fmt.Errorf("workflow client ID is required")
 	}
 	actionURL, err := url.Parse(p.Form.ActionURL)
 	if err != nil || actionURL.Scheme == "" || actionURL.Host == "" || actionURL.User != nil || actionURL.Fragment != "" ||

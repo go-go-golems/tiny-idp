@@ -42,12 +42,21 @@ until that service has a deliberate production binding.
 cp pkg/idpsignup/open_signup.js ./var/signup.js
 ```
 
+The production host also requires a reviewed client catalog and a reviewed
+theme catalog. The example files under `catalog/` and `themes/` register one
+public PKCE client. In a real deployment these non-secret files should be
+mounted read-only by the deployment system. Client registration and theme
+selection are loaded once, before the listener opens.
+
 Use a certificate whose SAN covers the issuer hostname, then run:
 
 ```bash
 go run ./cmd/tinyidp serve-production \
   --addr :8443 \
   --issuer https://idp.example.test:8443 \
+  --clients-file ./examples/production-host/catalog/clients.json \
+  --theme-dir ./examples/production-host/themes \
+  --theme-catalog-file ./examples/production-host/themes/themes.json \
   --db ./var/idp.db \
   --audit-path ./var/audit.jsonl \
   --token-secret-file ./var/token-secret \

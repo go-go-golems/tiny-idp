@@ -114,10 +114,10 @@ func containerNames(pid int) names {
 }
 
 func startTinyIDP(ctx context.Context, root string, names names, subnet, program, version string) error {
-	script := "umask 077; head -c 48 /dev/urandom > /run/tinyidp-secrets/token.key; exec tinyidp serve-production --addr :8081 --listener-mode trusted-proxy-http --issuer " + idpIssuer + " --message-desk-origin " + messageOrigin + " --signup-program-file /etc/tinyidp/signup/open-signup.js --db /var/lib/tinyidp/tinyidp.sqlite --audit-path /var/log/tinyidp/audit.jsonl --token-secret-file /run/tinyidp-secrets/token.key --trusted-proxy-cidrs " + subnet
+	script := "umask 077; head -c 48 /dev/urandom > /run/tinyidp-secrets/token.key; exec tinyidp serve-production --addr :8081 --listener-mode trusted-proxy-http --issuer " + idpIssuer + " --clients-file /etc/tinyidp/catalog/clients.json --theme-dir /etc/tinyidp/themes --theme-catalog-file /etc/tinyidp/themes/themes.json --signup-program-file /etc/tinyidp/signup/open-signup.js --db /var/lib/tinyidp/tinyidp.sqlite --audit-path /var/log/tinyidp/audit.jsonl --token-secret-file /run/tinyidp-secrets/token.key --trusted-proxy-cidrs " + subnet
 	return command(ctx, root, "docker", "run", "-d", "--name", names.idp, "--network", names.network, "--network-alias", "tinyidp", "--read-only",
 		"--tmpfs", "/tmp:rw,noexec,nosuid,size=16m", "--tmpfs", "/var/lib/tinyidp:uid=65532,gid=65532,mode=0750", "--tmpfs", "/var/log/tinyidp:uid=65532,gid=65532,mode=0750", "--tmpfs", "/run/tinyidp-secrets:uid=65532,gid=65532,mode=0700",
-		"-v", program+":/etc/tinyidp/signup/open-signup.js:ro", "--entrypoint", "/bin/sh", "tinyidp:"+version, "-ec", script)
+		"-v", program+":/etc/tinyidp/signup/open-signup.js:ro", "-v", filepath.Join(root, "examples", "production-host", "catalog")+":/etc/tinyidp/catalog:ro", "-v", filepath.Join(root, "examples", "production-host", "themes")+":/etc/tinyidp/themes:ro", "--entrypoint", "/bin/sh", "tinyidp:"+version, "-ec", script)
 }
 
 func startProxy(ctx context.Context, root string, names names, material string) error {
