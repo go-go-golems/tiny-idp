@@ -157,6 +157,16 @@ The generated host image is distroless. Inspect it through Compose logs and
 the public readiness/acceptance scripts rather than adding debugging packages
 to the runtime image.
 
+The one-shot `goja-bootstrap` service runs the same generated image with
+`operator bootstrap-admin`. It reads its local database DSN from a Compose
+secret, reconciles the immutable TinyIDP issuer/subject identity and initial
+organization administrator, and writes an audit record in the same database
+transaction. The operation is idempotent and may be rerun with:
+
+```sh
+docker compose run --rm goja-bootstrap
+```
+
 ## Logs and diagnosis
 
 ```sh

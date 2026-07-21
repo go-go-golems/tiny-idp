@@ -132,6 +132,7 @@ services:
       retries: 24
 
   goja-auth:
+    image: tinyidp-local/goja-auth-host:dev
     build:
       context: ../../../go-go-goja
       dockerfile: Dockerfile.auth-host
@@ -170,24 +171,29 @@ services:
     # proxy instead of weakening the image solely for a container healthcheck.
 
   goja-bootstrap:
-    image: postgres:17-alpine
-    environment:
-      PGPASSWORD: goja-local-development-only
+    image: tinyidp-local/goja-auth-host:dev
+    build:
+      context: ../../../go-go-goja
+      dockerfile: Dockerfile.auth-host
+    # Local Compose secrets are host bind mounts and retain the host file's
+    # 0600 ownership. This one-shot process runs as root only to read that
+    # mount; the long-running generated host remains distroless/nonroot.
+    user: "0:0"
     command:
-      - /bin/sh
-      - -ec
-      - |
-        for attempt in $$(seq 1 60); do
-          if psql -h postgres -U goja -d goja_auth -tAc "SELECT to_regclass('public.auth_app_users')" | grep -q auth_app_users; then
-            psql -h postgres -U goja -d goja_auth -v ON_ERROR_STOP=1 -f /bootstrap/bootstrap.sql
-            exit 0
-          fi
-          sleep 1
-        done
-        echo 'goja auth schema did not become available' >&2
-        exit 1
-    volumes:
-      - ./bootstrap.sql:/bootstrap/bootstrap.sql:ro
+      - operator
+      - bootstrap-admin
+      - --db-driver=postgres
+      - --db-dsn-file=/run/secrets/goja_appauth_dsn
+      - --apply-schema
+      - --issuer=https://idp.localhost:8443
+      - --subject=local-admin
+      - --email=admin@example.test
+      - --display-name=Local Administrator
+      - --organization-id=o1
+      - --organization-slug=local-demo
+      - --organization-name=Local Demo Organization
+      - --operator-id=local-compose-bootstrap
+    secrets: [goja_appauth_dsn]
     depends_on:
       postgres: {condition: service_healthy}
       goja-auth: {condition: service_started}
@@ -217,3 +223,5 @@ secrets:
     file: ./runtime/secrets/invitation-lookup.key
   email_challenge_key:
     file: ./runtime/secrets/email-challenge.key
+  goja_appauth_dsn:
+    file: ./runtime/secrets/goja-appauth-dsn.txt
