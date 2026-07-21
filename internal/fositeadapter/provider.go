@@ -771,11 +771,12 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrInvalidRequest.WithHint("invalid registration request"))
 		return
 	}
-	if registrationRequested && hasSession {
-		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrInvalidRequest.WithHint("registration requires a new browser session"))
-		return
-	}
 	if registrationRequested {
+		// Registration is an explicit browser intent to create and switch to a
+		// new identity. An active provider session remains bound to the pending
+		// interaction until commit; successful account creation then replaces
+		// the current browser cookie with the new session. The previous durable
+		// session may remain available through the account chooser.
 		needLogin = false
 		actions &^= idpstore.InteractionRequireLogin | idpstore.InteractionRequireFreshLogin
 		actions |= idpstore.InteractionRequireRegistration

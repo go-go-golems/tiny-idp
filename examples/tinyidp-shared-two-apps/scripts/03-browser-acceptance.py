@@ -422,6 +422,28 @@ def reject_cross_site_registration_with_themed_page() -> None:
         require(forbidden not in result.body, f"registration rejection disclosed forbidden value {forbidden!r}")
 
 
+def begin_signup_after_local_logout() -> None:
+    browser = Browser()
+    login(browser, f"{MESSAGE_ORIGIN}/auth/login?return_to=/", ADMIN_LOGIN, ADMIN_PASSWORD, MESSAGE_ORIGIN)
+    session = browser.get(f"{MESSAGE_ORIGIN}/api/session")
+    require_status(session, 200, "load Message Desk session before local logout")
+    csrf = session.json().get("csrfToken", "")
+    require(csrf, "Message Desk session omitted CSRF token before local logout")
+    logged_out = browser.request(
+        "POST",
+        f"{MESSAGE_ORIGIN}/auth/logout/local",
+        headers={"X-CSRF-Token": csrf},
+    )
+    require_status(logged_out, 204, "log out of Message Desk only")
+    signup_page = browser.get(f"{MESSAGE_ORIGIN}/auth/register?return_to=/")
+    require_status(signup_page, 200, "start signup with remembered TinyIDP session")
+    signup_form = parse_form(signup_page)
+    require(
+        {"display_name", "email"}.issubset(signup_form.values),
+        f"remembered-session signup did not render identity fields: {signup_form.values.keys()}",
+    )
+
+
 def goja_session(browser: Browser) -> dict[str, Any]:
     response = browser.get(f"{GOJA_ORIGIN}/auth/session")
     require_status(response, 200, "load goja session")
@@ -452,11 +474,15 @@ def main() -> None:
     run_id = secrets.token_hex(6)
     password = f"phase-five-{run_id}-correct-horse-battery-staple"
 
-    print("1/8 themed cross-site registration rejection")
+    print("1/9 themed cross-site registration rejection")
     reject_cross_site_registration_with_themed_page()
     print("OK rejected registration returned Message Desk HTML without submitted identity data")
 
-    print("2/8 Message Desk open-signup browser journey")
+    print("2/9 signup after Message Desk-only logout")
+    begin_signup_after_local_logout()
+    print("OK remembered TinyIDP session did not block explicit signup")
+
+    print("3/9 Message Desk open-signup browser journey")
     message_email = f"message-{run_id}@example.test"
     message_browser = Browser()
     _, message_code = signup(
@@ -474,7 +500,7 @@ def main() -> None:
     require(message_session.json().get("authenticated") is True, "Message Desk signup did not establish a session")
     print(f"OK open signup established Message Desk session for {message_email}")
 
-    print("3/8 administrator OIDC login and application invitation issuance")
+    print("4/9 administrator OIDC login and application invitation issuance")
     admin = Browser()
     login(admin, f"{GOJA_ORIGIN}/auth/login?return_to=/", ADMIN_LOGIN, ADMIN_PASSWORD, GOJA_ORIGIN)
     admin_session = goja_session(admin)
@@ -485,7 +511,7 @@ def main() -> None:
     new_user_pending = begin_membership_invitation(Browser(), new_user_app_invite["token"])
     print(f"OK issued email-bound application invite for {new_goja_email}")
 
-    print("4/8 invite-gated TinyIDP signup and OIDC callback")
+    print("5/9 invite-gated TinyIDP signup and OIDC callback")
     signup_invite = issue_signup_invitation()
     new_goja_browser = Browser()
     completed, goja_code = signup(
@@ -505,7 +531,7 @@ def main() -> None:
     require(new_session.get("emailVerified") is True, f"verified signup did not produce a verified app user: {new_session}")
     print("OK pending handle and verified email survived registration, authorization, callback, and app session creation")
 
-    print("5/8 newly verified user accepts the email-bound application invitation")
+    print("6/9 newly verified user accepts the email-bound application invitation")
     accepted_new = new_goja_browser.json_request(
         "POST",
         f"{GOJA_ORIGIN}/org-invites/accept",
@@ -537,7 +563,7 @@ def main() -> None:
     require(new_membership_count == "1", f"expected one new-user viewer membership, got {new_membership_count}")
     print("OK verified signup immediately received one membership and rejected both replay paths")
 
-    print("6/8 one-time TinyIDP signup invitation replay rejection")
+    print("7/9 one-time TinyIDP signup invitation replay rejection")
     replay_browser = Browser()
     replay_page = replay_browser.get(f"{GOJA_ORIGIN}/auth/register?return_to=/")
     replay_email = f"goja-replay-{run_id}@example.test"
@@ -561,7 +587,7 @@ def main() -> None:
     require_status(no_replay_mail, 404, "invalid signup invitation must not send email")
     print("OK consumed signup invitation was denied before mail delivery")
 
-    print("7/8 verified existing-user membership acceptance remains supported")
+    print("8/9 verified existing-user membership acceptance remains supported")
     existing_invite = issue_membership_invitation(admin, INVITEE_LOGIN)
     existing_browser = Browser()
     existing_pending = begin_membership_invitation(existing_browser, existing_invite["token"])
@@ -606,7 +632,7 @@ def main() -> None:
     require(membership_count == "1", f"expected one active viewer membership, got {membership_count}")
     print("OK verified invitee received one membership and both pending/raw replay paths were rejected")
 
-    print("8/8 operational audit evidence")
+    print("9/9 operational audit evidence")
     audit_response = admin.get(f"{GOJA_ORIGIN}/orgs/o1/audit?limit=100")
     require_status(audit_response, 200, "query application audit")
     audit_text = json.dumps(audit_response.json(), sort_keys=True)

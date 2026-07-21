@@ -146,6 +146,25 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 		t.Fatalf("registered user=%#v err=%v", user, err)
 	}
 
+	secondRequest := authorizeForm("secondABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnop")
+	secondRequest.Del("login")
+	secondRequest.Set("client_id", "message-desk")
+	secondRequest.Set("scope", "openid profile")
+	secondRequest.Set("state", "second-registration-state")
+	secondRequest.Set("tinyidp_signup", "1")
+	secondResponse, err := client.Get(server.URL + "/authorize?" + secondRequest.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBody, err := io.ReadAll(secondResponse.Body)
+	secondResponse.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondResponse.StatusCode != http.StatusOK || !strings.Contains(string(secondBody), `name="`+idpui.PasswordConfirmationFieldName+`"`) {
+		t.Fatalf("registration with active provider session status=%d body=%s", secondResponse.StatusCode, secondBody)
+	}
+
 	replay := submitRegistration(t, client, server.URL, form)
 	defer replay.Body.Close()
 	if replay.StatusCode != http.StatusBadRequest {
