@@ -84,8 +84,10 @@ function Welcome({ registrationEnabled, providerRegistrationEnabled }: { registr
 		return <section className="composer">
 			<p className="kicker">02 / JOIN</p><h2>Open a desk account</h2>
 			<p className="form-help">Tiny-IDP creates and protects your account. Message Desk receives only the signed-in identity after the secure authorization flow completes.</p>
-			<a className="quiet" href="/auth/register?return_to=/">Create an account with Tiny-IDP</a>
-			<a className="quiet" href="/auth/login?return_to=/">I already have an account</a>
+			<nav className="d-flex flex-column align-items-start gap-2" aria-label="Account actions">
+				<a className="quiet" href="/auth/register?return_to=/">Create an account with Tiny-IDP</a>
+				<a className="quiet" href="/auth/login?return_to=/">I already have an account</a>
+			</nav>
 		</section>;
 	}
 	if (!registrationEnabled) {
