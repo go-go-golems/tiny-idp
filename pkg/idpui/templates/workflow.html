@@ -9,6 +9,7 @@
 <body>
   <main class="container py-4">
     <h1>{{.DocumentTitle}}</h1>
+    {{with .Error}}<div class="alert alert-danger" role="alert">{{.Summary}} {{if $.Form.RedirectOrigin}}<a href="{{$.Form.RedirectOrigin}}">Return to application</a>{{end}}</div>{{end}}
     <form method="post" action="{{.Form.ActionURL}}">
       {{range .Fields}}
       {{$error := $.ErrorFor .Descriptor.ID}}

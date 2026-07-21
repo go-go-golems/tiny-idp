@@ -13,6 +13,7 @@
       <p class="kicker">{{.Theme.ProductName}} / identity</p>
       <h1>{{.Page.DocumentTitle}}</h1>
     </header>
+    {{with .Page.Error}}<p class="error" role="alert">{{.Summary}} {{if $.Page.Form.RedirectOrigin}}<a href="{{$.Page.Form.RedirectOrigin}}">Return to application</a>{{end}}</p>{{end}}
     <form method="post" action="{{.Page.Form.ActionURL}}">
       {{range .Page.Fields}}
       {{$error := $.Page.ErrorFor .Descriptor.ID}}

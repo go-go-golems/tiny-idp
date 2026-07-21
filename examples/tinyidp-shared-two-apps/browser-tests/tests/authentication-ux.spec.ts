@@ -108,13 +108,13 @@ test("duplicate email produces a themed actionable signup error", async ({ page 
   await expect(page.getByLabel("Email verification code")).toBeVisible();
   await page.getByLabel("Email verification code").fill(await latestEmailCode(page, email));
   await page.getByRole("button", { name: /create account|continue/i }).click();
-  await expect(page.getByRole("heading", { name: "Choose a password" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create an account" })).toBeVisible();
   await page.getByLabel("Password", { exact: true }).fill("duplicate account password 2026!");
   await page.getByLabel("Confirm password").fill("duplicate account password 2026!");
   await page.getByRole("button", { name: "Create account" }).click();
 
   await expect(page.getByText("An account already uses this email address.")).toBeVisible();
-  await expect(page.getByRole("link", { name: /sign in|log in/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return to application" })).toBeVisible();
   await expectMessageDeskTheme(page);
   expect((await page.locator("body").innerText()).toLowerCase()).not.toContain("registration request was not accepted");
 });

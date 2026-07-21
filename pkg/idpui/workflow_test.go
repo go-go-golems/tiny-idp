@@ -35,6 +35,20 @@ func TestWorkflowPasswordRejectionHasActionablePublicCopy(t *testing.T) {
 	assert.Equal(t, "Use at least 15 characters and choose a password that is difficult to guess.", errorMessage.Summary())
 }
 
+func TestWorkflowDuplicateIdentityHasSafeGlobalRecoveryCopy(t *testing.T) {
+	errorMessage := idpui.WorkflowGlobalError{Code: idpui.WorkflowErrorDuplicateIdentity}
+	assert.Equal(t, "An account already uses this email address. Return to the application to sign in, or restart signup with a different email address.", errorMessage.Summary())
+	page := workflowPage(t)
+	page.Form.RedirectOrigin = "https://app.example"
+	page.Error = &errorMessage
+	renderer, err := idpui.NewDefaultRenderer()
+	require.NoError(t, err)
+	var output bytes.Buffer
+	require.NoError(t, renderer.RenderWorkflow(context.Background(), &output, page))
+	assert.Contains(t, output.String(), "An account already uses this email address.")
+	assert.Contains(t, output.String(), "Return to application")
+}
+
 func TestWorkflowPageRejectsRenderedSecretAndInvalidDescriptor(t *testing.T) {
 	page := workflowPage(t)
 	page.Fields[1].Value = "secret-value"

@@ -23,6 +23,7 @@ type WorkflowPage struct {
 	Fields   []WorkflowField
 	Actions  []WorkflowAction
 	Errors   []WorkflowFieldError
+	Error    *WorkflowGlobalError
 }
 
 type WorkflowForm struct {
@@ -49,6 +50,29 @@ type WorkflowAction struct {
 type WorkflowFieldError struct {
 	Field idpworkflow.FieldID
 	Code  idpworkflow.FieldErrorCode
+}
+
+// WorkflowGlobalErrorCode identifies a provider-owned error that applies to a
+// live workflow but cannot truthfully be attached to a field on the current
+// page. A duplicate email is discovered after this workflow has advanced to
+// password selection, where no email input is rendered.
+type WorkflowGlobalErrorCode string
+
+const WorkflowErrorDuplicateIdentity WorkflowGlobalErrorCode = "duplicate_identity"
+
+func (c WorkflowGlobalErrorCode) Valid() bool {
+	return c == WorkflowErrorDuplicateIdentity
+}
+
+type WorkflowGlobalError struct {
+	Code WorkflowGlobalErrorCode
+}
+
+func (e WorkflowGlobalError) Summary() string {
+	if e.Code == WorkflowErrorDuplicateIdentity {
+		return "An account already uses this email address. Return to the application to sign in, or restart signup with a different email address."
+	}
+	return "This request could not be completed."
 }
 
 func (p WorkflowPage) Validate() error {
@@ -109,6 +133,9 @@ func (p WorkflowPage) Validate() error {
 			return fmt.Errorf("invalid workflow field error")
 		}
 	}
+	if p.Error != nil && !p.Error.Code.Valid() {
+		return fmt.Errorf("invalid workflow global error")
+	}
 	return nil
 }
 
@@ -117,6 +144,10 @@ func (p WorkflowPage) Clone() WorkflowPage {
 	clone.Fields = append([]WorkflowField(nil), p.Fields...)
 	clone.Actions = append([]WorkflowAction(nil), p.Actions...)
 	clone.Errors = append([]WorkflowFieldError(nil), p.Errors...)
+	if p.Error != nil {
+		errorCopy := *p.Error
+		clone.Error = &errorCopy
+	}
 	return clone
 }
 

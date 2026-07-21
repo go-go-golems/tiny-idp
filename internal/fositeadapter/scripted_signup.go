@@ -221,6 +221,10 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, continuationBindings, record, clientAddress, verifiedEmail)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: signupCommitFailureReason(err)})
+		if errors.Is(err, idpstore.ErrDuplicate) {
+			p.renderScriptedSignupGlobalError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpui.WorkflowErrorDuplicateIdentity)
+			return
+		}
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
@@ -516,6 +520,12 @@ func (p *Provider) renderScriptedSignupFieldError(w http.ResponseWriter, r *http
 		return
 	}
 	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: idpworkflow.ErrorRejected}}))
+}
+
+func (p *Provider) renderScriptedSignupGlobalError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, code idpui.WorkflowGlobalErrorCode) {
+	page := workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, nil)
+	page.Error = &idpui.WorkflowGlobalError{Code: code}
+	p.renderWorkflow(w, r, http.StatusBadRequest, page)
 }
 
 func (p *Provider) signupBindingsFor(record idpstore.InteractionRecord, r *http.Request, fingerprint string) idpcontinuation.Bindings {
