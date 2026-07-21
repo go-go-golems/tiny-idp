@@ -110,6 +110,41 @@ func TestEmailVerifiedProgramDeclaresChallengeThenPasswordWorkflow(t *testing.T)
 	assert.NotEmpty(t, outcome.Challenge)
 }
 
+func TestVerifiedInvitationProgramComposesPerClientAdmissionAndEmailChallenge(t *testing.T) {
+	executor, err := idpsignup.New(context.Background(), idpsignup.VerifiedInviteSource, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+
+	message, err := executor.Start(context.Background(), idpsignup.StartInput{ClientID: "tinyidp-message-app", RedirectURI: "https://message.example/callback", RequestedScope: "openid", InteractionID: "message"})
+	require.NoError(t, err)
+	assert.Equal(t, []idpworkflow.FieldID{idpworkflow.FieldDisplayName, idpworkflow.FieldEmail}, fieldIDs(message.Fields))
+	goja, err := executor.Start(context.Background(), idpsignup.StartInput{ClientID: "goja-auth-host-demo", RedirectURI: "https://goja.example/callback", RequestedScope: "openid", InteractionID: "goja"})
+	require.NoError(t, err)
+	assert.Equal(t, []idpworkflow.FieldID{idpworkflow.FieldDisplayName, idpworkflow.FieldEmail, idpworkflow.FieldInviteCode}, fieldIDs(goja.Fields))
+
+	outcome, err := executor.Submit(context.Background(), map[idpworkflow.FieldID]string{idpworkflow.FieldDisplayName: "Ada", idpworkflow.FieldEmail: "ada@example.test"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, idpprogram.OutcomeChallenge, outcome.Kind)
+
+	workflow := executor.Program().Workflows[idpsignup.WorkflowID]
+	assert.Equal(t, "emailVerified", workflow.Handlers["submitted"].ContinuationEdges[0].HandlerID)
+	assert.Equal(t, "passwordSubmitted", workflow.Handlers["emailVerified"].ContinuationEdges[0].HandlerID)
+	passwordLambda := executor.Program().Lambdas[workflow.Handlers["passwordSubmitted"].LambdaID]
+	assert.Equal(t, []idpprogram.EffectKind{idpprogram.EffectCreateLocalIdentity, idpprogram.EffectAttachPasswordCredential, idpprogram.EffectConsumeInvitation}, passwordLambda.AllowedEffects)
+	assert.Len(t, executor.Program().Providers, 1)
+	for _, result := range executor.RunTests(context.Background()) {
+		assert.True(t, result.Passed, "%+v", result)
+	}
+}
+
+func fieldIDs(fields []idpworkflow.FieldDescriptor) []idpworkflow.FieldID {
+	ids := make([]idpworkflow.FieldID, 0, len(fields))
+	for _, field := range fields {
+		ids = append(ids, field.ID)
+	}
+	return ids
+}
+
 func TestExecutorRunsDeclarativeEmbeddedTests(t *testing.T) {
 	source := `const A = require("tinyidp").v1;
 module.exports = A.program("embedded-tests", p => {

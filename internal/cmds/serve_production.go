@@ -25,6 +25,8 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/productionui"
 	"github.com/go-go-golems/tiny-idp/pkg/embeddedidp"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge/smtpmailer"
 	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
@@ -37,30 +39,40 @@ type ServeProductionCommand struct {
 }
 
 type serveProductionSettings struct {
-	Addr                string   `glazed:"addr"`
-	ListenerMode        string   `glazed:"listener-mode"`
-	Issuer              string   `glazed:"issuer"`
-	ClientsFile         string   `glazed:"clients-file"`
-	ThemeDir            string   `glazed:"theme-dir"`
-	ThemeCatalogFile    string   `glazed:"theme-catalog-file"`
-	SignupProgramFile   string   `glazed:"signup-program-file"`
-	DBPath              string   `glazed:"db"`
-	AuditPath           string   `glazed:"audit-path"`
-	TokenSecretFile     string   `glazed:"token-secret-file"`
-	InvitationKeyFile   string   `glazed:"invitation-lookup-key-file"`
-	TLSCertFile         string   `glazed:"tls-cert"`
-	TLSKeyFile          string   `glazed:"tls-key"`
-	TrustedProxyCIDRs   []string `glazed:"trusted-proxy-cidrs"`
-	MaxProxyHops        int      `glazed:"max-proxy-hops"`
-	RateLimit           int      `glazed:"rate-limit"`
-	RateWindow          string   `glazed:"rate-window"`
-	MaintenanceInterval string   `glazed:"maintenance-interval"`
-	ReadHeaderTimeout   string   `glazed:"read-header-timeout"`
-	ReadTimeout         string   `glazed:"read-timeout"`
-	WriteTimeout        string   `glazed:"write-timeout"`
-	IdleTimeout         string   `glazed:"idle-timeout"`
-	ShutdownTimeout     string   `glazed:"shutdown-timeout"`
-	MaxRequestBytes     int      `glazed:"max-request-bytes"`
+	Addr                    string   `glazed:"addr"`
+	ListenerMode            string   `glazed:"listener-mode"`
+	Issuer                  string   `glazed:"issuer"`
+	ClientsFile             string   `glazed:"clients-file"`
+	ThemeDir                string   `glazed:"theme-dir"`
+	ThemeCatalogFile        string   `glazed:"theme-catalog-file"`
+	SignupProgramFile       string   `glazed:"signup-program-file"`
+	DBPath                  string   `glazed:"db"`
+	AuditPath               string   `glazed:"audit-path"`
+	TokenSecretFile         string   `glazed:"token-secret-file"`
+	InvitationKeyFile       string   `glazed:"invitation-lookup-key-file"`
+	EmailChallengeKeyFile   string   `glazed:"email-challenge-key-file"`
+	EmailSMTPAddress        string   `glazed:"email-smtp-address"`
+	EmailSMTPTLSMode        string   `glazed:"email-smtp-tls-mode"`
+	EmailSMTPServerName     string   `glazed:"email-smtp-server-name"`
+	EmailSMTPUsername       string   `glazed:"email-smtp-username"`
+	EmailSMTPPasswordFile   string   `glazed:"email-smtp-password-file"`
+	EmailFromAddress        string   `glazed:"email-from-address"`
+	EmailFromName           string   `glazed:"email-from-name"`
+	EmailSMTPConnectTimeout string   `glazed:"email-smtp-connect-timeout"`
+	EmailSMTPSendTimeout    string   `glazed:"email-smtp-send-timeout"`
+	TLSCertFile             string   `glazed:"tls-cert"`
+	TLSKeyFile              string   `glazed:"tls-key"`
+	TrustedProxyCIDRs       []string `glazed:"trusted-proxy-cidrs"`
+	MaxProxyHops            int      `glazed:"max-proxy-hops"`
+	RateLimit               int      `glazed:"rate-limit"`
+	RateWindow              string   `glazed:"rate-window"`
+	MaintenanceInterval     string   `glazed:"maintenance-interval"`
+	ReadHeaderTimeout       string   `glazed:"read-header-timeout"`
+	ReadTimeout             string   `glazed:"read-timeout"`
+	WriteTimeout            string   `glazed:"write-timeout"`
+	IdleTimeout             string   `glazed:"idle-timeout"`
+	ShutdownTimeout         string   `glazed:"shutdown-timeout"`
+	MaxRequestBytes         int      `glazed:"max-request-bytes"`
 }
 
 const maxProductionSignupProgramBytes = 256 << 10
@@ -104,6 +116,16 @@ Example:
 			fields.New("audit-path", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Synchronous JSONL audit path")),
 			fields.New("token-secret-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Owner-only file containing at least 32 random bytes")),
 			fields.New("invitation-lookup-key-file", fields.TypeString, fields.WithHelp("Owner-only 32-byte HMAC key; required when the signup program declares a durable invitation provider")),
+			fields.New("email-challenge-key-file", fields.TypeString, fields.WithHelp("Owner-only 32-byte HMAC key; required when the signup program declares an email challenge")),
+			fields.New("email-smtp-address", fields.TypeString, fields.WithHelp("SMTP submission host:port; required for email-challenge signup")),
+			fields.New("email-smtp-tls-mode", fields.TypeString, fields.WithHelp("SMTP transport: starttls, implicit, or private-plaintext")),
+			fields.New("email-smtp-server-name", fields.TypeString, fields.WithHelp("Optional TLS server name; defaults to the SMTP address host")),
+			fields.New("email-smtp-username", fields.TypeString, fields.WithHelp("Optional SMTP username; requires --email-smtp-password-file and TLS")),
+			fields.New("email-smtp-password-file", fields.TypeString, fields.WithHelp("Owner-only SMTP password file; required with --email-smtp-username")),
+			fields.New("email-from-address", fields.TypeString, fields.WithHelp("Fixed sender mailbox for email challenges")),
+			fields.New("email-from-name", fields.TypeString, fields.WithDefault("TinyIDP"), fields.WithHelp("Fixed sender display name")),
+			fields.New("email-smtp-connect-timeout", fields.TypeString, fields.WithDefault("5s"), fields.WithHelp("SMTP connection timeout")),
+			fields.New("email-smtp-send-timeout", fields.TypeString, fields.WithDefault("15s"), fields.WithHelp("Complete SMTP exchange timeout")),
 			fields.New("tls-cert", fields.TypeString, fields.WithHelp("TLS certificate PEM path; required only for direct-tls")),
 			fields.New("tls-key", fields.TypeString, fields.WithHelp("TLS private-key PEM path; required only for direct-tls")),
 			fields.New("trusted-proxy-cidrs", fields.TypeStringList, fields.WithHelp("Required only for trusted-proxy-http; narrow CIDRs allowed to supply forwarded metadata")),
@@ -158,10 +180,11 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 	if err != nil {
 		return err
 	}
-	signupProgram, err := checkProductionSignupProgram(ctx, signupSource)
+	signupArtifact, err := idpsignup.Compile(ctx, signupSource)
 	if err != nil {
-		return err
+		return fmt.Errorf("check signup program: %w", err)
 	}
+	signupProgram := signupArtifact.Program()
 	var invitationLookupKey []byte
 	if productionProgramRequiresDurableInvitations(signupProgram) {
 		invitationLookupKey, err = readOwnerOnlySecret(settings.InvitationKeyFile)
@@ -195,12 +218,17 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		}
 		clearProductionSecret(invitationLookupKey)
 	}
+	emailChallenges, err := newProductionEmailChallenges(settings, store, signupProgram)
+	if err != nil {
+		_ = store.Close()
+		return err
+	}
 	audit, err := idp.NewFileAuditSink(settings.AuditPath)
 	if err != nil {
 		_ = store.Close()
 		return err
 	}
-	signupManager, err := newProductionSignupManager(ctx, signupSource, audit)
+	signupManager, err := newProductionSignupManager(ctx, signupSource, audit, productionSignupServices{EmailChallenges: emailChallenges != nil})
 	if err != nil {
 		_ = audit.Close()
 		_ = store.Close()
@@ -236,6 +264,7 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		ScriptedSignup: embeddedidp.ScriptedSignupConfig{
 			GenerationManager:  signupManager,
 			DurableInvitations: durableInvitations,
+			EmailChallenges:    emailChallenges,
 		},
 		Maintenance: embeddedidp.MaintenanceConfig{Interval: maintenanceInterval},
 		UI:          embeddedidp.UIConfig{Renderer: interactionUI, WorkflowRenderer: interactionUI},
@@ -369,8 +398,12 @@ func readProductionSignupProgram(path string) (string, error) {
 	return string(data), nil
 }
 
-func newProductionSignupManager(ctx context.Context, source string, audit idp.Sink) (*idpsignup.GenerationManager, error) {
-	_, err := checkProductionSignupProgram(ctx, source)
+type productionSignupServices struct {
+	EmailChallenges bool
+}
+
+func newProductionSignupManager(ctx context.Context, source string, audit idp.Sink, services productionSignupServices) (*idpsignup.GenerationManager, error) {
+	_, err := checkProductionSignupProgram(ctx, source, services)
 	if err != nil {
 		return nil, err
 	}
@@ -385,19 +418,19 @@ func newProductionSignupManager(ctx context.Context, source string, audit idp.Si
 	return manager, nil
 }
 
-func checkProductionSignupProgram(ctx context.Context, source string) (idpprogram.Program, error) {
+func checkProductionSignupProgram(ctx context.Context, source string, services productionSignupServices) (idpprogram.Program, error) {
 	artifact, err := idpsignup.Compile(ctx, source)
 	if err != nil {
 		return idpprogram.Program{}, fmt.Errorf("check signup program: %w", err)
 	}
 	program := artifact.Program()
-	if err := validateProductionSignupProgram(program); err != nil {
+	if err := validateProductionSignupProgram(program, services); err != nil {
 		return idpprogram.Program{}, err
 	}
 	return program, nil
 }
 
-func validateProductionSignupProgram(program idpprogram.Program) error {
+func validateProductionSignupProgram(program idpprogram.Program, services productionSignupServices) error {
 	unsupportedCapabilities := make([]string, 0)
 	for id, requirement := range program.Capabilities {
 		if id != idpinvite.LookupCapabilityID || requirement.Version != idpinvite.LookupCapabilityVersion {
@@ -427,7 +460,7 @@ func validateProductionSignupProgram(program idpprogram.Program) error {
 	usesInvitationEffect := false
 	for _, lambda := range program.Lambdas {
 		for _, outcome := range lambda.AllowedOutcomes {
-			if outcome == idpprogram.OutcomeChallenge {
+			if outcome == idpprogram.OutcomeChallenge && !services.EmailChallenges {
 				unsupported["email_challenge"] = struct{}{}
 			}
 		}
@@ -462,6 +495,79 @@ func productionProgramRequiresDurableInvitations(program idpprogram.Program) boo
 		}
 	}
 	return false
+}
+
+func productionProgramRequiresEmailChallenges(program idpprogram.Program) bool {
+	for _, lambda := range program.Lambdas {
+		for _, outcome := range lambda.AllowedOutcomes {
+			if outcome == idpprogram.OutcomeChallenge {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func newProductionEmailChallenges(settings *serveProductionSettings, store idpemailchallenge.Store, program idpprogram.Program) (*idpemailchallenge.Service, error) {
+	required := productionProgramRequiresEmailChallenges(program)
+	configured := strings.TrimSpace(settings.EmailChallengeKeyFile) != "" || strings.TrimSpace(settings.EmailSMTPAddress) != "" || strings.TrimSpace(settings.EmailSMTPTLSMode) != "" || strings.TrimSpace(settings.EmailSMTPServerName) != "" || strings.TrimSpace(settings.EmailSMTPUsername) != "" || strings.TrimSpace(settings.EmailSMTPPasswordFile) != "" || strings.TrimSpace(settings.EmailFromAddress) != ""
+	if !required {
+		if configured {
+			return nil, errors.New("email delivery flags require a signup program that declares an email challenge")
+		}
+		return nil, nil
+	}
+	if store == nil {
+		return nil, errors.New("email challenge signup requires a durable challenge store")
+	}
+	if strings.TrimSpace(settings.EmailChallengeKeyFile) == "" || strings.TrimSpace(settings.EmailSMTPAddress) == "" || strings.TrimSpace(settings.EmailSMTPTLSMode) == "" || strings.TrimSpace(settings.EmailFromAddress) == "" {
+		return nil, errors.New("email challenge signup requires --email-challenge-key-file, --email-smtp-address, --email-smtp-tls-mode, and --email-from-address")
+	}
+	connectTimeout, err := positiveDurationFlag("email-smtp-connect-timeout", settings.EmailSMTPConnectTimeout)
+	if err != nil {
+		return nil, err
+	}
+	sendTimeout, err := positiveDurationFlag("email-smtp-send-timeout", settings.EmailSMTPSendTimeout)
+	if err != nil {
+		return nil, err
+	}
+	key, err := readOwnerOnlyFile(settings.EmailChallengeKeyFile, "email challenge key", 32)
+	if err != nil {
+		return nil, err
+	}
+	defer clearProductionSecret(key)
+	var password []byte
+	if strings.TrimSpace(settings.EmailSMTPUsername) != "" || strings.TrimSpace(settings.EmailSMTPPasswordFile) != "" {
+		if strings.TrimSpace(settings.EmailSMTPUsername) == "" || strings.TrimSpace(settings.EmailSMTPPasswordFile) == "" {
+			return nil, errors.New("--email-smtp-username and --email-smtp-password-file must be configured together")
+		}
+		password, err = readOwnerOnlyFile(settings.EmailSMTPPasswordFile, "SMTP password", 1)
+		if err != nil {
+			return nil, err
+		}
+		defer clearProductionSecret(password)
+	}
+	mailer, err := smtpmailer.New(smtpmailer.Config{
+		Address: settings.EmailSMTPAddress, TLSMode: smtpmailer.TLSMode(settings.EmailSMTPTLSMode), ServerName: settings.EmailSMTPServerName,
+		Username: settings.EmailSMTPUsername, Password: password, FromAddress: settings.EmailFromAddress, FromName: settings.EmailFromName,
+		ConnectTimeout: connectTimeout, SendTimeout: sendTimeout, Templates: smtpmailer.SignupTemplates(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("construct SMTP email challenge mailer: %w", err)
+	}
+	service, err := idpemailchallenge.NewService(store, mailer, key)
+	if err != nil {
+		return nil, fmt.Errorf("construct durable email challenge service: %w", err)
+	}
+	return service, nil
+}
+
+func positiveDurationFlag(name, raw string) (time.Duration, error) {
+	duration, err := time.ParseDuration(raw)
+	if err != nil || duration <= 0 {
+		return 0, fmt.Errorf("invalid --%s duration %q", name, raw)
+	}
+	return duration, nil
 }
 
 func lambdaRequiresCapability(lambda idpprogram.LambdaSpec, id string, version uint32) bool {
@@ -532,23 +638,27 @@ func parseProductionDurations(settings *serveProductionSettings) (time.Duration,
 }
 
 func readOwnerOnlySecret(path string) ([]byte, error) {
+	return readOwnerOnlyFile(path, "token secret", 32)
+}
+
+func readOwnerOnlyFile(path, label string, minimumBytes int) ([]byte, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("--token-secret-file is required")
+		return nil, fmt.Errorf("%s file is required", label)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("stat token secret file: %w", err)
+		return nil, fmt.Errorf("stat %s file: %w", label, err)
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("token secret file must be regular and owner-only (0600 or 0400)")
+		return nil, fmt.Errorf("%s file must be regular and owner-only (0600 or 0400)", label)
 	}
 	secret, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read token secret file: %w", err)
+		return nil, fmt.Errorf("read %s file: %w", label, err)
 	}
 	secret = bytes.TrimSuffix(secret, []byte("\n"))
-	if len(secret) < 32 {
-		return nil, fmt.Errorf("token secret file must contain at least 32 bytes")
+	if len(secret) < minimumBytes {
+		return nil, fmt.Errorf("%s file must contain at least %d bytes", label, minimumBytes)
 	}
 	return secret, nil
 }

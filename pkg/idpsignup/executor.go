@@ -28,6 +28,9 @@ var EmailVerifiedSource string
 //go:embed invite_required_signup.js
 var InviteRequiredSource string
 
+//go:embed verified_invite_signup.js
+var VerifiedInviteSource string
+
 const (
 	WorkflowID       = "signup"
 	StartHandler     = "start"
