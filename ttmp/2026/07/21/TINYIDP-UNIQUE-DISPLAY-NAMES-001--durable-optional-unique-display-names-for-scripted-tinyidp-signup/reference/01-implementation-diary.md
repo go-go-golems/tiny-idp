@@ -125,3 +125,76 @@ The planned capability is `identity.displayName.lookup@v1` with a coarse
 boolean result. The planned effect flag is `uniqueDisplayName: true`; the
 native transaction must reserve a canonical key before writing the user and
 credential.
+
+## Step 2 — implement the native atomic claim primitive
+
+### Prompt Context
+
+> ok, Create a new ticket with docmgr and add a design/implementation guide and upload to remarkable, then work on those tasks, commit at appropriate interval, keep a detailed diary as you work.
+
+### Assistant interpretation
+
+Implement the durable invariant first because all later JavaScript and UI
+behavior depends on it being trustworthy. Commit: pending in this step.
+
+### What I did
+
+- Added `DisplayNameStore` and typed `ErrDisplayNameTaken` to the store contract.
+- Added a SQLite migration for a separate `display_name_claims` table and a
+  memory-store transactional claim map.
+- Added `RequireUniqueDisplayName` to account creation and prepared account
+  state. `CommitPrepared` reserves the canonical key before user and password
+  writes, in the caller-owned transaction.
+- Added memory and SQLite tests covering Unicode, case, and whitespace
+  equivalence; rollback; and preservation of non-policy behavior.
+
+### Why
+
+The claim is separate from `users` because profile display names are not
+globally unique by definition. A primary-key insert inside the transaction is
+the only component that can correctly decide a concurrent race.
+
+### What worked
+
+`go test ./pkg/idpaccounts ./internal/store/memory ./pkg/sqlitestore` passed.
+
+### What didn't work
+
+The first SQLite implementation called a nonexistent `isDuplicate` helper.
+The store already centralizes SQLite duplicate mapping in `mapDup`, so the
+implementation was corrected to use that helper before rerunning the focused
+suite.
+
+### What I learned
+
+The existing `Service.Create` path used the store's convenience
+`CreateUserWithCredential`; it now uses the same `Update` plus `CommitPrepared`
+boundary as scripted signup, ensuring policy behavior is consistent.
+
+### What was tricky
+
+The durable claim table initially contains only identities created under the
+policy. Historical-user reconciliation remains deliberate follow-up work; it
+must not silently choose a winner where old records already collide.
+
+### What warrants a second pair of eyes
+
+Review whether policy activation should be accompanied by an explicit
+operator-facing reconciliation command before it is enabled on a populated
+production instance.
+
+### What should be done in the future
+
+Wire the bounded lookup capability and script-selected effect flag, then add
+browser journeys for both preflight and final collision recovery.
+
+### Code review instructions
+
+Verify `ReserveDisplayName` precedes `PutUser` in `CommitPrepared` and that
+the SQLite table's primary key is the actual conflict authority.
+
+### Technical details
+
+`NormalizeDisplayName` uses Unicode NFC, case folding, and whitespace
+canonicalization. It intentionally stores the original `User.Name` unchanged
+for OIDC/profile presentation.

@@ -53,6 +53,45 @@ func TestCreateAndSetPasswordEnforceAcceptancePolicy(t *testing.T) {
 	}
 }
 
+func TestCreateOptionallyReservesNormalizedDisplayName(t *testing.T) {
+	stores := map[string]func(*testing.T) idpstore.Store{
+		"memory": func(*testing.T) idpstore.Store { return memory.New() },
+		"sqlite": func(t *testing.T) idpstore.Store {
+			store, err := sqlitestore.Open(context.Background(), sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			return store
+		},
+	}
+	for name, newStore := range stores {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := newStore(t)
+			service := testService(t, store, Options{})
+			if _, err := service.Create(ctx, CreateRequest{Login: "alice", Name: "  Mánuel  Example ", Password: []byte("alice-password-long"), RequireUniqueDisplayName: true}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Create(ctx, CreateRequest{Login: "bob", Name: "mánuel example", Password: []byte("bob-password-long"), RequireUniqueDisplayName: true}); !errors.Is(err, idpstore.ErrDisplayNameTaken) {
+				t.Fatalf("duplicate display name error = %v", err)
+			}
+			if _, err := store.GetUserByLogin(ctx, "bob"); !errors.Is(err, idpstore.ErrNotFound) {
+				t.Fatalf("duplicate display name left partial account: %v", err)
+			}
+			if _, err := service.Create(ctx, CreateRequest{Login: "carol", Name: "mánuel example", Password: []byte("carol-password-long")}); err != nil {
+				t.Fatalf("non-policy account unexpectedly rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestNormalizeDisplayName(t *testing.T) {
+	if got, want := NormalizeDisplayName("  Ma\u0301nuel\tEXAMPLE  "), "mánuel example"; got != want {
+		t.Fatalf("NormalizeDisplayName() = %q, want %q", got, want)
+	}
+}
+
 func TestCreateRejectsDuplicateExplicitIDAtomically(t *testing.T) {
 	stores := map[string]func(*testing.T) idpstore.Store{
 		"memory": func(*testing.T) idpstore.Store { return memory.New() },

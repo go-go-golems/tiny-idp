@@ -12,6 +12,7 @@ var (
 	ErrExpired                   = errors.New("expired")
 	ErrRefreshReuseDetected      = errors.New("refresh token reuse detected")
 	ErrDuplicate                 = errors.New("duplicate")
+	ErrDisplayNameTaken          = errors.New("display name is already claimed")
 	ErrLastSigningKey            = errors.New("cannot retire the final active signing key")
 	ErrActiveSigningKey          = errors.New("cannot purge an active signing key")
 	ErrSigningKeyNotRetired      = errors.New("cannot purge a signing key that has not been retired")
@@ -38,6 +39,15 @@ type UserStore interface {
 	// so subjects are unique within one Store.
 	GetUserBySubject(ctx context.Context, subject string) (User, error)
 	PutUser(ctx context.Context, login string, u User) error
+}
+
+// DisplayNameStore owns optional public-name claims. Claims are separate from
+// User.Name so an application may opt into uniqueness without making every
+// profile name globally unique. A successful reservation is durable; callers
+// must invoke ReserveDisplayName in the same transaction as identity creation.
+type DisplayNameStore interface {
+	DisplayNameAvailable(ctx context.Context, normalized string) (bool, error)
+	ReserveDisplayName(ctx context.Context, normalized, userID string) error
 }
 
 type PasswordCredentialStore interface {

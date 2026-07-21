@@ -3,7 +3,7 @@
 ## TODO
 
 - [x] Map current identity creation, normalization, durable storage, scripted signup, and presentation boundaries. <!-- t:dovv -->
-- [ ] Define and test a normalized durable display-name uniqueness invariant in the account store and transaction boundary. <!-- t:fyke -->
+- [x] Define and test a normalized durable display-name uniqueness invariant in the account store and transaction boundary. <!-- t:fyke -->
 - [ ] Add a bounded Goja identity display-name lookup capability and production program validation. <!-- t:pal1 -->
 - [ ] Expose a script-selected unique-display-name signup policy without making JavaScript the final authority. <!-- t:koyq -->
 - [ ] Render recoverable inline and race-time duplicate display-name errors with accurate themed UI. <!-- t:utef -->
