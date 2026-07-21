@@ -146,8 +146,8 @@ func DefaultRegistry() *Registry {
 	registry, err := NewRegistry([]FieldDescriptor{
 		{ID: FieldDisplayName, InputName: "display_name", Label: "Display name", Kind: ValueText, Normalize: NormalizeTrim, Required: true, MinLength: 1, MaxLength: 120, Autocomplete: "name", Redisplay: RedisplayPublic},
 		{ID: FieldEmail, InputName: "email", Label: "Email", Kind: ValueEmail, Normalize: NormalizeTrimLower, Required: true, MinLength: 3, MaxLength: 320, Autocomplete: "email", Redisplay: RedisplayPublic},
-		{ID: FieldPassword, InputName: "password", Label: "Password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 12, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
-		{ID: FieldPasswordConfirmation, InputName: "password_confirmation", Label: "Confirm password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 12, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
+		{ID: FieldPassword, InputName: "password", Label: "Password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 15, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
+		{ID: FieldPasswordConfirmation, InputName: "password_confirmation", Label: "Confirm password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 15, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
 		{ID: FieldInviteCode, InputName: "invite_code", Label: "Invite code", Kind: ValueText, Normalize: NormalizeTrim, Required: false, MinLength: 0, MaxLength: 128, Autocomplete: "off", Redisplay: RedisplayPublic},
 		{ID: FieldEmailCode, InputName: "email_code", Label: "Email verification code", Kind: ValueText, Normalize: NormalizeTrim, Required: true, MinLength: 6, MaxLength: 32, Autocomplete: "one-time-code", Redisplay: RedisplayPublic},
 	}, []ActionDescriptor{

@@ -107,8 +107,8 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 			if !action.SkipFormValidation && field.Required && raw == "" {
 				return Submission{}, errors.Errorf("workflow field %q is required", field.ID)
 			}
-			if !action.SkipFormValidation && utf8.RuneCountInString(raw) > field.MaxLength {
-				return Submission{}, errors.Errorf("workflow field %q exceeds maximum length", field.ID)
+			if !action.SkipFormValidation && (utf8.RuneCountInString(raw) < field.MinLength || utf8.RuneCountInString(raw) > field.MaxLength) {
+				return Submission{}, errors.Errorf("workflow field %q is outside length bounds", field.ID)
 			}
 			secretValues[field.ID] = append([]byte(nil), raw...)
 			continue

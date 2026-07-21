@@ -127,6 +127,9 @@ func (e WorkflowFieldError) Summary() string {
 	case idpworkflow.ErrorMismatch:
 		return "The values do not match."
 	case idpworkflow.ErrorRejected:
+		if e.Field == idpworkflow.FieldPassword || e.Field == idpworkflow.FieldPasswordConfirmation {
+			return "Use at least 15 characters and choose a password that is difficult to guess."
+		}
 		return "This value could not be accepted."
 	case idpworkflow.ErrorInvalid:
 		return "Enter a valid value."

@@ -22,10 +22,17 @@ func TestDefaultRendererRendersOnlyValidatedWorkflowDescriptors(t *testing.T) {
 	html := output.String()
 	assert.Contains(t, html, `name="display_name"`)
 	assert.Contains(t, html, `name="password" type="password" value=""`)
+	assert.Contains(t, html, `minlength="15" maxlength="1024"`)
+	assert.Contains(t, html, `Use at least 15 characters.`)
 	assert.Contains(t, html, `value="submit"`)
 	assert.Contains(t, html, `value="deny" formnovalidate`)
 	assert.NotContains(t, html, "secret-value")
 	assert.NotContains(t, html, "<script>")
+}
+
+func TestWorkflowPasswordRejectionHasActionablePublicCopy(t *testing.T) {
+	errorMessage := idpui.WorkflowFieldError{Field: idpworkflow.FieldPassword, Code: idpworkflow.ErrorRejected}
+	assert.Equal(t, "Use at least 15 characters and choose a password that is difficult to guess.", errorMessage.Summary())
 }
 
 func TestWorkflowPageRejectsRenderedSecretAndInvalidDescriptor(t *testing.T) {

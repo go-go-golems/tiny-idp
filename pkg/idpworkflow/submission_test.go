@@ -45,7 +45,8 @@ func TestParseSubmissionRejectsMalformedShapeAndValues(t *testing.T) {
 		{name: "unknown action", edit: func(v url.Values) { v.Set(idpui.ActionFieldName, "admin") }, want: "unsupported action"},
 		{name: "required empty", edit: func(v url.Values) { v.Set("display_name", "  ") }, want: "required"},
 		{name: "bad email", edit: func(v url.Values) { v.Set("email", "not an email") }, want: "valid email"},
-		{name: "long password", edit: func(v url.Values) { v.Set("password", string(make([]byte, 1025))) }, want: "maximum length"},
+		{name: "short password", edit: func(v url.Values) { v.Set("password", "too short") }, want: "length bounds"},
+		{name: "long password", edit: func(v url.Values) { v.Set("password", string(make([]byte, 1025))) }, want: "length bounds"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
