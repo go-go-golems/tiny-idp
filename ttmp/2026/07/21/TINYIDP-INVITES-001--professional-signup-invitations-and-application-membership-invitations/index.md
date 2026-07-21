@@ -1,7 +1,7 @@
 ---
 Title: Professional signup invitations and application membership invitations
 Ticket: TINYIDP-INVITES-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - identity
@@ -13,7 +13,7 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: "Design ticket for a minimal production-grade TinyIDP signup-invitation core and a separate atomic go-go-goja organization-membership invitation flow."
-LastUpdated: 2026-07-21T18:20:00-04:00
+LastUpdated: 2026-07-21T15:15:38-04:00
 WhatFor: "Track the design and implementation phases needed to ship invite-gated identities and application memberships without coupling the two authority domains."
 WhenToUse: "Use to orient implementation work and find the detailed design, diary, tasks, and change history."
 ---
@@ -35,7 +35,7 @@ The design reuses existing durable TinyIDP invitation and go-go-goja capability 
 
 ## Current status
 
-The research and design are complete. Implementation tasks remain open and are organized into six phases. The intended order is TinyIDP production activation, concrete invite-required signup, atomic go-go-goja membership acceptance, OIDC orchestration, and finally local acceptance before k3s/GitOps work.
+All ticket tasks through local Phase 5 are complete. TinyIDP production invitation activation, the concrete per-client signup workflow, atomic go-go-goja membership acceptance, safe OIDC continuation, deterministic local bootstrap, and the full browser acceptance suite are implemented and passing. k3s and GitOps remain deliberately outside this ticket's completed scope.
 
 ## Core decision
 

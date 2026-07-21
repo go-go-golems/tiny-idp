@@ -1,7 +1,7 @@
 ---
 Title: Professional invitation core and application membership invitation design and implementation guide
 Ticket: TINYIDP-INVITES-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - identity
@@ -11,6 +11,10 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
+      Note: Defines the completed local two-application HTTPS and bootstrap topology
+    - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
+      Note: Executes the seven-stage browser and audit definition of done
     - Path: repo://internal/cmds/serve_production.go
       Note: Contains the current production validator that rejects native invitation capabilities
     - Path: repo://internal/fositeadapter/scripted_signup.go
@@ -20,17 +24,20 @@ RelatedFiles:
     - Path: repo://pkg/idpinvite/durable.go
       Note: Defines HMAC-protected durable invitation issuance, revocation, and transaction-aware redemption
     - Path: ws://go-go-goja/examples/xgoja/21-generated-host-auth/verbs/sites.js
-      Note: Shows current org-invite issuance and incomplete acceptance without membership creation
+      Note: Shows final policy-gated org-invite issuance, continuation, and membership acceptance routes
     - Path: ws://go-go-goja/pkg/gojahttp/auth/appauth/appauth.go
       Note: Defines application users, memberships, and the authentication-versus-authorization boundary
     - Path: ws://go-go-goja/pkg/gojahttp/auth/capability/capability.go
       Note: Defines the durable application capability lifecycle and token-secrecy contract
+    - Path: ws://go-go-goja/pkg/gojahttp/auth/membershipinvite/sqlstore/sqlstore.go
+      Note: Implements atomic identity-bound membership and invitation acceptance
 ExternalSources: []
 Summary: A pragmatic design for durable TinyIDP account-creation invitations and atomic go-go-goja application-membership invitations, including trust boundaries, JS APIs, browser flows, transactions, tests, and phased implementation.
-LastUpdated: 2026-07-21T18:20:00-04:00
+LastUpdated: 2026-07-21T15:15:38-04:00
 WhatFor: Implement invitation-gated signup and organization membership without turning JavaScript into a database layer or coupling TinyIDP to application authorization.
 WhenToUse: Use before changing TinyIDP signup scripting, go-go-goja capability acceptance, OIDC registration routing, or the shared two-application deployment.
 ---
+
 
 
 
@@ -420,8 +427,9 @@ BEGIN application transaction
   verify capability resource type == org
   load authenticated application user
   verify user is enabled
-  verify invite email is nonempty
-  verify actor email is verified and normalized-email matches
+  verify capability has an email binding, a subject binding, or both
+  if subject binding exists, verify it equals authenticated app user ID
+  if email binding exists, verify actor email is verified and normalized-email matches
   validate role against the application's closed role vocabulary
   insert membership(user_id, org_id, role)
   mark capability used with a conditional update
@@ -439,19 +447,24 @@ JavaScript may own routing and response presentation while native code owns the 
 ```javascript
 app.post("/org-invites/accept")
   .auth(express.user().required())
+  .allow("user.self.read")
   .csrf()
   .audit("org.invite.accepted")
-  .handle(async (ctx, res) => {
-    const accepted = await auth.membershipInvites.accept({
-      token: ctx.body.token
-      // actor identity is injected by native code, not accepted here
-    });
+  .handle((ctx, res) => {
+    const accepted = auth.membershipInvites
+      .acceptPending(ctx.body.pending || "")
+      .actor(ctx.actor.id)
+      .run();
 
-    res.redirect(`/orgs/${accepted.orgId}`);
+    res.json({
+      capabilityId: accepted.capabilityId,
+      orgId: accepted.orgId,
+      role: accepted.role
+    });
   });
 ```
 
-The JS function receives an opaque native operation whose implementation uses `ctx.actor`. The host must ignore or reject `userId`, `email`, `role`, and `orgId` supplied by request data. The only browser-provided authority is the invite token; all other authority comes from the authenticated actor and stored capability.
+The route passes only the opaque pending handle and the actor ID already established by the authenticated host context. The host must ignore or reject `userId`, `email`, `role`, and `orgId` supplied by request data. The native operation reloads the actor, pending record, and underlying capability in one transaction; organization, role, and identity binding come from durable trusted state.
 
 ### 6.3 Issuance remains application policy
 
