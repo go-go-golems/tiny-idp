@@ -18,28 +18,28 @@
 
 ## Phase 3 — Make MessageDesk a GitOps-provided theme
 
-- [ ] Move the MessageDesk IdP CSS source into an application-owned theme source directory and document its review ownership. <!-- t:f9bm -->
-- [ ] Add a GitOps Kustomize `configMapGenerator` that packages `themes.json` and reviewed CSS with a content-hashed name. <!-- t:g1uy -->
-- [ ] Mount the generated ConfigMap read-only at `/etc/tinyidp/themes`; pass `--theme-dir` and `--theme-catalog-file` to TinyIDP. <!-- t:493j -->
-- [ ] Remove the embedded MessageDesk stylesheet route from the production host after the mounted asset route is verified. <!-- t:4wvf -->
-- [ ] Render the shared IdP manifest and prove a theme source change alters the generated ConfigMap reference and therefore the Pod template. <!-- t:5eqb -->
+- [x] Move the MessageDesk IdP CSS source into an application-owned theme source directory and document its review ownership. <!-- t:f9bm -->
+- [x] Add a GitOps Kustomize `configMapGenerator` that packages `themes.json` and reviewed CSS with a content-hashed name. <!-- t:g1uy -->
+- [x] Mount the generated ConfigMap read-only at `/etc/tinyidp/themes`; pass `--theme-dir` and `--theme-catalog-file` to TinyIDP. <!-- t:493j -->
+- [x] Remove the embedded MessageDesk stylesheet route from the production host after the mounted asset route is verified. <!-- t:4wvf -->
+- [x] Render the shared IdP manifest and prove a theme source change alters the generated ConfigMap reference and therefore the Pod template. <!-- t:5eqb -->
 
 ## Phase 4 — Register and deploy the second application
 
-- [ ] Choose the concrete second example and record its public hostname, callback path, logout path, client ID, required scopes, and UI theme owner. <!-- t:1zs0 -->
-- [ ] Add that client to the shared IdP client catalog; use a distinct, immutable public client ID. <!-- t:eo20 -->
-- [ ] Create a new Argo CD Application and a separate kustomization/namespace for the second app; it must not share the MessageDesk PVC or ServiceAccount. <!-- t:3fis -->
-- [ ] Give the second app an HTTPS Ingress, certificate, Service, restricted NetworkPolicy, trusted-Traefik listener configuration, and canonical-issuer backchannel route through Traefik. <!-- t:s33j -->
-- [ ] Add its theme CSS and catalog mapping through the same reviewed GitOps change. <!-- t:jh9j -->
-- [ ] Verify MessageDesk remains functional while the second app completes signup/login/consent/logout against the same IdP. <!-- t:2qy7 -->
+- [x] Choose the concrete second example and record its public hostname, callback path, logout path, client ID, required scopes, and UI theme owner. <!-- t:1zs0 -->
+- [x] Add that client to the shared IdP client catalog; use a distinct, immutable public client ID. <!-- t:eo20 -->
+- [x] Reuse the existing independent goja-auth Argo Application and separate kustomization/namespace; it does not share the MessageDesk PVC or ServiceAccount. <!-- t:3fis -->
+- [x] Give the second app an HTTPS Ingress, certificate, Service, restricted NetworkPolicy, trusted-Traefik listener configuration, and canonical-issuer backchannel route through Traefik. <!-- t:s33j -->
+- [x] Add its theme CSS and catalog mapping through the same reviewed GitOps change. <!-- t:jh9j -->
+- [x] Verify MessageDesk remains functional while the second app completes login/consent/logout with an account created through MessageDesk against the same IdP. <!-- t:2qy7 -->
 
 ## Phase 5 — Acceptance, operations, and rollback
 
-- [ ] Extend the public acceptance harness with one independent authorization-code-with-PKCE flow for each client. <!-- t:42so -->
-- [ ] Assert theme selection from HTML and stylesheet headers without logging cookies, authorization codes, or passwords. <!-- t:l77l -->
-- [ ] Test invalid client/theme mappings, path traversal, a direct untrusted forwarded request, and CSP rejection of off-origin assets. <!-- t:inv5 -->
-- [ ] Write an operator runbook for adding a client, changing a theme, disabling a client, rolling back a theme, and recovering a broken catalog. <!-- t:3kjh -->
-- [ ] Capture Argo health, certificate readiness, PVC preservation, and audit events for both clients. <!-- t:rwm3 -->
+- [x] Extend the public acceptance harness with one independent authorization-code-with-PKCE flow for each client. <!-- t:42so -->
+- [x] Assert theme selection from HTML and stylesheet headers without logging cookies, authorization codes, or passwords. <!-- t:l77l -->
+- [x] Test invalid client/theme mappings, path traversal, a direct untrusted forwarded request, and CSP rejection of off-origin assets. <!-- t:inv5 -->
+- [x] Write an operator runbook for adding a client, changing a theme, disabling a client, rolling back a theme, and recovering a broken catalog. <!-- t:3kjh -->
+- [x] Capture Argo health, certificate readiness, PVC preservation, and audit events for both clients. <!-- t:rwm3 -->
 
 ## Research branch — TinyIDP Kubernetes operator
 

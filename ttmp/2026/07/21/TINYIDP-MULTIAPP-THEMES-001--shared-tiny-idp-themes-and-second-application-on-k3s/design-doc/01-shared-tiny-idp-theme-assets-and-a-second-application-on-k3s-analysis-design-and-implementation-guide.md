@@ -27,7 +27,7 @@ RelatedFiles:
       Note: Current k3s deployment topology to generalize
 ExternalSources: []
 Summary: 'Intern-ready design for a shared TinyIDP: declarative multi-client bootstrapping, GitOps-mounted per-client themes, a second independently deployed browser application, and a bounded Kubernetes-operator research branch.'
-LastUpdated: 2026-07-21T10:52:49.15243738-04:00
+LastUpdated: 2026-07-21T12:50:00-04:00
 WhatFor: Explain why the current deployment is single-app, how to make it safely shared, and how to deploy a second app without weakening OIDC or cluster boundaries.
 WhenToUse: Use as the implementation and review guide for TINYIDP-MULTIAPP-THEMES-001.
 ---
@@ -40,10 +40,12 @@ WhenToUse: Use as the implementation and review guide for TINYIDP-MULTIAPP-THEME
 TinyIDP is already capable of holding multiple OAuth clients. Its bootstrap API
 accepts a slice of `ClientSpec` values, normalizes each client, and refuses a
 startup configuration that conflicts with an existing durable client record.
-The deployed production command is not yet multi-application: it accepts one
-`--message-desk-origin`, creates one `tinyidp-message-app` client, selects one
-MessageDesk renderer, and serves one stylesheet embedded in the TinyIDP image.
-Those are host-wiring choices, not inherent protocol limits.
+Before this ticket, the deployed production command was not multi-application:
+it accepted one `--message-desk-origin`, created one `tinyidp-message-app`
+client, selected one MessageDesk renderer, and served one stylesheet embedded
+in the TinyIDP image. Those were host-wiring choices, not inherent protocol
+limits. The implementation described below has now replaced those choices with
+strict startup catalogs and mounted assets.
 
 This ticket proposes a first shared deployment with two browser applications:
 the existing MessageDesk and a deliberately separate second example application
@@ -55,11 +57,34 @@ reviewed GitOps change, but it cannot choose a CSS URL during OAuth, execute
 scripts in the IdP, change the form protocol, or obtain write access to the
 IdP Pod.
 
-The recommended first implementation is ordinary Argo CD plus Kustomize. A
+The implemented first version uses ordinary Argo CD plus Kustomize. A
 custom Kubernetes operator is worth researching because it could reduce
 repetition as the number of apps grows, but it should not be introduced before
 we have operated the two-app design. An operator would add a controller,
 CRDs, RBAC, reconciliation races, and an additional privileged trust boundary.
+
+### Deployed result on 2026-07-21
+
+The production deployment now has one TinyIDP and two independent relying
+parties:
+
+| Component | Public origin | OAuth client ID | Deployment boundary | Theme |
+| --- | --- | --- | --- | --- |
+| TinyIDP | `https://idp-message-desk.yolo.scapegoat.dev` | provider | `tiny-message-desk` namespace | selects by validated client ID |
+| MessageDesk | `https://message-desk.yolo.scapegoat.dev` | `tinyidp-message-app` | its own Deployment, Service, PVC, and ServiceAccount | `message-desk.css` |
+| goja auth host | `https://goja-auth.yolo.scapegoat.dev` | `goja-auth-host-demo` | separate namespace, Argo Application, ServiceAccount, and PostgreSQL schema | `goja-auth.css` |
+
+TinyIDP and MessageDesk run image `sha-78997ec`; goja-auth runs the
+repository-owned image `sha-cd1429f`. GitOps PR #191 merged as
+`68209d0f6a426d01b7cf42dd5322051fb91d51ca`. Argo CD reported both
+applications `Synced` and `Healthy` at that revision.
+
+The public acceptance harness created an account through MessageDesk, asserted
+the MessageDesk stylesheet and headers, logged the same identity into
+goja-auth through a fresh browser cookie jar, asserted the distinct goja-auth
+stylesheet, loaded `/me`, and completed CSRF-protected local logout. The harness
+prints no password, cookie, authorization code, state, nonce, or CSRF token.
+See `scripts/01-public-two-app-flow/main.go` and the chronological diary.
 
 ## 1. What the intern is building
 
@@ -113,7 +138,11 @@ issuer changes the issuer claim, discovery address, cookies, and every relying
 party configuration. That is a planned migration, not a prerequisite for
 adding the second application.
 
-## 2. Current state, with evidence
+## 2. Pre-implementation baseline, with evidence
+
+This section deliberately records the state that motivated the change. Paths
+describe the old coupling; compare them with the deployed-result section above
+and the final GitOps manifests when reviewing the implementation.
 
 ### 2.1 The reusable provider is multi-client capable
 

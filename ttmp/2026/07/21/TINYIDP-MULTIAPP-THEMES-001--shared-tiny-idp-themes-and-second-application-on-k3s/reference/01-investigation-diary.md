@@ -688,6 +688,150 @@ message-desk ingress               goja-auth ingress
 GitOps source -> configMapGenerator -> content hash -> Pod template change
 ```
 
+## Step 7: Merge through Argo and prove both public clients
+
+### Prompt Context
+
+**User prompt (verbatim):** "(continuation of Step 5)"
+
+**Assistant interpretation:** Finish the active deployment goal without an
+imperative cluster apply, validate it through the public TLS edge, and close
+the implementation phases with non-secret evidence and an operator runbook.
+
+**Inferred user intent:** Return only after the proposed configuration is a
+working production system that another engineer can inspect and operate.
+
+### What I did
+
+- Pinned TinyIDP and MessageDesk to `sha-78997ec` and goja-auth to
+  `sha-cd1429f` in GitOps commit `9577509`.
+- Opened combined GitOps PR #191, merged it, and requested an Argo hard refresh
+  for both existing Applications. Argo reconciled merge commit
+  `68209d0f6a426d01b7cf42dd5322051fb91d51ca` without an imperative workload
+  apply.
+- Added `scripts/01-public-two-app-flow/main.go`. It creates one randomized
+  acceptance identity through MessageDesk, checks the MessageDesk theme, logs
+  the same identity into goja-auth with a fresh cookie jar, checks the distinct
+  goja theme, calls `/me`, and performs CSRF-protected logout.
+- Added `scripts/02-kustomize-theme-rollout.sh` and proved a CSS-only edit
+  changes the generated theme ConfigMap/Pod reference without changing the
+  independent client-catalog reference.
+- Ran focused negative suites for client/theme validation, traversal,
+  rendering/CSP, and trusted-proxy boundaries.
+- Captured Argo revision/health, exact images, certificate readiness, unchanged
+  PVC volume IDs, and the persisted audit event name/result/client ID fields.
+- Updated the design guide with the exact deployed result and wrote a separate
+  production runbook for add/change/disable/rollback/broken-catalog workflows.
+
+### Why
+
+- A successful image build does not prove that the cluster can pull the image,
+  that a schema migration succeeds, or that two browser clients interoperate
+  with one durable provider.
+- Separate browser cookie jars prove shared identity through credentials and
+  OIDC rather than accidentally reusing an application session.
+- The disable-client runbook needs special ordering because deleting a desired
+  catalog entry does not delete durable state, while disabling durable state
+  under an old active catalog causes a strict bootstrap conflict.
+
+### What worked
+
+- GitOps PR #191 was immediately mergeable and Argo reported both applications
+  `Synced` and `Healthy` at the merge revision.
+- All Deployments became Ready with the intended immutable tags.
+- The public harness passed readiness, signup, both client-selected themes,
+  shared identity, protected-route, session, and logout checks.
+- The audit log recorded accepted self-registration, login, consent,
+  authorization, and token events for both client IDs.
+- The theme hash changed from `tinyidp-theme-catalog-9tc86ct4tg` to
+  `tinyidp-theme-catalog-969t5mb6g6` in the isolated probe, while
+  `tinyidp-client-catalog-9t78t4hkh2` remained unchanged.
+
+### What didn't work
+
+- The first public harness run used the speculative hostname
+  `idp.yolo.scapegoat.dev`. TLS correctly rejected it because the established
+  issuer/certificate is `idp-message-desk.yolo.scapegoat.dev`. I corrected the
+  harness constant and authorization path; the second run passed.
+- `kubectl logs ... | jq` failed because application logs are console-formatted,
+  not JSON: `jq: parse error: Invalid numeric literal`. I read the dedicated
+  JSONL audit file instead and extracted only allowlisted fields.
+- `kubectl cp deployment/tinyidp:...` was interpreted as Pod `tinyidp` and
+  failed with `pods \"tinyidp\" not found`. Retrying with the resolved Pod name
+  copied the file successfully.
+- `gh pr view` rejected the nonexistent field `baseRefOid`; the documented
+  field list showed the mistake and the corrected query confirmed the PR was
+  clean and mergeable.
+- The first changelog commit was stopped by `git diff --check` because the
+  changelog helper appended one blank line at EOF. Removing that blank line
+  made the documentation checkpoint clean.
+- A source-inspection command used the old ticket date `07/07` rather than
+  `07/18`, and another tried to read GitOps paths from the TinyIDP working
+  directory. Both were path-selection mistakes; corrected reads succeeded.
+
+### What I learned
+
+- The existing issuer hostname is deliberately application-qualified. This
+  rollout preserves it because issuer renaming is a separate token/session and
+  client migration.
+- The TinyIDP image contains enough tooling for `kubectl cp` to retrieve the
+  persisted audit file, but the copy target must be a Pod, not a Deployment.
+- Current bootstrap is additive and conflict-detecting. Removing a client from
+  desired configuration is not equivalent to revocation, so operational
+  disable needs both an admin state change and a coordinated catalog removal.
+
+### What was tricky to build
+
+- The acceptance harness had to drive two independent authorization code flows
+  without leaking transient security material into output or ticket evidence.
+- Reusing a live PostgreSQL database required an idempotent migration before
+  the new goja-auth process started; a clean-install-only schema would have
+  failed after Argo replaced the Pod.
+- Evidence collection had to distinguish persistent data continuity (PVC IDs
+  and non-destructive schema) from mere Pod readiness.
+
+### What warrants a second pair of eyes
+
+- Review the disable/re-enable ordering in the production runbook before its
+  first real use; interruption between the admin action and GitOps merge should
+  be part of the operator's incident plan.
+- The goja-auth landing page still contains historical product wording about
+  Keycloak. Authentication itself uses TinyIDP; changing application copy was
+  intentionally outside this configuration/deployment ticket.
+- The operator research tasks remain unchecked. They are a follow-up research
+  branch, not hidden completion work for this rollout.
+
+### What should be done in the future
+
+- Operate the GitOps-only design long enough to collect repetition and failure
+  evidence before deciding whether a `TinyIDPClient` CRD is justified.
+- Consider a catalog-represented disabled state in a future ticket if routine
+  client suspension becomes common; do not add it as an undocumented adapter.
+- Close superseded one-image automation PRs after confirming they cannot
+  overwrite the combined deployment revision.
+
+### Code review instructions
+
+- Review GitOps PR #191 as the deployment unit and compare its merge revision
+  with the Argo evidence document.
+- Run both ticket scripts. The public harness creates one acceptance account;
+  it never prints the generated login or password.
+- Review the runbook's disable sequence against `clientConflictFields` in
+  `pkg/embeddedidp/bootstrap.go` and the admin disable implementation before
+  using it operationally.
+- Confirm the research branch tasks remain open intentionally.
+
+### Technical details
+
+```text
+TinyIDP PR #12 ----> sha-78997ec --+
+                                      +--> GitOps PR #191 --> Argo --> k3s
+go-go-goja PR #100 -> sha-cd1429f --+
+
+fresh jar A: MessageDesk -> signup -> TinyIDP -> callback -> app session
+fresh jar B: goja-auth  -> login  -> TinyIDP -> callback -> /me -> logout
+```
+
 ## Usage Examples
 
 Use the primary design doc for implementation order and `tasks.md` as the

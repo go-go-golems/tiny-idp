@@ -15,7 +15,7 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: "Evidence-backed design for turning the current one-client production host into a shared IdP with GitOps-mounted, per-client same-origin themes and a separately deployed second relying party. Includes an operator research branch."
-LastUpdated: 2026-07-21T10:52:48.409217049-04:00
+LastUpdated: 2026-07-21T12:53:00-04:00
 WhatFor: "Plan the first shared tiny-idp deployment and its second browser application without giving applications control over IdP protocol behavior or asset origins."
 WhenToUse: "Use before implementing multi-client production configuration, theme assets, a second k3s application, or a TinyIDP Kubernetes operator."
 ---
@@ -39,11 +39,14 @@ operator. The operator is not a prerequisite for the first two-app rollout.
 - **Related Files**: See frontmatter RelatedFiles field
 - **Primary guide**: [shared IdP and themes design](./design-doc/01-shared-tiny-idp-theme-assets-and-a-second-application-on-k3s-analysis-design-and-implementation-guide.md)
 - **Investigation record**: [diary](./reference/01-investigation-diary.md)
+- **Production runbook**: [client and theme operations](./reference/02-production-client-and-theme-runbook.md)
+- **Acceptance evidence**: [two-app production evidence](./reference/03-production-acceptance-evidence.md)
 - **External Sources**: See frontmatter ExternalSources field
 
 ## Status
 
-Current status: **active**
+Current status: **active** — the GitOps-only two-app rollout is complete; the
+separate Kubernetes-operator research branch remains an explicit follow-up.
 
 ## Topics
 
