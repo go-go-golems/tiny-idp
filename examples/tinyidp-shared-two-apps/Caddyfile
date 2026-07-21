@@ -1,5 +1,11 @@
 # Caddy is the browser-facing TLS boundary. Each backend validates that its
 # immediate peer is this proxy and that the forwarded HTTPS origin is exact.
+{
+	# A container cannot install trust into the host. Trust is exported as a
+	# public certificate by the Compose ca-export service instead.
+	skip_install_trust
+}
+
 https://idp.localhost:8443 {
 	tls internal
 	reverse_proxy idp:8081
@@ -7,10 +13,10 @@ https://idp.localhost:8443 {
 
 https://message.localhost:8443 {
 	tls internal
-	reverse_proxy message-desk:8080
+	reverse_proxy message-proxy-backend:8080
 }
 
 https://goja.localhost:8443 {
 	tls internal
-	reverse_proxy goja-auth:8080
+	reverse_proxy goja-proxy-backend:8080
 }

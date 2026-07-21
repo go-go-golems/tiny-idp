@@ -10,6 +10,32 @@ services:
       - caddy-config:/config
     networks: [idp-backend, message-backend, goja-backend]
 
+  ca-export:
+    image: alpine:3.22
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        source=/caddy-data/caddy/pki/authorities/local/root.crt
+        for attempt in $$(seq 1 60); do
+          if [ -s "$$source" ]; then
+            cp "$$source" /trust/caddy-local-root.crt
+            chmod 0444 /trust/caddy-local-root.crt
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "Caddy local root certificate was not generated" >&2
+        exit 1
+    volumes:
+      - caddy-data:/caddy-data:ro
+      - local-ca:/trust
+    depends_on:
+      proxy:
+        condition: service_started
+    restart: "no"
+    networks: [idp-backend]
+
   idp:
     build:
       context: ../..
@@ -23,6 +49,10 @@ services:
         if [ ! -s /state/token.key ]; then dd if=/dev/urandom of=/state/token.key bs=32 count=1 status=none; fi
         chmod 0600 /state/token.key
         exec tinyidp serve-production --addr=:8081 --listener-mode=trusted-proxy-http --issuer=https://idp.localhost:8443 --clients-file=/config/clients.json --theme-dir=/config --theme-catalog-file=/config/themes.json --signup-program-file=/config/open-signup.js --db=/state/tinyidp.sqlite --audit-path=/state/audit/audit.jsonl --token-secret-file=/state/token.key --trusted-proxy-cidrs=172.31.0.0/24
+    depends_on:
+      ca-export:
+        condition: service_completed_successfully
+    networks: [idp-backend]
     volumes:
       - idp-state:/state
       - ./clients.json:/config/clients.json:ro
@@ -30,10 +60,9 @@ services:
       - ./message-desk.css:/config/message-desk.css:ro
       - ./goja-auth.css:/config/goja-auth.css:ro
       - ./open-signup.js:/config/open-signup.js:ro
-    depends_on: [proxy]
-    networks: [idp-backend]
+      - local-ca:/trust:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -kfsS --resolve idp.localhost:8443:172.31.0.2 https://idp.localhost:8443/readyz >/dev/null"]
+      test: ["CMD-SHELL", "curl --cacert /trust/caddy-local-root.crt -fsS --resolve idp.localhost:8443:172.31.0.2 https://idp.localhost:8443/readyz >/dev/null"]
       interval: 5s
       timeout: 3s
       retries: 24
@@ -48,12 +77,21 @@ services:
       - |
         if [ ! -f /state/state.json ]; then tinyidp-message-desk init --state-root /state --public-base-url https://message.localhost:8443; fi
         exec tinyidp-message-desk serve --state-root /state --addr :8080 --listener-mode trusted-proxy-http --trusted-proxy-cidrs 172.32.0.0/24 --external-issuer https://idp.localhost:8443 --external-backchannel-url https://idp.localhost:8443
-    volumes: [message-state:/state]
+    environment:
+      # Caddy creates this local-only root. The application still verifies the
+      # issuer certificate; it does not disable TLS verification.
+      SSL_CERT_FILE: /trust/caddy-local-root.crt
+    volumes:
+      - message-state:/state
+      - local-ca:/trust:ro
     extra_hosts: ["idp.localhost:172.31.0.2"]
     depends_on:
       idp:
         condition: service_healthy
-    networks: [idp-backend, message-backend]
+    networks:
+      idp-backend: {}
+      message-backend:
+        aliases: [message-proxy-backend]
     healthcheck:
       test: ["CMD-SHELL", "curl -kfsS --resolve message.localhost:8443:172.32.0.2 https://message.localhost:8443/readyz >/dev/null"]
       interval: 5s
@@ -92,18 +130,23 @@ services:
       XGOJA_OIDC_DEMO_AUTH_OIDC_SCOPES: profile,email
       XGOJA_OIDC_DEMO_AUTH_OIDC_AFTER_LOGIN_URL: /
       XGOJA_OIDC_DEMO_AUTH_OIDC_AFTER_LOGOUT_URL: /
+      SSL_CERT_FILE: /trust/caddy-local-root.crt
     extra_hosts: ["idp.localhost:172.31.0.2"]
+    volumes:
+      - local-ca:/trust:ro
     depends_on:
       idp:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    networks: [idp-backend, goja-backend, goja-database]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- --no-check-certificate --header='Host: goja.localhost:8443' --header='X-Forwarded-Host: goja.localhost:8443' --header='X-Forwarded-Proto: https' https://172.33.0.2:8443/auth/readyz >/dev/null"]
-      interval: 5s
-      timeout: 3s
-      retries: 24
+    networks:
+      idp-backend: {}
+      goja-backend:
+        aliases: [goja-proxy-backend]
+      goja-database: {}
+    # The published image is distroless and intentionally contains no shell or
+    # HTTP client. scripts/02-smoke.sh checks readiness through the real TLS
+    # proxy instead of weakening the image solely for a container healthcheck.
 
 networks:
   idp-backend: {ipam: {config: [{subnet: 172.31.0.0/24}]}}
@@ -117,3 +160,4 @@ volumes:
   goja-postgres:
   caddy-data:
   caddy-config:
+  local-ca:
