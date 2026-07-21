@@ -15,5 +15,8 @@ fi
 if [ ! -s "$secret_dir/invitation-lookup.key" ]; then
   dd if=/dev/urandom of="$secret_dir/invitation-lookup.key" bs=32 count=1 status=none
 fi
-chmod 0600 "$secret_dir/local-admin-password.txt" "$secret_dir/local-invitee-password.txt" "$secret_dir/invitation-lookup.key"
+if [ ! -s "$secret_dir/email-challenge.key" ]; then
+  dd if=/dev/urandom of="$secret_dir/email-challenge.key" bs=32 count=1 status=none
+fi
+chmod 0600 "$secret_dir/local-admin-password.txt" "$secret_dir/local-invitee-password.txt" "$secret_dir/invitation-lookup.key" "$secret_dir/email-challenge.key"
 printf 'Initialized local-only secrets in %s\n' "$secret_dir"

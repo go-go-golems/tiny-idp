@@ -12,6 +12,9 @@ The public endpoints are:
 - `https://goja.localhost:8443` — the generated go-go-goja auth-host demo.
 - `https://idp.localhost:8443` — TinyIDP's canonical issuer. Start login or
   signup from an application, not by opening `/authorize` without parameters.
+- `http://127.0.0.1:8025` — private local Mailpit operator outbox. It is bound
+  to loopback rather than Caddy/public ingress and requires
+  `operator` / `local-outbox-password-2026!`.
 
 The local-only, email-verified operator fixtures are:
 
@@ -47,16 +50,28 @@ shell or HTTP client to the runtime image.
 CA to exercise the complete HTTPS/OIDC behavior:
 
 - Message Desk account creation without an invitation;
-- goja account creation with a one-time TinyIDP signup invitation;
+- durable email-code verification for both newly created accounts, with codes
+  retrieved through Mailpit's authenticated operator API;
+- a pending email challenge surviving an actual TinyIDP container restart;
+- rejection followed by successful retry of an incorrect email code;
+- goja account creation with a one-time TinyIDP signup invitation, validated
+  before any email is sent;
 - preservation of an opaque application-invite continuation through OIDC;
-- retryable rejection when that new password-only identity lacks a verified
-  email claim;
-- successful, atomic membership creation for the verified invitee fixture;
+- successful, atomic membership creation for the newly verified signup and
+  the verified invitee fixture;
 - rejection of both signup-invite and membership-invite replay; and
 - tenant-queryable application audit plus TinyIDP issuance/redemption audit.
 
 The script calls Docker Compose only for operator invitation issuance and
-read-only database/audit assertions. Bearer codes are never written to disk.
+read-only database/audit assertions. It retrieves email codes from the private
+Mailpit API. Bearer codes are never written to disk or emitted to its output.
+
+Mailpit is a first-deploy delivery substitution, not a verification bypass.
+TinyIDP still generates and hashes each code, persists challenge bindings and
+attempt limits, verifies browser submissions, and sets `email_verified=true`
+only from native evidence. Do not expose the outbox through public ingress.
+Later, point the same SMTP mailer at the real submission server and remove the
+catcher; the JavaScript workflow and account semantics do not change.
 
 ## Trust the local CA in a browser
 

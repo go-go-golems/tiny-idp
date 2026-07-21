@@ -11,11 +11,14 @@ as the same HTTP requests made by the checked-in frontend.
 from __future__ import annotations
 
 import http.cookiejar
+import base64
 import json
+import re
 import secrets
 import ssl
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -31,6 +34,9 @@ TRUST_FILE = EXAMPLE_DIR / "runtime" / "caddy-local-root.crt"
 MESSAGE_ORIGIN = "https://message.localhost:8443"
 GOJA_ORIGIN = "https://goja.localhost:8443"
 IDP_ORIGIN = "https://idp.localhost:8443"
+OUTBOX_ORIGIN = "http://127.0.0.1:8025"
+OUTBOX_USERNAME = "operator"
+OUTBOX_PASSWORD = "local-outbox-password-2026!"
 ADMIN_LOGIN = "admin@example.test"
 ADMIN_PASSWORD = "local-admin-password-2026!"
 INVITEE_LOGIN = "invitee@example.test"
@@ -226,6 +232,48 @@ def compose(*args: str) -> str:
     return completed.stdout
 
 
+def outbox_request(path: str) -> HTTPResult:
+    credentials = base64.b64encode(f"{OUTBOX_USERNAME}:{OUTBOX_PASSWORD}".encode("utf-8")).decode("ascii")
+    request = urllib.request.Request(
+        urllib.parse.urljoin(OUTBOX_ORIGIN, path),
+        headers={"Authorization": f"Basic {credentials}"},
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        response = opener.open(request, timeout=5)
+    except urllib.error.HTTPError as response:
+        return HTTPResult(response.code, response.geturl(), response.headers, response.read().decode("utf-8", "replace"))
+    with response:
+        return HTTPResult(response.status, response.geturl(), response.headers, response.read().decode("utf-8", "replace"))
+
+
+def outbox_code(recipient: str) -> str:
+    query = urllib.parse.urlencode({"query": f'to:"{recipient}"'})
+    for _ in range(40):
+        result = outbox_request(f"/view/latest.txt?{query}")
+        if result.status == 200:
+            match = re.search(r"verification code is:\s*([A-Z2-7]{8})", result.body)
+            if match:
+                return match.group(1)
+        elif result.status != 404:
+            raise AcceptanceFailure(f"private outbox query failed with HTTP {result.status}: {result.body[:500]}")
+        time.sleep(0.25)
+    raise AcceptanceFailure(f"private outbox did not receive a challenge for {recipient}")
+
+
+def restart_idp_and_wait(browser: Browser) -> None:
+    compose("restart", "idp")
+    for _ in range(40):
+        try:
+            result = browser.get(f"{IDP_ORIGIN}/readyz")
+            if result.status == 200:
+                return
+        except urllib.error.URLError:
+            pass
+        time.sleep(0.25)
+    raise AcceptanceFailure("TinyIDP did not become ready after challenge-state restart")
+
+
 def issue_signup_invitation() -> dict[str, Any]:
     output = compose(
         "exec",
@@ -280,12 +328,15 @@ def signup(
     password: str,
     expected_origin: str,
     invite_code: str | None,
-) -> HTTPResult:
+    restart_after_delivery: bool = False,
+    retry_wrong_code: bool = False,
+) -> tuple[HTTPResult, str]:
     page = browser.get(entry_url)
     require_status(page, 200, "render signup form")
     form = parse_form(page)
-    expected_fields = {"display_name", "email", "password", "password_confirmation"}
+    expected_fields = {"display_name", "email"}
     require(expected_fields.issubset(form.values), f"unexpected signup fields at {page.url}: {form.values.keys()}")
+    require("password" not in form.values, "signup collected a password before email verification")
     if invite_code is None:
         require("invite_code" not in form.values, "open-signup client unexpectedly requested an invite code")
     else:
@@ -293,17 +344,37 @@ def signup(
     values = {
         "display_name": display_name,
         "email": email,
-        "password": password,
-        "password_confirmation": password,
         "action": "submit",
     }
     if invite_code is not None:
         values["invite_code"] = invite_code
-    result = browser.submit_first_form(page, values)
-    require_status(result, 200, "complete OIDC signup")
+    code_page = browser.submit_first_form(page, values)
+    require_status(code_page, 200, "start email challenge")
+    code_form = parse_form(code_page)
+    require("email_code" in code_form.values, f"email challenge form is missing at {code_page.url}")
+    code = outbox_code(email)
+    if restart_after_delivery:
+        restart_idp_and_wait(browser)
+    if retry_wrong_code:
+        wrong = browser.submit_first_form(code_page, {"email_code": "AAAAAAAA", "action": "submit"})
+        require_status(wrong, 400, "reject incorrect email challenge code")
+        require("email_code" in parse_form(wrong).values, "incorrect code did not preserve the challenge form")
+        code_page = wrong
+    password_page = browser.submit_first_form(code_page, {"email_code": code, "action": "submit"})
+    require_status(password_page, 200, "verify email challenge")
+    password_form = parse_form(password_page)
+    require(
+        {"password", "password_confirmation"}.issubset(password_form.values),
+        f"password form is missing after email verification at {password_page.url}",
+    )
+    result = browser.submit_first_form(
+        password_page,
+        {"password": password, "password_confirmation": password, "action": "submit"},
+    )
+    require_status(result, 200, "complete verified OIDC signup")
     result = complete_idp_prompts(browser, result)
     require(result.url.startswith(expected_origin), f"OIDC signup ended at unexpected URL: {result.url}")
-    return result
+    return result, code
 
 
 def goja_session(browser: Browser) -> dict[str, Any]:
@@ -339,7 +410,7 @@ def main() -> None:
     print("1/7 Message Desk open-signup browser journey")
     message_email = f"message-{run_id}@example.test"
     message_browser = Browser()
-    signup(
+    _, message_code = signup(
         message_browser,
         f"{MESSAGE_ORIGIN}/auth/register?return_to=/",
         display_name="Phase Five Message User",
@@ -347,6 +418,7 @@ def main() -> None:
         password=password,
         expected_origin=MESSAGE_ORIGIN,
         invite_code=None,
+        restart_after_delivery=True,
     )
     message_session = message_browser.get(f"{MESSAGE_ORIGIN}/api/session")
     require_status(message_session, 200, "load Message Desk session")
@@ -367,7 +439,7 @@ def main() -> None:
     print("3/7 invite-gated TinyIDP signup and OIDC callback")
     signup_invite = issue_signup_invitation()
     new_goja_browser = Browser()
-    completed = signup(
+    completed, goja_code = signup(
         new_goja_browser,
         urllib.parse.urljoin(GOJA_ORIGIN, new_user_pending["registrationUrl"]),
         display_name="Phase Five Goja User",
@@ -375,35 +447,46 @@ def main() -> None:
         password=password,
         expected_origin=GOJA_ORIGIN,
         invite_code=signup_invite["code"],
+        retry_wrong_code=True,
     )
     pending_handle = urllib.parse.parse_qs(urllib.parse.urlsplit(completed.url).query).get("pending", [""])[0]
     require(pending_handle, f"pending app invitation was not restored after signup: {completed.url}")
     new_session = goja_session(new_goja_browser)
     require(new_session.get("email") == new_goja_email, f"unexpected normalized new user: {new_session}")
-    require(new_session.get("emailVerified") is False, "password-only signup must not claim email ownership")
-    print("OK pending handle survived registration, authorization, callback, and app session creation")
+    require(new_session.get("emailVerified") is True, f"verified signup did not produce a verified app user: {new_session}")
+    print("OK pending handle and verified email survived registration, authorization, callback, and app session creation")
 
-    print("4/7 unverified-email denial remains retryable")
-    denied = new_goja_browser.json_request(
+    print("4/7 newly verified user accepts the email-bound application invitation")
+    accepted_new = new_goja_browser.json_request(
         "POST",
         f"{GOJA_ORIGIN}/org-invites/accept",
         {"pending": pending_handle},
         csrf=new_session["csrfToken"],
     )
-    require_status(denied, 403, "reject unverified email-bound invitation")
-    retry = new_goja_browser.json_request(
+    require_status(accepted_new, 200, "accept newly verified application invitation")
+    accepted_new_body = accepted_new.json()
+    require(
+        accepted_new_body.get("orgId") == "o1" and accepted_new_body.get("role") == "viewer",
+        f"unexpected new-user acceptance: {accepted_new_body}",
+    )
+    new_pending_replay = new_goja_browser.json_request(
         "POST",
         f"{GOJA_ORIGIN}/org-invites/accept",
         {"pending": pending_handle},
         csrf=new_session["csrfToken"],
     )
-    require_status(retry, 403, "retry unverified email-bound invitation")
-    unused = postgres_scalar(
-        "SELECT count(*) FROM auth_capabilities WHERE id = "
-        f"'{new_user_app_invite['capabilityId']}' AND used_at IS NULL"
+    require(new_pending_replay.status in {403, 409}, f"new-user pending replay returned {new_pending_replay.status}")
+    new_raw_replay = Browser().json_request(
+        "POST", f"{GOJA_ORIGIN}/org-invites/begin", {"token": new_user_app_invite["token"]}
     )
-    require(unused == "1", "denied application invitation was consumed")
-    print("OK native verified-email check denied twice without consuming capability")
+    require_status(new_raw_replay, 400, "reject consumed new-user raw application invitation")
+    new_membership_count = postgres_scalar(
+        "SELECT count(*) FROM auth_app_memberships m JOIN auth_app_users u ON u.id=m.user_id "
+        f"WHERE lower(u.email)=lower('{new_goja_email}') AND m.tenant_id='o1' "
+        "AND m.role='viewer' AND m.revoked_at IS NULL"
+    )
+    require(new_membership_count == "1", f"expected one new-user viewer membership, got {new_membership_count}")
+    print("OK verified signup immediately received one membership and rejected both replay paths")
 
     print("5/7 one-time TinyIDP signup invitation replay rejection")
     replay_browser = Browser()
@@ -414,8 +497,6 @@ def main() -> None:
         {
             "display_name": "Replay Attempt",
             "email": replay_email,
-            "password": password,
-            "password_confirmation": password,
             "invite_code": signup_invite["code"],
             "action": "submit",
         },
@@ -425,7 +506,13 @@ def main() -> None:
     require("This value could not be accepted." in replay_result.body, "replay denial was not rendered on the form")
     print("OK consumed signup invitation produced a stable field-level denial")
 
-    print("6/7 verified existing-user membership acceptance and replay rejection")
+    no_replay_mail = outbox_request(
+        f"/view/latest.txt?{urllib.parse.urlencode({'query': f'to:\"{replay_email}\"'})}"
+    )
+    require_status(no_replay_mail, 404, "invalid signup invitation must not send email")
+    print("OK consumed signup invitation was denied before mail delivery")
+
+    print("6/7 verified existing-user membership acceptance remains supported")
     existing_invite = issue_membership_invitation(admin, INVITEE_LOGIN)
     existing_browser = Browser()
     existing_pending = begin_membership_invitation(existing_browser, existing_invite["token"])
@@ -477,8 +564,8 @@ def main() -> None:
     require("org.invite.issued" in audit_text, "application audit is missing invitation issuance")
     require("org.invite.accepted" in audit_text, "application audit is missing invitation acceptance")
     require(
-        existing_invite["capabilityId"] in audit_text,
-        "tenant audit does not contain the capability accepted in this run",
+        new_user_app_invite["capabilityId"] in audit_text and existing_invite["capabilityId"] in audit_text,
+        "tenant audit does not contain both capabilities accepted in this run",
     )
     require(
         new_user_app_invite["token"] not in audit_text and existing_invite["token"] not in audit_text,
@@ -494,12 +581,19 @@ def main() -> None:
     )
     require("signup_invitation.issued" in idp_audit, "TinyIDP audit is missing signup invitation issuance")
     require("signup_invitation.consumed" in idp_audit, "TinyIDP audit is missing signup invitation consumption")
+    require("workflow.signup.email_challenge_send" in idp_audit, "TinyIDP audit is missing email challenge delivery")
     require(
         signup_invite["invitation_id"] in idp_audit,
         "TinyIDP audit does not contain the signup invitation consumed in this run",
     )
     require(signup_invite["code"] not in idp_audit, "TinyIDP audit contains a raw signup invitation code")
-    print("OK both services expose issuance, denial/acceptance, and redemption audit evidence")
+    require(message_code not in idp_audit and goja_code not in idp_audit, "TinyIDP audit contains a raw email code")
+    service_logs = compose("logs", "--no-color", "idp", "goja-auth")
+    require(
+        signup_invite["code"] not in service_logs and message_code not in service_logs and goja_code not in service_logs,
+        "service logs contain a raw invitation or email challenge code",
+    )
+    print("OK both services expose issuance/acceptance evidence without raw bearer values")
 
     print("PASS: shared TinyIDP Phase 5 browser acceptance completed")
 

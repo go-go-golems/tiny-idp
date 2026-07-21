@@ -36,6 +36,16 @@ services:
     restart: "no"
     networks: [idp-backend]
 
+  mailpit:
+    image: axllent/mailpit:v1.30.5
+    ports: ["127.0.0.1:8025:8025"]
+    environment:
+      MP_UI_AUTH: "operator:local-outbox-password-2026!"
+      MP_MAX_MESSAGES: "100"
+      MP_MAX_AGE: "1h"
+      MP_SMTP_STRICT_RFC_HEADERS: "true"
+    networks: [idp-backend]
+
   idp:
     build:
       context: ../..
@@ -54,10 +64,12 @@ services:
         if ! tinyidp admin --db=/state/tinyidp.sqlite user get --login=invitee@example.test >/dev/null 2>&1; then
           tinyidp admin --db=/state/tinyidp.sqlite user create --login=invitee@example.test --id=local-invitee --sub=local-invitee --email=invitee@example.test --email-verified --name='Local Invitee' --password-from-stdin </state/.secrets/local_invitee_password
         fi
-        exec tinyidp serve-production --addr=:8081 --listener-mode=trusted-proxy-http --issuer=https://idp.localhost:8443 --clients-file=/config/clients.json --theme-dir=/config --theme-catalog-file=/config/themes.json --signup-program-file=/config/open-signup.js --db=/state/tinyidp.sqlite --audit-path=/state/audit/audit.jsonl --token-secret-file=/state/token.key --invitation-lookup-key-file=/state/.secrets/invitation_lookup_key --trusted-proxy-cidrs=172.31.0.0/24
+        exec tinyidp serve-production --addr=:8081 --listener-mode=trusted-proxy-http --issuer=https://idp.localhost:8443 --clients-file=/config/clients.json --theme-dir=/config --theme-catalog-file=/config/themes.json --signup-program-file=/config/open-signup.js --db=/state/tinyidp.sqlite --audit-path=/state/audit/audit.jsonl --token-secret-file=/state/token.key --invitation-lookup-key-file=/state/.secrets/invitation_lookup_key --email-challenge-key-file=/state/.secrets/email_challenge_key --email-smtp-address=mailpit:1025 --email-smtp-tls-mode=private-plaintext --email-from-address=accounts@idp.localhost --email-from-name=TinyIDP --trusted-proxy-cidrs=172.31.0.0/24
     depends_on:
       ca-export:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     networks: [idp-backend]
     volumes:
       - idp-state:/state
@@ -67,7 +79,7 @@ services:
       - ./goja-auth.css:/config/goja-auth.css:ro
       - ./open-signup.js:/config/open-signup.js:ro
       - local-ca:/trust:ro
-    secrets: [local_admin_password, local_invitee_password, invitation_lookup_key]
+    secrets: [local_admin_password, local_invitee_password, invitation_lookup_key, email_challenge_key]
     healthcheck:
       test: ["CMD-SHELL", "curl --cacert /trust/caddy-local-root.crt -fsS --resolve idp.localhost:8443:172.31.0.2 https://idp.localhost:8443/readyz >/dev/null"]
       interval: 5s
@@ -203,3 +215,5 @@ secrets:
     file: ./runtime/secrets/local-invitee-password.txt
   invitation_lookup_key:
     file: ./runtime/secrets/invitation-lookup.key
+  email_challenge_key:
+    file: ./runtime/secrets/email-challenge.key
