@@ -32,3 +32,14 @@ Implemented and validated Phases 1-2 in commit 7d8a19d: strict production client
 - internal/cmds/serve_production.go — Production host catalog wiring
 - internal/productionconfig/clients.go — Strict versioned multi-client production catalog
 - internal/productionui/catalog.go — Mounted theme catalog and allowlisted CSS assets
+
+## 2026-07-21 - Prepared the combined two-app GitOps rollout
+
+Recorded source merges, image publishing repair, verified k3s/Argo topology, and GitOps commit fee8104 containing strict catalogs, mounted themes, the goja-auth repoint, bounded network policy, and an idempotent database migration.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/hetzner-k3s-phase5/gitops/kustomize/goja-auth-host-demo/bootstrap-configmap.yaml — Non-destructive OIDC schema migration
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/hetzner-k3s-phase5/gitops/kustomize/tiny-message-desk/themes/clients.json — Authoritative two-client catalog
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/hetzner-k3s-phase5/gitops/kustomize/tiny-message-desk/themes/themes.json — Authoritative per-client theme mapping
+- ttmp/2026/07/21/TINYIDP-MULTIAPP-THEMES-001--shared-tiny-idp-themes-and-second-application-on-k3s/reference/01-investigation-diary.md — Step 6 contains the exact cross-repository rollout evidence

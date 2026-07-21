@@ -531,6 +531,163 @@ validation: go build ./... && go test ./...
 hook validation: golangci-lint + glazed-lint + IDP UI analyzer + go test ./...
 ```
 
+## Step 6: Join the source changes to a reviewable GitOps deployment
+
+### Prompt Context
+
+**User prompt (verbatim):** "(continuation of Step 5)"
+
+**Assistant interpretation:** Continue autonomously from the committed TinyIDP
+source boundary into the existing k3s GitOps repository, reusing the deployed
+goja auth example as the second application and preserving the live databases.
+
+**Inferred user intent:** Produce the operational half of the design—not merely
+another source implementation—and leave exact evidence for an intern to review.
+
+### What I did
+
+- Merged TinyIDP PR #12. Its merge commit is
+  `78997ec08629d3f420b89c2de73c59d9b12cd5f8`.
+- Audited go-go-goja PR #100 and confirmed that its public-client OIDC path is
+  the required second-app primitive: an empty secret selects
+  `AuthStyleInParams`, while trusted-forwarded mode accepts the cluster's
+  Traefik TLS boundary explicitly.
+- Repaired PR #100's image publication target by moving it from the unrelated
+  `ghcr.io/go-go-golems/go-goja-auth-host` package to the repository-owned
+  `ghcr.io/go-go-golems/go-go-goja-auth-host` package. The repair commit is
+  `9eaacaf`; PR #100 merged as
+  `cd1429f95e24156a98ff976fa63b484ee2d35e9c`.
+- Verified the kubectl target before modifying manifests. It is the intended
+  single-node k3s cluster at `k3s-demo-1.tail879302.ts.net`, and both existing
+  Argo applications were Synced and Healthy at GitOps revision `0bcde4e`.
+- Created GitOps branch `deploy/shared-tinyidp-two-apps` and commit `fee8104`.
+  That commit adds a strict two-client catalog, two client-selected CSS themes,
+  content-hashed ConfigMaps, TinyIDP mounts/arguments, and a repointed
+  goja-auth deployment using the shared TinyIDP.
+- Added the minimum idempotent PostgreSQL migration needed by the already-live
+  goja-auth database. It adds the new OIDC identity columns and backfills them
+  without deleting the historical Keycloak columns or resetting user data.
+- Added a goja-auth NetworkPolicy for Traefik ingress and bounded DNS,
+  TinyIDP-via-Traefik, and PostgreSQL egress.
+- Rendered both Kustomize trees and passed Kubernetes client-side dry-run
+  validation before publishing the deployment branch.
+
+### Why
+
+- A second purpose-built example application would add application code that
+  the ticket does not need. The existing goja-auth host already provides the
+  independent namespace, hostname, database, Argo application, and public PKCE
+  behavior needed to test shared identity and per-client appearance.
+- The catalogs and CSS belong in GitOps because operators—not the TinyIDP
+  binary or an untrusted browser request—own production client registration
+  and visual policy.
+- Content-hashed ConfigMaps make a catalog or stylesheet edit change the Pod
+  template reference, which gives Kubernetes an auditable rollout trigger.
+- The migration must precede the new container because `CREATE TABLE IF NOT
+  EXISTS` does not add columns to an old table.
+
+### What worked
+
+- TinyIDP's complete pre-push suite passed: generation checks, lint, UI static
+  analysis, build, and `go test ./...`.
+- go-go-goja's complete pre-push suite passed after the package rename.
+- `kubectl kustomize` and `kubectl apply --dry-run=client -f` accepted both
+  rendered applications.
+- The generated catalog ConfigMaps have deterministic content suffixes:
+  `tinyidp-client-catalog-9t78t4hkh2` and
+  `tinyidp-theme-catalog-9tc86ct4tg`.
+
+### What didn't work
+
+- The original go-go-goja main image job received HTTP 403 from GHCR after
+  login because it attempted to publish a package historically owned by a
+  different repository. A repository-owned package name removed that ownership
+  ambiguity.
+- I first pushed `task/prod-tiny-idp` to the organization remote, while PR #100
+  was sourced from the `wesen` fork. The PR head did not move. I corrected this
+  with `git push wesen task/prod-tiny-idp`; no source commit was lost.
+- GitHub's merge command could not switch either local worktree to `main`:
+  `fatal: 'main' is already used by worktree`. Both remote merges themselves
+  succeeded, so I fetched `origin/main` and continued from a new local branch.
+- One large GitOps patch was rejected atomically because its README context had
+  changed: `apply_patch verification failed: Failed to find expected lines`.
+  I split it into file-specific patches and re-rendered the complete manifests.
+- A read-only PostgreSQL probe with `psql -U postgres` failed with
+  `FATAL: role \"postgres\" does not exist`. I did not guess credentials or
+  expose the Secret; the migration remains inside the existing authenticated
+  bootstrap Job.
+
+### What I learned
+
+- This cluster's stable Traefik Service IP is `10.43.80.21`; both application
+  namespaces already use host aliases to route the public issuer hostname back
+  through Traefik, preserving HTTPS issuer semantics inside the cluster.
+- The goja-auth database predates the merged OIDC schema. Deployment safety
+  therefore depends on a migration, even though a clean install would start.
+- The current image update automation produces one GitOps PR per component.
+  A single combined deployment branch is safer here because the TinyIDP client
+  catalog and both compatible images form one rollout unit.
+
+### What was tricky to build
+
+- The public issuer must remain an HTTPS URL while Pods use cluster-local
+  routing. Replacing it with a plain HTTP Service URL would make OIDC metadata,
+  callback validation, and browser-visible origins disagree.
+- The existing goja-auth tables must retain user/session continuity across an
+  identity-provider change. The migration therefore backfills the new identity
+  columns and leaves destructive cleanup for a separately reviewed operation.
+
+### What warrants a second pair of eyes
+
+- Review the PostgreSQL `DO` block and backfill predicates against a production
+  schema snapshot before removing any legacy Keycloak columns in the future.
+- Confirm that `10.43.80.21` remains the cluster's intended stable Traefik
+  Service IP; this rollout records the current topology rather than introducing
+  a new internal DNS name.
+- Verify that the GHCR pull credential used by the goja namespace can read the
+  new repository-owned package before pruning the former package reference.
+
+### What should be done in the future
+
+- Pin the successful source image digests/tags in the combined GitOps branch.
+- Open and merge the combined PR, let Argo reconcile it, then prove signup on
+  MessageDesk and login of the same account on goja-auth.
+- Capture public theme selection, health, logout/session behavior, Pod rollout,
+  and audit evidence before checking the remaining production tasks.
+
+### Code review instructions
+
+- In TinyIDP, review PR #12 before the GitOps commit; the manifests rely on its
+  required `--clients-file`, `--theme-dir`, and `--theme-catalog-file` flags.
+- In go-go-goja, review PR #100's empty-secret token endpoint behavior and
+  trusted-forwarded validation.
+- In GitOps, begin with the two catalog JSON files, follow their generated
+  ConfigMaps into the TinyIDP Deployment, then inspect the goja-auth environment
+  and bootstrap migration as one compatibility boundary.
+- Re-run both Kustomize renders and inspect the generated ConfigMap suffixes;
+  never review only the handwritten YAML.
+
+### Technical details
+
+```text
+public browser
+   | HTTPS                              | HTTPS
+   v                                    v
+message-desk ingress               goja-auth ingress
+   | callback A                         | callback B
+   +----------------+  +----------------+
+                    v  v
+              Traefik websecure
+                    |
+                    v
+            shared TinyIDP Pod
+              | clients.json
+              | themes.json
+              + /static/themes/*.css
+
+GitOps source -> configMapGenerator -> content hash -> Pod template change
+```
+
 ## Usage Examples
 
 Use the primary design doc for implementation order and `tasks.md` as the
