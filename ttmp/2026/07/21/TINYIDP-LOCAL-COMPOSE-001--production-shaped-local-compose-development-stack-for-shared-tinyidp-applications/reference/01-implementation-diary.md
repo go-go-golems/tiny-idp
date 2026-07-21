@@ -13,14 +13,20 @@ Owners: []
 RelatedFiles:
     - Path: repo://examples/tinyidp-message-app/ui/src/App.tsx
       Note: Separated account action navigation (commit 4b15802)
+    - Path: repo://examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts
+      Note: Playwright journeys (commit 34959ea)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
       Note: Null-origin guard and registration error routing (commits 924b575 and dffc6c4)
     - Path: repo://internal/fositeadapter/registration_test.go
-      Note: Active-session second-signup regression coverage (commit 1a15439)
+      Note: |-
+        Active-session second-signup regression coverage (commit 1a15439)
+        Provider regression (commit c7a2cb7)
     - Path: repo://internal/fositeadapter/rendering.go
       Note: Terminal browser error response boundary (commit dffc6c4)
+    - Path: repo://internal/fositeadapter/scripted_signup.go
+      Note: Remembered-session continuation fix (commit c7a2cb7)
     - Path: repo://internal/productionui/renderer.go
       Note: Per-client error theme selection (commit dffc6c4)
     - Path: repo://pkg/idpui/browser_error.go
@@ -35,6 +41,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -755,22 +762,199 @@ TinyIDP identities without requiring a confusing provider-wide logout first.
 - Remembered-account state remains provider-owned and available to
   `prompt=select_account`.
 
-## Goal
+## Step 9: Define the browser-state authentication UX matrix
 
-<!-- What is the purpose of this reference document? -->
+The raw duplicate-email report showed that protocol tests alone were not a
+sufficient acceptance boundary. I defined a browser-level matrix that makes
+both state transitions and user presentation observable requirements across
+TinyIDP, Message Desk, Goja Auth, Caddy, and Mailpit.
 
-## Context
+The guide records the browser, provider, remembered-identity, relying-party,
+and workflow dimensions; expected outcomes; phased implementation work; test
+artifact policy; and an initial defect ledger. It deliberately distinguishes
+recoverable field mistakes from terminal stale or replayed authority.
 
-<!-- Provide background context needed to use this reference -->
+### Prompt Context
 
-## Quick Reference
+**User prompt (verbatim):** "can you do playwright tests for all kinds of potential error cases and such to test the different paths. multiple account, sining out , using same email, bad password, bad username, etc... We want to provide a high quality navigation and UI experiences and not these error pages without anything. 
 
-<!-- Provide copy/paste-ready content, API contracts, or quick-look tables -->
+Crate a design / analysis / implementation guide to keep track of all thecombos and how to exercise them and then to keep track of the things to do and errors encountered."
 
-## Usage Examples
+**Assistant interpretation:** Define and begin implementing a real-browser
+test program for authentication state, validation, error presentation, and
+cross-application navigation.
 
-<!-- Show how to use this reference in practice -->
+**Inferred user intent:** Turn authentication UX quality into a repeatable
+release gate instead of discovering raw error responses through manual use.
 
-## Related
+**Commit (code):** `3deca0d` — "docs: define authentication browser test matrix"
 
-<!-- Link to related documents or resources -->
+### What I did
+
+- Added `design-doc/03-playwright-browser-state-and-authentication-ux-test-matrix.md`.
+- Added seven ticket tasks covering the matrix, harness, validation, sessions,
+  cross-client behavior, defect repair, and final retained-state validation.
+- Recorded UX-001 through UX-003 in the initial defect ledger.
+
+### Why
+
+- Cookie and navigation state crosses process boundaries that isolated Go
+  tests do not render.
+- The expected result of a rejection includes HTML, theme, accessibility,
+  safe copy, preserved non-secret values, and a valid next action.
+
+### What worked
+
+- Docmgr frontmatter validation passed.
+- The guide maps each phase to concrete exit criteria and file locations.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The relevant matrix is not simply inputs by endpoints. Current identity,
+  remembered identities, RP sessions, workflow stage, and client policy each
+  change the correct browser outcome.
+
+### What was tricky to build
+
+- The matrix must cover pairwise state boundaries without becoming an
+  unmaintainable Cartesian product. Scenarios were selected where ownership or
+  recovery semantics change.
+
+### What warrants a second pair of eyes
+
+- Review the duplicate-email disclosure policy. The guide recommends explicit
+  copy only inside a signup attempt, while login remains non-enumerating.
+
+### What should be done in the future
+
+- Complete each phase and update the defect ledger with test names and fix
+  commits.
+
+### Code review instructions
+
+- Read the state model and matrix before the implementation phases.
+- Compare each browser test name to one or more matrix rows.
+
+### Technical details
+
+- Playwright artifacts are retained on failure and ignored by Git.
+- Stable conclusions belong in the diary; traces must not be copied into the
+  ticket because they can contain transient workflow authority.
+
+## Step 10: Fix active-session continuation binding and add Playwright journeys
+
+The audit event at `2026-07-21T23:03:35Z` classified the reported request as
+`workflow.signup.resume_rejected` with `continuation_unavailable`. The failure
+occurred before duplicate-account validation: a signup interaction correctly
+cleared its active-session binding, but continuation loading incorrectly
+reintroduced the cookies from the submitting request.
+
+I changed continuation loading to preserve the interaction's binding contract
+and added a provider regression that completes one signup, starts another in
+the remembered browser, and submits its first form. I also added the initial
+Playwright project and four browser journeys.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 9)
+
+**Assistant interpretation:** Implement the first testable slice and use it to
+diagnose the current raw error rather than merely documenting future work.
+
+**Inferred user intent:** Make the reported journey work and establish a suite
+that prevents equivalent UX regressions.
+
+**Commit (code):** `c7a2cb7` — "fix: preserve unbound signup continuation sessions"
+
+**Commit (code):** `34959ea` — "test: add authentication UX browser journeys"
+
+### What I did
+
+- Changed `signupLoadBindings` to use the validated interaction record's
+  browser, session, and chooser bindings.
+- Extended provider integration coverage through the first POST of a second
+  signup in a browser with an active TinyIDP session.
+- Added a pinned pnpm Playwright project with Chromium, single-worker stateful
+  execution, retained failure traces, screenshots, video, and ignored output.
+- Added journeys for Message Desk account-action layout, malformed email,
+  remembered-session add-account submission, and duplicate email.
+
+### Why
+
+- A continuation must not strengthen an interaction's intentionally empty
+  session binding by sampling unrelated current cookies.
+- The real browser is required to test native form validation, CSS loading,
+  layout, navigation, and browser error behavior.
+
+### What worked
+
+- The focused Go regression passed.
+- Full `go test ./...`, golangci-lint, Glazed lint, and the UI analyzer passed
+  through the pre-commit hook.
+- Playwright discovered all four tests.
+- The layout and malformed-email tests passed against the live HTTPS stack.
+
+### What didn't work
+
+- The first Playwright run could not launch: `Executable doesn't exist at
+  /home/manuel/.cache/ms-playwright/chromium_headless_shell-1155/chrome-linux/headless_shell`.
+  `pnpm exec playwright install chromium` installed the pinned revision, after
+  which the two executed journeys passed.
+- The first regression-test draft expected password mismatch copy, but the
+  existing implementation rendered a generic display-name rejection. The
+  assertion was narrowed to the invariant under repair: a live themed workflow
+  response rather than continuation rejection. Password taxonomy remains a
+  separate matrix defect.
+
+### What I learned
+
+- The form CSRF value and CSRF cookie in the browser capture were expected to
+  differ: the form value is a MAC over the cookie nonce and interaction. The
+  decisive evidence was the continuation audit event.
+- Signup interactions clear `SessionIDHash`, while the former load binding
+  sampled a non-empty active session cookie. `validateBindings` correctly
+  rejected that mismatch.
+
+### What was tricky to build
+
+- Signup must remain independent of the active identity so abandoning signup
+  does not destroy or replace it. The repair therefore preserves the empty
+  session binding; it does not bind signup back to the old session or weaken
+  the CSRF browser binding.
+
+### What warrants a second pair of eyes
+
+- Review that every future continuation constructor and loader uses the same
+  authoritative binding source. Current request cookies are appropriate only
+  when the interaction contract requires them.
+- Review the test-only `ignoreHTTPSErrors` scope. Human browsers and backend
+  clients still use the persistent exported CA; Playwright's disposable
+  Chromium profile does not inherit that trust store.
+
+### What should be done in the future
+
+- Implement the closed duplicate-account and password error taxonomy.
+- Complete email-code, invitation, session, logout, stale-form, replay, and
+  cross-client journeys.
+
+### Code review instructions
+
+- Start with `signupLoadBindings` and the expanded
+  `TestScriptedSignupDoesNotRequireLegacyRegistrationOption`.
+- Run `go test ./internal/fositeadapter -run
+  TestScriptedSignupDoesNotRequireLegacyRegistrationOption -count=1`.
+- From `examples/tinyidp-shared-two-apps/browser-tests`, run `pnpm test` and
+  inspect retained traces with `pnpm show-report`.
+
+### Technical details
+
+```text
+interaction.SessionIDHash = empty (intentional add-account behavior)
+old loader expectation    = hash(current tinyidp_session) (incorrect)
+new loader expectation    = interaction.SessionIDHash (empty, authoritative)
+browser CSRF binding      = interaction.BrowserBindingHash (still required)
+```

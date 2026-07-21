@@ -45,3 +45,13 @@ Defined the Playwright browser-state and authentication UX matrix, phased harnes
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/21/TINYIDP-LOCAL-COMPOSE-001--production-shaped-local-compose-development-stack-for-shared-tinyidp-applications/design-doc/03-playwright-browser-state-and-authentication-ux-test-matrix.md — Intern implementation and review guide
 
+
+## 2026-07-21
+
+Fixed remembered-session signup continuation loading (c7a2cb7) and added the initial Playwright authentication UX harness and journeys (34959ea).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Initial real-browser UX journeys
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Preserves authoritative interaction bindings
+
