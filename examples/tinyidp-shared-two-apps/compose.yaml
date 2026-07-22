@@ -152,6 +152,7 @@ services:
       XGOJA_OIDC_DEMO_AUTH_OIDC_SCOPES: profile,email
       XGOJA_OIDC_DEMO_AUTH_OIDC_AFTER_LOGIN_URL: /
       XGOJA_OIDC_DEMO_AUTH_OIDC_AFTER_LOGOUT_URL: /
+      XGOJA_OIDC_DEMO_AUTH_OIDC_CALLBACK_ERROR_STYLESHEET_PATH: /static/styles.css
       SSL_CERT_FILE: /trust/caddy-local-root.crt
     extra_hosts: ["idp.localhost:172.31.0.2"]
     volumes:
