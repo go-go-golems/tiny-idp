@@ -188,3 +188,12 @@ Step 26: Rendered Goja Auth OAuth callback failures as safe same-origin recovery
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/go-go-goja/pkg/gojahttp/auth/oidcauth/oidcauth.go — Callback renderer
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml — Local stylesheet wiring
 
+
+## 2026-07-21
+
+Step 26 follow-up: Committed Chromium coverage for Goja callback recovery (commit a62d319).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Cross-client callback UX proof
+

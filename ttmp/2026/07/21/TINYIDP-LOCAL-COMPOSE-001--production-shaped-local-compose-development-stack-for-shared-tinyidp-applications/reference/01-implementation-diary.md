@@ -36,6 +36,7 @@ RelatedFiles:
         Message Desk callback browser evidence (commit cb5d2ca)
         Same-origin replayed-form Chromium evidence (commit 10190ba)
         Live Goja callback recovery regression (uncommitted matrix work)
+        Live Goja callback recovery regression (commit a62d319)
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: |-
         Local shared IdP enables reviewed chooser policy (commit d940253)
@@ -87,6 +88,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -2547,6 +2549,8 @@ receive a polished, safe application page rather than a raw OAuth diagnostic.
 OIDC callback recovery pages"
 
 **Commit (Compose):** `9c37b66` — "compose: style Goja callback recovery pages"
+
+**Commit (browser test):** `a62d319` — "test: cover Goja callback recovery UX"
 
 ### What I did
 
