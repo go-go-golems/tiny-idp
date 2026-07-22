@@ -212,18 +212,36 @@ test("email-code resend keeps a blank themed retry workflow", async ({ page }) =
   await expectMessageDeskTheme(page);
 });
 
-test("email-code attempt exhaustion remains themed and explains the recovery", async ({ page }) => {
-  const email = `playwright-code-exhaustion-${Date.now()}@example.test`;
-  await beginMessageSignup(page);
-  await submitIdentity(page, "Playwright Code Exhaustion", email);
-  const code = page.getByLabel("Email verification code");
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await code.fill("AAAAAAAA");
-    await page.getByRole("button", { name: "Create account" }).click();
-    await expect(code).toHaveValue("");
-  }
-  await expect(page.getByText("Too many incorrect verification codes were entered. Restart registration to receive a new code.")).toBeVisible();
-  await expectMessageDeskTheme(page);
+test("email-code exhaustion stays themed and a resend invalidates the old code", async ({ page }) => {
+	const email = `playwright-code-exhaustion-${Date.now()}@example.test`;
+	await beginMessageSignup(page);
+	await submitIdentity(page, "Playwright Code Exhaustion", email);
+	const originalCode = await latestEmailCode(page, email);
+	const code = page.getByLabel("Email verification code");
+	for (let attempt = 0; attempt < 5; attempt++) {
+		await code.fill("AAAAAAAA");
+		await page.getByRole("button", { name: "Create account" }).click();
+		await expect(code).toHaveValue("");
+	}
+	await expect(page.getByText("Too many incorrect verification codes were entered. Request a new code to try again.")).toBeVisible();
+	await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Send another code" })).toBeVisible();
+	await expectMessageDeskTheme(page);
+
+	await page.getByRole("button", { name: "Send another code" }).click();
+	await expect(code).toBeVisible();
+	await expect(code).toHaveValue("");
+	const replacementCode = await latestEmailCode(page, email);
+	expect(replacementCode).not.toBe(originalCode);
+
+	await code.fill(originalCode);
+	await page.getByRole("button", { name: "Create account" }).click();
+	await expect(page.getByText("This value could not be accepted.")).toBeVisible();
+	await expect(code).toHaveValue("");
+
+	await code.fill(replacementCode);
+	await page.getByRole("button", { name: "Create account" }).click();
+	await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
 });
 
 test("email-code resend limit remains themed and preserves the verification form", async ({ page }) => {
