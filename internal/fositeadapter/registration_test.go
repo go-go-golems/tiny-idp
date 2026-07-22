@@ -439,7 +439,7 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 		SecretKey:             []byte("provider-registration-test-secret-key"),
 		Audit:                 audit,
 		Authenticator:         accounts,
-		Consent:               fositeadapter.AlwaysSkipConsent{},
+		Consent:               fositeadapter.NewStoredConsent(store, 0),
 		Registration:          fositeadapter.RegistrationConfig{Enabled: true, Accounts: accounts},
 		ScriptedSignupManager: manager,
 		WorkflowContinuations: store,
@@ -568,10 +568,24 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 	passwordForm.Set(idpui.PasswordConfirmationFieldName, "correct horse battery staple 2026")
 
 	response = submitRegistration(t, client, server.URL, passwordForm)
+	body, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), "Approve access") {
+		t.Fatalf("verified signup consent status=%d body=%s", response.StatusCode, body)
+	}
+	if got, want := response.Header.Get("Content-Security-Policy"), "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' http://localhost; base-uri 'none'"; got != want {
+		t.Fatalf("verified signup consent CSP=%q want=%q", got, want)
+	}
+	consentForm := parseInteractionInputs(string(body))
+	consentForm.Set(idpui.ActionFieldName, string(idpui.ActionApprove))
+	response = submitRegistration(t, client, server.URL, consentForm)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusSeeOther {
 		body, _ = io.ReadAll(response.Body)
-		t.Fatalf("verified signup status=%d body=%s", response.StatusCode, body)
+		t.Fatalf("verified signup approval status=%d body=%s", response.StatusCode, body)
 	}
 	user, err := store.GetUserByLogin(ctx, "verified-user@example.test")
 	if err != nil || !user.EmailVerified || user.Name != "Verified User" {

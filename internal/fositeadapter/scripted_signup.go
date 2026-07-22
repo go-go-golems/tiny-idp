@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -419,7 +420,11 @@ func (p *Provider) completeScriptedSignup(w http.ResponseWriter, r *http.Request
 			http.Error(w, "create consent interaction failed", http.StatusInternalServerError)
 			return
 		}
-		page := p.newInteractionPage(consentHandle, consentCSRF, idpstore.InteractionRequireConsent, nil, true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
+		// Preserve the already-validated canonical request when rendering the
+		// post-signup consent page. In particular, RedirectOrigin is used by the
+		// response CSP so form-action permits the terminal authorization redirect
+		// back to the relying party after the same-origin consent POST.
+		page := p.newInteractionPage(consentHandle, consentCSRF, idpstore.InteractionRequireConsent, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
 		p.renderInteraction(w, r, http.StatusOK, page)
 		return
 	}
