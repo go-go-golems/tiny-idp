@@ -247,3 +247,12 @@ Step 31: Passed all 25 Chromium cases against retained and fresh volumes and mad
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml — Fresh topology fix
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/21/TINYIDP-LOCAL-COMPOSE-001--production-shaped-local-compose-development-stack-for-shared-tinyidp-applications/design-doc/03-playwright-browser-state-and-authentication-ux-test-matrix.md — Final defect ledger and evidence
 
+
+## 2026-07-22
+
+Step 32: Repaired multiline verbatim prompt Markdown and uploaded the complete intern guide bundle to reMarkable (commit 618a17d).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/21/TINYIDP-LOCAL-COMPOSE-001--production-shaped-local-compose-development-stack-for-shared-tinyidp-applications/reference/01-implementation-diary.md — Pandoc-safe prompt formatting and publication evidence
+

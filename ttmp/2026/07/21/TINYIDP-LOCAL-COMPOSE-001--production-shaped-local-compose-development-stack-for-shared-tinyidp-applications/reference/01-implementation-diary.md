@@ -3328,3 +3328,100 @@ container TLS client
   -> Caddy terminates TLS
   -> trusted-proxy HTTP to TinyIDP
 ```
+
+## Step 32: Repair the diary's PDF boundary and publish the guide
+
+The final ticket bundle initially failed during Pandoc's LaTeX rendering. Two
+historical multiline prompts had been stored on one Markdown line with literal
+backslash-`n` escape sequences. A backslash at the generated line boundary was
+interpreted as a LaTeX command rather than as displayed prompt text.
+
+Both prompts now use Markdown blockquotes and actual blank lines, preserving
+their verbatim wording while producing ordinary Pandoc input. A ticket-wide
+scan found no remaining literal newline escapes, and the four-document guide
+bundle uploaded successfully to reMarkable.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue, is there a way to fix the diary?"
+
+**Assistant interpretation:** Repair the diary source rather than omitting it,
+then complete the previously blocked reMarkable publication.
+
+**Inferred user intent:** Keep the detailed historical record intact and make
+the final documentation deliverable usable on the target device.
+
+**Commit (code):** `618a17d` — "docs: make diary prompts renderable"
+
+### What I did
+
+- Located literal backslash-`n` sequences with a fixed-string scan rather than
+  a newline-matching regular expression.
+- Converted exactly two affected `User prompt (verbatim)` values into Markdown
+  blockquotes with real blank lines.
+- Scanned every Markdown file in the ticket and confirmed no literal escaped
+  newline sequence remained.
+- Uploaded the three design documents and this diary as one PDF with a
+  depth-two table of contents.
+
+### Why
+
+- Dropping the diary would have hidden useful implementation and failure
+  evidence. Escaping the generated LaTeX would have coupled ticket Markdown to
+  one renderer. Correct Markdown is the smallest durable repair.
+
+### What worked
+
+- Commit `618a17d` contains only the two prompt-format repairs.
+- `remarquee` reported:
+  `OK: uploaded TinyIDP Local Compose and Authentication UX Guide.pdf ->
+  /ai/2026/07/22/TINYIDP-LOCAL-COMPOSE-001`.
+
+### What didn't work
+
+- The first upload failed at generated LaTeX line 1822 with an undefined
+  control sequence immediately after `to remarkable.`.
+- After fixing that first prompt, the second upload failed at line 2989 with an
+  undefined control sequence immediately after the callback state value.
+- The initial Perl search pattern was over-escaped and returned no matches.
+  A fixed-string grep for backslash followed by `n` found the remaining six
+  literal occurrences reliably.
+
+### What I learned
+
+- JSON-style escaped prompts should not be pasted into a Markdown paragraph.
+  Multiline verbatim prompts belong in blockquotes or fenced text with actual
+  line structure.
+- A successful `remarquee` upload is itself the verification signal; an extra
+  cloud listing is unnecessary and would add an expensive remote call.
+
+### What was tricky to build
+
+- The diary format requires prompt text to remain verbatim. The repair could
+  change Markdown representation but not normalize spelling, punctuation, or
+  line content.
+- The literal sequence and an actual newline require different search quoting;
+  a fixed-string search made that distinction explicit.
+
+### What warrants a second pair of eyes
+
+- Confirm future diary writers preserve multiline prompts as Markdown blocks
+  at creation time so the renderer boundary does not regress.
+
+### What should be done in the future
+
+- N/A.
+
+### Code review instructions
+
+- Review the Step 1 and historical callback-error prompt blocks in this diary.
+- Validate with a fixed-string recursive grep for backslash followed by `n`;
+  it should emit no matches.
+
+### Technical details
+
+```text
+unsafe source: one quoted line containing escaped newline markers
+safe source:   blockquote containing first line, blank line, second line
+output:        Pandoc -> XeLaTeX -> PDF -> reMarkable cloud
+```
