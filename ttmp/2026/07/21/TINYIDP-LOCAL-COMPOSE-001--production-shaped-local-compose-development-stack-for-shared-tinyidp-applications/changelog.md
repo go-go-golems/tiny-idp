@@ -159,3 +159,12 @@ Replaced Message Desk's raw OIDC callback error with a non-reflective CSP-safe r
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — RP callback error boundary
 
+
+## 2026-07-21
+
+Replaced raw consumed-signup-continuation responses with themed terminal restart pages and covered a real browser replay POST (commits 73b0c0d and 10190ba).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Terminal signup replay boundary
+

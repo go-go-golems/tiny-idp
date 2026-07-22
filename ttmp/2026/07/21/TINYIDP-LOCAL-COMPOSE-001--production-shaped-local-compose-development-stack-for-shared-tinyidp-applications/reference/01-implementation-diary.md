@@ -30,6 +30,7 @@ RelatedFiles:
         Two-account switching and removal regression (commits fadfc08 and 492a659)
         Email-limit and Goja invitation browser coverage (commits cd93fec and 2403443)
         Message Desk callback browser evidence (commit cb5d2ca)
+        Same-origin replayed-form Chromium evidence (commit 10190ba)
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: Local shared IdP enables reviewed chooser policy (commit d940253)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
@@ -42,6 +43,7 @@ RelatedFiles:
       Note: |-
         Active-session second-signup regression coverage (commit 1a15439)
         Provider regression (commit c7a2cb7)
+        Provider replay terminal-page regression (commit 73b0c0d)
     - Path: repo://internal/fositeadapter/rendering.go
       Note: Terminal browser error response boundary (commit dffc6c4)
     - Path: repo://internal/fositeadapter/scripted_signup.go
@@ -49,6 +51,7 @@ RelatedFiles:
         Remembered-session continuation fix (commit c7a2cb7)
         Duplicate commit mapping (commit 21456f9)
         Native email-code verification and closed error mapping (commit cd93fec)
+        Themed terminal handling for unavailable signup continuations (commit 73b0c0d)
     - Path: repo://internal/productionui/renderer.go
       Note: Per-client error theme selection (commit dffc6c4)
     - Path: repo://lefthook.yml
@@ -71,6 +74,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -2292,4 +2296,99 @@ OIDC callback?error=...
   -> HTML + /static/app/assets/index.css + strict CSP
   -> Try signing in again | Return to Message Desk
   -> no provider error query reflected
+```
+
+## Step 24: Render replayed signup continuations as themed terminal pages
+
+The signup workflow can correctly reject a continuation that was consumed by a
+previous successful code verification, but its early load failure still used a
+raw `http.Error`. This step sends continuation-load, retired-generation, and
+invalid-presentation failures through the existing client-themed terminal
+renderer. It does not weaken replay protection or turn the replay into a live
+form retry.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 21)
+
+**Assistant interpretation:** Cover stale and replayed browser authority with
+the same safe, actionable terminal experience required for ordinary mistakes.
+
+**Inferred user intent:** A security rejection must remain fail-closed while
+giving a browser user a clear route back to a fresh registration flow.
+
+**Commit (code):** `73b0c0d` — "fix: render stale signup continuations safely"
+
+**Commit (code):** `10190ba` — "test: cover replayed signup terminal UX"
+
+### What I did
+
+- Added `renderSignupTerminalError`, a bounded `BrowserErrorPage` with fixed
+  restart copy and the already-validated client ID.
+- Routed unavailable continuations, unavailable program generations, and
+  invalid persisted workflow descriptors through it.
+- Extended the provider replay test to require themed HTML and non-reflection
+  of the former raw fallback.
+- Added a Chromium journey that captures a real email-code form, consumes it
+  normally, then submits the captured POST again in the same browser origin.
+
+### Why
+
+- A consumed continuation is terminal authority, not a correctable field
+  value. The user must restart, but should not receive raw text or protocol
+  details.
+
+### What worked
+
+- `GOWORK=off go test ./internal/fositeadapter -run
+  TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification
+  -count=1` passed.
+- The fast test and lint gate passed while committing `73b0c0d`.
+- `pnpm --dir examples/tinyidp-shared-two-apps/browser-tests exec playwright
+  test -g 'replayed signup form returns'` passed in 2.2 seconds.
+
+### What didn't work
+
+- A first back-navigation scenario was not a true stale continuation: the
+  identity-page continuation legitimately advanced to a new email challenge.
+- `page.goBack()` after the email-code POST produced Chromium
+  `net::ERR_CACHE_MISS`, so the browser test now captures the original form
+  fields before consuming them and submits a new same-origin HTML form.
+- The form contains a hidden input named `action`, which shadows DOM
+  `form.action`; reading `form.getAttribute("action")` avoids an accidental
+  navigation to `/[object Object]`.
+
+### What I learned
+
+- A stale UX test must target a consumed/retired authority, not merely an
+  earlier presentation that the workflow intentionally allows to advance.
+
+### What was tricky to build
+
+- The browser test cannot use `fetch` under the provider’s deliberate
+  `default-src 'none'` CSP. Creating and submitting an ordinary hidden form
+  preserves the real navigation and CSP contract.
+
+### What warrants a second pair of eyes
+
+- Confirm the terminal wording correctly distinguishes “restart” from a
+  recoverable wrong code, where the existing workflow retry remains valid.
+
+### What should be done in the future
+
+- Add an expiry fixture that exercises the same terminal renderer after a
+  continuation’s actual TTL elapses or is operator-expired.
+
+### Code review instructions
+
+- Start at `resumeScriptedSignup` and `renderSignupTerminalError`.
+- Run the focused provider test and named Chromium replay test.
+
+### Technical details
+
+```text
+valid email-code POST -> consume continuation -> password page
+captured old email-code POST -> continuation load rejects
+                           -> BrowserErrorPage(client theme)
+                           -> restart registration guidance
 ```
