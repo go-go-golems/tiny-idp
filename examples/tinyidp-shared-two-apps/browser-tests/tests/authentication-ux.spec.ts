@@ -98,6 +98,18 @@ test("malformed signup email stays on the themed form with native validation", a
   await expectMessageDeskTheme(page);
 });
 
+test("signup identity form enforces required and bounded display names before submission", async ({ page }) => {
+  await beginMessageSignup(page);
+  const displayName = page.getByLabel("Display name");
+  await expect(displayName).toHaveAttribute("maxlength", "120");
+  await page.getByLabel("Email").fill("display-name-validation@example.test");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(displayName).toBeFocused();
+  expect(await displayName.evaluate((input: HTMLInputElement) => input.validity.valueMissing)).toBe(true);
+  await expect(page.getByRole("heading", { name: "Create an account" })).toBeVisible();
+  await expectMessageDeskTheme(page);
+});
+
 test("remembered TinyIDP session can submit the first add-account signup step", async ({ page }) => {
   await loginToMessageDesk(page);
   await page.getByRole("button", { name: "Log out of Message Desk" }).click();
@@ -106,6 +118,21 @@ test("remembered TinyIDP session can submit the first add-account signup step", 
   const email = `playwright-add-account-${Date.now()}@example.test`;
   await submitIdentity(page, "Playwright Add Account", email);
   await expect(page.getByLabel("Email verification code")).toBeVisible();
+  await expectMessageDeskTheme(page);
+});
+
+test("short password is rejected by native validation before the password workflow posts", async ({ page }) => {
+  const email = `playwright-short-password-${Date.now()}@example.test`;
+  await beginMessageSignup(page);
+  await submitIdentity(page, "Playwright Short Password", email);
+  await page.getByLabel("Email verification code").fill(await latestEmailCode(page, email));
+  await page.getByRole("button", { name: /create account|continue/i }).click();
+  const password = page.getByLabel("Password", { exact: true });
+  await password.fill("too-short-2026");
+  await page.getByLabel("Confirm password").fill("too-short-2026");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(password).toBeFocused();
+  expect(await password.evaluate((input: HTMLInputElement) => input.validity.tooShort)).toBe(true);
   await expectMessageDeskTheme(page);
 });
 
