@@ -21,6 +21,7 @@ RelatedFiles:
         Goja Auth invalid-credential and client-theme browser coverage (commit 98821fa)
         Native display-name and password browser validation coverage (commit f5f9eaf)
         Email-code resend browser recovery coverage (commit 137ebd3)
+        Browser provider-logout coverage (commit 9d25a40)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
@@ -55,6 +56,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1704,4 +1706,85 @@ mail delivery ordering remains a service-level concern.
 Send another code -> continuation advance -> themed code form
                                          -> blank input
                                          -> resend remains available
+```
+
+## Step 18: Cover RP-initiated provider logout
+
+This browser journey verifies the distinction between the relying-party session
+and the TinyIDP browser session at the full logout boundary. Message Desk first
+revokes its own application session, then navigates the browser to TinyIDP's
+validated end-session endpoint; TinyIDP clears its session cookies and returns
+the browser to Message Desk's registered post-logout origin.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 16)
+
+**Assistant interpretation:** Continue the session and logout portions of the
+matrix with actual browser cookie and navigation evidence.
+
+**Inferred user intent:** Users must be able to understand and trust the scope
+of “log out everywhere,” especially in a shared identity-provider topology.
+
+**Commit (code):** `9d25a40` — "test: cover provider logout browser flow"
+
+### What I did
+
+- Logged into Message Desk using the seeded local administrator.
+- Clicked the application’s `Log out everywhere` control.
+- Asserted the registered Message Desk post-logout URL, guest UI, and absence
+  of a non-empty `tinyidp_session` cookie in the Playwright browser context.
+
+### Why
+
+- An RP-only logout must not be mistaken for provider logout. This row proves
+  the stronger user action removes both layers of browser authentication.
+
+### What worked
+
+- `pnpm exec playwright test -g 'logging out everywhere'` passed in 2.6
+  seconds.
+
+### What didn't work
+
+- A temporary one-account chooser assertion did not show `Choose an account`.
+  With only one remembered identity, TinyIDP correctly completed the
+  `prompt=select_account` request without a selection UI. The temporary test
+  was removed; the chooser row remains open and requires two identities.
+
+### What I learned
+
+- The app emits a real `prompt=select_account` request for change-account.
+  Whether a chooser renders depends on remembered-account cardinality, not
+  merely the prompt value.
+
+### What was tricky to build
+
+- The browser test must inspect the IdP-origin cookie jar after a cross-origin
+  redirect; the Message Desk guest page alone would not prove provider logout.
+
+### What warrants a second pair of eyes
+
+- Review whether the product should visually acknowledge provider logout in
+  addition to its guest-mode state.
+
+### What should be done in the future
+
+- Create two remembered identities deterministically, then cover chooser
+  selection and account removal without relying on the flaky final-signup
+  Playwright navigation path.
+
+### Code review instructions
+
+- Run `pnpm exec playwright test -g 'logging out everywhere'` from the
+  browser-tests directory.
+
+### Technical details
+
+```text
+Message Desk logout everywhere
+  -> revoke RP session
+  -> browser GET TinyIDP end-session with registered post-logout URL
+  -> TinyIDP revokes browser session and clears cookie
+  -> Message Desk guest mode
 ```

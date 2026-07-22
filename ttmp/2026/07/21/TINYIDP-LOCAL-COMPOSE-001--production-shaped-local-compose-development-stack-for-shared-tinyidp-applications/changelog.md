@@ -112,3 +112,12 @@ Added a reliable Playwright resend recovery journey that verifies blank themed r
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Resend UX coverage
 
+
+## 2026-07-21
+
+Added real-browser RP-initiated provider logout coverage, including Message Desk guest state and retired TinyIDP session cookie (commit 9d25a40).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Provider logout journey
+
