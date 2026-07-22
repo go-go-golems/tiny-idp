@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -162,6 +163,21 @@ func (p *Provider) renderRegistrationRejected(w http.ResponseWriter, r *http.Req
 		ClientID:      clientID,
 		Heading:       "Registration could not be completed",
 		Summary:       "TinyIDP could not verify that this registration form came from the expected page. Restart registration from the application and try again.",
+	})
+}
+
+func (p *Provider) renderRateLimited(w http.ResponseWriter, r *http.Request, clientID string) {
+	if strings.TrimSpace(clientID) == "" {
+		// Address-wide throttling happens before the interaction is loaded and
+		// therefore before a client can be trusted. Use a stable provider-owned
+		// presentation context instead of reflecting an unvalidated form value.
+		clientID = "tinyidp"
+	}
+	p.renderBrowserError(w, r, http.StatusTooManyRequests, idpui.BrowserErrorPage{
+		DocumentTitle: "Too many attempts",
+		ClientID:      clientID,
+		Heading:       "Please wait before trying again",
+		Summary:       "Too many authentication requests were made from this browser or network. Wait briefly, then restart sign-in or registration from the application.",
 	})
 }
 

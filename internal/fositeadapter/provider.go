@@ -882,7 +882,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if !p.rateLimiter.Allow(r.Context(), "authorize:"+clientAddress) {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.rate_limited", Result: "rejected", Reason: "rate_limited"})
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		p.renderRateLimited(w, r, "")
 		return
 	}
 	handle := r.PostForm.Get(interactionFieldName)
@@ -1081,7 +1081,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	if login != "" {
 		if !p.allowLogin(r.Context(), ar.GetClient().GetID(), clientAddress, login) {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.rate_limited", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "rate_limited"})
-			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			p.renderRateLimited(w, r, client.ID)
 			return
 		}
 		result, authErr := p.authenticator.AuthenticatePassword(r.Context(), login, r.PostForm.Get("password"), idp.LoginMetadata{RemoteAddr: clientAddress, UserAgent: r.UserAgent(), ClientID: ar.GetClient().GetID()})
