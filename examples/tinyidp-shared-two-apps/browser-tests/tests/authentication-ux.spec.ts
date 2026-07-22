@@ -280,6 +280,15 @@ test("Goja signup rejects an unknown invitation with a themed field error", asyn
   await expectGojaAuthTheme(page);
 });
 
+test("Message Desk OIDC callback error is an application-styled recovery page", async ({ page }) => {
+  await page.goto(`${messageOrigin}/auth/callback?error=access_denied&error_description=untrusted-provider-text&state=missing`);
+  await expect(page.getByRole("heading", { name: "Sign-in was cancelled" })).toBeVisible();
+  await expect(page.locator('link[rel="stylesheet"]')).toHaveAttribute("href", "/static/app/assets/index.css");
+  await expect(page.getByRole("link", { name: "Try signing in again" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return to Message Desk" })).toBeVisible();
+  expect(await page.locator("body").innerText()).not.toContain("untrusted-provider-text");
+});
+
 test("duplicate email produces a themed actionable signup error", async ({ page }) => {
   const email = "admin@example.test";
   await beginMessageSignup(page);
