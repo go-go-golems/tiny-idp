@@ -1,7 +1,7 @@
 ---
 Title: Production-shaped local Compose development stack for shared TinyIDP applications
 Ticket: TINYIDP-LOCAL-COMPOSE-001
-Status: active
+Status: complete
 Topics:
     - oidc
     - tiny-idp
@@ -13,10 +13,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-07-21T13:18:51.3541156-04:00
+LastUpdated: 2026-07-22T15:14:09.193967371-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # Production-shaped local Compose development stack for shared TinyIDP applications
 

@@ -256,3 +256,8 @@ Step 32: Repaired multiline verbatim prompt Markdown and uploaded the complete i
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/21/TINYIDP-LOCAL-COMPOSE-001--production-shaped-local-compose-development-stack-for-shared-tinyidp-applications/reference/01-implementation-diary.md — Pandoc-safe prompt formatting and publication evidence
 
+
+## 2026-07-22
+
+Ticket closed
+
