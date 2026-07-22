@@ -36,12 +36,16 @@ RelatedFiles:
         Duplicate commit mapping (commit 21456f9)
     - Path: repo://internal/productionui/renderer.go
       Note: Per-client error theme selection (commit dffc6c4)
+    - Path: repo://lefthook.yml
+      Note: Fast pre-commit and full pre-push validation policy (commit bd4c424)
     - Path: repo://pkg/idpui/browser_error.go
       Note: Bounded terminal error model (commit dffc6c4)
     - Path: repo://pkg/idpui/workflow.go
       Note: Global duplicate-identity error model (commit 21456f9)
     - Path: repo://pkg/idpworkflow/descriptors.go
-      Note: Production-aligned public password bounds (commit 2c136ee)
+      Note: |-
+        Production-aligned public password bounds (commit 2c136ee)
+        Non-redisplayable one-time email verification code contract (commit bd4c424)
     - Path: repo://pkg/idpworkflow/submission.go
       Note: Native secret-field bounds enforcement (commit 2c136ee)
 ExternalSources: []
@@ -50,6 +54,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1504,4 +1509,122 @@ password: minlength=15                  -> browser prevents 14-character POST
 
 The provider-owned workflow descriptor remains the single source of both
 HTML constraints and server-side ParseSubmission bounds.
+```
+
+## Step 16: Never redisplay rejected email codes and split fast from full commit gates
+
+The wrong-email-code browser test showed that the retry HTML contained the
+previous one-time code. This is not acceptable retry state: although the code
+is text rather than a password, it is authentication evidence and must not be
+rendered after a failed verification attempt. The descriptor now declares that
+field non-redisplayable, so the existing public-value projection omits it.
+
+This Go change also exposed why each commit felt slow. The old pre-commit hook
+ran the entire repository suite, including ticket-local, two-process k3s
+deployment harnesses. The hook now runs a fast reusable-package and Message
+Desk suite; `make test` and pre-push retain the complete Fosite and production
+harness coverage.
+
+### Prompt Context
+
+**User prompt (verbatim):** "how long does the entire test process / commit gate take?"
+
+**Assistant interpretation:** Explain the latency source and make the normal
+commit feedback loop proportionate without weakening the full validation gate.
+
+**Inferred user intent:** Keep frequent, safe commits practical while retaining
+the expensive deployment-shaped tests at a sensible boundary.
+
+**Commit (code):** `bd4c424` — "fix: never redisplay rejected email codes"
+
+### What I did
+
+- Added a browser journey for a wrong email code, expecting a themed retry form
+  and resend action.
+- Observed that the rejected code was rendered back into the input.
+- Allowed non-secret fields to opt into `RedisplayNever` and assigned that
+  policy to `FieldEmailCode`.
+- Added a unit regression proving email codes do not enter `PublicValues`.
+- Rebuilt only the local IDP and reran the focused browser test successfully.
+- Updated a stale k3s two-process harness expectation from its old generic
+  duplicate-email copy to the current actionable themed duplicate-identity
+  guidance; its focused test passed in 22.099 seconds.
+- Added `make test-fast` and changed the pre-commit test hook to use it.
+  Full `make test` remains the pre-push command.
+
+### Why
+
+- Retry pages are part of the authentication boundary. They must not retain a
+  one-time code in HTML, DOM values, screenshots, browser history, or shared
+  screen captures.
+- The full suite includes deliberately expensive integration harnesses. They
+  are essential before push but are disproportionate for every small Go edit.
+
+### What worked
+
+- `go test ./pkg/idpworkflow ./internal/fositeadapter -count=1` passed before
+  the local rebuild.
+- `pnpm exec playwright test -g 'wrong email verification code'` passed after
+  rebuilding the IDP.
+- The focused two-process k3s harness passed after its expected public copy was
+  updated.
+- The new pre-commit gate passed lint and `make test-fast` in 7.90 seconds.
+
+### What didn't work
+
+- The original full suite failed after 1–2 minutes because
+  `TestTwoProcessRegistrationRedirectAndSignup` still asserted the obsolete
+  generic duplicate-email wording. Its failure was a stale test expectation,
+  not a regression from non-redisplayable email codes.
+
+### What I learned
+
+- `RedisplayNever` is a distinct concern from `Sensitive`: a value can be
+  safely parsed as text for a current native verifier while still being unsafe
+  to carry into a later rendered presentation.
+- The k3s harness is a Go test under the production deployment ticket. It
+  launches TinyIDP and Message Desk as separate local processes and checks the
+  production-shaped signup/redirect boundary; it is not Kubernetes itself.
+
+### What was tricky to build
+
+- The validation implementation cannot simply mark email codes as password
+  secrets, because that would change the input kind and presentation contract.
+  Allowing non-secret `RedisplayNever` preserves the one-time-code input while
+  closing the redisplay channel.
+
+### What warrants a second pair of eyes
+
+- Review all future short-lived proof fields—recovery, device, or invitation
+  values—to decide explicitly whether they may be redisplayed.
+- Review the fast test set periodically so it remains meaningful without
+  silently becoming a second full suite.
+
+### What should be done in the future
+
+- Complete the other email-code state rows: exhausted, expired, replayed, and
+  resend-limit behavior.
+- Keep full `make test` green before pushing; do not use `test-fast` as a
+  release or deployment substitute.
+
+### Code review instructions
+
+- Start with `FieldEmailCode` in `pkg/idpworkflow/descriptors.go` and the
+  `ParseSubmission` projection test.
+- Run `make test-fast` for the pre-commit suite, then run the focused
+  Playwright wrong-code test from the browser-tests directory.
+- Run the two-process harness package or full `make test` before push when
+  reviewing production-shape changes.
+
+### Technical details
+
+```text
+wrong code POST
+  -> ParseSubmission
+  -> email_code excluded from PublicValues (RedisplayNever)
+  -> verifier rejects code
+  -> themed retry page with blank input + resend action
+
+pre-commit: make test-fast + make lint  (~8 seconds observed)
+pre-push:   make test + make lint       (includes Fosite and k3s harnesses)
 ```

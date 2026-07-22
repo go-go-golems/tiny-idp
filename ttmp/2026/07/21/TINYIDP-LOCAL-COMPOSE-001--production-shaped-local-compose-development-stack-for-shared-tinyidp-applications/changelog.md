@@ -93,3 +93,13 @@ Added focused Chromium coverage for native display-name and password validation 
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Native signup validation journeys
 
+
+## 2026-07-21
+
+Prevented rejected one-time email-code redisplay, verified the themed retry journey, and made the pre-commit test gate fast while retaining full pre-push coverage (commit bd4c424).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/lefthook.yml — Commit gate scope
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/descriptors.go — One-time code redisplay policy
+
