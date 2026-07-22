@@ -239,6 +239,44 @@ test("email-code resend limit remains themed and preserves the verification form
   await expectMessageDeskTheme(page);
 });
 
+test("replayed signup form returns a themed restart document instead of raw provider text", async ({ page }) => {
+	const email = `playwright-stale-signup-${Date.now()}@example.test`;
+	await beginMessageSignup(page);
+	await submitIdentity(page, "Playwright Stale Signup", email);
+	const code = page.getByLabel("Email verification code");
+	await expect(code).toBeVisible();
+	const verificationCode = await latestEmailCode(page, email);
+	const replay = await page.locator("form").evaluate(form => ({
+		// The provider's hidden input is named "action", which shadows the
+		// DOM form.action property. Read the literal attribute instead.
+		postURL: form.getAttribute("action") || "",
+		fields: Object.fromEntries(new FormData(form).entries())
+	}));
+	(replay.fields as Record<string, string>).email_code = verificationCode;
+	await code.fill(verificationCode);
+	await page.getByRole("button", { name: "Create account" }).click();
+	await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+
+	await page.evaluate(request => {
+		const form = document.createElement("form");
+		form.method = "post";
+		form.action = request.postURL;
+		for (const [name, value] of Object.entries(request.fields)) {
+			const input = document.createElement("input");
+			input.type = "hidden";
+			input.name = name;
+			input.value = value;
+			form.append(input);
+		}
+		document.body.append(form);
+		form.submit();
+	}, replay);
+	await expect(page.getByRole("heading", { name: "Registration needs to be restarted" })).toBeVisible();
+	await expect(page.getByText("This registration page is no longer active. Return to the application and begin registration again.")).toBeVisible();
+	await expectMessageDeskTheme(page);
+	expect((await page.locator("body").innerText()).toLowerCase()).not.toContain("registration request was not accepted");
+});
+
 for (const [name, login, password] of [
   ["unknown login", "not-a-real-account@example.test", "not-the-right-password-2026!"],
   ["wrong password", "admin@example.test", "not-the-right-password-2026!"],
