@@ -2,6 +2,7 @@ import { expect, Page, test } from "@playwright/test";
 
 const messageOrigin = "https://message.localhost:8443";
 const idpOrigin = "https://idp.localhost:8443";
+const gojaOrigin = "https://goja.localhost:8443";
 const outboxOrigin = "http://127.0.0.1:8025";
 const outboxAuthorization = `Basic ${Buffer.from("operator:local-outbox-password-2026!").toString("base64")}`;
 
@@ -9,6 +10,13 @@ async function expectMessageDeskTheme(page: Page): Promise<void> {
   await expect(page.locator('link[rel="stylesheet"]')).toHaveAttribute(
     "href",
     "/static/themes/message-desk.css"
+  );
+}
+
+async function expectGojaAuthTheme(page: Page): Promise<void> {
+  await expect(page.locator('link[rel="stylesheet"]')).toHaveAttribute(
+    "href",
+    "/static/themes/goja-auth-lab.css"
   );
 }
 
@@ -117,6 +125,18 @@ for (const [name, login, password] of [
     await expectMessageDeskTheme(page);
   });
 }
+
+test("Goja Auth invalid credentials retain login and use the Goja-specific theme", async ({ page }) => {
+  await page.goto(`${gojaOrigin}/auth/login?return_to=/`);
+  await page.getByLabel("Login").fill("not-a-real-goja-account@example.test");
+  await page.getByLabel("Password").fill("not-the-right-password-2026!");
+  await page.getByRole("button", { name: /continue|sign in|approve/i }).first().click();
+
+  await expect(page.getByText("Invalid login or password.")).toBeVisible();
+  await expect(page.getByLabel("Login")).toHaveValue("not-a-real-goja-account@example.test");
+  await expect(page.getByLabel("Password")).toHaveValue("");
+  await expectGojaAuthTheme(page);
+});
 
 test("duplicate email produces a themed actionable signup error", async ({ page }) => {
   const email = "admin@example.test";
