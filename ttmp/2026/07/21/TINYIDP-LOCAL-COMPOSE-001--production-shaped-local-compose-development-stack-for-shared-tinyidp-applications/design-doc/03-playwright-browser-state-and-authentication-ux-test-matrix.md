@@ -11,6 +11,8 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts
+      Note: Matrix Goja invitation and email-limit evidence
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: Production-shaped local topology exercised by the browser suite
     - Path: repo://examples/tinyidp-shared-two-apps/open-signup.js
@@ -33,6 +35,7 @@ LastUpdated: 2026-07-21T19:06:06.136211008-04:00
 WhatFor: Implement and review a Playwright suite that treats navigation quality and themed error recovery as observable authentication requirements.
 WhenToUse: Read before adding browser tests, changing authentication navigation, or deciding how a TinyIDP failure should appear to a user.
 ---
+
 
 
 # Playwright browser-state and authentication UX test matrix
@@ -212,6 +215,7 @@ Failures are recorded in this document's ledger before repair:
 | UX-001 | Duplicate-email signup with remembered IdP session | `400 text/plain`: `registration request was not accepted`; audit reason `continuation_unavailable` | Continuation binding / provider presentation | Reproducing |
 | UX-002 | Duplicate-email commit | Current generic field copy is `This value could not be accepted.` | Signup error taxonomy | Planned |
 | UX-003 | RP OAuth callback error | Message Desk says only `identity login was not accepted` | RP callback presentation | Planned |
+| UX-004 | Email-code attempt exhaustion | Chromium final retry page remains `This value could not be accepted.` after the closed attempt-limit mapping was added; resend-limit copy passes | Email challenge error classification / deployed request trace | Investigating; no third speculative fix |
 
 New rows must include the first failing trace, expected behavior, owner layer,
 fix commit, and passing test name.

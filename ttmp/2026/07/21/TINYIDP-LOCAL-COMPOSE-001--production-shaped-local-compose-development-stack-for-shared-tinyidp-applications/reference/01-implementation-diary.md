@@ -24,6 +24,7 @@ RelatedFiles:
         Browser provider-logout coverage (commit 9d25a40)
         Two-account Chromium switch regression (commit fadfc08)
         Two-account switching and removal regression (commits fadfc08 and 492a659)
+        Email-limit and Goja invitation browser coverage (commits cd93fec and 2403443)
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: Local shared IdP enables reviewed chooser policy (commit d940253)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
@@ -42,6 +43,7 @@ RelatedFiles:
       Note: |-
         Remembered-session continuation fix (commit c7a2cb7)
         Duplicate commit mapping (commit 21456f9)
+        Native email-code verification and closed error mapping (commit cd93fec)
     - Path: repo://internal/productionui/renderer.go
       Note: Per-client error theme selection (commit dffc6c4)
     - Path: repo://lefthook.yml
@@ -55,13 +57,16 @@ RelatedFiles:
         Production-aligned public password bounds (commit 2c136ee)
         Non-redisplayable one-time email verification code contract (commit bd4c424)
     - Path: repo://pkg/idpworkflow/submission.go
-      Note: Native secret-field bounds enforcement (commit 2c136ee)
+      Note: |-
+        Native secret-field bounds enforcement (commit 2c136ee)
+        Request-scoped non-redisplayable verification values (commit cd93fec)
 ExternalSources: []
 Summary: Chronological implementation and debugging record for the shared TinyIDP local HTTPS Compose stack.
 LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1998,4 +2003,194 @@ chooser [Administrator, Invitee]
   -> select Invitee + Remove account
   -> chooser [Administrator]
   -> durable Invitee account unchanged
+```
+
+## Step 21: Restore request-scoped email-code verification
+
+The non-redisplay policy for email codes correctly stopped a rejected code from
+returning in HTML, but a provider regression test showed that it had also
+removed the code from the native verifier input. A valid code consequently
+could never advance from the email-code page. This step restores the intended
+three-way separation: public fields may render, secrets and evidence may be
+resolved only during the current native request, and neither becomes durable
+workflow presentation state.
+
+The same implementation adds closed, provider-owned messages for expired,
+attempt-exhausted, and resend-limited email-code states. The error code, not an
+underlying storage error, crosses the native/rendering boundary.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 19)
+
+**Assistant interpretation:** Continue covering the browser UX matrix while
+preserving the security rule that one-time codes are never redisplayed.
+
+**Inferred user intent:** Authentication error handling must be both secure and
+actionable; fixing an information-flow issue must not quietly break signup.
+
+**Commit (code):** `cd93fec` — "fix: preserve verifiable email codes and explain limits"
+
+### What I did
+
+- Changed `ParseSubmission` so a `RedisplayNever` non-secret value is stored
+  in the request-scoped secret set instead of being discarded.
+- Resolved the email-code handle only in `resumeScriptedSignup`, passed a
+  transient clone to the native email challenge verifier, and cleared it.
+- Added closed field-error codes and public copy for expiry, exhausted attempts,
+  and resend limits.
+- Added focused Go regressions for the projection and safe public copy.
+- Added Chromium tests for attempt exhaustion and resend-limit presentation.
+
+### Why
+
+- An email code is authentication evidence: it must reach the native verifier
+  for this request, but must not enter `PublicValues`, JavaScript input, a
+  continuation, a rendered retry form, or audit data.
+
+### What worked
+
+- `GOWORK=off go test ./pkg/idpworkflow ./pkg/idpui ./internal/fositeadapter
+  -run 'Test(ParseSubmissionDoesNotRedisplayEmailVerificationCodes|WorkflowEmailCodeFailureHasSpecificPublicCopy|EmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification|EmailVerifiedScriptedSignupSurvivesSQLiteRestart)' -count=1`
+  passed.
+- The normal fast pre-commit gate and lint passed while committing `cd93fec`.
+- The real Chromium resend-limit journey passed and displayed the closed,
+  themed recovery message.
+
+### What didn't work
+
+- `pnpm --dir examples/tinyidp-shared-two-apps/browser-tests exec playwright
+  test -g 'email-code (attempt exhaustion|resend limit)'` still failed the
+  exhaustion assertion after a rebuilt image: the final page showed
+  `This value could not be accepted.` rather than the new attempt-limit text.
+- The initial failed run was made against an image built before the
+  request-scoped verifier correction; its durable challenge record had
+  `Attempts:0`. A second rebuild still reproduced the generic final page, so
+  this remaining discrepancy is recorded as a defect rather than receiving a
+  third speculative implementation change.
+
+### What I learned
+
+- `RedisplayNever` must mean “private to the current verifier,” not “drop the
+  submitted value.” It is not equivalent to a display-only omission.
+- The resend path is independent of verification and therefore proved the new
+  error taxonomy even while attempt-exhaustion remains unresolved.
+
+### What was tricky to build
+
+- The parser has to normalize a non-secret code before placing it in the
+  request-scoped set, while password descriptors must remain unnormalized
+  secrets. Treating every non-redisplayed field as a password would change
+  its input and validation contract.
+
+### What warrants a second pair of eyes
+
+- Trace the deployed exhaustion POST through `ParseSubmission`,
+  `emailChallenges.Verify`, and `renderScriptedSignupEmailCodeError` before
+  changing it again. Confirm the runtime error class and attempt counter rather
+  than inferring it from the generic browser page.
+
+### What should be done in the future
+
+- Resolve the attempt-exhaustion discrepancy with one instrumented,
+  deterministic trace, then retain the Chromium regression.
+- Add expiry and replay fixtures after the error-class trace is understood.
+
+### Code review instructions
+
+- Start with `Submission` in `pkg/idpworkflow/submission.go`, then inspect the
+  email-code branch in `internal/fositeadapter/scripted_signup.go`.
+- Run the focused Go command above. Run the resend-limit test separately; do
+  not treat the currently failing exhaustion assertion as passing evidence.
+
+### Technical details
+
+```text
+email_code POST
+  -> normalize (trim)
+  -> request-scoped SecretHandle (never PublicValues)
+  -> native email challenge Verify(code)
+  -> clear clone + destroy handle set
+  -> themed field error only when verification rejects
+```
+
+## Step 22: Cover Goja Auth invitation rejection
+
+The shared local stack has a different policy per relying party: Message Desk
+is open signup, while Goja Auth starts the same TinyIDP workflow with an
+invite-code field. This step proves that the real Goja `/auth/register` route
+preserves that policy and gets Goja's client-specific theme when an unknown
+invite is rejected.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 21)
+
+**Assistant interpretation:** Continue an independent browser-matrix row while
+the email-code exhaustion defect remains explicitly bounded.
+
+**Inferred user intent:** Two applications may share the provider without
+silently sharing signup policy or visual presentation.
+
+**Commit (code):** `2403443` — "test: cover Goja invitation rejection UX"
+
+### What I did
+
+- Added a Goja signup helper that enters through the actual RP route and
+  verifies the resulting TinyIDP authorize origin and Goja CSS.
+- Submitted a unique identity plus an unknown invitation code.
+- Asserted that the invite value remains available for correction, the provider
+  renders a field error, and the `goja-auth-lab.css` theme remains active.
+
+### Why
+
+- Invitation policy and visual client identity are both provider-selected by
+  the validated OAuth client. A Message Desk result cannot prove Goja's path.
+
+### What worked
+
+- `pnpm --dir examples/tinyidp-shared-two-apps/browser-tests exec playwright
+  test -g 'Goja signup rejects an unknown invitation'` passed in 2.3 seconds.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- Goja's `/auth/register` forwards the standard PKCE/OIDC request with
+  `tinyidp_signup=1`; TinyIDP adds the invite field only after validating the
+  `goja-auth-host-demo` client identifier.
+
+### What was tricky to build
+
+- The test deliberately uses an unknown code rather than creating an invitation
+  through storage internals. It exercises the normal browser policy boundary
+  and avoids turning a test fixture into authorization evidence.
+
+### What warrants a second pair of eyes
+
+- Review the generic invite rejection copy before public rollout: it avoids
+  leaking invitation existence, but the product may want a more helpful
+  provider-owned generic sentence.
+
+### What should be done in the future
+
+- Add durable invitation lifecycle fixtures—valid, consumed, revoked, expired,
+  and wrong-audience—using supported administrative setup rather than direct
+  database mutation.
+
+### Code review instructions
+
+- Run the named focused Goja Playwright test with the Compose stack running.
+- Inspect `open-signup.js` to see the client-ID-gated invite descriptor.
+
+### Technical details
+
+```text
+Goja /auth/register
+  -> OIDC authorize (client_id=goja-auth-host-demo, tinyidp_signup=1)
+  -> TinyIDP client policy adds inviteCode
+  -> provider lookup rejects unknown code
+  -> Goja-themed field error; no email challenge sent
 ```

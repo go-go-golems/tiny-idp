@@ -140,3 +140,13 @@ Extended the real Chromium chooser journey to remove a remembered account while 
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Remembered-account removal coverage
 
+
+## 2026-07-21
+
+Restored request-scoped email-code verification without redisplay, added closed email-limit UX copy, and covered Goja's themed unknown-invitation journey (commits cd93fec and 2403443).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Real Chromium evidence
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/submission.go — Private verifier input boundary
+
