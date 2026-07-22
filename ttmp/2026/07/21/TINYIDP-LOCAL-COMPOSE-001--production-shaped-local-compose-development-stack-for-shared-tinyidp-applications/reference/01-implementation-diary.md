@@ -150,7 +150,12 @@ demo until its development assumptions became ambiguous.
 
 ### Prompt Context
 
-**User prompt (verbatim):** "Create a design document for this task, Create  a detailed analysis / design / implementation guide that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and the nupload to remarkable.\n\n\nthen work on it and get it up and running"
+**User prompt (verbatim):**
+
+> Create a design document for this task, Create  a detailed analysis / design / implementation guide that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and the nupload to remarkable.
+>
+>
+> then work on it and get it up and running
 
 **Assistant interpretation:** Create a ticketed intern guide, implement the
 local multi-app Compose topology, run it, and publish the documentation.
@@ -769,7 +774,15 @@ made the advertised multi-account workflow internally inconsistent.
 
 ### Prompt Context
 
-**User prompt (verbatim):** "https://message.localhost:8443/auth/callback?error=invalid_request&error_description=The+request+is+missing+a+required+parameter%2C+includes+an+invalid+parameter+value%2C+includes+a+parameter+more+than+once%2C+or+is+otherwise+malformed.+registration+requires+a+new+browser+session&state=c-Cub8zOZIkcGz9pJht0uSynae4A41daZ78fhR7yop8\n\nidentity login was not accepted\n\n---\n\nThis was after logging out of message-desk (not idp) and clicking \"sign up for a new account\""
+**User prompt (verbatim):**
+
+> https://message.localhost:8443/auth/callback?error=invalid_request&error_description=The+request+is+missing+a+required+parameter%2C+includes+an+invalid+parameter+value%2C+includes+a+parameter+more+than+once%2C+or+is+otherwise+malformed.+registration+requires+a+new+browser+session&state=c-Cub8zOZIkcGz9pJht0uSynae4A41daZ78fhR7yop8
+>
+> identity login was not accepted
+>
+> ---
+>
+> This was after logging out of message-desk (not idp) and clicking "sign up for a new account"
 
 **Assistant interpretation:** Reproduce and fix signup after relying-party-only
 logout while preserving TinyIDP's remembered-account behavior.
