@@ -152,6 +152,18 @@ test("wrong email verification code keeps a themed retry form with resend", asyn
   await expectMessageDeskTheme(page);
 });
 
+test("email-code resend keeps a blank themed retry workflow", async ({ page }) => {
+  const email = `playwright-resend-code-${Date.now()}@example.test`;
+  await beginMessageSignup(page);
+  await submitIdentity(page, "Playwright Resend Code", email);
+  await page.getByRole("button", { name: "Send another code" }).click();
+  const code = page.getByLabel("Email verification code");
+  await expect(code).toBeVisible();
+  await expect(code).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Send another code" })).toBeVisible();
+  await expectMessageDeskTheme(page);
+});
+
 for (const [name, login, password] of [
   ["unknown login", "not-a-real-account@example.test", "not-the-right-password-2026!"],
   ["wrong password", "admin@example.test", "not-the-right-password-2026!"],
