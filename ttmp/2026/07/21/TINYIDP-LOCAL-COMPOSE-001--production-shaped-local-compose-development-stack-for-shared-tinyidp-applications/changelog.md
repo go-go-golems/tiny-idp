@@ -66,3 +66,12 @@ Explained duplicate-email signup failures with a themed workflow-level recovery 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Maps duplicate commit failures to safe user guidance
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpui/workflow.go — Closed global workflow-error contract
 
+
+## 2026-07-21
+
+Covered themed invalid credential browser retries and recorded the unresolved pre-comparison password mismatch defect (commit 882790a).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Focused real-HTTPS login UX regressions
+

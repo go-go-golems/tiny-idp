@@ -17,6 +17,7 @@ RelatedFiles:
       Note: |-
         Playwright journeys (commit 34959ea)
         Playwright duplicate-email regression (commit 21456f9)
+        Themed unknown-login and wrong-password browser coverage (commit 882790a)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
@@ -47,6 +48,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1070,4 +1072,137 @@ password input --> native commit --> idpstore.ErrDuplicate
                                   --> audit: duplicate_login
                                   --> WorkflowGlobalError{duplicate_identity}
                                   --> themed HTML + validated application return link
+```
+
+## Step 12: Cover invalid-credential retries and classify the password mismatch defect
+
+This step added browser coverage for the login boundary that must not disclose
+whether an account exists. Both an unknown login and a known login with the
+wrong password now retain the non-secret login field, clear the password field,
+and render the relying application's themed generic error.
+
+I also investigated the password-confirmation browser row without weakening its
+security requirements. The local audit proved the request was rejected before
+the password comparison branch. An experimental mismatch-specific error mapping
+therefore had no effect and was deliberately removed rather than committed as
+an unverified repair.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Continue keeping a diary bruh"
+
+**Assistant interpretation:** Continue implementation while recording focused
+test evidence and failures in the ticket diary.
+
+**Inferred user intent:** Make matrix progress auditable and avoid claiming
+coverage where the observed browser behavior does not meet the documented UX
+contract.
+
+**Commit (code):** `882790a` — "test: cover themed invalid credential login"
+
+### What I did
+
+- Added two real-HTTPS Playwright cases to
+  `authentication-ux.spec.ts`: unknown login and wrong password.
+- Asserted the fixed public message `Invalid login or password.`, retained login
+  value, cleared password value, and Message Desk stylesheet.
+- Ran `pnpm exec playwright test -g 'retains the login name'`; both cases
+  passed.
+- Inspected the local durable audit with:
+
+  ```sh
+  docker compose -f examples/tinyidp-shared-two-apps/compose.yaml \
+    exec -T idp sh -c 'tail -100 /state/audit/audit.jsonl'
+  ```
+
+- Observed the two password-mismatch attempts at `2026-07-22T00:25:29Z` and
+  `2026-07-22T00:26:22Z` as
+  `account.self_registration result=rejected reason=registration_rejected`.
+- Removed the unproven mismatch-specific native change and its failing browser
+  assertion. The matrix row remains open.
+
+### Why
+
+- Login must use one non-enumerating result for unknown accounts and bad
+  credentials, while still giving a user enough information to retry safely.
+- A generic precondition failure must not be relabeled as a password mismatch;
+  that would make the matrix look green while leaving the actual defect hidden.
+
+### What worked
+
+- `pnpm exec playwright test -g 'retains the login name'` reported:
+
+  ```text
+  2 passed (2.3s)
+  ```
+
+- The two tests observed the themed Message Desk workflow and no product page
+  errors.
+
+### What didn't work
+
+- The attempted password-confirmation journey did not reach the introduced
+  `errSignupPasswordMismatch` branch. Its audit reason remained
+  `registration_rejected`, which means one of the prior native effect checks
+  rejected the request.
+- The browser page attached that generic failure to the password field and
+  showed password-policy wording. That is misleading and remains an explicit
+  UX defect rather than validated coverage.
+
+### What I learned
+
+- The audit reason is the authoritative way to distinguish password-policy
+  rejection, duplicate identity, state conflict, and a broader commit
+  precondition at this boundary.
+- The existing generic renderer picks the first visible field. On the password
+  page that produces password-policy copy even when the cause is not the
+  password policy.
+
+### What was tricky to build
+
+- The login tests run against a persisted local stack whose cookies and
+  provider rate limits are meaningful state. Each test starts a fresh
+  Playwright context, but service-side audit evidence is still needed to avoid
+  mistaking a generic provider refusal for the intended validation branch.
+- Password secrets cannot appear in the diary, audit assertion, or retained
+  screenshots. The test asserts only post-submit field clearing and public
+  copy.
+
+### What warrants a second pair of eyes
+
+- Review the native commit preconditions before changing error taxonomy. The
+  repair must classify each safe rejection without exposing verified-email,
+  secret-handle, rate-limit, or continuation details.
+- Review whether the default generic workflow renderer should use a global
+  recovery alert instead of assigning `ErrorRejected` to the first field.
+
+### What should be done in the future
+
+- Add a deterministic provider-level regression that identifies the exact
+  mismatch precondition before implementing its user-facing classification.
+- Continue the independent email-code, invitation, session, replay, and
+  cross-client matrix rows.
+
+### Code review instructions
+
+- Start with the loop of credential cases in
+  `examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts`.
+- Run `pnpm exec playwright test -g 'retains the login name'` from
+  `examples/tinyidp-shared-two-apps/browser-tests`.
+- Compare the audit records only by event name and public reason category; do
+  not copy credentials, cookies, codes, or continuation handles into review
+  notes.
+
+### Technical details
+
+```text
+unknown login / wrong password
+  -> POST TinyIDP login workflow
+  -> generic credential error (no account disclosure)
+  -> login redisplayed; password cleared; Message Desk CSS loaded
+
+password mismatch experiment
+  -> native commit precondition
+  -> audit reason registration_rejected
+  -> generic first-field error (defect; row remains open)
 ```
