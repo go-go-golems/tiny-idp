@@ -43,12 +43,15 @@ RelatedFiles:
       Note: |-
         Local shared IdP enables reviewed chooser policy (commit d940253)
         Configures Goja local callback stylesheet (commit 9c37b66)
+        Finite local exhaustive-test rate budget (commit 595742b)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/cmds/serve_production.go
       Note: Opt-in production account chooser host configuration (commit d940253)
     - Path: repo://internal/fositeadapter/provider.go
-      Note: Null-origin guard and registration error routing (commits 924b575 and dffc6c4)
+      Note: |-
+        Null-origin guard and registration error routing (commits 924b575 and dffc6c4)
+        Authorization rate-limit call sites (commit 595742b)
     - Path: repo://internal/fositeadapter/registration_test.go
       Note: |-
         Active-session second-signup regression coverage (commit 1a15439)
@@ -56,7 +59,9 @@ RelatedFiles:
         Provider replay terminal-page regression (commit 73b0c0d)
         Provider regression for callback-aware consent CSP and approval redirect
     - Path: repo://internal/fositeadapter/rendering.go
-      Note: Terminal browser error response boundary (commit dffc6c4)
+      Note: |-
+        Terminal browser error response boundary (commit dffc6c4)
+        Provider-owned browser throttling presentation (commit 595742b)
     - Path: repo://internal/fositeadapter/scripted_signup.go
       Note: |-
         Remembered-session continuation fix (commit c7a2cb7)
@@ -98,6 +103,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -2944,4 +2950,117 @@ password commit
   -> Approve POST /authorize
   -> 303 Message Desk callback
   -> signed-in application
+```
+
+## Step 29: Separate browser throttling UX from the exhaustive local test budget
+
+The retained-stack matrix initially appeared to expose six unrelated failures,
+but every artifact contained the same plain-text `rate limited` response. The
+default production limiter permits 30 authorization submissions per address
+and minute, while the sequential matrix deliberately performs substantially
+more submissions from one Compose proxy address.
+
+The provider now renders address-wide and account-aware authorization
+throttling through the terminal browser-error contract. Production throttling
+remains enabled. The local exhaustive stack raises its finite budget to 500 so
+the matrix reaches the validation behavior under test instead of accidentally
+becoming a rate-limiter load test.
+
+### Prompt Context
+
+**User prompt (verbatim):** "do it"
+
+**Assistant interpretation:** Continue the agreed browser-validation work,
+diagnose the full-matrix failures, fix real UX defects, and finish validation.
+
+**Inferred user intent:** Make the complete local authentication experience
+reliably testable while preserving production-safe security behavior.
+
+**Commit (code):** `595742b` — "fix: render browser rate limits safely"
+
+### What I did
+
+- Ran all 21 retained-stack Playwright scenarios and inspected each failure
+  artifact rather than treating the first downstream symptom as independent.
+- Identified `authorize:<client-address>` as the exhausted shared limiter
+  namespace.
+- Added a provider-owned `renderRateLimited` terminal error document that does
+  not reflect an untrusted client identifier at the early address boundary.
+- Routed both authorization address throttling and per-login throttling through
+  the safe HTML renderer.
+- Added a focused renderer regression for status, media type, cache policy, and
+  public copy.
+- Set `--rate-limit=500` only in the local two-application Compose command.
+
+### Why
+
+- A security control should remain visible as a coherent authentication page;
+  raw provider text is not an acceptable browser failure mode.
+- The local matrix uses one network source for many intentionally invalid
+  requests. Its workload is qualitatively different from a human production
+  session, so it needs a documented test budget without disabling throttling.
+
+### What worked
+
+- `go test ./internal/fositeadapter ./internal/productionui ./pkg/idpui
+  -count=1` passed.
+- The pre-commit package tests, golangci-lint, glazed analyzer, custom UI
+  analyzer, and vet gates passed.
+- The browser-error response is a 429 HTML document with `no-store` and
+  `no-cache` and contains no raw `rate limited` provider text.
+
+### What didn't work
+
+- The first focused Go run failed to compile with
+  `internal/fositeadapter/rendering.go:169:5: undefined: strings` because the
+  new normalization guard lacked its import. Adding the import resolved the
+  failure; the repeated focused run passed.
+- The first complete browser run could not exercise its last six scenarios
+  because all were masked by the shared limiter.
+
+### What I learned
+
+- The browser matrix itself is a form of state: retained limiter windows can
+  affect later cases even when database and browser contexts are isolated.
+- Early address throttling occurs before a client record can be trusted. A
+  provider-owned presentation context is required there; a submitted
+  `client_id` must not select arbitrary themed content.
+
+### What was tricky to build
+
+- Raising a test limit alone would hide the raw 429 defect, while styling the
+  429 alone would still prevent later tests from reaching their intended
+  branches. Both changes are necessary and serve different purposes.
+- A truthful `Retry-After` value was intentionally not invented because the
+  renderer does not own or expose the configured limiter window.
+
+### What warrants a second pair of eyes
+
+- Review whether device-verification browser throttling should adopt the same
+  terminal renderer in its own scoped follow-up; this change is limited to the
+  `/authorize` matrix.
+- Confirm 500 remains comfortably above the exhaustive local suite while still
+  catching accidental request loops.
+
+### What should be done in the future
+
+- Rebuild the local IDP, complete password mismatch and invitation validation
+  coverage, and rerun retained and fresh-stack matrices.
+
+### Code review instructions
+
+- Start with `renderRateLimited` in `internal/fositeadapter/rendering.go` and
+  its two call sites in `provider.go`.
+- Review the local-only `--rate-limit=500` in the Compose service command.
+- Run `go test ./internal/fositeadapter ./internal/productionui ./pkg/idpui
+  -count=1`.
+
+### Technical details
+
+```text
+production/default: 30 requests / configured window / limiter key
+local matrix:       500 requests / configured window / limiter key
+
+early address rejection -> provider-owned "tinyidp" presentation context
+known login rejection   -> validated client presentation context
 ```

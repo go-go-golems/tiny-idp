@@ -217,3 +217,13 @@ Step 28: Fixed the post-signup consent CSP by preserving the canonical RP origin
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Consent CSP and redirect regression
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Signup-to-consent canonical request handoff
 
+
+## 2026-07-22
+
+Step 29: Rendered authorization throttling as safe terminal HTML and separated the local exhaustive matrix budget from production defaults (commit 595742b).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml — Local test budget
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/rendering.go — Browser throttling UX
+
