@@ -308,8 +308,19 @@ func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Requ
 		return err
 	}
 	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ContinuationCreated, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationCreate, Outcome: assurance.TransitionApplied})
-	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, validated.Fields, validated.Actions, validated.Presentation.PublicValues, nil))
+	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, validated.Fields, validated.Actions, validated.Presentation.PublicValues, workflowFieldErrors(validated.Presentation.Errors)))
 	return nil
+}
+
+func workflowFieldErrors(errors []idpworkflow.FieldError) []idpui.WorkflowFieldError {
+	if len(errors) == 0 {
+		return nil
+	}
+	result := make([]idpui.WorkflowFieldError, 0, len(errors))
+	for _, fieldError := range errors {
+		result = append(result, idpui.WorkflowFieldError{Field: fieldError.Field, Code: fieldError.Code})
+	}
+	return result
 }
 
 func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, executor *idpsignup.Executor, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string) error {

@@ -35,3 +35,12 @@ Bound the display-name lookup capability, enabled script-selected policy, and ad
 - internal/fositeadapter/scripted_signup.go — Bounded capability wiring and duplicate-display-name recovery.
 - internal/gojamodules/tinyidp/module.go — Closed unique display-name effect flag.
 - pkg/idpui/workflow.go — Actionable display-name error copy.
+
+## 2026-07-21
+
+Preserved validated scripted field errors through workflow rendering and verified duplicate display-name preflight in Playwright.
+
+### Related Files
+
+- examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Live duplicate display-name preflight journey.
+- internal/fositeadapter/scripted_signup.go — Projects validated script field errors into themed workflow pages.

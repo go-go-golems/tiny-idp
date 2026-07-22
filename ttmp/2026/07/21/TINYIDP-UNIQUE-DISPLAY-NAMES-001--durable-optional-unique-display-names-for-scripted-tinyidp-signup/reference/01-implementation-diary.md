@@ -285,3 +285,82 @@ The shared program creates a `submitted -> present -> submitted` continuation
 edge for a rejected display name. The final effect contains
 `requireUniqueDisplayName: true`, and `ErrDisplayNameTaken` maps to
 `duplicate_display_name` only after the atomic transaction rejects it.
+
+## Step 4 — preserve scripted field errors and verify the browser preflight
+
+### Prompt Context
+
+> cover the browser UX matrix.
+
+### Assistant interpretation
+
+Use the browser matrix as the completion standard rather than treating unit
+tests as proof of browser behavior. Stabilize the new display-name collision
+journey before expanding the matrix.
+
+### What I did
+
+- Ran the new local HTTPS Playwright duplicate-display-name journey against a
+  rebuilt Compose IDP.
+- Identified that the Goja program emitted the rejected display-name error,
+  but `advanceSignupPresentation` rendered the next page with `nil` errors.
+- Added `workflowFieldErrors` to project already-validated script errors into
+  the renderer's closed `WorkflowFieldError` type.
+- Added a focused provider unit test and reran the local Playwright journey.
+
+### Why
+
+The omitted projection was not unique to display names. It would have erased
+any script-selected, validated inline error, including future invitation or
+email-policy feedback, and therefore undermined the browser UX matrix.
+
+### What worked
+
+- `go test ./internal/fositeadapter ./pkg/idpui` passed.
+- After rebuilding only the Compose IDP service, `pnpm exec playwright test -g
+  'duplicate display name'` passed.
+- The successful journey creates a first unique identity, begins a second
+  signup with the same name, remains on the Message Desk-themed identity form,
+  shows `That display name is already in use. Choose another.`, and does not
+  send an email challenge.
+
+### What didn't work
+
+The initial test assumed post-signup consent would redirect immediately to
+Message Desk. The actual flow stayed at the consent page, which was sufficient
+evidence that the account and its claim had committed. Removing that unrelated
+redirect assertion exposed the real missing field-error projection.
+
+### What I learned
+
+`idpworkflow.ValidatePresentation` correctly validates `Presentation.Errors`,
+but validation alone does not render them. The provider must explicitly carry
+the closed error descriptors through the continuation advance and page build.
+
+### What was tricky
+
+The Compose image build takes materially longer than focused Go tests. The
+browser test was therefore run only after the narrow provider test passed and
+the new image reported healthy.
+
+### What warrants a second pair of eyes
+
+The final unique-name race path still needs a deterministic concurrent
+provider-level test, not merely the preflight journey.
+
+### What should be done in the future
+
+Continue the matrix with password, email-code, invite, chooser, logout,
+stale/replay, and cross-client paths. Do not mark the matrix ticket complete
+until each row has an explicit passing evidence reference.
+
+### Code review instructions
+
+Confirm that `workflowFieldErrors` receives only the already-validated
+`Presentation.Errors` and that the renderer still controls all public text.
+
+### Technical details
+
+The fix changes `advanceSignupPresentation` from passing `nil` to passing a
+lossless projection of `[]idpworkflow.FieldError`. The error codes remain the
+host-approved enum (`required`, `invalid`, `mismatch`, `rejected`).

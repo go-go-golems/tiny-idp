@@ -118,3 +118,26 @@ test("duplicate email produces a themed actionable signup error", async ({ page 
   await expectMessageDeskTheme(page);
   expect((await page.locator("body").innerText()).toLowerCase()).not.toContain("registration request was not accepted");
 });
+
+test("duplicate display name is rejected on the themed identity form before email verification", async ({ page }) => {
+  const suffix = Date.now();
+  const displayName = `Playwright Unique Name ${suffix}`;
+  const firstEmail = `playwright-name-first-${suffix}@example.test`;
+  await beginMessageSignup(page);
+  await submitIdentity(page, displayName, firstEmail);
+  await expect(page.getByLabel("Email verification code")).toBeVisible();
+  await page.getByLabel("Email verification code").fill(await latestEmailCode(page, firstEmail));
+  await page.getByRole("button", { name: /create account|continue/i }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await page.getByLabel("Password", { exact: true }).fill("playwright unique display name password 2026!");
+  await page.getByLabel("Confirm password").fill("playwright unique display name password 2026!");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "Approve access" })).toBeVisible();
+
+  await beginMessageSignup(page);
+  await submitIdentity(page, displayName, `playwright-name-second-${suffix}@example.test`);
+  await expect(page.getByRole("heading", { name: "Create an account" })).toBeVisible();
+  await expect(page.getByText("That display name is already in use. Choose another.")).toBeVisible();
+  await expect(page.getByLabel("Email verification code")).toHaveCount(0);
+  await expectMessageDeskTheme(page);
+});
