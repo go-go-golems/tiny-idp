@@ -194,19 +194,32 @@ module.exports = A.program("display-name-capability", p => {
 	if err == nil || !strings.Contains(err.Error(), "unsupported native capabilities: identity.displayName.lookup") {
 		t.Fatalf("unavailable display-name capability error = %v", err)
 	}
-	displayNameManager, err := newProductionSignupManager(context.Background(), displayNameCapabilityProgram, idp.NewMemorySink(), productionSignupServices{DisplayNameLookup: true})
-	if err != nil {
-		t.Fatalf("supported display-name capability rejected: %v", err)
+	_, err = newProductionSignupManager(context.Background(), displayNameCapabilityProgram, idp.NewMemorySink(), productionSignupServices{DisplayNameLookup: true})
+	if err == nil || !strings.Contains(err.Error(), "workflow signup handler start: identity.displayName.lookup@v1") {
+		t.Fatalf("entry-handler display-name capability error = %v", err)
 	}
-	defer displayNameManager.Close(context.Background())
 
 	verifiedInviteArtifact, err := idpsignup.Compile(context.Background(), idpsignup.VerifiedInviteSource)
 	if err != nil {
 		t.Fatal(err)
 	}
+	resumedDisplayNameProgram := verifiedInviteArtifact.Program()
+	resumedDisplayNameProgram.Capabilities[idpaccounts.DisplayNameLookupCapabilityID] = idpprogram.CapabilityRequirement{ID: idpaccounts.DisplayNameLookupCapabilityID, Version: idpaccounts.DisplayNameLookupCapabilityVersion}
+	workflow := resumedDisplayNameProgram.Workflows[idpsignup.WorkflowID]
+	submitted := resumedDisplayNameProgram.Lambdas[workflow.Handlers[idpsignup.SubmittedHandler].LambdaID]
+	submitted.RequiredCapabilities = append(submitted.RequiredCapabilities, idpprogram.CapabilityRequirement{ID: idpaccounts.DisplayNameLookupCapabilityID, Version: idpaccounts.DisplayNameLookupCapabilityVersion})
+	resumedDisplayNameProgram.Lambdas[submitted.ID] = submitted
+	if err := validateProductionSignupProgram(resumedDisplayNameProgram, productionSignupServices{EmailChallenges: true, DisplayNameLookup: true}); err != nil {
+		t.Fatalf("resumed display-name capability rejected: %v", err)
+	}
+
+	verifiedInviteArtifact, err = idpsignup.Compile(context.Background(), idpsignup.VerifiedInviteSource)
+	if err != nil {
+		t.Fatal(err)
+	}
 	workflowCapabilityMisuse := verifiedInviteArtifact.Program()
-	workflow := workflowCapabilityMisuse.Workflows[idpsignup.WorkflowID]
-	submitted := workflowCapabilityMisuse.Lambdas[workflow.Handlers[idpsignup.SubmittedHandler].LambdaID]
+	workflow = workflowCapabilityMisuse.Workflows[idpsignup.WorkflowID]
+	submitted = workflowCapabilityMisuse.Lambdas[workflow.Handlers[idpsignup.SubmittedHandler].LambdaID]
 	submitted.RequiredCapabilities = append(submitted.RequiredCapabilities, idpprogram.CapabilityRequirement{ID: idpinvite.LookupCapabilityID, Version: idpinvite.LookupCapabilityVersion})
 	workflowCapabilityMisuse.Lambdas[submitted.ID] = submitted
 	if err := validateProductionSignupProgram(workflowCapabilityMisuse, productionSignupServices{}); err == nil || !strings.Contains(err.Error(), "workflow signup handler submitted: invitation.lookup@v1") {

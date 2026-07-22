@@ -516,7 +516,7 @@ func validateProductionSignupCapabilityBindings(program idpprogram.Program, serv
 		for handlerID, handler := range workflow.Handlers {
 			lambda := program.Lambdas[handler.LambdaID]
 			for _, requirement := range lambda.RequiredCapabilities {
-				if requirement.ID != idpaccounts.DisplayNameLookupCapabilityID || requirement.Version != idpaccounts.DisplayNameLookupCapabilityVersion || !services.DisplayNameLookup {
+				if handlerID == workflow.EntryHandler || requirement.ID != idpaccounts.DisplayNameLookupCapabilityID || requirement.Version != idpaccounts.DisplayNameLookupCapabilityVersion || !services.DisplayNameLookup {
 					unsupported = append(unsupported, fmt.Sprintf("workflow %s handler %s: %s@v%d", workflowID, handlerID, requirement.ID, requirement.Version))
 				}
 			}
