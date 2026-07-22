@@ -59,3 +59,29 @@ func TestServiceResendRotatesCodeAndEnforcesPolicy(t *testing.T) {
 	_, err = s.Verify(context.Background(), ref, m.requests[1].Code, testBindings())
 	require.NoError(t, err)
 }
+
+func TestServiceResendRestoresVerificationAfterAttemptsAreExhausted(t *testing.T) {
+	now := time.Now().UTC()
+	mail := &mailer{}
+	service, err := idpemailchallenge.NewService(idpemailchallenge.NewMemoryStore(), mail, []byte("0123456789abcdef0123456789abcdef"))
+	require.NoError(t, err)
+	ref, err := service.CreateAndSend(context.Background(), idpemailchallenge.CreateRequest{ID: "exhausted-challenge", Email: "ada@example.test", Template: "signup", Bindings: testBindings(), ExpiresAt: now.Add(time.Hour), MaximumAttempts: 2, MaximumResends: 1})
+	require.NoError(t, err)
+	firstCode := mail.requests[0].Code
+
+	_, err = service.Verify(context.Background(), ref, "WRONGCODE", testBindings())
+	assert.ErrorIs(t, err, idpemailchallenge.ErrConflict)
+	_, err = service.Verify(context.Background(), ref, "WRONGCODE", testBindings())
+	assert.ErrorIs(t, err, idpemailchallenge.ErrAttemptsExceeded)
+	_, err = service.Verify(context.Background(), ref, firstCode, testBindings())
+	assert.ErrorIs(t, err, idpemailchallenge.ErrAttemptsExceeded)
+
+	require.NoError(t, service.Resend(context.Background(), ref, testBindings()))
+	require.Len(t, mail.requests, 2)
+	secondCode := mail.requests[1].Code
+	assert.NotEqual(t, firstCode, secondCode)
+	_, err = service.Verify(context.Background(), ref, firstCode, testBindings())
+	assert.ErrorIs(t, err, idpemailchallenge.ErrConflict)
+	_, err = service.Verify(context.Background(), ref, secondCode, testBindings())
+	require.NoError(t, err)
+}

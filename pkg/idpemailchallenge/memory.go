@@ -108,6 +108,11 @@ func (s *MemoryStore) ResendEmailChallenge(_ context.Context, id string, codeHas
 		return PendingChallenge{}, ErrResendLimited
 	}
 	c.CodeHash = append([]byte(nil), codeHash...)
+	// A resend starts a fresh code generation. A challenge that reached its
+	// incorrect-code limit remains bound to the same browser and workflow, but
+	// the newly delivered secret gets its own attempt budget. Without this
+	// reset, the UI could offer a resend which could never be verified.
+	c.Attempts = 0
 	c.Resends++
 	c.LastSentAt = now.UTC()
 	s.records[id] = c

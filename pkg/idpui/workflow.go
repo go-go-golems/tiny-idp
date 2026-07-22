@@ -178,7 +178,7 @@ func (e WorkflowFieldError) Summary() string {
 		return "This value has expired. Restart and try again."
 	case idpworkflow.ErrorAttemptsExceeded:
 		if e.Field == idpworkflow.FieldEmailCode {
-			return "Too many incorrect verification codes were entered. Restart registration to receive a new code."
+			return "Too many incorrect verification codes were entered. Request a new code to try again."
 		}
 		return "Too many attempts were made. Restart and try again."
 	case idpworkflow.ErrorResendLimited:
