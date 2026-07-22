@@ -11,7 +11,10 @@ import (
 
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
+	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 )
 
@@ -196,6 +199,33 @@ module.exports = A.program("display-name-capability", p => {
 		t.Fatalf("supported display-name capability rejected: %v", err)
 	}
 	defer displayNameManager.Close(context.Background())
+
+	verifiedInviteArtifact, err := idpsignup.Compile(context.Background(), idpsignup.VerifiedInviteSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflowCapabilityMisuse := verifiedInviteArtifact.Program()
+	workflow := workflowCapabilityMisuse.Workflows[idpsignup.WorkflowID]
+	submitted := workflowCapabilityMisuse.Lambdas[workflow.Handlers[idpsignup.SubmittedHandler].LambdaID]
+	submitted.RequiredCapabilities = append(submitted.RequiredCapabilities, idpprogram.CapabilityRequirement{ID: idpinvite.LookupCapabilityID, Version: idpinvite.LookupCapabilityVersion})
+	workflowCapabilityMisuse.Lambdas[submitted.ID] = submitted
+	if err := validateProductionSignupProgram(workflowCapabilityMisuse, productionSignupServices{}); err == nil || !strings.Contains(err.Error(), "workflow signup handler submitted: invitation.lookup@v1") {
+		t.Fatalf("workflow invitation capability error = %v", err)
+	}
+
+	verifiedInviteArtifact, err = idpsignup.Compile(context.Background(), idpsignup.VerifiedInviteSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerCapabilityMisuse := verifiedInviteArtifact.Program()
+	providerCapabilityMisuse.Capabilities[idpaccounts.DisplayNameLookupCapabilityID] = idpprogram.CapabilityRequirement{ID: idpaccounts.DisplayNameLookupCapabilityID, Version: idpaccounts.DisplayNameLookupCapabilityVersion}
+	provider := providerCapabilityMisuse.Providers["invitation.signup"]
+	validate := providerCapabilityMisuse.Lambdas[provider.Handlers[idpprogram.InvitationValidateHandler].LambdaID]
+	validate.RequiredCapabilities = append(validate.RequiredCapabilities, idpprogram.CapabilityRequirement{ID: idpaccounts.DisplayNameLookupCapabilityID, Version: idpaccounts.DisplayNameLookupCapabilityVersion})
+	providerCapabilityMisuse.Lambdas[validate.ID] = validate
+	if err := validateProductionSignupProgram(providerCapabilityMisuse, productionSignupServices{DisplayNameLookup: true}); err == nil || !strings.Contains(err.Error(), "provider invitation.signup handler validate: identity.displayName.lookup@v1") {
+		t.Fatalf("provider display-name capability error = %v", err)
+	}
 }
 
 func TestProductionEmailChallengesRequireCompleteProgramBoundConfiguration(t *testing.T) {

@@ -55,9 +55,9 @@ module.exports = A.program("shared-verified-open-and-invite-signup", program => 
           resume: "submitted",
           fields: [A.field.displayName(), A.field.email()],
           actions: [A.action.submit(), A.action.deny()],
-          values: ctx.input,
+          values: {displayName: ctx.input.displayName, email: ctx.input.email},
           errors: [{field: A.field.displayName(), code: "rejected"}],
-          carry: {},
+          carry: ctx.input.inviteCode ? {inviteCode: ctx.input.inviteCode} : {},
           expiresInSeconds: 300,
         });
       }

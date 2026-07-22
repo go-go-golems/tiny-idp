@@ -457,6 +457,9 @@ func validateProductionSignupProgram(program idpprogram.Program, services produc
 		sort.Strings(unsupportedCapabilities)
 		return fmt.Errorf("signup program declares unsupported native capabilities: %s", strings.Join(unsupportedCapabilities, ", "))
 	}
+	if err := validateProductionSignupCapabilityBindings(program, services); err != nil {
+		return err
+	}
 	durableProvider := false
 	for _, provider := range program.Providers {
 		if provider.Kind != idpprogram.ProviderKindInvitation || provider.State != idpprogram.ProviderStateDurable {
@@ -505,6 +508,35 @@ func validateProductionSignupProgram(program idpprogram.Program, services produc
 	}
 	sort.Strings(ids)
 	return fmt.Errorf("signup program declares unsupported native services: %s", strings.Join(ids, ", "))
+}
+
+func validateProductionSignupCapabilityBindings(program idpprogram.Program, services productionSignupServices) error {
+	unsupported := make([]string, 0)
+	for workflowID, workflow := range program.Workflows {
+		for handlerID, handler := range workflow.Handlers {
+			lambda := program.Lambdas[handler.LambdaID]
+			for _, requirement := range lambda.RequiredCapabilities {
+				if requirement.ID != idpaccounts.DisplayNameLookupCapabilityID || requirement.Version != idpaccounts.DisplayNameLookupCapabilityVersion || !services.DisplayNameLookup {
+					unsupported = append(unsupported, fmt.Sprintf("workflow %s handler %s: %s@v%d", workflowID, handlerID, requirement.ID, requirement.Version))
+				}
+			}
+		}
+	}
+	for providerID, provider := range program.Providers {
+		for handlerID, handler := range provider.Handlers {
+			lambda := program.Lambdas[handler.LambdaID]
+			for _, requirement := range lambda.RequiredCapabilities {
+				if provider.Kind != idpprogram.ProviderKindInvitation || provider.State != idpprogram.ProviderStateDurable || requirement.ID != idpinvite.LookupCapabilityID || requirement.Version != idpinvite.LookupCapabilityVersion {
+					unsupported = append(unsupported, fmt.Sprintf("provider %s handler %s: %s@v%d", providerID, handlerID, requirement.ID, requirement.Version))
+				}
+			}
+		}
+	}
+	if len(unsupported) == 0 {
+		return nil
+	}
+	sort.Strings(unsupported)
+	return fmt.Errorf("signup program requires capabilities unavailable on their invocation paths: %s", strings.Join(unsupported, ", "))
 }
 
 func productionProgramRequiresDurableInvitations(program idpprogram.Program) bool {
