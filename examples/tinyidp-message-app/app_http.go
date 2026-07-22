@@ -8,6 +8,7 @@ import (
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"html"
 	"io"
 	"io/fs"
 	"mime"
@@ -220,16 +221,29 @@ func (a *messageApp) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (a *messageApp) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if a.oidc == nil || r.URL.Query().Get("error") != "" {
-		http.Error(w, "identity login was not accepted", http.StatusBadRequest)
+		a.renderCallbackError(w, http.StatusBadRequest, "Sign-in was cancelled", "TinyIDP did not complete this sign-in request. Your Message Desk session was not changed.")
 		return
 	}
 	completion, err := a.oidc.finishLogin(r.Context(), a.store, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
 	if err != nil {
-		http.Error(w, "identity login could not be completed", http.StatusBadGateway)
+		a.renderCallbackError(w, http.StatusBadGateway, "Sign-in could not be completed", "Message Desk could not verify this completed sign-in. Your session was not changed; start a new sign-in request and try again.")
 		return
 	}
 	a.setSessionCookie(w, completion.SessionToken)
 	http.Redirect(w, r, completion.ReturnTo, http.StatusSeeOther)
+}
+
+func (a *messageApp) renderCallbackError(w http.ResponseWriter, status int, title, summary string) {
+	// Callback query parameters are protocol input and must not be reflected.
+	// This page carries only provider-owned copy and same-origin static assets,
+	// so an OIDC error remains actionable without becoming a script or markup
+	// injection surface.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	w.WriteHeader(status)
+	title = html.EscapeString(title)
+	summary = html.EscapeString(summary)
+	_, _ = io.WriteString(w, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>"+title+" · Message Desk</title><link rel=\"stylesheet\" href=\"/static/app/assets/index.css\"></head><body><main class=\"desk\"><section class=\"composer\"><p class=\"kicker\">TINY-IDP / SIGN-IN</p><h1>"+title+"</h1><p class=\"form-help\">"+summary+"</p><nav class=\"d-flex flex-column align-items-start gap-2\" aria-label=\"Sign-in recovery\"><a class=\"quiet\" href=\"/auth/login?return_to=/\">Try signing in again</a><a class=\"quiet\" href=\"/\">Return to Message Desk</a></nav></section></main></body></html>")
 }
 
 func (a *messageApp) handleSession(w http.ResponseWriter, r *http.Request) {
