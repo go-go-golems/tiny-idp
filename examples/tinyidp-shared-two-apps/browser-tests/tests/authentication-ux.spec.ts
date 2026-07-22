@@ -154,6 +154,12 @@ test("account chooser remembers two password logins and supports switching accou
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page).toHaveURL(new RegExp(`^${messageOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
   await expect(page.getByText("Local Administrator", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Change account" }).click();
+  await page.getByLabel("Local Invitee").check();
+  await page.getByRole("button", { name: "Remove account" }).click();
+  await expect(page.getByLabel("Local Invitee")).toHaveCount(0);
+  await expect(page.getByLabel("Local Administrator")).toBeVisible();
 });
 
 test("short password is rejected by native validation before the password workflow posts", async ({ page }) => {
