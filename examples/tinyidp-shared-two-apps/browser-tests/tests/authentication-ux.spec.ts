@@ -395,15 +395,16 @@ test("Goja signup rejects an unknown invitation with a themed field error", asyn
   await expectGojaAuthTheme(page);
 });
 
-test("Goja signup requires an invitation before it submits", async ({ page }) => {
+test("Goja signup rejects a missing invitation with a themed field error", async ({ page }) => {
   await beginGojaSignup(page);
   await page.getByLabel("Display name").fill("Goja Missing Invitation");
   await page.getByLabel("Email").fill(`playwright-goja-missing-invite-${Date.now()}@example.test`);
   const invite = page.getByLabel("Invite code");
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await expect(invite).toBeFocused();
-  expect(await invite.evaluate((input: HTMLInputElement) => input.validity.valueMissing)).toBe(true);
+  await expect(invite).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("This value could not be accepted.")).toBeVisible();
+  await expect(page.getByLabel("Email verification code")).toHaveCount(0);
   await expectGojaAuthTheme(page);
 });
 

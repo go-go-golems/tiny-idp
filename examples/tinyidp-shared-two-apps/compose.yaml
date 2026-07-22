@@ -8,7 +8,14 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    networks: [idp-backend, message-backend, goja-backend]
+    networks:
+      idp-backend:
+        # Backend TLS clients and the IDP healthcheck deliberately resolve the
+        # public idp.localhost name to Caddy. Reserve the documented address so
+        # a fresh network cannot assign it to an earlier-starting container.
+        ipv4_address: 172.31.0.2
+      message-backend: {}
+      goja-backend: {}
 
   ca-export:
     image: alpine:3.22
@@ -202,7 +209,7 @@ services:
     restart: "no"
 
 networks:
-  idp-backend: {ipam: {config: [{subnet: 172.31.0.0/24}]}}
+  idp-backend: {ipam: {config: [{subnet: 172.31.0.0/24, ip_range: 172.31.0.128/25}]}}
   message-backend: {ipam: {config: [{subnet: 172.32.0.0/24}]}}
   goja-backend: {ipam: {config: [{subnet: 172.33.0.0/24}]}}
   goja-database: {ipam: {config: [{subnet: 172.34.0.0/24}]}}

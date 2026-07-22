@@ -126,6 +126,13 @@ Compose gates TinyIDP on `service_completed_successfully`; Message Desk and
 goja then wait for TinyIDP readiness. This guarantees that TLS clients never
 race the creation or publication of the local root.
 
+The IDP backend reserves `172.31.0.2` for Caddy because container-side TLS
+clients resolve the public `idp.localhost` name to that proxy address. Dynamic
+containers are allocated from `172.31.0.128/25`; this prevents a fresh,
+concurrently started stack from assigning the proxy address to Mailpit or an
+application before Caddy attaches to the network. The entire `172.31.0.0/24`
+remains the explicitly trusted proxy network at TinyIDP's HTTP listener.
+
 ## Persistent protected local CA
 
 The Caddy PKI is stored in the explicitly named external Docker volume:
