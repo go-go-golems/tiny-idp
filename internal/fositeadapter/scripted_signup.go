@@ -74,19 +74,19 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	continuation, err := p.workflowContinuations.Load(r.Context(), continuationHandle, p.signupLoadBindings(record, r))
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.resume_rejected", ClientID: record.ClientID, Result: "rejected", Reason: "continuation_unavailable"})
-		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
+		p.renderSignupTerminalError(w, r, record.ClientID)
 		return
 	}
 	executor, err := p.signupExecutorFor(continuation.ProgramFingerprint)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.resume_rejected", ClientID: record.ClientID, Result: "rejected", Reason: "generation_unavailable"})
-		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
+		p.renderSignupTerminalError(w, r, record.ClientID)
 		return
 	}
 	continuationBindings := p.signupBindingsFor(record, r, continuation.ProgramFingerprint)
 	fields, actions, err := workflowDescriptors(continuation.Presentation)
 	if err != nil {
-		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
+		p.renderSignupTerminalError(w, r, record.ClientID)
 		return
 	}
 	submission, err := idpworkflow.ParseSubmission(fields, actions, r.PostForm)
@@ -245,6 +245,15 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	p.completeScriptedSignup(w, r, ar, client, record, registered)
+}
+
+func (p *Provider) renderSignupTerminalError(w http.ResponseWriter, r *http.Request, clientID string) {
+	p.renderBrowserError(w, r, http.StatusBadRequest, idpui.BrowserErrorPage{
+		DocumentTitle: "Registration needs to be restarted",
+		ClientID:      clientID,
+		Heading:       "Registration needs to be restarted",
+		Summary:       "This registration page is no longer active. Return to the application and begin registration again.",
+	})
 }
 
 func (p *Provider) signupRuntimeCapabilities(_ context.Context, executor *idpsignup.Executor, handler string) (map[string]idpscript.CapabilityBinding, error) {

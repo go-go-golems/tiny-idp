@@ -548,9 +548,19 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 		t.Fatalf("password page status=%d body=%s", response.StatusCode, body)
 	}
 	replay := submitRegistration(t, client, server.URL, codeForm)
+	replayBody, err := io.ReadAll(replay.Body)
 	replay.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if replay.StatusCode != http.StatusBadRequest {
 		t.Fatalf("verified-code replay status=%d", replay.StatusCode)
+	}
+	if contentType := replay.Header.Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+		t.Fatalf("verified-code replay content type=%q", contentType)
+	}
+	if body := string(replayBody); !strings.Contains(body, "Registration needs to be restarted") || !strings.Contains(body, "Return to the application and begin registration again.") || strings.Contains(body, "registration request was not accepted") {
+		t.Fatalf("verified-code replay has unsafe terminal page: %s", body)
 	}
 	passwordForm := parseInteractionInputs(string(body))
 	passwordForm.Set(idpui.ActionFieldName, "submit")
