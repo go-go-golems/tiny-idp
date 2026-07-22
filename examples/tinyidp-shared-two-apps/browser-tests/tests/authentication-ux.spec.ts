@@ -1,10 +1,30 @@
 import { expect, Page, test } from "@playwright/test";
+import { execFile } from "node:child_process";
+import { resolve } from "node:path";
+import { promisify } from "node:util";
 
 const messageOrigin = "https://message.localhost:8443";
 const idpOrigin = "https://idp.localhost:8443";
 const gojaOrigin = "https://goja.localhost:8443";
 const outboxOrigin = "http://127.0.0.1:8025";
 const outboxAuthorization = `Basic ${Buffer.from("operator:local-outbox-password-2026!").toString("base64")}`;
+const execFileAsync = promisify(execFile);
+const composeFile = resolve(process.cwd(), "../compose.yaml");
+
+async function issueSignupInvitation(audience: string, ttl = "1h"): Promise<string> {
+  const { stdout } = await execFileAsync("docker", [
+    "compose", "-f", composeFile, "exec", "-T", "idp",
+    "tinyidp", "admin", "--db=/state/tinyidp.sqlite", "invitation", "issue",
+    `--audience=${audience}`,
+    "--policy-version=signup-invite-v1",
+    `--ttl=${ttl}`,
+    "--lookup-key-file=/state/.secrets/invitation_lookup_key",
+    "--output=json"
+  ]);
+  const rows = JSON.parse(stdout) as Array<{ code?: string }>;
+  if (rows.length !== 1 || !rows[0].code) throw new Error("invitation issue command returned no one-time code");
+  return rows[0].code;
+}
 
 async function expectMessageDeskTheme(page: Page): Promise<void> {
   await expect(page.locator('link[rel="stylesheet"]')).toHaveAttribute(
@@ -205,6 +225,24 @@ test("short password is rejected by native validation before the password workfl
   await expectMessageDeskTheme(page);
 });
 
+test("password mismatch stays on the themed password form with a confirmation error", async ({ page }) => {
+  const email = `playwright-password-mismatch-${Date.now()}@example.test`;
+  await beginMessageSignup(page);
+  await submitIdentity(page, "Playwright Password Mismatch", email);
+  await page.getByLabel("Email verification code").fill(await latestEmailCode(page, email));
+  await page.getByRole("button", { name: /create account|continue/i }).click();
+  await page.getByLabel("Password", { exact: true }).fill("first acceptable playwright password 2026!");
+  const confirmation = page.getByLabel("Confirm password");
+  await confirmation.fill("different acceptable playwright password 2026!");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  await expect(page.getByText("The values do not match.")).toBeVisible();
+  await expect(confirmation).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+  await expect(confirmation).toHaveValue("");
+  await expectMessageDeskTheme(page);
+});
+
 test("wrong email verification code keeps a themed retry form with resend", async ({ page }) => {
   const email = `playwright-wrong-code-${Date.now()}@example.test`;
   await beginMessageSignup(page);
@@ -356,6 +394,37 @@ test("Goja signup rejects an unknown invitation with a themed field error", asyn
   await expect(page.getByText("This value could not be accepted.")).toBeVisible();
   await expectGojaAuthTheme(page);
 });
+
+test("Goja signup requires an invitation before it submits", async ({ page }) => {
+  await beginGojaSignup(page);
+  await page.getByLabel("Display name").fill("Goja Missing Invitation");
+  await page.getByLabel("Email").fill(`playwright-goja-missing-invite-${Date.now()}@example.test`);
+  const invite = page.getByLabel("Invite code");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  await expect(invite).toBeFocused();
+  expect(await invite.evaluate((input: HTMLInputElement) => input.validity.valueMissing)).toBe(true);
+  await expectGojaAuthTheme(page);
+});
+
+for (const invitationCase of [
+  { name: "expired", audience: "goja-auth-host-demo", ttl: "1ms" },
+  { name: "wrong-audience", audience: "tinyidp-message-app", ttl: "1h" }
+]) {
+  test(`Goja signup rejects a ${invitationCase.name} invitation with the same themed field error`, async ({ page }) => {
+    const invitation = await issueSignupInvitation(invitationCase.audience, invitationCase.ttl);
+    await beginGojaSignup(page);
+    await page.getByLabel("Display name").fill(`Goja ${invitationCase.name} Invitation`);
+    await page.getByLabel("Email").fill(`playwright-goja-${invitationCase.name}-${Date.now()}@example.test`);
+    await page.getByLabel("Invite code").fill(invitation);
+    await page.getByRole("button", { name: "Create account" }).click();
+
+    await expect(page.getByText("This value could not be accepted.")).toBeVisible();
+    await expect(page.getByLabel("Invite code")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByLabel("Email verification code")).toHaveCount(0);
+    await expectGojaAuthTheme(page);
+  });
+}
 
 test("Message Desk OIDC callback error is an application-styled recovery page", async ({ page }) => {
   await page.goto(`${messageOrigin}/auth/callback?error=access_denied&error_description=untrusted-provider-text&state=missing`);

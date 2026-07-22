@@ -280,6 +280,9 @@ func TestScriptedSignupDoesNotRequireLegacyRegistrationOption(t *testing.T) {
 	if secondResponse.StatusCode != http.StatusBadRequest || !strings.Contains(secondResponse.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(secondBody), `name="`+idpui.WorkflowContinuationFieldName+`"`) {
 		t.Fatalf("remembered-browser signup POST status=%d body=%s", secondResponse.StatusCode, secondBody)
 	}
+	if !strings.Contains(string(secondBody), "The values do not match.") || !strings.Contains(string(secondBody), `name="password_confirmation" type="password" value="" autocomplete="new-password" minlength="15" maxlength="1024" required aria-invalid="true"`) {
+		t.Fatalf("password mismatch was not attached to confirmation field: %s", secondBody)
+	}
 	for _, event := range audit.Events() {
 		if event.Name == "workflow.signup.resume_rejected" {
 			t.Fatalf("fresh signup continuation was rejected in remembered browser: %#v", event)

@@ -125,6 +125,10 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, nil, nil))
 		return
 	}
+	if workflowHasField(fields, idpworkflow.FieldPassword) && workflowHasField(fields, idpworkflow.FieldPasswordConfirmation) && !submissionPasswordsMatch(submission) {
+		p.renderScriptedSignupFieldErrorCode(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpworkflow.FieldPasswordConfirmation, idpworkflow.ErrorMismatch)
+		return
+	}
 	input, err := executor.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
 	if err == nil {
 		input, err = mergeWorkflowCarry(continuation.Carry, input)
@@ -576,6 +580,14 @@ func submissionSecrets(submission idpworkflow.Submission, passwordToken, confirm
 		}
 	}
 	return password, confirmation, password != nil && confirmation != nil
+}
+
+func submissionPasswordsMatch(submission idpworkflow.Submission) bool {
+	password, passwordOK := submission.ResolveSecret(submission.Secrets[idpworkflow.FieldPassword])
+	confirmation, confirmationOK := submission.ResolveSecret(submission.Secrets[idpworkflow.FieldPasswordConfirmation])
+	defer clearBytes(password)
+	defer clearBytes(confirmation)
+	return passwordOK && confirmationOK && equalBytes(password, confirmation)
 }
 
 // signupSubmissionSecrets projects only descriptors submitted on the active
