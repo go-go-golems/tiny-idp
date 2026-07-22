@@ -18,6 +18,7 @@ RelatedFiles:
         Playwright journeys (commit 34959ea)
         Playwright duplicate-email regression (commit 21456f9)
         Themed unknown-login and wrong-password browser coverage (commit 882790a)
+        Goja Auth invalid-credential and client-theme browser coverage (commit 98821fa)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
@@ -48,6 +49,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1205,4 +1207,213 @@ password mismatch experiment
   -> native commit precondition
   -> audit reason registration_rejected
   -> generic first-field error (defect; row remains open)
+```
+
+## Step 13: Separate protocol completion from the Playwright navigation failure
+
+The new-account browser journey reached the consent page and submitted its
+approval action, but Playwright did not observe a response or navigation away
+from `/authorize`. The TinyIDP audit nevertheless recorded a successful
+account creation, consent grant, and authorization issuance. This required a
+separate protocol control rather than an immediate product change.
+
+The existing Python HTTPS acceptance harness completed all nine of its
+cross-service journeys, including Message Desk signup/callback, Goja signup,
+TinyIDP signup invitations, application membership invitations, and replay
+rejections. The browser-specific failure therefore remains open as a
+Playwright/Caddy/Chromium navigation defect; it is not evidence that the OIDC
+or callback contract is broken.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 12)
+
+**Assistant interpretation:** Continue investigation with durable evidence and
+do not claim an incomplete browser navigation journey as covered.
+
+**Inferred user intent:** The matrix must distinguish actual protocol defects
+from test-runner defects while still insisting on browser-level evidence for
+the final UX claim.
+
+**Commit (code):** N/A — the temporary failing Playwright journey was removed
+instead of being committed as coverage.
+
+### What I did
+
+- Added a temporary Playwright new-identity signup-to-callback journey.
+- Confirmed it created a new account and displayed the themed `Approve access`
+  form, then observed the page remain at `https://idp.localhost:8443/authorize`
+  after approval.
+- Inspected the retained trace. The consent approval POST was reported as
+  `net::ERR_ABORTED` with no browser-visible response.
+- Inspected IDP audit evidence for both reproductions. Each recorded accepted
+  signup and consent, followed by `authorize.request.accepted`.
+- Ran `python3 scripts/03-browser-acceptance.py`; all nine real-HTTPS
+  acceptance journeys passed.
+- Removed the temporary test so the committed Playwright suite does not
+  contain an unverified or hanging matrix claim.
+
+### Why
+
+- A successful backend audit event is insufficient to mark a browser
+  navigation row complete.
+- Conversely, changing issuer, consent, callback, or redirect behavior based
+  only on a Playwright abort would risk breaking a protocol sequence that the
+  independent HTTPS harness has verified end to end.
+
+### What worked
+
+- The control command completed in 4.9 seconds and ended with:
+
+  ```text
+  PASS: shared TinyIDP Phase 5 browser acceptance completed
+  ```
+
+- It explicitly validated Message Desk open signup and OIDC callback, plus
+  invite-gated Goja signup and callback.
+
+### What didn't work
+
+- The temporary Chromium journey did not receive a response for the final
+  consent POST. Adding `page.waitForResponse` made the test process wait until
+  it was terminated; that confirms the missing response observation but does
+  not identify a safe product-side repair.
+- The trace recorded `net::ERR_ABORTED` for the approval POST. No TinyIDP or
+  Caddy application log contained a matching server exception.
+
+### What I learned
+
+- The acceptance harness and Chromium differ materially in the final approval
+  navigation even though both use the same trusted local TLS endpoints.
+- `authorize.request.accepted` currently records an `internal_error` reason
+  when the supplied reason is empty because `cleanAuditReason("")` maps to its
+  fallback. That audit wording is misleading but is not the cause of the
+  Chromium abort.
+
+### What was tricky to build
+
+- The final interaction is a cross-origin 303 from TinyIDP to Message Desk.
+  Capturing it in a browser test must preserve browser cookies, navigation,
+  fetch metadata, and Caddy TLS behavior; replaying it with a server-side
+  request alone cannot prove the browser experience.
+
+### What warrants a second pair of eyes
+
+- Review Playwright 1.50 Chromium network behavior with Caddy's HTTP/2/HTTP/3
+  listener and the local CA configuration before changing the OAuth response
+  writer.
+- Review whether an access log with redacted request IDs should be enabled for
+  this local Compose profile to make browser/proxy correlation observable.
+
+### What should be done in the future
+
+- Reintroduce the full Playwright callback journey only after its final
+  approval navigation is reliably observable.
+- Keep the passing Python HTTPS sequence as protocol coverage, but do not use
+  it as a substitute for the matrix's browser row.
+
+### Code review instructions
+
+- Run `python3 scripts/03-browser-acceptance.py` from
+  `examples/tinyidp-shared-two-apps` as the protocol control.
+- Inspect retained Playwright traces before accepting a browser-only fix.
+- Start with `issueApprovedAuthorizationArtifacts` and Caddy's three host
+  routes if analyzing the final redirect path.
+
+### Technical details
+
+```text
+Chromium temporary journey:
+  signup -> email code -> password -> consent page -> approval POST
+  browser observation: net::ERR_ABORTED, page remains /authorize
+
+Independent HTTPS control:
+  same logical sequence -> 303 callback -> RP token exchange -> signed-in app
+  result: PASS (both Message Desk and Goja Auth)
+```
+
+## Step 14: Cover equivalent invalid-credential UX in Goja Auth
+
+This step made the cross-client error requirement concrete for the credential
+boundary. An unknown Goja Auth login now has a real Chromium assertion for the
+same generic, non-enumerating error used by Message Desk, while verifying that
+TinyIDP selects Goja Auth's own approved stylesheet.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 12)
+
+**Assistant interpretation:** Continue matrix coverage with independent,
+repeatable browser evidence.
+
+**Inferred user intent:** A shared IdP must not accidentally give every relying
+party the same visual treatment or leak account existence through a
+client-specific error path.
+
+**Commit (code):** `98821fa` — "test: cover Goja invalid credential theme"
+
+### What I did
+
+- Added a `gojaOrigin` browser fixture and a strict Goja theme assertion.
+- Added an unknown-login journey starting from
+  `https://goja.localhost:8443/auth/login?return_to=/`.
+- Asserted generic public copy, retained login, cleared password, and the
+  `/static/themes/goja-auth-lab.css` stylesheet route.
+- Ran `pnpm exec playwright test -g 'Goja Auth invalid credentials'`.
+
+### Why
+
+- Error-equivalence means both applications use the same safe identity policy,
+  not that they share the same CSS asset.
+- A server-owned per-client theme route is the tested boundary: application
+  code does not submit arbitrary stylesheet URLs to TinyIDP.
+
+### What worked
+
+- The focused Chromium test passed in 2.6 seconds.
+- The login value remained visible for correction, while the sensitive password
+  field was empty after rejection.
+
+### What didn't work
+
+- The initial assertion expected `/static/themes/goja-auth.css`. Runtime HTML
+  correctly served `/static/themes/goja-auth-lab.css`; the test expectation was
+  updated to the configured catalog route.
+
+### What I learned
+
+- The runtime theme catalog is authoritative over a filename inferred from the
+  Compose bind-mount name.
+- The error copy and field-clearing behavior are shared provider policy; the
+  theme route is client-specific presentation policy.
+
+### What was tricky to build
+
+- The test must begin at the relying-party URL, not directly at TinyIDP, so the
+  client ID and resulting theme choice come from a real OIDC authorization
+  request.
+
+### What warrants a second pair of eyes
+
+- Confirm the theme catalog continues to expose the exact `goja-auth-lab.css`
+  route expected by this local deployment profile.
+
+### What should be done in the future
+
+- Add matching cross-client coverage for recoverable signup and terminal
+  callback failures after the Playwright final-navigation defect is resolved.
+
+### Code review instructions
+
+- Review `expectGojaAuthTheme` and the Goja invalid-credential test.
+- Run `pnpm exec playwright test -g 'Goja Auth invalid credentials'` from the
+  browser-tests directory.
+
+### Technical details
+
+```text
+Goja Auth login URL -> TinyIDP authorize(client_id=goja-auth-host-demo)
+                   -> invalid credentials
+                   -> generic public error; login retained; password cleared
+                   -> /static/themes/goja-auth-lab.css
 ```

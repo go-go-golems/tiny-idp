@@ -75,3 +75,12 @@ Covered themed invalid credential browser retries and recorded the unresolved pr
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Focused real-HTTPS login UX regressions
 
+
+## 2026-07-21
+
+Recorded protocol-control evidence for the outstanding Playwright approval-navigation defect and added Goja Auth invalid-credential theme coverage (commit 98821fa).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Cross-client invalid credential browser journey
+
