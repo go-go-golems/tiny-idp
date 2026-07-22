@@ -27,6 +27,13 @@ async function beginMessageSignup(page: Page): Promise<void> {
   await expectMessageDeskTheme(page);
 }
 
+async function beginGojaSignup(page: Page): Promise<void> {
+  await page.goto(`${gojaOrigin}/auth/register?return_to=/`);
+  await expect(page).toHaveURL(new RegExp(`^${idpOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/authorize`));
+  await expect(page.getByRole("heading", { name: "Create an account" })).toBeVisible();
+  await expectGojaAuthTheme(page);
+}
+
 async function latestEmailCode(page: Page, recipient: string): Promise<string> {
   const query = encodeURIComponent(`to:"${recipient}"`);
   await expect
@@ -258,6 +265,18 @@ test("Goja Auth invalid credentials retain login and use the Goja-specific theme
   await expect(page.getByText("Invalid login or password.")).toBeVisible();
   await expect(page.getByLabel("Login")).toHaveValue("not-a-real-goja-account@example.test");
   await expect(page.getByLabel("Password")).toHaveValue("");
+  await expectGojaAuthTheme(page);
+});
+
+test("Goja signup rejects an unknown invitation with a themed field error", async ({ page }) => {
+  await beginGojaSignup(page);
+  await page.getByLabel("Display name").fill("Goja Unknown Invitation");
+  await page.getByLabel("Email").fill(`playwright-goja-invite-${Date.now()}@example.test`);
+  await page.getByLabel("Invite code").fill("not-a-real-invitation-code");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  await expect(page.getByLabel("Invite code")).toHaveValue("not-a-real-invitation-code");
+  await expect(page.getByText("This value could not be accepted.")).toBeVisible();
   await expectGojaAuthTheme(page);
 });
 
