@@ -150,3 +150,12 @@ Restored request-scoped email-code verification without redisplay, added closed 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Real Chromium evidence
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/submission.go — Private verifier input boundary
 
+
+## 2026-07-21
+
+Replaced Message Desk's raw OIDC callback error with a non-reflective CSP-safe recovery page and verified it in Chromium (commits 9c70f31 and cb5d2ca).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-message-app/app_http.go — RP callback error boundary
+

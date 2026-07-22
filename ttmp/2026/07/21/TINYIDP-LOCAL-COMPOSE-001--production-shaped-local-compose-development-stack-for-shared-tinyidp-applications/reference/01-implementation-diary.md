@@ -11,6 +11,10 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://examples/tinyidp-message-app/app_http.go
+      Note: Safe non-reflective Message Desk callback recovery page (commit 9c70f31)
+    - Path: repo://examples/tinyidp-message-app/app_http_test.go
+      Note: Callback recovery page contract (commit 9c70f31)
     - Path: repo://examples/tinyidp-message-app/ui/src/App.tsx
       Note: Separated account action navigation (commit 4b15802)
     - Path: repo://examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts
@@ -25,6 +29,7 @@ RelatedFiles:
         Two-account Chromium switch regression (commit fadfc08)
         Two-account switching and removal regression (commits fadfc08 and 492a659)
         Email-limit and Goja invitation browser coverage (commits cd93fec and 2403443)
+        Message Desk callback browser evidence (commit cb5d2ca)
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: Local shared IdP enables reviewed chooser policy (commit d940253)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
@@ -66,6 +71,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -2193,4 +2199,97 @@ Goja /auth/register
   -> TinyIDP client policy adds inviteCode
   -> provider lookup rejects unknown code
   -> Goja-themed field error; no email challenge sent
+```
+
+## Step 23: Render Message Desk callback errors as safe recovery pages
+
+The callback matrix probe found that Message Desk returned `text/plain`
+`identity login was not accepted` for an OIDC error redirect. This is an
+application-owned failure page, so provider themes cannot repair it. The
+handler now returns CSP-bound HTML using the application’s existing stylesheet,
+fixed copy, and two safe navigation choices.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 21)
+
+**Assistant interpretation:** Complete the RP callback-error row with
+browser-visible evidence instead of accepting a provider-only themed flow.
+
+**Inferred user intent:** OAuth errors must remain understandable and safe at
+the relying-party boundary as well as inside TinyIDP.
+
+**Commit (code):** `9c70f31` — "fix: render Message Desk callback recovery page"
+
+**Commit (code):** `cb5d2ca` — "test: cover Message Desk callback recovery UX"
+
+### What I did
+
+- Replaced raw callback `http.Error` responses with a same-origin HTML recovery
+  page for provider errors and failed callback completion.
+- Used only fixed provider-owned copy, escaped the internal title/summary
+  arguments defensively, did not reflect `error` or `error_description`, and
+  linked only to local Message Desk routes.
+- Added unit and Chromium coverage for content type, CSS, recovery links, and
+  non-reflection of attacker-controlled query text.
+
+### Why
+
+- The RP owns the last page users see after OAuth returns. A raw protocol error
+  is not an acceptable user experience and could accidentally reflect
+  untrusted query input in a future change.
+
+### What worked
+
+- Focused Message Desk Go tests passed.
+- The fast pre-commit test and lint gate passed in 13.88 seconds.
+- `pnpm --dir examples/tinyidp-shared-two-apps/browser-tests exec playwright
+  test -g 'Message Desk OIDC callback error'` passed in 2.5 seconds after the
+  rebuilt service.
+
+### What didn't work
+
+- The same direct probe still finds Goja Auth’s separate repository handler
+  returns `401 text/plain: oidc error: access_denied`. It is recorded as an
+  external cross-client defect; this ticket did not silently edit that other
+  checkout.
+
+### What I learned
+
+- TinyIDP’s client theme selects provider interaction pages, not callback pages
+  rendered by a relying application. Each RP must own its own callback-error
+  presentation contract.
+
+### What was tricky to build
+
+- The callback page must preserve strict CSP without relying on inline style or
+  JavaScript. Reusing the existing same-origin compiled application stylesheet
+  gives a coherent page while retaining `default-src 'none'`.
+
+### What warrants a second pair of eyes
+
+- Review whether Message Desk should distinguish a user cancellation from a
+  provider failure more visibly. Both current pages deliberately avoid
+  provider-supplied details.
+
+### What should be done in the future
+
+- Open or update the corresponding Goja Auth work item to replace its raw
+  callback errors with an equivalent application-owned recovery page.
+
+### Code review instructions
+
+- Read `handleCallback` and `renderCallbackError` in
+  `examples/tinyidp-message-app/app_http.go`.
+- Run the focused Go test, rebuild Message Desk, and run the named Playwright
+  test.
+
+### Technical details
+
+```text
+OIDC callback?error=...
+  -> Message Desk fixed error class
+  -> HTML + /static/app/assets/index.css + strict CSP
+  -> Try signing in again | Return to Message Desk
+  -> no provider error query reflected
 ```

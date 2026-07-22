@@ -214,7 +214,7 @@ Failures are recorded in this document's ledger before repair:
 |---|---|---|---|---|
 | UX-001 | Duplicate-email signup with remembered IdP session | `400 text/plain`: `registration request was not accepted`; audit reason `continuation_unavailable` | Continuation binding / provider presentation | Reproducing |
 | UX-002 | Duplicate-email commit | Current generic field copy is `This value could not be accepted.` | Signup error taxonomy | Planned |
-| UX-003 | RP OAuth callback error | Message Desk says only `identity login was not accepted` | RP callback presentation | Planned |
+| UX-003 | RP OAuth callback error | Message Desk previously returned `400 text/plain`; it now renders a CSP-bound recovery page (`9c70f31`, Chromium `cb5d2ca`). Goja Auth still returns `401 text/plain: oidc error: access_denied` from its separate repository handler. | RP callback presentation | Message Desk resolved; Goja follow-up required |
 | UX-004 | Email-code attempt exhaustion | Chromium final retry page remains `This value could not be accepted.` after the closed attempt-limit mapping was added; resend-limit copy passes | Email challenge error classification / deployed request trace | Investigating; no third speculative fix |
 
 New rows must include the first failing trace, expected behavior, owner layer,
