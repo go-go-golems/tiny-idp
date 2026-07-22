@@ -22,8 +22,13 @@ RelatedFiles:
         Native display-name and password browser validation coverage (commit f5f9eaf)
         Email-code resend browser recovery coverage (commit 137ebd3)
         Browser provider-logout coverage (commit 9d25a40)
+        Two-account Chromium switch regression (commit fadfc08)
+    - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
+      Note: Local shared IdP enables reviewed chooser policy (commit d940253)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
+    - Path: repo://internal/cmds/serve_production.go
+      Note: Opt-in production account chooser host configuration (commit d940253)
     - Path: repo://internal/fositeadapter/provider.go
       Note: Null-origin guard and registration error routing (commits 924b575 and dffc6c4)
     - Path: repo://internal/fositeadapter/registration_test.go
@@ -56,6 +61,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1787,4 +1793,128 @@ Message Desk logout everywhere
   -> browser GET TinyIDP end-session with registered post-logout URL
   -> TinyIDP revokes browser session and clears cookie
   -> Message Desk guest mode
+```
+
+## Step 19: Enable and exercise the production account chooser
+
+The local host had a complete provider-side chooser implementation, but
+`serve-production` never opted into it. As a result, an RP's
+`prompt=select_account` request could finish with the current TinyIDP session
+instead of presenting the account-choice interaction that the Message Desk UI
+advertises. This step adds a deliberately opt-in host flag and enables it only
+in the local shared-two-app Compose deployment.
+
+The browser journey now proves the entire useful path with seeded identities:
+the administrator is remembered, the user chooses another account and signs in
+as the invitee, then the next chooser page presents both identities and
+switches back to the administrator. This is production-shaped configuration,
+not a test-only provider shortcut.
+
+### Prompt Context
+
+**User prompt (verbatim):** "yes thanks"
+
+**Assistant interpretation:** Continue the narrowed browser UX work after the
+test-gate discussion, using the local stack to close the remaining session and
+account-selection coverage.
+
+**Inferred user intent:** The development feedback loop should stay quick, but
+the browser matrix must still exercise the real multi-account identity-provider
+behavior before deployment work resumes.
+
+**Commit (code):** `d940253` — "feat: enable opt-in production account chooser"
+
+**Commit (code):** `fadfc08` — "test: cover production account chooser browser flow"
+
+### What I did
+
+- Added the optional `--account-chooser` `serve-production` flag.
+- Bound the opt-in to TinyIDP's existing `AccountChooserConfig`, including
+  password-login remembering and a deliberate display-label policy: trimmed
+  account name first, then preferred username.
+- Enabled that flag only in
+  `examples/tinyidp-shared-two-apps/compose.yaml`.
+- Rebuilt the local `idp` Compose service in tmux.
+- Added and ran a real Chromium test that remembers the two seeded users,
+  renders both labels, and switches between them.
+
+### Why
+
+- A shared IdP needs account selection to be a conscious host policy because
+  remembered names reveal earlier use of that browser. The production command
+  must not enable it accidentally.
+- The local two-app environment is specifically intended to expose shared-IdP
+  session behavior before a cluster rollout.
+
+### What worked
+
+- `GOWORK=off go test ./internal/cmds -run
+  'TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag'
+  -count=1` passed.
+- `docker compose -f examples/tinyidp-shared-two-apps/compose.yaml config`
+  passed.
+- The normal pre-commit `make test-fast` and lint gate passed in 9.07 seconds
+  while committing `d940253`.
+- `pnpm --dir examples/tinyidp-shared-two-apps/browser-tests exec playwright
+  test -g 'account chooser remembers two password'` passed in 7.2 seconds.
+
+### What didn't work
+
+- Rebuilding the CGO-enabled TinyIDP Docker image spent roughly two minutes
+  compiling `github.com/mattn/go-sqlite3`'s `sqlite3-binding.c`. This was build
+  time, not a product or test failure.
+
+### What I learned
+
+- The provider already creates the chooser whenever an RP sends
+  `prompt=select_account` and a remembered browser context exists; the missing
+  seam was host configuration, not protocol or renderer support.
+- Account selection can require a separate consent continuation after a switch,
+  so the browser test deliberately accepts a consent page if it is shown.
+
+### What was tricky to build
+
+- The chooser needs a safe browser-visible label policy. Reusing an arbitrary
+  user record field would make the privacy decision implicit. The flag both
+  enables remembering and selects the reviewed name/preferred-username policy,
+  while the zero value leaves all remembered-account state disabled.
+- The test must create both remembered sessions in one browser context. It does
+  so through the actual `Use another account` action, rather than adding
+  provider cookies or store rows directly.
+
+### What warrants a second pair of eyes
+
+- Confirm that production operators who enable `--account-chooser` accept that
+  remembered account display names are visible to later users of the same
+  browser profile.
+- Review whether the final production deployment should enable the flag now or
+  leave it disabled until its product privacy policy is documented.
+
+### What should be done in the future
+
+- Add the explicit remembered-account removal journey; the provider supports
+  it, but this matrix increment verifies selection and switching first.
+- Finish the separate signup failure rows (password mismatch, expired,
+  exhausted, and replayed email codes) before closing the whole matrix.
+
+### Code review instructions
+
+- Start with `serveProductionSettings` and `runProductionHost` in
+  `internal/cmds/serve_production.go`.
+- Inspect the exact local opt-in in
+  `examples/tinyidp-shared-two-apps/compose.yaml`.
+- Run the focused command test, rebuild `idp`, then run the named Playwright
+  chooser test from the browser-tests directory.
+
+### Technical details
+
+```text
+Message Desk Change account
+  -> OIDC authorize?prompt=select_account
+  -> TinyIDP browser-context lookup
+  -> Choose an account [Local Administrator]
+  -> Use another account
+  -> password login [Local Invitee]
+  -> remembered context: Administrator + Invitee
+  -> Choose an account -> Administrator -> Message Desk
 ```

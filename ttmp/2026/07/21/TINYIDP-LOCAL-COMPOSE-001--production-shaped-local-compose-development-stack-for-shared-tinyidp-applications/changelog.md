@@ -121,3 +121,13 @@ Added real-browser RP-initiated provider logout coverage, including Message Desk
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Provider logout journey
 
+
+## 2026-07-21
+
+Enabled an opt-in production account chooser, wired it into the shared local Compose IdP, and covered two-account switching in Chromium (commits d940253 and fadfc08).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Live two-account chooser coverage
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Reviewed browser-visible remembered-account policy
+

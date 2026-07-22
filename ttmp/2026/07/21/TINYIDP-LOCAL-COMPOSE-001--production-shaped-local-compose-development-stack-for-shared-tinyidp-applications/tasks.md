@@ -15,7 +15,7 @@
 - [x] Define the browser-state, identity-state, application-state, and validation-path test matrix with explicit UI expectations. <!-- t:zpds -->
 - [x] Add a Playwright test project for the real local HTTPS Compose stack with trusted CA, deterministic fixtures, screenshots, traces, and failure artifacts. <!-- t:c08j -->
 - [ ] Cover signup validation paths: malformed email, duplicate email, short password, password mismatch, email code failures, and invite failures. <!-- t:m17w -->
-- [ ] Cover session navigation paths: first login, remembered-account selection, add-account signup, Message Desk-only logout, TinyIDP logout, and account switching. <!-- t:gix8 -->
+- [x] Cover session navigation paths: first login, remembered-account selection, add-account signup, Message Desk-only logout, TinyIDP logout, and account switching. <!-- t:gix8 -->
 - [ ] Cover both relying applications and assert themed HTML for recoverable and terminal authentication failures. <!-- t:r9rq -->
 - [ ] Classify browser-test failures in the defect ledger and implement the provider or application UX fixes without weakening security checks. <!-- t:8vbu -->
 - [ ] Run the complete Playwright matrix against a fresh and retained local stack, document evidence, and close the discovered defects. <!-- t:1lta -->
