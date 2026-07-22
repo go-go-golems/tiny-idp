@@ -121,6 +121,15 @@ test("remembered TinyIDP session can submit the first add-account signup step", 
   await expectMessageDeskTheme(page);
 });
 
+test("logging out everywhere clears Message Desk and TinyIDP browser sessions", async ({ page, context }) => {
+  await loginToMessageDesk(page);
+  await page.getByRole("button", { name: "Log out everywhere" }).click();
+  await expect(page).toHaveURL(new RegExp(`^${messageOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+  await expect(page.getByText("GUEST MODE")).toBeVisible();
+  const idpCookies = await context.cookies(idpOrigin);
+  expect(idpCookies.some(cookie => cookie.name === "tinyidp_session" && cookie.value !== "")).toBe(false);
+});
+
 test("short password is rejected by native validation before the password workflow posts", async ({ page }) => {
   const email = `playwright-short-password-${Date.now()}@example.test`;
   await beginMessageSignup(page);
