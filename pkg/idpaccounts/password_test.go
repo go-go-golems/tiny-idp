@@ -109,15 +109,17 @@ func TestServiceFailsClosedOnSecurityStateStorageErrors(t *testing.T) {
 }
 
 func TestPasswordWorkIsBoundedAndObservable(t *testing.T) {
+	const attempts = 6
 	ctx := context.Background()
 	store := memory.New()
 	now := time.Now().UTC()
 	if err := store.PutUser(ctx, "alice", idpstore.User{ID: "u1", Sub: "subject-1"}); err != nil {
 		t.Fatal(err)
 	}
-	service := testService(t, store, Options{PasswordWork: idp.PasswordWorkConfig{MaxConcurrent: 1}})
+	policy := DefaultLoginPolicy()
+	policy.LockoutThreshold = attempts + 1
+	service := testService(t, store, Options{LoginPolicy: policy, PasswordWork: idp.PasswordWorkConfig{MaxConcurrent: 1}})
 	seedCredential(t, service, store, "alice", "u1", "a valid password phrase", now)
-	const attempts = 6
 	start := make(chan struct{})
 	errs := make(chan error, attempts)
 	var group sync.WaitGroup
