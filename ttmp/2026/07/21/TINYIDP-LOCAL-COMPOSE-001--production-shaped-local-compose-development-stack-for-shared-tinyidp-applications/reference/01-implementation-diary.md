@@ -39,6 +39,7 @@ RelatedFiles:
         Live Goja callback recovery regression (commit a62d319)
         Chromium recovery journey through the trusted local stack
         Complete Chromium new-account journey
+        Password and invitation browser matrix (commit 647d540)
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: |-
         Local shared IdP enables reviewed chooser policy (commit d940253)
@@ -69,6 +70,7 @@ RelatedFiles:
         Native email-code verification and closed error mapping (commit cd93fec)
         Themed terminal handling for unavailable signup continuations (commit 73b0c0d)
         Preserves the validated RP origin across the signup-to-consent handoff
+        Native password mismatch boundary (commit 647d540)
     - Path: repo://internal/productionui/renderer.go
       Note: Per-client error theme selection (commit dffc6c4)
     - Path: repo://lefthook.yml
@@ -103,6 +105,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -3063,4 +3066,118 @@ local matrix:       500 requests / configured window / limiter key
 
 early address rejection -> provider-owned "tinyidp" presentation context
 known login rejection   -> validated client presentation context
+```
+
+## Step 30: Complete password-mismatch and invitation-policy coverage
+
+The native signup commit already refused unequal passwords, but the rejection
+occurred after the JavaScript handler and returned the generic password-policy
+copy. TinyIDP now compares the two secret capabilities immediately after the
+active form is parsed, clears both resolved byte slices, and renders the closed
+`mismatch` error on the confirmation field without invoking JavaScript.
+
+The browser matrix now exercises missing, unknown, expired, and wrong-audience
+signup invitations against Goja Auth and requires identical public field copy.
+This complements the existing real-stack acceptance flow for valid consumption
+and consumed-code replay and the lower-level revoked-state provider matrix.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 29)
+
+**Assistant interpretation:** Finish the remaining signup-validation rows and
+make their browser behavior specific, safe, and testable.
+
+**Inferred user intent:** Ensure ordinary validation and security-policy
+failures remain within a polished themed workflow instead of producing vague
+or terminal errors.
+
+**Commit (code):** `647d540` — "test: complete signup validation matrix"
+
+### What I did
+
+- Added native cross-field password comparison before signup lambda invocation.
+- Attached `ErrorMismatch` to `passwordConfirmation` and preserved the existing
+  secret-destruction lifecycle.
+- Strengthened the provider integration test to assert exact mismatch copy and
+  `aria-invalid` on the confirmation input.
+- Added a real Chromium password-mismatch journey that verifies both password
+  fields return blank and the Message Desk theme remains loaded.
+- Added Goja invitation cases for native required validation, expired durable
+  evidence, and wrong audience in addition to the existing unknown-code case.
+- Added a test-only helper that issues opaque invitations through the actual
+  administrative CLI inside the running IDP container.
+
+### Why
+
+- Password equality is a native field relationship, not application policy.
+  JavaScript should receive only structurally valid submissions.
+- Invitation failure classes intentionally collapse to one public response,
+  but each important policy boundary still needs an executable regression.
+
+### What worked
+
+- `TestScriptedSignupDoesNotRequireLegacyRegistrationOption` passed with the
+  new field-specific mismatch assertions.
+- Playwright collected all 25 tests after the helper's module path was fixed.
+- The pre-commit package, lint, analyzer, and vet gates passed.
+
+### What didn't work
+
+- The first `playwright test --list` failed with
+  `ReferenceError: require is not defined in ES module scope` at the Node
+  imports. `import.meta.url` forced mixed ESM/CommonJS evaluation in this
+  package. Replacing it with `resolve(process.cwd(), "../compose.yaml")`
+  matched the documented pnpm working directory and collection then passed.
+
+### What I learned
+
+- The test suite's invitation coverage is deliberately layered: Playwright
+  proves browser presentation for representative durable-policy classes, the
+  HTTP acceptance script proves one-time consume and replay over the real
+  stack, and package tests exhaust internal state classifications.
+- Resolving a secret handle returns a byte slice that must be cleared even for
+  validation-only comparisons; `submission.DestroySecrets` remains a second
+  lifecycle safeguard for the owned handles.
+
+### What was tricky to build
+
+- Invitation codes are one-time operator secrets. The helper must parse the
+  administrative JSON only in memory and must not print or copy codes into the
+  diary or committed fixtures.
+- Cross-field validation must happen after deny and resend actions, which are
+  explicitly allowed to bypass ordinary form validation, but before any
+  lambda capability is invoked.
+
+### What warrants a second pair of eyes
+
+- Confirm `submissionPasswordsMatch` is correctly ordered before JavaScript
+  while the native commit retains its independent equality revalidation.
+- Review that browser artifacts remain gitignored because retained traces for
+  failed invitation tests can contain the ephemeral input value.
+
+### What should be done in the future
+
+- Run the focused new browser cases, then the complete retained and fresh-stack
+  matrices and update the defect ledger with final evidence.
+
+### Code review instructions
+
+- Start in `resumeScriptedSignup` immediately after the deny/resend branches.
+- Review the invitation cases and `issueSignupInvitation` helper in
+  `authentication-ux.spec.ts`.
+- Run the focused Go test and `pnpm --dir
+  examples/tinyidp-shared-two-apps/browser-tests exec playwright test --list`.
+
+### Technical details
+
+```text
+password form POST
+  -> parse secret handles
+  -> deny/resend bypass (when applicable)
+  -> resolve password + confirmation
+  -> constant-time equality check
+  -> clear resolved copies
+  -> mismatch: themed 400 on confirmation field
+  -> match: invoke signup lambda, then independently revalidate at commit
 ```

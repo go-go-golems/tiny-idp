@@ -227,3 +227,13 @@ Step 29: Rendered authorization throttling as safe terminal HTML and separated t
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml — Local test budget
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/rendering.go — Browser throttling UX
 
+
+## 2026-07-22
+
+Step 30: Added native password-mismatch presentation and expanded the Goja invitation browser matrix (commit 647d540).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Chromium coverage
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Cross-field secret validation
+
