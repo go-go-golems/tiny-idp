@@ -251,6 +251,10 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	if _, legacy := section.GetDefinitions().Get("registration-enabled"); legacy {
 		t.Fatal("legacy registration-enabled production flag is still exposed")
 	}
+	chooser, ok := section.GetDefinitions().Get("account-chooser")
+	if !ok || chooser.Required {
+		t.Fatal("optional account-chooser flag is unavailable")
+	}
 	for _, required := range []string{"clients-file", "theme-dir", "theme-catalog-file"} {
 		definition, ok := section.GetDefinitions().Get(required)
 		if !ok || !definition.Required {

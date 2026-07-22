@@ -65,6 +65,7 @@ type serveProductionSettings struct {
 	TLSKeyFile              string   `glazed:"tls-key"`
 	TrustedProxyCIDRs       []string `glazed:"trusted-proxy-cidrs"`
 	MaxProxyHops            int      `glazed:"max-proxy-hops"`
+	AccountChooser          bool     `glazed:"account-chooser"`
 	RateLimit               int      `glazed:"rate-limit"`
 	RateWindow              string   `glazed:"rate-window"`
 	MaintenanceInterval     string   `glazed:"maintenance-interval"`
@@ -131,6 +132,7 @@ Example:
 			fields.New("tls-key", fields.TypeString, fields.WithHelp("TLS private-key PEM path; required only for direct-tls")),
 			fields.New("trusted-proxy-cidrs", fields.TypeStringList, fields.WithHelp("Required only for trusted-proxy-http; narrow CIDRs allowed to supply forwarded metadata")),
 			fields.New("max-proxy-hops", fields.TypeInteger, fields.WithDefault(8), fields.WithHelp("Maximum accepted forwarded-address hops")),
+			fields.New("account-chooser", fields.TypeBool, fields.WithHelp("Offer remembered signed-in accounts when an OIDC client requests prompt=select_account; uses each account's display name as its deliberate browser-visible label")),
 			fields.New("rate-limit", fields.TypeInteger, fields.WithDefault(30), fields.WithHelp("Login attempts per account/client/address bucket and window")),
 			fields.New("rate-window", fields.TypeString, fields.WithDefault("1m"), fields.WithHelp("Login rate-limit window")),
 			fields.New("maintenance-interval", fields.TypeString, fields.WithDefault("15m"), fields.WithHelp("Retention maintenance interval")),
@@ -269,6 +271,16 @@ func runProductionHost(ctx context.Context, settings *serveProductionSettings) e
 		},
 		Maintenance: embeddedidp.MaintenanceConfig{Interval: maintenanceInterval},
 		UI:          embeddedidp.UIConfig{Renderer: interactionUI, WorkflowRenderer: interactionUI},
+		AccountChooser: embeddedidp.AccountChooserConfig{
+			Enabled:                 settings.AccountChooser,
+			RememberOnPasswordLogin: settings.AccountChooser,
+			DisplayLabel: func(user idpstore.User) (string, error) {
+				if label := strings.TrimSpace(user.Name); label != "" {
+					return label, nil
+				}
+				return user.PreferredUsername, nil
+			},
+		},
 	})
 	clearProductionSecret(secret)
 	if err != nil {
