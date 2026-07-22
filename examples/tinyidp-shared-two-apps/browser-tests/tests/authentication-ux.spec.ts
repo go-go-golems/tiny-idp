@@ -327,6 +327,15 @@ test("Message Desk OIDC callback error is an application-styled recovery page", 
   expect(await page.locator("body").innerText()).not.toContain("untrusted-provider-text");
 });
 
+test("Goja Auth OIDC callback error is an application-styled safe recovery page", async ({ page }) => {
+  await page.goto(`${gojaOrigin}/auth/callback?error=access_denied&error_description=untrusted-provider-text&state=missing`);
+  await expect(page.getByRole("heading", { name: "Sign-in was canceled" })).toBeVisible();
+  await expect(page.locator('link[rel="stylesheet"]')).toHaveAttribute("href", "/static/styles.css");
+  await expect(page.getByRole("link", { name: "Try signing in again" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return to the application" })).toBeVisible();
+  expect(await page.locator("body").innerText()).not.toContain("untrusted-provider-text");
+});
+
 test("duplicate email produces a themed actionable signup error", async ({ page }) => {
   const email = "admin@example.test";
   await beginMessageSignup(page);
