@@ -30,6 +30,22 @@ func TestParseSubmissionProjectsPublicValuesAndSecretsSeparately(t *testing.T) {
 	assert.False(t, present, "a secret must not enter the public projection")
 }
 
+func TestParseSubmissionDoesNotRedisplayEmailVerificationCodes(t *testing.T) {
+	registry := idpworkflow.DefaultRegistry()
+	fields := selectedFields(t, registry, idpworkflow.FieldEmailCode)
+	actions := selectedActions(t, registry, idpworkflow.ActionSubmit, idpworkflow.ActionDeny, idpworkflow.ActionResend)
+	result, err := idpworkflow.ParseSubmission(fields, actions, url.Values{
+		idpui.InteractionFieldName:          {"interaction"},
+		idpui.WorkflowContinuationFieldName: {"continuation"},
+		idpui.CSRFFieldName:                 {"csrf"},
+		idpui.ActionFieldName:               {"submit"},
+		"email_code":                        {"ABCDEFGH"},
+	})
+	require.NoError(t, err)
+	_, present := result.PublicValues[idpworkflow.FieldEmailCode]
+	assert.False(t, present, "email verification code must not enter the redisplay projection")
+}
+
 func TestParseSubmissionRejectsMalformedShapeAndValues(t *testing.T) {
 	registry := idpworkflow.DefaultRegistry()
 	fields := selectedFields(t, registry, idpworkflow.FieldDisplayName, idpworkflow.FieldEmail, idpworkflow.FieldPassword)

@@ -1,4 +1,4 @@
-.PHONY: test build lint lintmax fmt fmt-check gosec vuln verify auditlint logcopter-generate logcopter-check docs-export goreleaser tag-major tag-minor tag-patch release install glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems image-tinyidp image-message-desk image-build image-smoke image-flow
+.PHONY: test test-fast build lint lintmax fmt fmt-check gosec vuln verify auditlint logcopter-generate logcopter-check docs-export goreleaser tag-major tag-minor tag-patch release install glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems image-tinyidp image-message-desk image-build image-smoke image-flow
 
 GO_PACKAGES ?= ./...
 LOGCOPTER_PACKAGES ?= ./cmd/... ./internal/... ./pkg/...
@@ -39,6 +39,13 @@ AUDITLINT_DIRS ?= ./pkg/... ./internal/... ./cmd/tinyidp-xapp/... ./examples/...
 
 test:
 	GOWORK=off go test $(GO_PACKAGES)
+
+# test-fast is deliberately limited to reusable packages and the Message Desk
+# application. It is the pre-commit feedback loop. The full test target also
+# includes long-running Fosite and production-shape harnesses under ttmp/ and
+# remains mandatory on pre-push and available for explicit local validation.
+test-fast:
+	GOWORK=off go test ./pkg/... ./examples/tinyidp-message-app/...
 
 build:
 	GOWORK=off go build $(GO_PACKAGES)

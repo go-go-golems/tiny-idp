@@ -249,8 +249,8 @@ func TestTwoProcessRegistrationRedirectAndSignup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read duplicate signup rejection: %v", err)
 	}
-	if !strings.Contains(string(duplicateBody), "This value could not be accepted.") || strings.Contains(strings.ToLower(string(duplicateBody)), "already exists") || strings.Contains(strings.ToLower(string(duplicateBody)), "duplicate") {
-		t.Fatalf("duplicate rejection is not generic: %s", duplicateBody)
+	if !strings.Contains(string(duplicateBody), "An account already uses this email address.") || !strings.Contains(string(duplicateBody), "Return to application") || strings.Contains(string(duplicateBody), "This value could not be accepted.") {
+		t.Fatalf("duplicate rejection did not use the actionable themed identity guidance: %s", duplicateBody)
 	}
 	harness.assertSingleProviderIdentityAndSession()
 	replayed := browser.postForm(t, idpIssuer+"/authorize", form)

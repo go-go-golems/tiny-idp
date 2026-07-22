@@ -136,6 +136,22 @@ test("short password is rejected by native validation before the password workfl
   await expectMessageDeskTheme(page);
 });
 
+test("wrong email verification code keeps a themed retry form with resend", async ({ page }) => {
+  const email = `playwright-wrong-code-${Date.now()}@example.test`;
+  await beginMessageSignup(page);
+  await submitIdentity(page, "Playwright Wrong Code", email);
+  const code = page.getByLabel("Email verification code");
+  await expect(code).toBeVisible();
+  await code.fill("AAAAAAAA");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  await expect(code).toBeVisible();
+  await expect(code).toHaveValue("");
+  await expect(page.getByText("This value could not be accepted.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send another code" })).toBeVisible();
+  await expectMessageDeskTheme(page);
+});
+
 for (const [name, login, password] of [
   ["unknown login", "not-a-real-account@example.test", "not-the-right-password-2026!"],
   ["wrong password", "admin@example.test", "not-the-right-password-2026!"],
