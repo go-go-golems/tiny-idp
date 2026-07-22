@@ -15,5 +15,5 @@ pre-push:
     lint:
       run: make lint
     test:
-      run: make test
+      run: make test-full
   parallel: true
