@@ -178,3 +178,13 @@ Step 25: Split fast, Fosite, two-process, and full test gates; preserve full pre
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/Makefile — Test target contract
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/lefthook.yml — Pre-push full test gate
 
+
+## 2026-07-21
+
+Step 26: Rendered Goja Auth OAuth callback failures as safe same-origin recovery pages (Goja f8ff1af; Compose 9c37b66).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/go-go-goja/pkg/gojahttp/auth/oidcauth/oidcauth.go — Callback renderer
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml — Local stylesheet wiring
+

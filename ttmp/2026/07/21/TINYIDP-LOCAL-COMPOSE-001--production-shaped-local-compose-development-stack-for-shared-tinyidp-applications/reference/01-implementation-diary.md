@@ -35,8 +35,11 @@ RelatedFiles:
         Email-limit and Goja invitation browser coverage (commits cd93fec and 2403443)
         Message Desk callback browser evidence (commit cb5d2ca)
         Same-origin replayed-form Chromium evidence (commit 10190ba)
+        Live Goja callback recovery regression (uncommitted matrix work)
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
-      Note: Local shared IdP enables reviewed chooser policy (commit d940253)
+      Note: |-
+        Local shared IdP enables reviewed chooser policy (commit d940253)
+        Configures Goja local callback stylesheet (commit 9c37b66)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/cmds/serve_production.go
@@ -74,12 +77,17 @@ RelatedFiles:
       Note: |-
         Native secret-field bounds enforcement (commit 2c136ee)
         Request-scoped non-redisplayable verification values (commit cd93fec)
+    - Path: ws://go-go-goja/pkg/gojahttp/auth/oidcauth/oidcauth.go
+      Note: Safe Goja OIDC callback recovery renderer (commit f8ff1af)
+    - Path: ws://go-go-goja/pkg/xgoja/hostauth/builder.go
+      Note: Wires the validated application stylesheet path to the native handler (commit f8ff1af)
 ExternalSources: []
 Summary: Chronological implementation and debugging record for the shared TinyIDP local HTTPS Compose stack.
 LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -2509,4 +2517,134 @@ production process/proxy change (explicit)
 
 git push / CI-equivalent local check
   -> make test-full (= go test ./... -count=1)
+```
+
+## Step 26: Render Goja Auth callback failures as safe, application-styled recovery pages
+
+Goja Auth previously allowed the browser-facing callback handler to return a
+raw `401 text/plain` protocol string when TinyIDP returned an OAuth error.
+This step gives the reusable Goja OIDC handler a deliberately bounded recovery
+page contract and wires the local generated-host example to its own static
+stylesheet. The provider still owns authorization; the relying application now
+owns the final browser page it presents after an unsuccessful callback.
+
+The result is not a TinyIDP theme change. TinyIDP renders its own interaction
+pages, while Goja Auth renders `/auth/callback`; each process uses a
+same-origin stylesheet and a separate, restrictive CSP. This preserves clear
+ownership when one TinyIDP serves several applications.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, let's focus on the callback part first."
+
+**Assistant interpretation:** Resolve the raw Goja Auth OIDC callback failure
+before returning to the remaining browser-matrix paths.
+
+**Inferred user intent:** A user who cancels or cannot complete sign-in must
+receive a polished, safe application page rather than a raw OAuth diagnostic.
+
+**Commit (code):** `f8ff1af` in the sibling Goja checkout — "auth: render safe
+OIDC callback recovery pages"
+
+**Commit (Compose):** `9c37b66` — "compose: style Goja callback recovery pages"
+
+### What I did
+
+- Located the actual Compose build source at
+  `/home/manuel/workspaces/2026-07-07/prod-tiny-idp/go-go-goja`; its current
+  reusable package is `pkg/gojahttp/auth/oidcauth`.
+- Added `CallbackErrorPage` to the Goja OIDC handler configuration, accepting
+  only absolute same-origin paths for its optional stylesheet and recovery
+  links.
+- Replaced every raw callback error boundary with fixed HTML recovery copy:
+  cancellation, restart-required authority failure, and generic retry.
+- Set `no-store`, strict CSP, `no-referrer`, no-sniff, and frame-denial headers;
+  OAuth `error` and `error_description` are not reflected.
+- Added a generated-host setting and configured this local Goja application to
+  use `/static/styles.css`.
+- Added focused Go tests, a direct trusted-HTTPS response probe, and a
+  Playwright regression test for `access_denied`.
+
+### Why
+
+- Callback errors cross a trust boundary. Provider-controlled query values and
+  internal token-validation details must not be rendered to the browser.
+- The generic auth library cannot know an application's CSS contents, so it
+  accepts a validated same-origin stylesheet path; the host chooses that path.
+- A dedicated recovery page gives users an actionable retry while retaining
+  opaque state/nonce/token validation failures.
+
+### What worked
+
+- `go test ./pkg/gojahttp/auth/oidcauth ./pkg/xgoja/hostauth -count=1` passed.
+- The Goja pre-commit lint and vet gate passed before `f8ff1af`.
+- The rebuilt local endpoint returned `401 text/html; charset=utf-8` with the
+  expected CSP, `/static/styles.css`, cancellation copy, and no reflected
+  `<script>` payload.
+- `pnpm --dir examples/tinyidp-shared-two-apps/browser-tests exec playwright
+  test -g 'Goja Auth OIDC callback error' --reporter=list` passed in 1.8
+  seconds.
+
+### What didn't work
+
+- The first source search inspected a different, older Goja checkout using the
+  former `keycloakauth` package name. It was not committed. Compose actually
+  builds the sibling checkout in this workspace, which uses `oidcauth`; the
+  implementation was repeated there before any deployment or verification.
+- The first pre-commit lint pass found an omitted explicit `callbackErrorRetry`
+  branch in the closed error-kind switch. Adding that branch made the
+  exhaustiveness gate pass.
+
+### What I learned
+
+- “Application-styled callback” does not mean an identity-provider theme. The
+  RP has to render and secure this page itself because it owns the callback
+  route and static asset mount.
+- A small presentation capability—fixed copy plus validated local paths—is
+  enough. It does not require exposing protocol errors, templates, or a Goja
+  runtime to the callback error boundary.
+
+### What was tricky to build
+
+- The recovery page needs enough configuration to use each application's
+  stylesheet but must reject external URLs, authority-style `//` URLs, and
+  backslash paths. The configuration is normalized once at handler creation;
+  request query values never participate in renderer selection.
+- The local Compose image uses a sibling repository as its Docker build
+  context. Checking that path before rebuilding was essential; otherwise a
+  green unit test could have validated code the running service never used.
+
+### What warrants a second pair of eyes
+
+- Review the public `CallbackErrorPage` API as a reusable host-auth surface:
+  its intentionally small field set is designed to prevent it becoming a
+  general template or redirect configuration language.
+- Confirm other generated-host examples that want styled callback errors set a
+  real same-origin stylesheet path rather than relying on the unstyled safe
+  default.
+
+### What should be done in the future
+
+- Continue the separate happy-path Chromium approval-navigation investigation.
+- Resolve the email-code attempt-exhaustion copy before closing the overall
+  matrix task.
+
+### Code review instructions
+
+- Start at `oidcauth.handleCallback`, `normalizeCallbackErrorPage`, and
+  `renderCallbackError` in the sibling Goja checkout.
+- Review `hostauth.BuildNativeHandlers` and the new generated-host setting to
+  see the safe application-to-library handoff.
+- Run the focused Go tests, rebuild `goja-auth`, then run the named Playwright
+  test above.
+
+### Technical details
+
+```text
+TinyIDP callback redirect ?error=access_denied&error_description=...
+  -> Goja Auth native /auth/callback handler
+  -> closed error kind: canceled
+  -> fixed HTML + same-origin /static/styles.css
+  -> strict CSP; query values never rendered
+  -> Try signing in again | Return to the application
 ```
