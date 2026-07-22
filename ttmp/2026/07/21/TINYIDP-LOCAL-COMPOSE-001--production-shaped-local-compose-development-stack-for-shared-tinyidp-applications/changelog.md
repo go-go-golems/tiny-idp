@@ -197,3 +197,13 @@ Step 26 follow-up: Committed Chromium coverage for Goja callback recovery (commi
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Cross-client callback UX proof
 
+
+## 2026-07-22
+
+Step 27: Made SQLite email-code attempt exhaustion durable, made resend rotate and reset the replacement-code budget, and verified the complete recovery journey in Chromium (commits a41087c and 263603a).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Real HTTPS exhaustion and resend regression
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/email_challenge.go — Commit rejected verification counters before returning errors
+

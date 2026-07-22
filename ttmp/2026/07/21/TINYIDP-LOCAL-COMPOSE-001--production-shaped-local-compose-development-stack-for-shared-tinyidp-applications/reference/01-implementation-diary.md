@@ -37,6 +37,7 @@ RelatedFiles:
         Same-origin replayed-form Chromium evidence (commit 10190ba)
         Live Goja callback recovery regression (uncommitted matrix work)
         Live Goja callback recovery regression (commit a62d319)
+        Chromium recovery journey through the trusted local stack
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: |-
         Local shared IdP enables reviewed chooser policy (commit d940253)
@@ -66,6 +67,10 @@ RelatedFiles:
       Note: |-
         Fast pre-commit and full pre-push validation policy (commit bd4c424)
         Runs the complete suite only before pushes (commit a99b0ed)
+    - Path: repo://pkg/idpemailchallenge/memory.go
+      Note: Keeps development/test challenge semantics aligned with SQLite
+    - Path: repo://pkg/idpemailchallenge/service_test.go
+      Note: Deterministic exhaustion resend and replacement-code contract
     - Path: repo://pkg/idpui/browser_error.go
       Note: Bounded terminal error model (commit dffc6c4)
     - Path: repo://pkg/idpui/workflow.go
@@ -78,6 +83,8 @@ RelatedFiles:
       Note: |-
         Native secret-field bounds enforcement (commit 2c136ee)
         Request-scoped non-redisplayable verification values (commit cd93fec)
+    - Path: repo://pkg/sqlitestore/email_challenge.go
+      Note: Durably commits rejected verification attempts and resets only a replacement code generation
     - Path: ws://go-go-goja/pkg/gojahttp/auth/oidcauth/oidcauth.go
       Note: Safe Goja OIDC callback recovery renderer (commit f8ff1af)
     - Path: ws://go-go-goja/pkg/xgoja/hostauth/builder.go
@@ -88,6 +95,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -2651,4 +2659,154 @@ TinyIDP callback redirect ?error=access_denied&error_description=...
   -> fixed HTML + same-origin /static/styles.css
   -> strict CSP; query values never rendered
   -> Try signing in again | Return to the application
+```
+
+## Step 27: Make exhausted email-code recovery durable and test it through Chromium
+
+The email-code screen already had a closed `attempts_exceeded` presentation
+code, but the real SQLite-backed Compose instance did not reach it. A wrong
+code updated the record in a transaction and then returned its typed error
+before committing; the deferred rollback erased the counter. This step makes
+the rejection itself a durable security transition and turns the visible
+resend button into a real recovery operation instead of a dead end.
+
+A permitted resend continues to preserve the challenge's workflow, browser,
+and recipient bindings, but it rotates the code and resets the incorrect-code
+counter for that new code generation. The browser test proves the complete
+contract: it exhausts five attempts, observes a styled actionable page with no
+password field, requests another code, confirms that the original code fails,
+and confirms the replacement reaches the password page.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, implement that"
+
+**Assistant interpretation:** Implement the previously specified
+email-code-exhaustion test and recovery contract, including the durable store
+behavior required for it to be truthful in the local production-shaped stack.
+
+**Inferred user intent:** An ordinary verification mistake must not strand a
+user on vague copy or create a security bypass; the IDP should provide a
+professional, testable recovery route.
+
+**Commit (native contract):** `a41087c` — "fix: recover email verification
+after attempt exhaustion"
+
+**Commit (browser regression):** `263603a` — "test: cover email code
+exhaustion recovery"
+
+### What I did
+
+- Inspected both `MemoryStore` and the production `sqlitestore.Store` email
+  challenge transitions rather than assuming the public error mapping was
+  wrong.
+- Added a transaction commit for a rejected SQLite verification after saving
+  the incremented attempt counter, before returning `ErrConflict` or
+  `ErrAttemptsExceeded`.
+- Changed both stores so a successful, policy-authorized resend rotates the
+  code hash and resets `Attempts` to zero while retaining the durable
+  challenge ID, bindings, expiry, and resend count.
+- Updated the closed public workflow copy to instruct the user to request a
+  new code, rather than incorrectly telling them to restart registration.
+- Added deterministic service and SQLite regression tests for exhaustion,
+  old-code invalidation, resend, and replacement-code verification.
+- Rebuilt only the local `idp` Compose image and ran the named Chromium
+  journey against `https://idp.localhost:8443` through Caddy.
+
+### Why
+
+- Incorrect-code limits are security state. They must survive a request that
+  returns an error; otherwise every browser POST silently resets the budget.
+- The old UI offered `Send another code` after exhaustion, but the stores kept
+  the exhausted count. The replacement code therefore could never succeed.
+- A code rotation is a clear generation boundary: it invalidates the prior
+  secret and gives only the replacement code a fresh, bounded attempt budget.
+
+### What worked
+
+- `go test ./pkg/idpemailchallenge ./pkg/sqlitestore ./pkg/idpui -count=1`
+  passed after the transaction and recovery changes.
+- `go test ./...` passed.
+- The native commit's pre-commit gate passed package tests, `golangci-lint`,
+  and both custom `go vet` analyzers.
+- `docker compose -f examples/tinyidp-shared-two-apps/compose.yaml up -d
+  --build --no-deps idp` rebuilt the service; the resulting health check was
+  healthy.
+- `pnpm --dir examples/tinyidp-shared-two-apps/browser-tests exec playwright
+  test -g 'email-code exhaustion stays themed' --reporter=list` passed: one
+  Chromium test in 1.7 seconds.
+
+### What didn't work
+
+- The first focused test run failed with:
+  `expected: "email challenge attempts exceeded"; in chain: "email challenge
+  conflict"` in `TestSQLiteChallengeResendRestoresAttemptBudgetAndInvalidatesOldCode`.
+  This was the diagnostic signal that revealed the SQLite transaction was
+  rolling back rejected attempt increments.
+- The first test run also showed the expected-copy failure after changing the
+  recovery wording. Updating `TestWorkflowEmailCodeFailureHasSpecificPublicCopy`
+  made the public copy contract explicit.
+
+### What I learned
+
+- A typed error return does not make a state transition durable. With a
+  transaction-scoped store, the commit point must be placed before a rejected
+  result is returned whenever the rejection updates security state.
+- The `attempts` count belongs to the delivered-code generation, not to the
+  overall workflow. The workflow-level controls that remain monotonic are the
+  challenge bindings, expiry, and resend budget.
+
+### What was tricky to build
+
+- The original symptom looked like a presentation-taxonomy failure because
+  Chromium displayed generic `rejected` copy. The provider already mapped
+  `ErrAttemptsExceeded` correctly; the storage layer never emitted that error
+  in the deployed SQLite path. The focused SQLite regression was necessary to
+  identify the actual boundary.
+- The browser assertion has to follow newly rendered forms and retrieve the
+  latest Mailpit message. It deliberately asserts a blank code field after
+  every rejection so secrets do not accidentally become redisplayed as part of
+  improving recovery UX.
+
+### What warrants a second pair of eyes
+
+- Review the chosen generation semantics: a resend after exhaustion consumes
+  one of the finite resend budget and resets only `Attempts`; it does not
+  extend expiry or relax browser/workflow binding checks.
+- Confirm deployment operators want the existing script-configured limits
+  (five attempts and two resends) for their risk model. This change does not
+  alter those policy values.
+
+### What should be done in the future
+
+- Finish the remaining browser matrix rows, especially password mismatch,
+  all invitation states, and the separately paused Chromium happy-path
+  approval-navigation investigation.
+- Run the whole Playwright matrix on fresh and retained Compose volumes once
+  the remaining rows are complete.
+
+### Code review instructions
+
+- Start at `Store.VerifyEmailChallenge` and `Store.ResendEmailChallenge` in
+  `pkg/sqlitestore/email_challenge.go`; verify the rejected-attempt commit
+  precedes its typed error and resend resets only `Attempts`.
+- Compare `pkg/idpemailchallenge/memory.go` to ensure the test/development
+  store has the same contract.
+- Run `go test ./pkg/idpemailchallenge ./pkg/sqlitestore ./pkg/idpui -count=1`.
+- Rebuild the `idp` service, then run the named Playwright command above.
+
+### Technical details
+
+```text
+wrong code (SQLite)
+  -> Attempts += 1
+  -> save + COMMIT
+  -> ErrConflict | ErrAttemptsExceeded
+
+permitted resend
+  -> fresh random code -> new HMAC hash
+  -> Attempts = 0; Resends += 1; old hash is unreachable
+  -> send the new code
+
+old code -> rejected; replacement code -> verified evidence -> password page
 ```

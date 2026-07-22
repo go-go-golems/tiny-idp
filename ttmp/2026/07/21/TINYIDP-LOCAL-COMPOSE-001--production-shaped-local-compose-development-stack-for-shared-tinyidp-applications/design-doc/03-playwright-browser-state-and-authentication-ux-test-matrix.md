@@ -12,7 +12,9 @@ Intent: long-term
 Owners: []
 RelatedFiles:
     - Path: repo://examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts
-      Note: Matrix Goja invitation and email-limit evidence
+      Note: |-
+        Matrix Goja invitation and email-limit evidence
+        Browser evidence for UX-004 resolution
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: Production-shaped local topology exercised by the browser suite
     - Path: repo://examples/tinyidp-shared-two-apps/open-signup.js
@@ -29,12 +31,15 @@ RelatedFiles:
       Note: |-
         Themed workflow form and accessible field errors
         Themed accessible workflow form
+    - Path: repo://pkg/sqlitestore/email_challenge.go
+      Note: Root cause and durable resolution of UX-004
 ExternalSources: []
 Summary: A browser-level verification strategy for every supported signup, login, remembered-account, logout, and validation transition in the shared TinyIDP local stack.
 LastUpdated: 2026-07-21T19:06:06.136211008-04:00
 WhatFor: Implement and review a Playwright suite that treats navigation quality and themed error recovery as observable authentication requirements.
 WhenToUse: Read before adding browser tests, changing authentication navigation, or deciding how a TinyIDP failure should appear to a user.
 ---
+
 
 
 
@@ -215,7 +220,7 @@ Failures are recorded in this document's ledger before repair:
 | UX-001 | Consumed or unavailable signup continuation | Former `400 text/plain`: `registration request was not accepted`; now a client-themed terminal restart page (`73b0c0d`, Chromium replay `10190ba`) | Continuation binding / provider presentation | Resolved |
 | UX-002 | Duplicate-email commit | Current generic field copy is `This value could not be accepted.` | Signup error taxonomy | Planned |
 | UX-003 | RP OAuth callback error | Message Desk previously returned `400 text/plain`; it now renders a CSP-bound recovery page (`9c70f31`, Chromium `cb5d2ca`). Goja Auth still returns `401 text/plain: oidc error: access_denied` from its separate repository handler. | RP callback presentation | Message Desk resolved; Goja follow-up required |
-| UX-004 | Email-code attempt exhaustion | Chromium final retry page remains `This value could not be accepted.` after the closed attempt-limit mapping was added; resend-limit copy passes | Email challenge error classification / deployed request trace | Investigating; no third speculative fix |
+| UX-004 | Email-code attempt exhaustion | SQLite rolled back each rejected verification counter, so the live attempt limit was never reached. A resend also rotated a code without restoring an exhausted attempt budget. Both transitions are now durable: rejected attempts commit, a permitted resend resets the new generation's counter, and Chromium verifies old-code rejection plus replacement-code success (`a41087c`, `263603a`). | SQLite email challenge transition / recovery presentation | Resolved |
 
 New rows must include the first failing trace, expected behavior, owner layer,
 fix commit, and passing test name.
