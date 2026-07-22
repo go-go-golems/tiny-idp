@@ -103,3 +103,12 @@ Prevented rejected one-time email-code redisplay, verified the themed retry jour
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/lefthook.yml — Commit gate scope
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/idpworkflow/descriptors.go — One-time code redisplay policy
 
+
+## 2026-07-21
+
+Added a reliable Playwright resend recovery journey that verifies blank themed retry state without coupling to Mailpit message ordering (commit 137ebd3).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Resend UX coverage
+

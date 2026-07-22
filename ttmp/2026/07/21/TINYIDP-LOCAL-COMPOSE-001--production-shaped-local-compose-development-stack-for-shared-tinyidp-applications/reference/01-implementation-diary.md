@@ -20,6 +20,7 @@ RelatedFiles:
         Themed unknown-login and wrong-password browser coverage (commit 882790a)
         Goja Auth invalid-credential and client-theme browser coverage (commit 98821fa)
         Native display-name and password browser validation coverage (commit f5f9eaf)
+        Email-code resend browser recovery coverage (commit 137ebd3)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
@@ -54,6 +55,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1627,4 +1629,79 @@ wrong code POST
 
 pre-commit: make test-fast + make lint  (~8 seconds observed)
 pre-push:   make test + make lint       (includes Fosite and k3s harnesses)
+```
+
+## Step 17: Cover resend as browser recovery state
+
+The Mailpit convenience endpoint cannot safely establish message order when two
+codes are sent to the same recipient in the same short interval. The browser
+test therefore verifies the durable user-facing resend contract directly: the
+same workflow remains available, the code field is blank, the resend action is
+still available, and the client theme remains loaded.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 16)
+
+**Assistant interpretation:** Continue adding reliable matrix evidence without
+making a mail-test-helper ordering assumption part of the product contract.
+
+**Inferred user intent:** Recovery paths should be proven in the browser while
+mail delivery ordering remains a service-level concern.
+
+**Commit (code):** `137ebd3` — "test: cover email code resend recovery"
+
+### What I did
+
+- Replaced a failing attempt to compare Mailpit's `view/latest.txt` values.
+- Added a Playwright resend journey that asserts the blank retry field, resend
+  action, and Message Desk theme after the real submit.
+- Ran `pnpm exec playwright test -g 'email-code resend keeps'`.
+
+### Why
+
+- The provider promises retry-safe browser state, not a particular Mailpit UI
+  ordering implementation.
+
+### What worked
+
+- The focused Chromium test passed in 3.6 seconds.
+
+### What didn't work
+
+- Comparing two Mailpit “latest” reads produced a different code but a later
+  read could return the earlier message, so the test submitted an invalid code.
+
+### What I learned
+
+- Mail delivery replacement should be covered through the email-challenge
+  service tests; browser tests should assert observable recovery UX.
+
+### What was tricky to build
+
+- The resend action intentionally skips browser field validation, so the test
+  must confirm the provider returns a valid continuation page rather than
+  merely that a button was clickable.
+
+### What warrants a second pair of eyes
+
+- Review any future outbox test helper for a stable message identifier or
+  timestamp contract before using it to assert sequence ordering.
+
+### What should be done in the future
+
+- Add explicit exhaustion and replay browser journeys with deterministic
+  provider-controlled fixtures.
+
+### Code review instructions
+
+- Run `pnpm exec playwright test -g 'email-code resend keeps'` from the
+  browser-tests directory.
+
+### Technical details
+
+```text
+Send another code -> continuation advance -> themed code form
+                                         -> blank input
+                                         -> resend remains available
 ```
