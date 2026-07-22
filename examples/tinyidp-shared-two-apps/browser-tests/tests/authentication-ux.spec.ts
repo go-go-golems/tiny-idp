@@ -205,6 +205,33 @@ test("email-code resend keeps a blank themed retry workflow", async ({ page }) =
   await expectMessageDeskTheme(page);
 });
 
+test("email-code attempt exhaustion remains themed and explains the recovery", async ({ page }) => {
+  const email = `playwright-code-exhaustion-${Date.now()}@example.test`;
+  await beginMessageSignup(page);
+  await submitIdentity(page, "Playwright Code Exhaustion", email);
+  const code = page.getByLabel("Email verification code");
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await code.fill("AAAAAAAA");
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(code).toHaveValue("");
+  }
+  await expect(page.getByText("Too many incorrect verification codes were entered. Restart registration to receive a new code.")).toBeVisible();
+  await expectMessageDeskTheme(page);
+});
+
+test("email-code resend limit remains themed and preserves the verification form", async ({ page }) => {
+  const email = `playwright-resend-limit-${Date.now()}@example.test`;
+  await beginMessageSignup(page);
+  await submitIdentity(page, "Playwright Resend Limit", email);
+  const resend = page.getByRole("button", { name: "Send another code" });
+  await resend.click();
+  await resend.click();
+  await resend.click();
+  await expect(page.getByText("No more verification codes can be sent for this registration. Enter the most recent code or restart registration.")).toBeVisible();
+  await expect(page.getByLabel("Email verification code")).toHaveValue("");
+  await expectMessageDeskTheme(page);
+});
+
 for (const [name, login, password] of [
   ["unknown login", "not-a-real-account@example.test", "not-the-right-password-2026!"],
   ["wrong password", "admin@example.test", "not-the-right-password-2026!"],

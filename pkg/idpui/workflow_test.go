@@ -35,6 +35,12 @@ func TestWorkflowPasswordRejectionHasActionablePublicCopy(t *testing.T) {
 	assert.Equal(t, "Use at least 15 characters and choose a password that is difficult to guess.", errorMessage.Summary())
 }
 
+func TestWorkflowEmailCodeFailureHasSpecificPublicCopy(t *testing.T) {
+	assert.Equal(t, "This verification code has expired. Restart registration to receive a new code.", (idpui.WorkflowFieldError{Field: idpworkflow.FieldEmailCode, Code: idpworkflow.ErrorExpired}).Summary())
+	assert.Equal(t, "Too many incorrect verification codes were entered. Restart registration to receive a new code.", (idpui.WorkflowFieldError{Field: idpworkflow.FieldEmailCode, Code: idpworkflow.ErrorAttemptsExceeded}).Summary())
+	assert.Equal(t, "No more verification codes can be sent for this registration. Enter the most recent code or restart registration.", (idpui.WorkflowFieldError{Field: idpworkflow.FieldEmailCode, Code: idpworkflow.ErrorResendLimited}).Summary())
+}
+
 func TestWorkflowDuplicateIdentityHasSafeGlobalRecoveryCopy(t *testing.T) {
 	errorMessage := idpui.WorkflowGlobalError{Code: idpui.WorkflowErrorDuplicateIdentity}
 	assert.Equal(t, "An account already uses this email address. Return to the application to sign in, or restart signup with a different email address.", errorMessage.Summary())

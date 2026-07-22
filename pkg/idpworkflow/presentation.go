@@ -20,10 +20,16 @@ const (
 	ErrorInvalid  FieldErrorCode = "invalid"
 	ErrorMismatch FieldErrorCode = "mismatch"
 	ErrorRejected FieldErrorCode = "rejected"
+	// ErrorExpired identifies a time-bounded value that can no longer be used.
+	ErrorExpired FieldErrorCode = "expired"
+	// ErrorAttemptsExceeded identifies a verifier that rejected too many values.
+	ErrorAttemptsExceeded FieldErrorCode = "attempts_exceeded"
+	// ErrorResendLimited identifies a challenge whose approved resend budget is spent.
+	ErrorResendLimited FieldErrorCode = "resend_limited"
 )
 
 func (c FieldErrorCode) Valid() bool {
-	return c == ErrorRequired || c == ErrorInvalid || c == ErrorMismatch || c == ErrorRejected
+	return c == ErrorRequired || c == ErrorInvalid || c == ErrorMismatch || c == ErrorRejected || c == ErrorExpired || c == ErrorAttemptsExceeded || c == ErrorResendLimited
 }
 
 type FieldError struct {

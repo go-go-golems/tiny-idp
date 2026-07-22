@@ -44,6 +44,11 @@ func TestParseSubmissionDoesNotRedisplayEmailVerificationCodes(t *testing.T) {
 	require.NoError(t, err)
 	_, present := result.PublicValues[idpworkflow.FieldEmailCode]
 	assert.False(t, present, "email verification code must not enter the redisplay projection")
+	emailCode, ok := result.ResolveSecret(result.Secrets[idpworkflow.FieldEmailCode])
+	require.True(t, ok)
+	assert.Equal(t, "ABCDEFGH", string(emailCode))
+	clear(emailCode)
+	result.DestroySecrets()
 }
 
 func TestParseSubmissionRejectsMalformedShapeAndValues(t *testing.T) {

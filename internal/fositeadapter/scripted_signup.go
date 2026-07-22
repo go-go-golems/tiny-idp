@@ -117,7 +117,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		}
 		if err := p.emailChallenges.Resend(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, idpemailchallenge.BindingsFromContinuation(continuation)); err != nil {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_resend", ClientID: record.ClientID, Result: "rejected", Reason: emailChallengeFailureReason(err)})
-			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, nil)
+			p.renderScriptedSignupEmailCodeError(w, r, record, interactionHandle, continuationHandle, fields, actions, nil, err)
 			return
 		}
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_resend", ClientID: record.ClientID, Result: "accepted"})
@@ -136,10 +136,16 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 			return
 		}
-		verified, verifyErr := p.emailChallenges.Verify(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, submission.PublicValues[idpworkflow.FieldEmailCode], idpemailchallenge.BindingsFromContinuation(continuation))
+		code, codeOK := submission.ResolveSecret(submission.Secrets[idpworkflow.FieldEmailCode])
+		if !codeOK {
+			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+			return
+		}
+		verified, verifyErr := p.emailChallenges.Verify(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, string(code), idpemailchallenge.BindingsFromContinuation(continuation))
+		clearBytes(code)
 		if verifyErr != nil {
 			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.EvidenceVerified, InteractionID: interactionTraceID(record), Transition: assurance.StepEvidenceVerify, Outcome: assurance.TransitionRejected})
-			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+			p.renderScriptedSignupEmailCodeError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, verifyErr)
 			return
 		}
 		evidence, err = idpemailchallenge.EvidenceProjection(verified)
@@ -582,11 +588,28 @@ func (p *Provider) renderScriptedSignupError(w http.ResponseWriter, r *http.Requ
 }
 
 func (p *Provider) renderScriptedSignupFieldError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, errorField idpworkflow.FieldID) {
+	p.renderScriptedSignupFieldErrorCode(w, r, record, interactionHandle, continuationHandle, fields, actions, values, errorField, idpworkflow.ErrorRejected)
+}
+
+func (p *Provider) renderScriptedSignupEmailCodeError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, challengeErr error) {
+	code := idpworkflow.ErrorRejected
+	switch {
+	case errors.Is(challengeErr, idpemailchallenge.ErrExpired):
+		code = idpworkflow.ErrorExpired
+	case errors.Is(challengeErr, idpemailchallenge.ErrAttemptsExceeded):
+		code = idpworkflow.ErrorAttemptsExceeded
+	case errors.Is(challengeErr, idpemailchallenge.ErrResendLimited):
+		code = idpworkflow.ErrorResendLimited
+	}
+	p.renderScriptedSignupFieldErrorCode(w, r, record, interactionHandle, continuationHandle, fields, actions, values, idpworkflow.FieldEmailCode, code)
+}
+
+func (p *Provider) renderScriptedSignupFieldErrorCode(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, errorField idpworkflow.FieldID, code idpworkflow.FieldErrorCode) {
 	if !workflowHasField(fields, errorField) {
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, values)
 		return
 	}
-	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: idpworkflow.ErrorRejected}}))
+	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: code}}))
 }
 
 func (p *Provider) renderScriptedSignupGlobalError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, code idpui.WorkflowGlobalErrorCode) {

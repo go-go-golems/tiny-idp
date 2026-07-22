@@ -171,6 +171,21 @@ func (e WorkflowFieldError) Summary() string {
 			return "That display name is already in use. Choose another."
 		}
 		return "This value could not be accepted."
+	case idpworkflow.ErrorExpired:
+		if e.Field == idpworkflow.FieldEmailCode {
+			return "This verification code has expired. Restart registration to receive a new code."
+		}
+		return "This value has expired. Restart and try again."
+	case idpworkflow.ErrorAttemptsExceeded:
+		if e.Field == idpworkflow.FieldEmailCode {
+			return "Too many incorrect verification codes were entered. Restart registration to receive a new code."
+		}
+		return "Too many attempts were made. Restart and try again."
+	case idpworkflow.ErrorResendLimited:
+		if e.Field == idpworkflow.FieldEmailCode {
+			return "No more verification codes can be sent for this registration. Enter the most recent code or restart registration."
+		}
+		return "No more retry requests can be made. Restart and try again."
 	case idpworkflow.ErrorInvalid:
 		return "Enter a valid value."
 	default:
