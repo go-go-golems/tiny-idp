@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "defaultTheme": "message-desk",
+  "themes": {
+    "message-desk": {"productName": "Message Desk", "stylesheet": "message-desk.css"},
+    "goja-auth-lab": {"productName": "go-go-goja Auth Lab", "stylesheet": "goja-auth.css"}
+  },
+  "clientThemes": {
+    "tinyidp-message-app": "message-desk",
+    "goja-auth-host-demo": "goja-auth-lab"
+  }
+}

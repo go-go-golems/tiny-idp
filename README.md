@@ -433,15 +433,20 @@ directive in `xgoja.yaml`.
 
 ```bash
 make build             # compile every repository package
-make test              # run unit, integration, and example tests
+make test              # fast ordinary feedback: reusable packages + Message Desk
+make test-fosite       # focused strict OAuth/OIDC provider suite (explicit)
+make test-k3s-harness  # real two-process trusted-proxy topology proof (explicit)
+make test-full         # every repository package, including ttmp harnesses
 make lint              # pinned golangci-lint + Glazed + repository analyzers
 make verify            # build + test + lint + auditlint + gosec + govulncheck
 make docs-export       # write .docsctl/tinyidp-help.sqlite
 make goreleaser        # local, unsigned, single-target snapshot
 ```
 
-The tracked `lefthook.yml` runs tests and lint before commits, and adds a local
-GoReleaser snapshot before pushes. A `v*` tag starts the release workflow:
+The tracked `lefthook.yml` runs the fast test loop and lint before commits. A
+push runs `make test-full` plus a local GoReleaser snapshot; this is where the
+strict Fosite adapter suite and the production-shaped two-process harness run.
+A `v*` tag starts the release workflow:
 Linux (including arm64 CGO) and Darwin artifacts are built separately, merged
 and signed in the protected `release` environment, then published to GitHub and
 the Go-Go-Golems Homebrew tap. The same successful tag exports the canonical

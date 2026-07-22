@@ -1,0 +1,237 @@
+name: tinyidp-shared-two-apps
+
+services:
+  proxy:
+    image: caddy:2.10.2-alpine
+    ports: ["8443:8443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      idp-backend:
+        # Backend TLS clients and the IDP healthcheck deliberately resolve the
+        # public idp.localhost name to Caddy. Reserve the documented address so
+        # a fresh network cannot assign it to an earlier-starting container.
+        ipv4_address: 172.31.0.2
+      message-backend: {}
+      goja-backend: {}
+
+  ca-export:
+    image: alpine:3.22
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        source=/caddy-data/caddy/pki/authorities/local/root.crt
+        for attempt in $$(seq 1 60); do
+          if [ -s "$$source" ]; then
+            cp "$$source" /trust/caddy-local-root.crt
+            chmod 0444 /trust/caddy-local-root.crt
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "Caddy local root certificate was not generated" >&2
+        exit 1
+    volumes:
+      - caddy-data:/caddy-data:ro
+      - local-ca:/trust
+    depends_on:
+      proxy:
+        condition: service_started
+    restart: "no"
+    networks: [idp-backend]
+
+  mailpit:
+    image: axllent/mailpit:v1.30.5
+    ports: ["127.0.0.1:8025:8025"]
+    environment:
+      MP_UI_AUTH: "operator:local-outbox-password-2026!"
+      MP_MAX_MESSAGES: "100"
+      MP_MAX_AGE: "1h"
+      MP_SMTP_STRICT_RFC_HEADERS: "true"
+    networks: [idp-backend]
+
+  idp:
+    build:
+      context: ../..
+      dockerfile: examples/tinyidp-shared-two-apps/Dockerfile.idp
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        mkdir -p /state/audit
+        if [ ! -s /state/token.key ]; then dd if=/dev/urandom of=/state/token.key bs=32 count=1 status=none; fi
+        chmod 0600 /state/token.key
+        if ! tinyidp admin --db=/state/tinyidp.sqlite user get --login=admin@example.test >/dev/null 2>&1; then
+          tinyidp admin --db=/state/tinyidp.sqlite user create --login=admin@example.test --id=local-admin --sub=local-admin --email=admin@example.test --email-verified --name='Local Administrator' --password-from-stdin </state/.secrets/local_admin_password
+        fi
+        if ! tinyidp admin --db=/state/tinyidp.sqlite user get --login=invitee@example.test >/dev/null 2>&1; then
+          tinyidp admin --db=/state/tinyidp.sqlite user create --login=invitee@example.test --id=local-invitee --sub=local-invitee --email=invitee@example.test --email-verified --name='Local Invitee' --password-from-stdin </state/.secrets/local_invitee_password
+        fi
+        exec tinyidp serve-production --addr=:8081 --listener-mode=trusted-proxy-http --issuer=https://idp.localhost:8443 --clients-file=/config/clients.json --theme-dir=/config --theme-catalog-file=/config/themes.json --signup-program-file=/config/open-signup.js --db=/state/tinyidp.sqlite --audit-path=/state/audit/audit.jsonl --token-secret-file=/state/token.key --invitation-lookup-key-file=/state/.secrets/invitation_lookup_key --email-challenge-key-file=/state/.secrets/email_challenge_key --email-smtp-address=mailpit:1025 --email-smtp-tls-mode=private-plaintext --email-from-address=accounts@idp.localhost --email-from-name=TinyIDP --trusted-proxy-cidrs=172.31.0.0/24 --rate-limit=500 --account-chooser
+    depends_on:
+      ca-export:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    networks: [idp-backend]
+    volumes:
+      - idp-state:/state
+      - ./clients.json:/config/clients.json:ro
+      - ./themes.json:/config/themes.json:ro
+      - ./message-desk.css:/config/message-desk.css:ro
+      - ./goja-auth.css:/config/goja-auth.css:ro
+      - ./open-signup.js:/config/open-signup.js:ro
+      - local-ca:/trust:ro
+    secrets: [local_admin_password, local_invitee_password, invitation_lookup_key, email_challenge_key]
+    healthcheck:
+      test: ["CMD-SHELL", "curl --cacert /trust/caddy-local-root.crt -fsS --resolve idp.localhost:8443:172.31.0.2 https://idp.localhost:8443/readyz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  message-desk:
+    build:
+      context: ../..
+      dockerfile: examples/tinyidp-shared-two-apps/Dockerfile.message-desk
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ ! -f /state/state.json ]; then tinyidp-message-desk init --state-root /state --public-base-url https://message.localhost:8443; fi
+        exec tinyidp-message-desk serve --state-root /state --addr :8080 --listener-mode trusted-proxy-http --trusted-proxy-cidrs 172.32.0.0/24 --external-issuer https://idp.localhost:8443 --external-backchannel-url https://idp.localhost:8443
+    environment:
+      # Caddy creates this local-only root. The application still verifies the
+      # issuer certificate; it does not disable TLS verification.
+      SSL_CERT_FILE: /trust/caddy-local-root.crt
+    volumes:
+      - message-state:/state
+      - local-ca:/trust:ro
+    extra_hosts: ["idp.localhost:172.31.0.2"]
+    depends_on:
+      idp:
+        condition: service_healthy
+    networks:
+      idp-backend: {}
+      message-backend:
+        aliases: [message-proxy-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS --resolve message.localhost:8443:172.32.0.2 https://message.localhost:8443/readyz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: goja_auth
+      POSTGRES_USER: goja
+      POSTGRES_PASSWORD: goja-local-development-only
+    volumes: [goja-postgres:/var/lib/postgresql/data]
+    networks: [goja-database]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goja -d goja_auth"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  goja-auth:
+    image: tinyidp-local/goja-auth-host:dev
+    build:
+      context: ../../../go-go-goja
+      dockerfile: Dockerfile.auth-host
+    command: ["serve", "sites", "demo"]
+    environment:
+      XGOJA_OIDC_DEMO_HTTP_LISTEN: :8080
+      XGOJA_OIDC_DEMO_AUTH_MODE: oidc
+      XGOJA_OIDC_DEMO_AUTH_DEFAULT_STORE_DRIVER: postgres
+      XGOJA_OIDC_DEMO_AUTH_DEFAULT_STORE_DSN: postgres://goja:goja-local-development-only@postgres:5432/goja_auth?sslmode=disable
+      XGOJA_OIDC_DEMO_AUTH_DEFAULT_STORE_APPLY_SCHEMA: "true"
+      XGOJA_OIDC_DEMO_AUTH_SESSION_COOKIE_ALLOW_INSECURE_HTTP: "false"
+      XGOJA_OIDC_DEMO_AUTH_PROXY_MODE: trusted-forwarded
+      XGOJA_OIDC_DEMO_AUTH_PROXY_TRUSTED_CIDRS: 172.33.0.0/24
+      XGOJA_OIDC_DEMO_AUTH_OIDC_ISSUER_URL: https://idp.localhost:8443
+      XGOJA_OIDC_DEMO_AUTH_OIDC_CLIENT_ID: goja-auth-host-demo
+      XGOJA_OIDC_DEMO_AUTH_OIDC_PUBLIC_BASE_URL: https://goja.localhost:8443
+      XGOJA_OIDC_DEMO_AUTH_OIDC_SCOPES: profile,email
+      XGOJA_OIDC_DEMO_AUTH_OIDC_AFTER_LOGIN_URL: /
+      XGOJA_OIDC_DEMO_AUTH_OIDC_AFTER_LOGOUT_URL: /
+      XGOJA_OIDC_DEMO_AUTH_OIDC_CALLBACK_ERROR_STYLESHEET_PATH: /static/styles.css
+      SSL_CERT_FILE: /trust/caddy-local-root.crt
+    extra_hosts: ["idp.localhost:172.31.0.2"]
+    volumes:
+      - local-ca:/trust:ro
+    depends_on:
+      idp:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      idp-backend: {}
+      goja-backend:
+        aliases: [goja-proxy-backend]
+      goja-database: {}
+    # The published image is distroless and intentionally contains no shell or
+    # HTTP client. scripts/02-smoke.sh checks readiness through the real TLS
+    # proxy instead of weakening the image solely for a container healthcheck.
+
+  goja-bootstrap:
+    image: tinyidp-local/goja-auth-host:dev
+    build:
+      context: ../../../go-go-goja
+      dockerfile: Dockerfile.auth-host
+    # Local Compose secrets are host bind mounts and retain the host file's
+    # 0600 ownership. This one-shot process runs as root only to read that
+    # mount; the long-running generated host remains distroless/nonroot.
+    user: "0:0"
+    command:
+      - operator
+      - bootstrap-admin
+      - --db-driver=postgres
+      - --db-dsn-file=/run/secrets/goja_appauth_dsn
+      - --apply-schema
+      - --issuer=https://idp.localhost:8443
+      - --subject=local-admin
+      - --email=admin@example.test
+      - --display-name=Local Administrator
+      - --organization-id=o1
+      - --organization-slug=local-demo
+      - --organization-name=Local Demo Organization
+      - --operator-id=local-compose-bootstrap
+    secrets: [goja_appauth_dsn]
+    depends_on:
+      postgres: {condition: service_healthy}
+      goja-auth: {condition: service_started}
+    networks: [goja-database]
+    restart: "no"
+
+networks:
+  idp-backend: {ipam: {config: [{subnet: 172.31.0.0/24, ip_range: 172.31.0.128/25}]}}
+  message-backend: {ipam: {config: [{subnet: 172.32.0.0/24}]}}
+  goja-backend: {ipam: {config: [{subnet: 172.33.0.0/24}]}}
+  goja-database: {ipam: {config: [{subnet: 172.34.0.0/24}]}}
+
+volumes:
+  idp-state:
+  message-state:
+  goja-postgres:
+  caddy-data:
+    external: true
+    name: tinyidp-local-caddy-pki
+  caddy-config:
+  local-ca:
+
+secrets:
+  local_admin_password:
+    file: ./runtime/secrets/local-admin-password.txt
+  local_invitee_password:
+    file: ./runtime/secrets/local-invitee-password.txt
+  invitation_lookup_key:
+    file: ./runtime/secrets/invitation-lookup.key
+  email_challenge_key:
+    file: ./runtime/secrets/email-challenge.key
+  goja_appauth_dsn:
+    file: ./runtime/secrets/goja-appauth-dsn.txt

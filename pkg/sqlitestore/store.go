@@ -325,6 +325,29 @@ func (s *Store) PutUser(ctx context.Context, login string, u idpstore.User) erro
 	_, err := s.conn().ExecContext(ctx, `INSERT INTO users(id,login,subject,data) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET login=excluded.login,subject=excluded.subject,data=excluded.data`, u.ID, login, u.Sub, b)
 	return mapDup(err)
 }
+
+func (s *Store) DisplayNameAvailable(ctx context.Context, normalized string) (bool, error) {
+	var claimed int
+	err := s.conn().QueryRowContext(ctx, `SELECT 1 FROM display_name_claims WHERE normalized_name=?`, normalized).Scan(&claimed)
+	if err == sql.ErrNoRows {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+func (s *Store) ReserveDisplayName(ctx context.Context, normalized, userID string) error {
+	_, err := s.conn().ExecContext(ctx, `INSERT INTO display_name_claims(normalized_name,user_id) VALUES(?,?)`, normalized, userID)
+	if err != nil {
+		if mapDup(err) == idpstore.ErrDuplicate {
+			return idpstore.ErrDisplayNameTaken
+		}
+		return err
+	}
+	return nil
+}
 func (s *Store) GetUser(ctx context.Context, id string) (idpstore.User, error) {
 	var b []byte
 	err := s.conn().QueryRowContext(ctx, `SELECT data FROM users WHERE id=?`, id).Scan(&b)

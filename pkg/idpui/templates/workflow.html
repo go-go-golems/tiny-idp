@@ -9,12 +9,14 @@
 <body>
   <main class="container py-4">
     <h1>{{.DocumentTitle}}</h1>
+    {{with .Error}}<div class="alert alert-danger" role="alert">{{.Summary}} {{if $.Form.RedirectOrigin}}<a href="{{$.Form.RedirectOrigin}}">Return to application</a>{{end}}</div>{{end}}
     <form method="post" action="{{.Form.ActionURL}}">
       {{range .Fields}}
       {{$error := $.ErrorFor .Descriptor.ID}}
       <div class="mb-3">
         <label class="form-label" for="tinyidp-workflow-{{.Descriptor.InputName}}">{{.Descriptor.Label}}</label>
-        <input class="form-control" id="tinyidp-workflow-{{.Descriptor.InputName}}" name="{{.Descriptor.InputName}}" type="{{if .Descriptor.Sensitive}}password{{else}}{{.Descriptor.Kind}}{{end}}" value="{{.Value}}" autocomplete="{{.Descriptor.Autocomplete}}" maxlength="{{.Descriptor.MaxLength}}"{{if .Descriptor.Required}} required{{end}}{{with $error}} aria-invalid="true" aria-describedby="tinyidp-error-{{.Field}}"{{end}}>
+        <input class="form-control" id="tinyidp-workflow-{{.Descriptor.InputName}}" name="{{.Descriptor.InputName}}" type="{{if .Descriptor.Sensitive}}password{{else}}{{.Descriptor.Kind}}{{end}}" value="{{.Value}}" autocomplete="{{.Descriptor.Autocomplete}}" minlength="{{.Descriptor.MinLength}}" maxlength="{{.Descriptor.MaxLength}}"{{if .Descriptor.Required}} required{{end}}{{with $error}} aria-invalid="true" aria-describedby="tinyidp-error-{{.Field}}"{{end}}>
+        {{if .Descriptor.Sensitive}}<div class="form-text">Use at least {{.Descriptor.MinLength}} characters.</div>{{end}}
         {{with $error}}<div id="tinyidp-error-{{.Field}}" class="invalid-feedback" role="alert">{{.Summary}}</div>{{end}}
       </div>
       {{end}}

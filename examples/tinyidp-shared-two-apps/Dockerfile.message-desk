@@ -1,0 +1,15 @@
+FROM golang:1.26-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o /out/tinyidp-message-desk ./examples/tinyidp-message-app
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl util-linux && rm -rf /var/lib/apt/lists/* && useradd --system --uid 10001 --create-home tinyidp
+COPY --from=build /out/tinyidp-message-desk /usr/local/bin/tinyidp-message-desk
+COPY examples/tinyidp-external-message-desk/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+RUN chmod 0755 /usr/local/bin/docker-entrypoint
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint"]
+CMD ["tinyidp-message-desk"]

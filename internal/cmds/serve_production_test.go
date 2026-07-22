@@ -11,6 +11,10 @@ import (
 
 	"github.com/go-go-golems/glazed/pkg/cmds/schema"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
+	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
+	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 )
 
@@ -133,7 +137,7 @@ func TestReadProductionSignupProgramRequiresBoundedRegularSource(t *testing.T) {
 }
 
 func TestNewProductionSignupManagerChecksAndActivatesOnlySupportedPrograms(t *testing.T) {
-	manager, err := newProductionSignupManager(context.Background(), idpsignup.DefaultSource, idp.NewMemorySink())
+	manager, err := newProductionSignupManager(context.Background(), idpsignup.DefaultSource, idp.NewMemorySink(), productionSignupServices{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,11 +145,34 @@ func TestNewProductionSignupManagerChecksAndActivatesOnlySupportedPrograms(t *te
 	if err := manager.Ready(); err != nil {
 		t.Fatalf("activated program not ready: %v", err)
 	}
-	if _, err := newProductionSignupManager(context.Background(), "not javascript", idp.NewMemorySink()); err == nil {
+	if _, err := newProductionSignupManager(context.Background(), "not javascript", idp.NewMemorySink(), productionSignupServices{}); err == nil {
 		t.Fatal("invalid program accepted")
 	}
-	if _, err := newProductionSignupManager(context.Background(), idpsignup.EmailVerifiedSource, idp.NewMemorySink()); err == nil || !strings.Contains(err.Error(), "unsupported native services: email_challenge") {
+	if _, err := newProductionSignupManager(context.Background(), idpsignup.EmailVerifiedSource, idp.NewMemorySink(), productionSignupServices{}); err == nil || !strings.Contains(err.Error(), "unsupported native services: email_challenge") {
 		t.Fatalf("unsupported email challenge error = %v", err)
+	}
+	emailManager, err := newProductionSignupManager(context.Background(), idpsignup.EmailVerifiedSource, idp.NewMemorySink(), productionSignupServices{EmailChallenges: true})
+	if err != nil {
+		t.Fatalf("email challenge program rejected with service available: %v", err)
+	}
+	defer emailManager.Close(context.Background())
+	combinedManager, err := newProductionSignupManager(context.Background(), idpsignup.VerifiedInviteSource, idp.NewMemorySink(), productionSignupServices{EmailChallenges: true})
+	if err != nil {
+		t.Fatalf("combined invitation and email challenge program rejected: %v", err)
+	}
+	defer combinedManager.Close(context.Background())
+	inviteManager, err := newProductionSignupManager(context.Background(), idpsignup.InviteRequiredSource, idp.NewMemorySink(), productionSignupServices{})
+	if err != nil {
+		t.Fatalf("supported durable invitation program rejected: %v", err)
+	}
+	defer inviteManager.Close(context.Background())
+	inviteArtifact, err := idpsignup.Compile(context.Background(), idpsignup.InviteRequiredSource)
+	if err != nil || !productionProgramRequiresDurableInvitations(inviteArtifact.Program()) {
+		t.Fatalf("durable invitation requirement was not detected: %v", err)
+	}
+	providerWithoutConsumption := strings.Replace(idpsignup.InviteRequiredSource, `, "consumeInvitation"`, "", 1)
+	if _, err := newProductionSignupManager(context.Background(), providerWithoutConsumption, idp.NewMemorySink(), productionSignupServices{}); err == nil || !strings.Contains(err.Error(), "durable_invitation_provider_without_consumeInvitation") {
+		t.Fatalf("durable provider without consumption error = %v", err)
 	}
 	capabilityProgram := `const A = require("tinyidp").v1;
 module.exports = A.program("unsupported-capability", p => {
@@ -153,9 +180,95 @@ module.exports = A.program("unsupported-capability", p => {
   const start = A.lambda("signup.start", { input:"signupStartInput", output:"signupResult", outcomes:["complete"], effects:[], capabilities:["clock.now"], timeoutMs:250, maxCapabilityCalls:1, maxOutputBytes:1024, run: async ctx => { await ctx.cap.clock.now({}); return A.result.complete(); } });
   p.workflow("signup", { version:1, entry:"start", handlers:{start}, edges:[] });
 });`
-	_, err = newProductionSignupManager(context.Background(), capabilityProgram, idp.NewMemorySink())
+	_, err = newProductionSignupManager(context.Background(), capabilityProgram, idp.NewMemorySink(), productionSignupServices{})
 	if err == nil || !strings.Contains(err.Error(), "unsupported native capabilities: clock.now") {
 		t.Fatalf("unsupported capability error = %v", err)
+	}
+	displayNameCapabilityProgram := `const A = require("tinyidp").v1;
+module.exports = A.program("display-name-capability", p => {
+  p.capabilities({"identity.displayName.lookup": {version:1}});
+  const start = A.lambda("signup.start", { input:"signupStartInput", output:"signupResult", outcomes:["complete"], effects:[], capabilities:["identity.displayName.lookup"], timeoutMs:250, maxCapabilityCalls:1, maxOutputBytes:1024, run: async ctx => { await ctx.cap.identity.displayName.lookup({displayName:"Ada"}); return A.result.complete(); } });
+  p.workflow("signup", { version:1, entry:"start", handlers:{start}, edges:[] });
+});`
+	_, err = newProductionSignupManager(context.Background(), displayNameCapabilityProgram, idp.NewMemorySink(), productionSignupServices{})
+	if err == nil || !strings.Contains(err.Error(), "unsupported native capabilities: identity.displayName.lookup") {
+		t.Fatalf("unavailable display-name capability error = %v", err)
+	}
+	_, err = newProductionSignupManager(context.Background(), displayNameCapabilityProgram, idp.NewMemorySink(), productionSignupServices{DisplayNameLookup: true})
+	if err == nil || !strings.Contains(err.Error(), "workflow signup handler start: identity.displayName.lookup@v1") {
+		t.Fatalf("entry-handler display-name capability error = %v", err)
+	}
+
+	verifiedInviteArtifact, err := idpsignup.Compile(context.Background(), idpsignup.VerifiedInviteSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumedDisplayNameProgram := verifiedInviteArtifact.Program()
+	resumedDisplayNameProgram.Capabilities[idpaccounts.DisplayNameLookupCapabilityID] = idpprogram.CapabilityRequirement{ID: idpaccounts.DisplayNameLookupCapabilityID, Version: idpaccounts.DisplayNameLookupCapabilityVersion}
+	workflow := resumedDisplayNameProgram.Workflows[idpsignup.WorkflowID]
+	submitted := resumedDisplayNameProgram.Lambdas[workflow.Handlers[idpsignup.SubmittedHandler].LambdaID]
+	submitted.RequiredCapabilities = append(submitted.RequiredCapabilities, idpprogram.CapabilityRequirement{ID: idpaccounts.DisplayNameLookupCapabilityID, Version: idpaccounts.DisplayNameLookupCapabilityVersion})
+	resumedDisplayNameProgram.Lambdas[submitted.ID] = submitted
+	if err := validateProductionSignupProgram(resumedDisplayNameProgram, productionSignupServices{EmailChallenges: true, DisplayNameLookup: true}); err != nil {
+		t.Fatalf("resumed display-name capability rejected: %v", err)
+	}
+
+	verifiedInviteArtifact, err = idpsignup.Compile(context.Background(), idpsignup.VerifiedInviteSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflowCapabilityMisuse := verifiedInviteArtifact.Program()
+	workflow = workflowCapabilityMisuse.Workflows[idpsignup.WorkflowID]
+	submitted = workflowCapabilityMisuse.Lambdas[workflow.Handlers[idpsignup.SubmittedHandler].LambdaID]
+	submitted.RequiredCapabilities = append(submitted.RequiredCapabilities, idpprogram.CapabilityRequirement{ID: idpinvite.LookupCapabilityID, Version: idpinvite.LookupCapabilityVersion})
+	workflowCapabilityMisuse.Lambdas[submitted.ID] = submitted
+	if err := validateProductionSignupProgram(workflowCapabilityMisuse, productionSignupServices{}); err == nil || !strings.Contains(err.Error(), "workflow signup handler submitted: invitation.lookup@v1") {
+		t.Fatalf("workflow invitation capability error = %v", err)
+	}
+
+	verifiedInviteArtifact, err = idpsignup.Compile(context.Background(), idpsignup.VerifiedInviteSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerCapabilityMisuse := verifiedInviteArtifact.Program()
+	providerCapabilityMisuse.Capabilities[idpaccounts.DisplayNameLookupCapabilityID] = idpprogram.CapabilityRequirement{ID: idpaccounts.DisplayNameLookupCapabilityID, Version: idpaccounts.DisplayNameLookupCapabilityVersion}
+	provider := providerCapabilityMisuse.Providers["invitation.signup"]
+	validate := providerCapabilityMisuse.Lambdas[provider.Handlers[idpprogram.InvitationValidateHandler].LambdaID]
+	validate.RequiredCapabilities = append(validate.RequiredCapabilities, idpprogram.CapabilityRequirement{ID: idpaccounts.DisplayNameLookupCapabilityID, Version: idpaccounts.DisplayNameLookupCapabilityVersion})
+	providerCapabilityMisuse.Lambdas[validate.ID] = validate
+	if err := validateProductionSignupProgram(providerCapabilityMisuse, productionSignupServices{DisplayNameLookup: true}); err == nil || !strings.Contains(err.Error(), "provider invitation.signup handler validate: identity.displayName.lookup@v1") {
+		t.Fatalf("provider display-name capability error = %v", err)
+	}
+}
+
+func TestProductionEmailChallengesRequireCompleteProgramBoundConfiguration(t *testing.T) {
+	artifact, err := idpsignup.Compile(context.Background(), idpsignup.EmailVerifiedSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(t.TempDir(), "challenge-key")
+	if err := os.WriteFile(keyPath, []byte("0123456789abcdef0123456789abcdef"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings := &serveProductionSettings{
+		EmailChallengeKeyFile: keyPath, EmailSMTPAddress: "mailcatcher:1025", EmailSMTPTLSMode: "private-plaintext",
+		EmailFromAddress: "accounts@example.test", EmailFromName: "TinyIDP", EmailSMTPConnectTimeout: "1s", EmailSMTPSendTimeout: "2s",
+	}
+	service, err := newProductionEmailChallenges(settings, idpemailchallenge.NewMemoryStore(), artifact.Program())
+	if err != nil || service == nil {
+		t.Fatalf("complete email challenge configuration = %v, %v", service, err)
+	}
+	missing := *settings
+	missing.EmailFromAddress = ""
+	if _, err := newProductionEmailChallenges(&missing, idpemailchallenge.NewMemoryStore(), artifact.Program()); err == nil {
+		t.Fatal("missing sender was accepted")
+	}
+	defaultArtifact, err := idpsignup.Compile(context.Background(), idpsignup.DefaultSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newProductionEmailChallenges(settings, idpemailchallenge.NewMemoryStore(), defaultArtifact.Program()); err == nil {
+		t.Fatal("mail configuration was accepted for a program without email challenges")
 	}
 }
 
@@ -172,8 +285,22 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	if !ok || !program.Required {
 		t.Fatal("signup-program-file is not a required production flag")
 	}
+	lookupKey, ok := section.GetDefinitions().Get("invitation-lookup-key-file")
+	if !ok || lookupKey.Required {
+		t.Fatal("invitation lookup key must be conditionally required by the selected program")
+	}
+	for _, conditional := range []string{"email-challenge-key-file", "email-smtp-address", "email-smtp-tls-mode", "email-smtp-password-file", "email-from-address"} {
+		definition, ok := section.GetDefinitions().Get(conditional)
+		if !ok || definition.Required {
+			t.Fatalf("%s must exist and be conditionally required by the selected program", conditional)
+		}
+	}
 	if _, legacy := section.GetDefinitions().Get("registration-enabled"); legacy {
 		t.Fatal("legacy registration-enabled production flag is still exposed")
+	}
+	chooser, ok := section.GetDefinitions().Get("account-chooser")
+	if !ok || chooser.Required {
+		t.Fatal("optional account-chooser flag is unavailable")
 	}
 	for _, required := range []string{"clients-file", "theme-dir", "theme-catalog-file"} {
 		definition, ok := section.GetDefinitions().Get(required)

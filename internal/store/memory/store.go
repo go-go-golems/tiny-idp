@@ -24,6 +24,7 @@ type Store struct {
 	usersByID          map[string]idpstore.User
 	usersByLogin       map[string]string
 	usersBySubject     map[string]string
+	displayNameClaims  map[string]string
 	credentialsByUser  map[string]idpstore.PasswordCredential
 	credentialsByLogin map[string]string
 	accountSecurity    map[string]idpstore.AccountSecurityState
@@ -53,6 +54,7 @@ func New() *Store {
 		usersByID:          map[string]idpstore.User{},
 		usersByLogin:       map[string]string{},
 		usersBySubject:     map[string]string{},
+		displayNameClaims:  map[string]string{},
 		credentialsByUser:  map[string]idpstore.PasswordCredential{},
 		credentialsByLogin: map[string]string{},
 		accountSecurity:    map[string]idpstore.AccountSecurityState{},
@@ -71,6 +73,23 @@ func New() *Store {
 		keys:               map[string]idpstore.SigningKey{},
 		continuations:      map[string]idpcontinuation.WorkflowContinuation{},
 	}
+}
+
+func (s *Store) DisplayNameAvailable(_ context.Context, normalized string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, claimed := s.displayNameClaims[normalized]
+	return !claimed, nil
+}
+
+func (s *Store) ReserveDisplayName(_ context.Context, normalized, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, claimed := s.displayNameClaims[normalized]; claimed && existing != userID {
+		return idpstore.ErrDisplayNameTaken
+	}
+	s.displayNameClaims[normalized] = userID
+	return nil
 }
 
 func hashKey(b []byte) string { return hex.EncodeToString(b) }
@@ -1205,6 +1224,7 @@ func (s *Store) cloneLocked() *Store {
 		usersByID:          cloneMap(s.usersByID),
 		usersByLogin:       cloneMap(s.usersByLogin),
 		usersBySubject:     cloneMap(s.usersBySubject),
+		displayNameClaims:  cloneMap(s.displayNameClaims),
 		credentialsByUser:  cloneMap(s.credentialsByUser),
 		credentialsByLogin: cloneMap(s.credentialsByLogin),
 		accountSecurity:    cloneMap(s.accountSecurity),
@@ -1230,6 +1250,7 @@ func (s *Store) replaceLocked(next *Store) {
 	s.usersByID = next.usersByID
 	s.usersByLogin = next.usersByLogin
 	s.usersBySubject = next.usersBySubject
+	s.displayNameClaims = next.displayNameClaims
 	s.credentialsByUser = next.credentialsByUser
 	s.credentialsByLogin = next.credentialsByLogin
 	s.accountSecurity = next.accountSecurity

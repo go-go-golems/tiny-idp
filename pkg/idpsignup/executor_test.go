@@ -76,6 +76,26 @@ func TestInvitationProgramRequestsNativeInvitationConsumption(t *testing.T) {
 	assert.JSONEq(t, `{"code":"invite-code"}`, string(outcome.Effects[2].Payload))
 }
 
+func TestInviteRequiredProgramKeepsMessageDeskOpenAndGatesGojaClient(t *testing.T) {
+	executor, err := idpsignup.New(context.Background(), idpsignup.InviteRequiredSource, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+
+	message, err := executor.Start(context.Background(), idpsignup.StartInput{ClientID: "tinyidp-message-app", RedirectURI: "https://message.example/callback", RequestedScope: "openid", InteractionID: "message-interaction"})
+	require.NoError(t, err)
+	assert.Len(t, message.Fields, 4)
+
+	goja, err := executor.Start(context.Background(), idpsignup.StartInput{ClientID: "goja-auth-host-demo", RedirectURI: "https://goja.example/callback", RequestedScope: "openid", InteractionID: "goja-interaction"})
+	require.NoError(t, err)
+	require.Len(t, goja.Fields, 5)
+	assert.Equal(t, idpworkflow.FieldInviteCode, goja.Fields[4].ID)
+
+	results := executor.RunTests(context.Background())
+	require.Len(t, results, 2)
+	assert.True(t, results[0].Passed, "%+v", results[0])
+	assert.True(t, results[1].Passed, "%+v", results[1])
+}
+
 func TestEmailVerifiedProgramDeclaresChallengeThenPasswordWorkflow(t *testing.T) {
 	executor, err := idpsignup.New(context.Background(), idpsignup.EmailVerifiedSource, 1)
 	require.NoError(t, err)
@@ -88,6 +108,41 @@ func TestEmailVerifiedProgramDeclaresChallengeThenPasswordWorkflow(t *testing.T)
 	require.NoError(t, err)
 	assert.Equal(t, idpprogram.OutcomeChallenge, outcome.Kind)
 	assert.NotEmpty(t, outcome.Challenge)
+}
+
+func TestVerifiedInvitationProgramComposesPerClientAdmissionAndEmailChallenge(t *testing.T) {
+	executor, err := idpsignup.New(context.Background(), idpsignup.VerifiedInviteSource, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, executor.Close(context.Background())) })
+
+	message, err := executor.Start(context.Background(), idpsignup.StartInput{ClientID: "tinyidp-message-app", RedirectURI: "https://message.example/callback", RequestedScope: "openid", InteractionID: "message"})
+	require.NoError(t, err)
+	assert.Equal(t, []idpworkflow.FieldID{idpworkflow.FieldDisplayName, idpworkflow.FieldEmail}, fieldIDs(message.Fields))
+	goja, err := executor.Start(context.Background(), idpsignup.StartInput{ClientID: "goja-auth-host-demo", RedirectURI: "https://goja.example/callback", RequestedScope: "openid", InteractionID: "goja"})
+	require.NoError(t, err)
+	assert.Equal(t, []idpworkflow.FieldID{idpworkflow.FieldDisplayName, idpworkflow.FieldEmail, idpworkflow.FieldInviteCode}, fieldIDs(goja.Fields))
+
+	outcome, err := executor.Submit(context.Background(), map[idpworkflow.FieldID]string{idpworkflow.FieldDisplayName: "Ada", idpworkflow.FieldEmail: "ada@example.test"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, idpprogram.OutcomeChallenge, outcome.Kind)
+
+	workflow := executor.Program().Workflows[idpsignup.WorkflowID]
+	assert.Equal(t, "emailVerified", workflow.Handlers["submitted"].ContinuationEdges[0].HandlerID)
+	assert.Equal(t, "passwordSubmitted", workflow.Handlers["emailVerified"].ContinuationEdges[0].HandlerID)
+	passwordLambda := executor.Program().Lambdas[workflow.Handlers["passwordSubmitted"].LambdaID]
+	assert.Equal(t, []idpprogram.EffectKind{idpprogram.EffectCreateLocalIdentity, idpprogram.EffectAttachPasswordCredential, idpprogram.EffectConsumeInvitation}, passwordLambda.AllowedEffects)
+	assert.Len(t, executor.Program().Providers, 1)
+	for _, result := range executor.RunTests(context.Background()) {
+		assert.True(t, result.Passed, "%+v", result)
+	}
+}
+
+func fieldIDs(fields []idpworkflow.FieldDescriptor) []idpworkflow.FieldID {
+	ids := make([]idpworkflow.FieldID, 0, len(fields))
+	for _, field := range fields {
+		ids = append(ids, field.ID)
+	}
+	return ids
 }
 
 func TestExecutorRunsDeclarativeEmbeddedTests(t *testing.T) {

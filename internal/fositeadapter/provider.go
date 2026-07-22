@@ -149,6 +149,7 @@ type Provider struct {
 	interactionTTL        time.Duration
 	clock                 func() time.Time
 	interactionUI         idpui.InteractionRenderer
+	browserErrorUI        idpui.BrowserErrorRenderer
 	workflowUI            idpui.WorkflowRenderer
 	deviceVerificationUI  idpui.DeviceVerificationRenderer
 	deviceCodeGenerator   func() (deviceCode, userCode string, err error)
@@ -239,6 +240,14 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("build default interaction renderer: %w", rendererErr)
 		}
 		opts.InteractionRenderer = renderer
+	}
+	browserErrorRenderer, ok := opts.InteractionRenderer.(idpui.BrowserErrorRenderer)
+	if !ok {
+		renderer, rendererErr := idpui.NewDefaultRenderer()
+		if rendererErr != nil {
+			return nil, fmt.Errorf("build default browser error renderer: %w", rendererErr)
+		}
+		browserErrorRenderer = renderer
 	}
 	if opts.DeviceVerificationRenderer == nil {
 		if renderer, ok := opts.InteractionRenderer.(idpui.DeviceVerificationRenderer); ok {
@@ -410,7 +419,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("create scripted signup continuation service: %w", continuationErr)
 		}
 	}
-	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, authorization: opts.Authorization, claims: opts.Claims, presentation: opts.Presentation, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
+	p := &Provider{issuer: iss, store: opts.Store, fositeStore: fs.memoryStore, sqlStore: fs.sqlStore, config: cfg, mode: opts.Mode, csrfKey: opts.SecretKey, cookieSecure: opts.CookieSecure, cookieSameSite: opts.CookieSameSite, sessionCookieName: opts.SessionCookieName, csrfCookieName: opts.CSRFCookieName, chooser: opts.AccountChooser, cookiePathValue: opts.CookiePath, audit: opts.Audit, securityEvents: opts.SecurityEvents, consent: opts.Consent, authorization: opts.Authorization, claims: opts.Claims, presentation: opts.Presentation, rateLimiter: opts.RateLimiter, clientAddress: opts.ClientAddress, authenticator: opts.Authenticator, registration: registration, scriptedSignup: opts.ScriptedSignup, scriptedSignupManager: opts.ScriptedSignupManager, durableInvitations: opts.DurableInvitations, emailChallenges: opts.EmailChallenges, workflowContinuations: workflowContinuations, sessionTTL: opts.SessionTTL, interactionTTL: opts.InteractionTTL, clock: opts.Clock, interactionUI: opts.InteractionRenderer, browserErrorUI: browserErrorRenderer, workflowUI: opts.WorkflowRenderer, deviceVerificationUI: opts.DeviceVerificationRenderer, deviceCodeGenerator: opts.deviceCodeGenerator}
 
 	core := compose.NewOAuth2HMACStrategy(cfg)
 	oidc := compose.NewOpenIDConnectStrategy(p.activePrivateKey, cfg)
@@ -762,11 +771,12 @@ func (p *Provider) beginAuthorize(w http.ResponseWriter, r *http.Request) {
 		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrInvalidRequest.WithHint("invalid registration request"))
 		return
 	}
-	if registrationRequested && hasSession {
-		p.oauth2.WriteAuthorizeError(r.Context(), w, ar, fosite.ErrInvalidRequest.WithHint("registration requires a new browser session"))
-		return
-	}
 	if registrationRequested {
+		// Registration is an explicit browser intent to create and switch to a
+		// new identity. An active provider session remains bound to the pending
+		// interaction until commit; successful account creation then replaces
+		// the current browser cookie with the new session. The previous durable
+		// session may remain available through the account chooser.
 		needLogin = false
 		actions &^= idpstore.InteractionRequireLogin | idpstore.InteractionRequireFreshLogin
 		actions |= idpstore.InteractionRequireRegistration
@@ -872,7 +882,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if !p.rateLimiter.Allow(r.Context(), "authorize:"+clientAddress) {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.rate_limited", Result: "rejected", Reason: "rate_limited"})
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		p.renderRateLimited(w, r, "")
 		return
 	}
 	handle := r.PostForm.Get(interactionFieldName)
@@ -918,7 +928,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	registrationRequired := record.RequiredActions.Has(idpstore.InteractionRequireRegistration)
 	if registrationRequired && !sameOriginBrowserPost(r) {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: "origin_rejected"})
-		http.Error(w, "registration request was not accepted", http.StatusForbidden)
+		p.renderRegistrationRejected(w, r, record.ClientID)
 		return
 	}
 	if registrationRequired {
@@ -1071,7 +1081,7 @@ func (p *Provider) resumeAuthorize(w http.ResponseWriter, r *http.Request) {
 	if login != "" {
 		if !p.allowLogin(r.Context(), ar.GetClient().GetID(), clientAddress, login) {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "login.rate_limited", ClientID: ar.GetClient().GetID(), Result: "rejected", Reason: "rate_limited"})
-			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			p.renderRateLimited(w, r, client.ID)
 			return
 		}
 		result, authErr := p.authenticator.AuthenticatePassword(r.Context(), login, r.PostForm.Get("password"), idp.LoginMetadata{RemoteAddr: clientAddress, UserAgent: r.UserAgent(), ClientID: ar.GetClient().GetID()})
@@ -1200,21 +1210,37 @@ func authorizeRegistrationIntent(values url.Values) (bool, error) {
 // sameOriginBrowserPost adds browser-context checks to the interaction's
 // cryptographic CSRF token. It derives the expected origin from the public
 // request Host: the listener/proxy enforces canonical Host handling, while the
-// interaction rejects a cross-site form before account creation. Missing Fetch
-// Metadata is accepted for browser compatibility; a supplied cross-site value
-// is never accepted.
+// interaction rejects a cross-site form before account creation.
+//
+// Browsers serialize Origin as "null" for a basic form POST when the form was
+// served with Referrer-Policy: no-referrer. In that case, accept the request
+// only when browser-controlled Fetch Metadata independently identifies a
+// user-activated, same-origin, top-level document navigation. This deliberately
+// does not accept a generic null origin, which can also be produced by sandboxed
+// or opaque-origin documents.
 func sameOriginBrowserPost(r *http.Request) bool {
 	if r == nil || r.Header.Get("Origin") == "" || r.Host == "" {
 		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "null" {
+		return headerEquals(r, "Sec-Fetch-Site", "same-origin") &&
+			headerEquals(r, "Sec-Fetch-Mode", "navigate") &&
+			headerEquals(r, "Sec-Fetch-Dest", "document") &&
+			headerEquals(r, "Sec-Fetch-User", "?1")
 	}
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if r.Header.Get("Origin") != scheme+"://"+r.Host {
+	if origin != scheme+"://"+r.Host {
 		return false
 	}
 	return strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) != "cross-site"
+}
+
+func headerEquals(r *http.Request, name, expected string) bool {
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get(name)), expected)
 }
 
 func clearBytes(value []byte) {

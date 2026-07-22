@@ -21,7 +21,7 @@ func (*module) TypeScriptModule() *spec.Module {
 			`export interface PresentationBuilders { form(spec: PresentationSpec): Outcome; }`,
 			`export interface SecretHandle { readonly __tinyIdpSecret?: never; }`,
 			`export interface SecretContext { readonly [name: string]: SecretHandle | undefined; }`,
-			`export interface SignupCommitSpec { login: string; displayName: string; password: SecretHandle; passwordConfirmation: SecretHandle; }`,
+			`export interface SignupCommitSpec { login: string; displayName: string; uniqueDisplayName?: boolean; password: SecretHandle; passwordConfirmation: SecretHandle; }`,
 			`export interface CommitBuilders { signup(spec: SignupCommitSpec): Outcome; }`,
 			`export interface EmailChallengeSpec { email: string; template: string; resume: string; expiresInSeconds: number; maximumAttempts: number; maximumResends: number; carry?: unknown; } export interface ChallengeBuilders { emailCode(spec: EmailChallengeSpec): Outcome; }`,
 			`export interface InvocationContext<I = unknown, C = Record<string, unknown>> { readonly input: Readonly<I>; readonly cap: C; readonly present: PresentationBuilders; readonly challenge: ChallengeBuilders; readonly secret: SecretContext; readonly evidence: Readonly<Record<string, unknown>>; readonly commit: CommitBuilders; }`,

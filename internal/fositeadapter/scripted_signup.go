@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +19,9 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
 	"github.com/go-go-golems/tiny-idp/pkg/idpprogram"
+	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
@@ -71,19 +75,19 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 	continuation, err := p.workflowContinuations.Load(r.Context(), continuationHandle, p.signupLoadBindings(record, r))
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.resume_rejected", ClientID: record.ClientID, Result: "rejected", Reason: "continuation_unavailable"})
-		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
+		p.renderSignupTerminalError(w, r, record.ClientID)
 		return
 	}
 	executor, err := p.signupExecutorFor(continuation.ProgramFingerprint)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.resume_rejected", ClientID: record.ClientID, Result: "rejected", Reason: "generation_unavailable"})
-		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
+		p.renderSignupTerminalError(w, r, record.ClientID)
 		return
 	}
 	continuationBindings := p.signupBindingsFor(record, r, continuation.ProgramFingerprint)
 	fields, actions, err := workflowDescriptors(continuation.Presentation)
 	if err != nil {
-		http.Error(w, "registration request was not accepted", http.StatusBadRequest)
+		p.renderSignupTerminalError(w, r, record.ClientID)
 		return
 	}
 	submission, err := idpworkflow.ParseSubmission(fields, actions, r.PostForm)
@@ -114,11 +118,15 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		}
 		if err := p.emailChallenges.Resend(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, idpemailchallenge.BindingsFromContinuation(continuation)); err != nil {
 			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_resend", ClientID: record.ClientID, Result: "rejected", Reason: emailChallengeFailureReason(err)})
-			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, nil)
+			p.renderScriptedSignupEmailCodeError(w, r, record, interactionHandle, continuationHandle, fields, actions, nil, err)
 			return
 		}
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.email_challenge_resend", ClientID: record.ClientID, Result: "accepted"})
 		p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, nil, nil))
+		return
+	}
+	if workflowHasField(fields, idpworkflow.FieldPassword) && workflowHasField(fields, idpworkflow.FieldPasswordConfirmation) && !submissionPasswordsMatch(submission) {
+		p.renderScriptedSignupFieldErrorCode(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpworkflow.FieldPasswordConfirmation, idpworkflow.ErrorMismatch)
 		return
 	}
 	input, err := executor.SubmissionInput(continuation.ResumeHandlerID, submission.PublicValues)
@@ -133,10 +141,16 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 			return
 		}
-		verified, verifyErr := p.emailChallenges.Verify(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, submission.PublicValues[idpworkflow.FieldEmailCode], idpemailchallenge.BindingsFromContinuation(continuation))
+		code, codeOK := submission.ResolveSecret(submission.Secrets[idpworkflow.FieldEmailCode])
+		if !codeOK {
+			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+			return
+		}
+		verified, verifyErr := p.emailChallenges.Verify(r.Context(), idpemailchallenge.Reference{ID: challengeID, Version: idpemailchallenge.RecordVersionV1}, string(code), idpemailchallenge.BindingsFromContinuation(continuation))
+		clearBytes(code)
 		if verifyErr != nil {
 			p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.EvidenceVerified, InteractionID: interactionTraceID(record), Transition: assurance.StepEvidenceVerify, Outcome: assurance.TransitionRejected})
-			p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+			p.renderScriptedSignupEmailCodeError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, verifyErr)
 			return
 		}
 		evidence, err = idpemailchallenge.EvidenceProjection(verified)
@@ -164,8 +178,34 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
+	requiresInvitationConsumption, err := signupInputRequiresInvitationConsumption(input)
+	if err != nil {
+		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+		return
+	}
+	if workflowHasField(fields, idpworkflow.FieldInviteCode) {
+		invitationEvidence, invitationErr := p.validateSignupInvitationProviders(r.Context(), executor, input, record.ClientID)
+		if invitationErr != nil {
+			p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.invitation_validation", ClientID: record.ClientID, Result: "rejected", Reason: "invitation_rejected"})
+			p.renderScriptedSignupFieldError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpworkflow.FieldInviteCode)
+			return
+		}
+		if evidence == nil {
+			evidence = map[string]json.RawMessage{}
+		}
+		for providerID, value := range invitationEvidence {
+			evidence[providerID] = value
+		}
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "workflow.signup.invitation_validation", ClientID: record.ClientID, Result: "accepted"})
+	}
 	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationStarted, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionApplied})
-	outcome, err := executor.InvokeSubmission(r.Context(), continuation.ResumeHandlerID, input, signupSubmissionSecrets(submission), evidence)
+	capabilities, capabilityErr := p.signupRuntimeCapabilities(r.Context(), executor, continuation.ResumeHandlerID)
+	if capabilityErr != nil {
+		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationRejected, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionRejected})
+		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+		return
+	}
+	outcome, err := executor.InvokeSubmissionWithCapabilities(r.Context(), continuation.ResumeHandlerID, input, capabilities, signupSubmissionSecrets(submission), evidence)
 	if err != nil {
 		p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.LambdaInvocationRejected, InteractionID: interactionTraceID(record), Transition: assurance.StepLambdaInvoke, Outcome: assurance.TransitionRejected})
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
@@ -200,13 +240,75 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
-	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, continuationBindings, record, clientAddress, verifiedEmail)
+	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, continuationBindings, record, clientAddress, verifiedEmail, requiresInvitationConsumption)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: signupCommitFailureReason(err)})
+		if errors.Is(err, idpstore.ErrDisplayNameTaken) {
+			p.renderScriptedSignupGlobalError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpui.WorkflowErrorDuplicateDisplayName)
+			return
+		}
+		if errors.Is(err, idpstore.ErrDuplicate) {
+			p.renderScriptedSignupGlobalError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues, idpui.WorkflowErrorDuplicateIdentity)
+			return
+		}
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
 	p.completeScriptedSignup(w, r, ar, client, record, registered)
+}
+
+func (p *Provider) renderSignupTerminalError(w http.ResponseWriter, r *http.Request, clientID string) {
+	p.renderBrowserError(w, r, http.StatusBadRequest, idpui.BrowserErrorPage{
+		DocumentTitle: "Registration needs to be restarted",
+		ClientID:      clientID,
+		Heading:       "Registration needs to be restarted",
+		Summary:       "This registration page is no longer active. Return to the application and begin registration again.",
+	})
+}
+
+func (p *Provider) signupRuntimeCapabilities(_ context.Context, executor *idpsignup.Executor, handler string) (map[string]idpscript.CapabilityBinding, error) {
+	workflow, ok := executor.Program().Workflows[idpsignup.WorkflowID]
+	if !ok {
+		return nil, errors.New("signup workflow is unavailable")
+	}
+	handlerSpec, ok := workflow.Handlers[handler]
+	if !ok {
+		return nil, errors.New("signup handler is unavailable")
+	}
+	lambda, ok := executor.Program().Lambdas[handlerSpec.LambdaID]
+	if !ok {
+		return nil, errors.New("signup handler lambda is unavailable")
+	}
+	bindings := map[string]idpscript.CapabilityBinding{}
+	for _, requirement := range lambda.RequiredCapabilities {
+		if requirement.ID != idpaccounts.DisplayNameLookupCapabilityID || requirement.Version != idpaccounts.DisplayNameLookupCapabilityVersion {
+			return nil, errors.Errorf("signup runtime capability %q is unsupported", requirement.ID)
+		}
+		if p.registration == nil {
+			return nil, errors.New("signup account service is unavailable")
+		}
+		bindings[requirement.ID] = idpscript.CapabilityBinding{
+			Requirement: requirement, MaxInputBytes: 1024, MaxOutputBytes: 128,
+			Invoke: func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				var request struct {
+					DisplayName string `json:"displayName"`
+				}
+				decoder := json.NewDecoder(strings.NewReader(string(raw)))
+				decoder.DisallowUnknownFields()
+				if err := decoder.Decode(&request); err != nil {
+					return nil, errors.Wrap(err, "decode display-name lookup request")
+				}
+				available, err := p.registration.DisplayNameAvailable(ctx, request.DisplayName)
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(struct {
+					Available bool `json:"available"`
+				}{Available: available})
+			},
+		}
+	}
+	return bindings, nil
 }
 
 func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Request, executor *idpsignup.Executor, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string, evidenceReferences []idpcontinuation.EvidenceReference) error {
@@ -231,8 +333,19 @@ func (p *Provider) advanceSignupPresentation(w http.ResponseWriter, r *http.Requ
 		return err
 	}
 	p.recordSecurity(r.Context(), securitytrace.Event{Kind: securitytrace.ContinuationCreated, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationCreate, Outcome: assurance.TransitionApplied})
-	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, validated.Fields, validated.Actions, validated.Presentation.PublicValues, nil))
+	p.renderWorkflow(w, r, http.StatusOK, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), nextHandle, validated.Fields, validated.Actions, validated.Presentation.PublicValues, workflowFieldErrors(validated.Presentation.Errors)))
 	return nil
+}
+
+func workflowFieldErrors(errors []idpworkflow.FieldError) []idpui.WorkflowFieldError {
+	if len(errors) == 0 {
+		return nil
+	}
+	result := make([]idpui.WorkflowFieldError, 0, len(errors))
+	for _, fieldError := range errors {
+		result = append(result, idpui.WorkflowFieldError{Field: fieldError.Field, Code: fieldError.Code})
+	}
+	return result
 }
 
 func (p *Provider) beginEmailChallenge(w http.ResponseWriter, r *http.Request, executor *idpsignup.Executor, outcome idpprogram.Outcome, handle string, current idpcontinuation.WorkflowContinuation, record idpstore.InteractionRecord, interactionHandle string) error {
@@ -316,7 +429,11 @@ func (p *Provider) completeScriptedSignup(w http.ResponseWriter, r *http.Request
 			http.Error(w, "create consent interaction failed", http.StatusInternalServerError)
 			return
 		}
-		page := p.newInteractionPage(consentHandle, consentCSRF, idpstore.InteractionRequireConsent, nil, true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
+		// Preserve the already-validated canonical request when rendering the
+		// post-signup consent page. In particular, RedirectOrigin is used by the
+		// response CSP so form-action permits the terminal authorization redirect
+		// back to the relying party after the same-origin consent POST.
+		page := p.newInteractionPage(consentHandle, consentCSRF, idpstore.InteractionRequireConsent, url.Values(record.CanonicalRequest), true, client.ID, []string(ar.GetRequestedScopes()), "", nil)
 		p.renderInteraction(w, r, http.StatusOK, page)
 		return
 	}
@@ -334,14 +451,19 @@ type signupCommitResult struct {
 // workflow consumption, and authorization interaction together. JavaScript
 // cannot call this operation directly; it can only return a declared effect
 // plan that this method revalidates.
-func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress, verifiedEmail string) (signupCommitResult, error) {
-	if len(outcome.Effects) != 2 && len(outcome.Effects) != 3 || outcome.Effects[0].Kind != idpprogram.EffectCreateLocalIdentity || outcome.Effects[1].Kind != idpprogram.EffectAttachPasswordCredential || len(outcome.Effects) == 3 && outcome.Effects[2].Kind != idpprogram.EffectConsumeInvitation {
+func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress, verifiedEmail string, requiresInvitationConsumption bool) (signupCommitResult, error) {
+	expectedEffectCount := 2
+	if requiresInvitationConsumption {
+		expectedEffectCount = 3
+	}
+	if !validSignupEffectSequence(outcome.Effects, expectedEffectCount, requiresInvitationConsumption) {
 		p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.EffectValidationCompleted, InteractionID: interactionTraceID(record), Transition: assurance.StepEffectValidate, Outcome: assurance.TransitionRejected})
 		return signupCommitResult{}, errors.New("signup script emitted an invalid effect sequence")
 	}
 	var identity struct {
-		Login       string `json:"login"`
-		DisplayName string `json:"displayName"`
+		Login                    string `json:"login"`
+		DisplayName              string `json:"displayName"`
+		RequireUniqueDisplayName bool   `json:"requireUniqueDisplayName"`
 	}
 	var credential struct {
 		PasswordHandle             string `json:"passwordHandle"`
@@ -369,7 +491,7 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.EffectValidationCompleted, InteractionID: interactionTraceID(record), Transition: assurance.StepEffectValidate, Outcome: assurance.TransitionApplied})
 	defer clearBytes(password)
 	defer clearBytes(confirmation)
-	prepared, err := p.registration.PrepareCreate(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login, EmailVerified: verifiedEmail != ""})
+	prepared, err := p.registration.PrepareCreate(ctx, idpaccounts.CreateRequest{Login: identity.Login, Name: identity.DisplayName, Password: password, Email: identity.Login, EmailVerified: verifiedEmail != "", RequireUniqueDisplayName: identity.RequireUniqueDisplayName})
 	if err != nil {
 		p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.NativeEffectCommitted, InteractionID: interactionTraceID(record), Transition: assurance.StepSignupCommit, Outcome: assurance.TransitionRejected})
 		return signupCommitResult{}, err
@@ -381,6 +503,7 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 	now := p.now()
 	sessionHash := idpstore.HashSecret(p.csrfKey, sessionHandle)
 	session := idpstore.Session{IDHash: sessionHash, UserID: prepared.User.ID, AuthTime: now, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(p.sessionTTL)}
+	var redeemedInvitation idpinvite.DurableEvidence
 	err = p.store.Update(ctx, func(tx idpstore.TxStore) error {
 		continuationStore, ok := tx.(idpcontinuation.Store)
 		if !ok {
@@ -393,7 +516,9 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 			return err
 		}
 		if len(outcome.Effects) == 3 {
-			if _, err := p.durableInvitations.RedeemInTransaction(ctx, tx, invitation.Code, record.ClientID, now); err != nil {
+			var err error
+			redeemedInvitation, err = p.durableInvitations.RedeemInTransaction(ctx, tx, invitation.Code, record.ClientID, now)
+			if err != nil {
 				return err
 			}
 		}
@@ -409,7 +534,65 @@ func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.
 	}
 	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.NativeEffectCommitted, InteractionID: interactionTraceID(record), Transition: assurance.StepSignupCommit, Outcome: assurance.TransitionApplied})
 	p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.ContinuationTerminal, InteractionID: interactionTraceID(record), Transition: assurance.StepContinuationConsume, Outcome: assurance.TransitionApplied})
+	if redeemedInvitation.InvitationID != "" {
+		p.recordAudit(ctx, idp.Event{Time: now, Name: "signup_invitation.consumed", ClientID: record.ClientID, Subject: prepared.User.Sub, Result: "accepted", Fields: map[string]string{"invitation_id": redeemedInvitation.InvitationID, "policy_version": redeemedInvitation.PolicyVersion}})
+	}
 	return signupCommitResult{User: prepared.User, SessionHandle: sessionHandle, SessionHash: sessionHash}, nil
+}
+
+func (p *Provider) validateSignupInvitationProviders(ctx context.Context, executor *idpsignup.Executor, input json.RawMessage, audience string) (map[string]json.RawMessage, error) {
+	if p.durableInvitations == nil {
+		return nil, errors.New("durable invitation service is unavailable")
+	}
+	providerIDs := make([]string, 0)
+	for id, provider := range executor.Program().Providers {
+		if provider.Kind == idpprogram.ProviderKindInvitation && provider.State == idpprogram.ProviderStateDurable {
+			providerIDs = append(providerIDs, id)
+		}
+	}
+	if len(providerIDs) == 0 {
+		return nil, errors.New("signup form requires an undeclared durable invitation provider")
+	}
+	sort.Strings(providerIDs)
+	capability, err := idpinvite.NewLookupCapability(p.durableInvitations, audience, p.now)
+	if err != nil {
+		return nil, err
+	}
+	evidence := make(map[string]json.RawMessage, len(providerIDs))
+	for _, providerID := range providerIDs {
+		outcome, invokeErr := executor.InvokeProvider(ctx, providerID, idpprogram.InvitationValidateHandler, input, map[string]idpscript.CapabilityBinding{idpinvite.LookupCapabilityID: capability})
+		if invokeErr != nil || outcome.Kind != idpprogram.OutcomeComplete {
+			return nil, errors.New("signup invitation was rejected")
+		}
+		evidence[providerID] = json.RawMessage(`{"accepted":true}`)
+	}
+	return evidence, nil
+}
+
+func workflowHasField(fields []idpworkflow.FieldDescriptor, expected idpworkflow.FieldID) bool {
+	for _, field := range fields {
+		if field.ID == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func signupInputRequiresInvitationConsumption(input json.RawMessage) (bool, error) {
+	var submitted struct {
+		InviteCode string `json:"inviteCode"`
+	}
+	if err := json.Unmarshal(input, &submitted); err != nil {
+		return false, errors.Wrap(err, "decode signup invitation requirement")
+	}
+	return strings.TrimSpace(submitted.InviteCode) != "", nil
+}
+
+func validSignupEffectSequence(effects []idpprogram.EffectPlan, expectedEffectCount int, requiresInvitationConsumption bool) bool {
+	return len(effects) == expectedEffectCount &&
+		effects[0].Kind == idpprogram.EffectCreateLocalIdentity &&
+		effects[1].Kind == idpprogram.EffectAttachPasswordCredential &&
+		(!requiresInvitationConsumption || effects[2].Kind == idpprogram.EffectConsumeInvitation)
 }
 
 func submissionSecrets(submission idpworkflow.Submission, passwordToken, confirmationToken string) ([]byte, []byte, bool) {
@@ -423,6 +606,14 @@ func submissionSecrets(submission idpworkflow.Submission, passwordToken, confirm
 		}
 	}
 	return password, confirmation, password != nil && confirmation != nil
+}
+
+func submissionPasswordsMatch(submission idpworkflow.Submission) bool {
+	password, passwordOK := submission.ResolveSecret(submission.Secrets[idpworkflow.FieldPassword])
+	confirmation, confirmationOK := submission.ResolveSecret(submission.Secrets[idpworkflow.FieldPasswordConfirmation])
+	defer clearBytes(password)
+	defer clearBytes(confirmation)
+	return passwordOK && confirmationOK && equalBytes(password, confirmation)
 }
 
 // signupSubmissionSecrets projects only descriptors submitted on the active
@@ -448,6 +639,37 @@ func (p *Provider) renderScriptedSignupError(w http.ResponseWriter, r *http.Requ
 	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: idpworkflow.ErrorRejected}}))
 }
 
+func (p *Provider) renderScriptedSignupFieldError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, errorField idpworkflow.FieldID) {
+	p.renderScriptedSignupFieldErrorCode(w, r, record, interactionHandle, continuationHandle, fields, actions, values, errorField, idpworkflow.ErrorRejected)
+}
+
+func (p *Provider) renderScriptedSignupEmailCodeError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, challengeErr error) {
+	code := idpworkflow.ErrorRejected
+	switch {
+	case errors.Is(challengeErr, idpemailchallenge.ErrExpired):
+		code = idpworkflow.ErrorExpired
+	case errors.Is(challengeErr, idpemailchallenge.ErrAttemptsExceeded):
+		code = idpworkflow.ErrorAttemptsExceeded
+	case errors.Is(challengeErr, idpemailchallenge.ErrResendLimited):
+		code = idpworkflow.ErrorResendLimited
+	}
+	p.renderScriptedSignupFieldErrorCode(w, r, record, interactionHandle, continuationHandle, fields, actions, values, idpworkflow.FieldEmailCode, code)
+}
+
+func (p *Provider) renderScriptedSignupFieldErrorCode(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, errorField idpworkflow.FieldID, code idpworkflow.FieldErrorCode) {
+	if !workflowHasField(fields, errorField) {
+		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, values)
+		return
+	}
+	p.renderWorkflow(w, r, http.StatusBadRequest, workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, []idpui.WorkflowFieldError{{Field: errorField, Code: code}}))
+}
+
+func (p *Provider) renderScriptedSignupGlobalError(w http.ResponseWriter, r *http.Request, record idpstore.InteractionRecord, interactionHandle, continuationHandle string, fields []idpworkflow.FieldDescriptor, actions []idpworkflow.ActionDescriptor, values map[idpworkflow.FieldID]string, code idpui.WorkflowGlobalErrorCode) {
+	page := workflowPage(p, record, interactionHandle, r.PostForm.Get(idpui.CSRFFieldName), continuationHandle, fields, actions, values, nil)
+	page.Error = &idpui.WorkflowGlobalError{Code: code}
+	p.renderWorkflow(w, r, http.StatusBadRequest, page)
+}
+
 func (p *Provider) signupBindingsFor(record idpstore.InteractionRecord, r *http.Request, fingerprint string) idpcontinuation.Bindings {
 	bindings := p.signupLoadBindings(record, r)
 	bindings.ProgramFingerprint = fingerprint
@@ -455,7 +677,13 @@ func (p *Provider) signupBindingsFor(record idpstore.InteractionRecord, r *http.
 }
 
 func (p *Provider) signupLoadBindings(record idpstore.InteractionRecord, r *http.Request) idpcontinuation.Bindings {
-	bindings := idpcontinuation.Bindings{WorkflowID: idpsignup.WorkflowID, ClientID: record.ClientID, RedirectURI: record.RedirectURI, ClientGeneration: hex.EncodeToString(record.GenerationHash), RequestDigest: record.RequestDigest, BrowserBindingHash: p.browserBindingHash(r), SessionIDHash: p.browserSessionHash(r), BrowserContextHash: p.browserContextHash(r)}
+	// A signup interaction deliberately clears its session binding so an
+	// explicit add-account flow can proceed without being coupled to the
+	// currently active identity. Preserve the interaction's binding contract
+	// when loading its workflow continuation. Reintroducing cookies from the
+	// current request would make a continuation created with an empty session or
+	// chooser binding reject its own first POST in a remembered browser.
+	bindings := idpcontinuation.Bindings{WorkflowID: idpsignup.WorkflowID, ClientID: record.ClientID, RedirectURI: record.RedirectURI, ClientGeneration: hex.EncodeToString(record.GenerationHash), RequestDigest: record.RequestDigest, BrowserBindingHash: record.BrowserBindingHash, SessionIDHash: record.SessionIDHash, BrowserContextHash: record.BrowserContextHash}
 	if p.scriptedSignupManager == nil && p.scriptedSignup != nil {
 		bindings.ProgramFingerprint = p.scriptedSignup.Fingerprint()
 	}

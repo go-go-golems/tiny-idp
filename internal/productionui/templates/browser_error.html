@@ -1,0 +1,21 @@
+{{- define "browser-error" -}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Page.DocumentTitle}} · {{.Theme.ProductName}}</title>
+  <link rel="stylesheet" href="{{.Theme.StylesheetRoute}}">
+</head>
+<body>
+  <main class="identity">
+    <header>
+      <p class="kicker">{{.Theme.ProductName}} / identity</p>
+      <h1>{{.Page.Heading}}</h1>
+      <p class="lede" role="alert">{{.Page.Summary}}</p>
+    </header>
+    <footer>No account information was changed.</footer>
+  </main>
+</body>
+</html>
+{{- end -}}

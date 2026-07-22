@@ -76,8 +76,8 @@ func (d FieldDescriptor) Validate() error {
 	if d.Sensitive && (d.Redisplay != RedisplayNever || d.Normalize != NormalizeNone) {
 		return errors.Errorf("secret field %q must never redisplay or normalize", d.ID)
 	}
-	if !d.Sensitive && d.Redisplay != RedisplayPublic {
-		return errors.Errorf("public field %q must use public redisplay policy", d.ID)
+	if !d.Sensitive && d.Redisplay != RedisplayPublic && d.Redisplay != RedisplayNever {
+		return errors.Errorf("public field %q has invalid redisplay policy", d.ID)
 	}
 	return nil
 }
@@ -146,10 +146,13 @@ func DefaultRegistry() *Registry {
 	registry, err := NewRegistry([]FieldDescriptor{
 		{ID: FieldDisplayName, InputName: "display_name", Label: "Display name", Kind: ValueText, Normalize: NormalizeTrim, Required: true, MinLength: 1, MaxLength: 120, Autocomplete: "name", Redisplay: RedisplayPublic},
 		{ID: FieldEmail, InputName: "email", Label: "Email", Kind: ValueEmail, Normalize: NormalizeTrimLower, Required: true, MinLength: 3, MaxLength: 320, Autocomplete: "email", Redisplay: RedisplayPublic},
-		{ID: FieldPassword, InputName: "password", Label: "Password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 12, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
-		{ID: FieldPasswordConfirmation, InputName: "password_confirmation", Label: "Confirm password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 12, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
+		{ID: FieldPassword, InputName: "password", Label: "Password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 15, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
+		{ID: FieldPasswordConfirmation, InputName: "password_confirmation", Label: "Confirm password", Kind: ValueSecret, Normalize: NormalizeNone, Required: true, MinLength: 15, MaxLength: 1024, Sensitive: true, Autocomplete: "new-password", Redisplay: RedisplayNever},
 		{ID: FieldInviteCode, InputName: "invite_code", Label: "Invite code", Kind: ValueText, Normalize: NormalizeTrim, Required: false, MinLength: 0, MaxLength: 128, Autocomplete: "off", Redisplay: RedisplayPublic},
-		{ID: FieldEmailCode, InputName: "email_code", Label: "Email verification code", Kind: ValueText, Normalize: NormalizeTrim, Required: true, MinLength: 6, MaxLength: 32, Autocomplete: "one-time-code", Redisplay: RedisplayPublic},
+		// An email code is authentication evidence, not recoverable form state.
+		// It is available to the verifier for this request but never rendered into
+		// a retry page after rejection.
+		{ID: FieldEmailCode, InputName: "email_code", Label: "Email verification code", Kind: ValueText, Normalize: NormalizeTrim, Required: true, MinLength: 6, MaxLength: 32, Autocomplete: "one-time-code", Redisplay: RedisplayNever},
 	}, []ActionDescriptor{
 		{ID: ActionSubmit, Label: "Create account"},
 		{ID: ActionDeny, Label: "Cancel", SkipFormValidation: true},

@@ -25,6 +25,12 @@ var DefaultSource string
 //go:embed email_verified_signup.js
 var EmailVerifiedSource string
 
+//go:embed invite_required_signup.js
+var InviteRequiredSource string
+
+//go:embed verified_invite_signup.js
+var VerifiedInviteSource string
+
 const (
 	WorkflowID       = "signup"
 	StartHandler     = "start"
@@ -58,12 +64,13 @@ type TestResult struct {
 }
 
 var deterministicTestFakeOutputs = map[string]json.RawMessage{
-	"clock.now":         json.RawMessage(`{"unixMillis":0}`),
-	"random.bytes":      json.RawMessage(`{"base64":""}`),
-	"mailer.send":       json.RawMessage(`{"accepted":true}`),
-	"identity.lookup":   json.RawMessage(`{"found":false}`),
-	"invitation.lookup": json.RawMessage(`{"valid":false}`),
-	"store.get":         json.RawMessage(`{"found":false}`),
+	"clock.now":                   json.RawMessage(`{"unixMillis":0}`),
+	"random.bytes":                json.RawMessage(`{"base64":""}`),
+	"mailer.send":                 json.RawMessage(`{"accepted":true}`),
+	"identity.lookup":             json.RawMessage(`{"found":false}`),
+	"identity.displayName.lookup": json.RawMessage(`{"available":false}`),
+	"invitation.lookup":           json.RawMessage(`{"valid":false}`),
+	"store.get":                   json.RawMessage(`{"found":false}`),
 }
 
 // StartInput is the immutable, redacted view of a validated authorization
@@ -309,6 +316,14 @@ func (e *Executor) SubmissionInput(handler string, values map[idpworkflow.FieldI
 }
 
 func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input json.RawMessage, secrets map[string]idpworkflow.SecretHandle, evidence map[string]json.RawMessage) (idpprogram.Outcome, error) {
+	return e.InvokeSubmissionWithCapabilities(ctx, handler, input, nil, secrets, evidence)
+}
+
+// InvokeSubmissionWithCapabilities supplies request-scoped, host-owned
+// capability bindings to a non-provider signup lambda. The caller remains
+// responsible for deriving the bindings from trusted services; JavaScript can
+// only invoke capabilities declared by its compiled lambda contract.
+func (e *Executor) InvokeSubmissionWithCapabilities(ctx context.Context, handler string, input json.RawMessage, capabilities map[string]idpscript.CapabilityBinding, secrets map[string]idpworkflow.SecretHandle, evidence map[string]json.RawMessage) (idpprogram.Outcome, error) {
 	if e == nil || e.pool == nil {
 		return idpprogram.Outcome{}, errors.New("signup executor is unavailable")
 	}
@@ -322,7 +337,7 @@ func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input j
 	}
 	before := e.pool.Stats().Discarded
 	started := time.Now()
-	outcome, err := e.pool.InvokeWithSecretsAndEvidence(ctx, handlerSpec.LambdaID, input, nil, secrets, evidence)
+	outcome, err := e.pool.InvokeWithSecretsAndEvidence(ctx, handlerSpec.LambdaID, input, capabilities, secrets, evidence)
 	e.metrics.invocations.Add(1)
 	if elapsed := time.Since(started); elapsed > 0 {
 		e.metrics.latencyNanos.Add(uint64(elapsed)) // #nosec G115 -- elapsed is checked positive before conversion.
@@ -351,6 +366,20 @@ func (e *Executor) InvokeSubmission(ctx context.Context, handler string, input j
 	}
 	e.auditInvocation(ctx, outcome, nil)
 	return outcome, nil
+}
+
+// InvokeProvider routes a declared provider handler through this executor's
+// exact compiled generation. Native callers supply only the capabilities
+// required for this invocation; the provider receives no ambient host service.
+func (e *Executor) InvokeProvider(ctx context.Context, providerID, handlerID string, input json.RawMessage, capabilities map[string]idpscript.CapabilityBinding) (idpprogram.Outcome, error) {
+	if e == nil || e.pool == nil {
+		return idpprogram.Outcome{}, errors.New("signup provider is unavailable")
+	}
+	invoker, err := idpscript.NewProviderInvoker(e.pool)
+	if err != nil {
+		return idpprogram.Outcome{}, err
+	}
+	return invoker.Invoke(ctx, providerID, handlerID, input, capabilities)
 }
 
 func (e *Executor) auditInvocation(ctx context.Context, outcome idpprogram.Outcome, invocationErr error) {

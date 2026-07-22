@@ -23,6 +23,7 @@ import (
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpcontinuation"
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
+	"github.com/go-go-golems/tiny-idp/pkg/idpinvite"
 	"github.com/go-go-golems/tiny-idp/pkg/idpsignup"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/idpui"
@@ -109,9 +110,19 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	crossSiteBody, err := io.ReadAll(crossSiteResponse.Body)
 	crossSiteResponse.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if crossSiteResponse.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-site registration status=%d", crossSiteResponse.StatusCode)
+	}
+	if contentType := crossSiteResponse.Header.Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+		t.Fatalf("cross-site registration content type=%q", contentType)
+	}
+	if body := string(crossSiteBody); !strings.Contains(body, "Registration could not be completed") || !strings.Contains(body, "Restart registration from the application") || strings.Contains(body, "new-user@example.test") || strings.Contains(body, "correct horse battery staple") || strings.Contains(body, "<form") {
+		t.Fatalf("unsafe or incomplete themed rejection body=%s", body)
 	}
 	if _, err := store.GetUserByLogin(ctx, "new-user@example.test"); err == nil {
 		t.Fatal("cross-site registration created an account")
@@ -133,6 +144,25 @@ func TestProviderOwnedRegistrationResumesPKCEAuthorization(t *testing.T) {
 	user, err := store.GetUserByLogin(ctx, "new-user@example.test")
 	if err != nil || user.Sub == "" || user.Name != "New User" {
 		t.Fatalf("registered user=%#v err=%v", user, err)
+	}
+
+	secondRequest := authorizeForm("secondABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnop")
+	secondRequest.Del("login")
+	secondRequest.Set("client_id", "message-desk")
+	secondRequest.Set("scope", "openid profile")
+	secondRequest.Set("state", "second-registration-state")
+	secondRequest.Set("tinyidp_signup", "1")
+	secondResponse, err := client.Get(server.URL + "/authorize?" + secondRequest.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBody, err := io.ReadAll(secondResponse.Body)
+	secondResponse.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondResponse.StatusCode != http.StatusOK || !strings.Contains(string(secondBody), `name="`+idpui.PasswordConfirmationFieldName+`"`) {
+		t.Fatalf("registration with active provider session status=%d body=%s", secondResponse.StatusCode, secondBody)
 	}
 
 	replay := submitRegistration(t, client, server.URL, form)
@@ -186,12 +216,19 @@ func TestScriptedSignupDoesNotRequireLegacyRegistrationOption(t *testing.T) {
 	}
 	server := httptest.NewServer(provider.Handler())
 	defer server.Close()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := server.Client()
+	client.Jar = jar
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	request := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	request.Del("login")
 	request.Set("client_id", "message-desk")
 	request.Set("scope", "openid profile")
 	request.Set("tinyidp_signup", "1")
-	response, err := server.Client().Get(server.URL + "/authorize?" + request.Encode())
+	response, err := client.Get(server.URL + "/authorize?" + request.Encode())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,6 +239,163 @@ func TestScriptedSignupDoesNotRequireLegacyRegistrationOption(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="`+idpui.WorkflowContinuationFieldName+`"`) {
 		t.Fatalf("scripted signup status=%d body=%s", response.StatusCode, body)
+	}
+	firstForm := parseInteractionInputs(string(body))
+	firstForm.Set(idpui.ActionFieldName, string(idpworkflow.ActionSubmit))
+	firstForm.Set(idpui.DisplayNameFieldName, "First User")
+	firstForm.Set(string(idpworkflow.FieldEmail), "first-user@example.test")
+	firstForm.Set(idpui.PasswordFieldName, "correct horse battery staple 2026")
+	firstForm.Set(idpui.PasswordConfirmationFieldName, "correct horse battery staple 2026")
+	firstResponse := submitRegistration(t, client, server.URL, firstForm)
+	firstResponse.Body.Close()
+	if firstResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("first scripted signup status=%d", firstResponse.StatusCode)
+	}
+
+	request.Set("state", "remembered-browser-signup")
+	response, err = client.Get(server.URL + "/authorize?" + request.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("second scripted signup page status=%d body=%s", response.StatusCode, body)
+	}
+	secondForm := parseInteractionInputs(string(body))
+	secondForm.Set(idpui.ActionFieldName, string(idpworkflow.ActionSubmit))
+	secondForm.Set(idpui.DisplayNameFieldName, "Second User")
+	secondForm.Set(string(idpworkflow.FieldEmail), "second-user@example.test")
+	secondForm.Set(idpui.PasswordFieldName, "correct horse battery staple 2026")
+	secondForm.Set(idpui.PasswordConfirmationFieldName, "different horse battery staple 2026")
+	secondResponse := submitRegistration(t, client, server.URL, secondForm)
+	defer secondResponse.Body.Close()
+	secondBody, err := io.ReadAll(secondResponse.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondResponse.StatusCode != http.StatusBadRequest || !strings.Contains(secondResponse.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(secondBody), `name="`+idpui.WorkflowContinuationFieldName+`"`) {
+		t.Fatalf("remembered-browser signup POST status=%d body=%s", secondResponse.StatusCode, secondBody)
+	}
+	if !strings.Contains(string(secondBody), "The values do not match.") || !strings.Contains(string(secondBody), `name="password_confirmation" type="password" value="" autocomplete="new-password" minlength="15" maxlength="1024" required aria-invalid="true"`) {
+		t.Fatalf("password mismatch was not attached to confirmation field: %s", secondBody)
+	}
+	for _, event := range audit.Events() {
+		if event.Name == "workflow.signup.resume_rejected" {
+			t.Fatalf("fresh signup continuation was rejected in remembered browser: %#v", event)
+		}
+	}
+}
+
+func TestDurableInvitationSignupValidatesThenConsumesAtomically(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	if err := store.PutClient(ctx, idpstore.Client{ID: "goja-auth-host-demo", Public: true, RequirePKCE: true, RedirectURIs: []string{"http://localhost/callback"}, AllowedScopes: []string{"openid", "profile"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}}); err != nil {
+		t.Fatal(err)
+	}
+	signingKey, err := keys.GenerateRSA("durable-invitation-signup", time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSigningKey(ctx, signingKey); err != nil {
+		t.Fatal(err)
+	}
+	audit := idp.NewMemorySink()
+	accounts, err := idpaccounts.NewService(store, idpaccounts.Options{Audit: audit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := idpsignup.NewGenerationManager(ctx, idpsignup.InviteRequiredSource, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close(context.Background())
+	invitations, err := idpinvite.NewDurableService(store, []byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := invitations.Issue(ctx, idpinvite.DurableIssue{Code: "valid-invite", ID: "invite-1", Audience: "goja-auth-host-demo", PolicyVersion: "v1", ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fositeadapter.NewProvider(ctx, fositeadapter.Options{
+		Issuer: "http://127.0.0.1:5556", Store: store, SecretKey: []byte("durable-invitation-signup-secret"), Audit: audit,
+		Authenticator: accounts, Consent: fositeadapter.AlwaysSkipConsent{}, Registration: fositeadapter.RegistrationConfig{Enabled: true, Accounts: accounts},
+		ScriptedSignupManager: manager, WorkflowContinuations: store, DurableInvitations: invitations,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(provider.Handler())
+	defer server.Close()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	authorize := authorizeForm("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	authorize.Del("login")
+	authorize.Set("client_id", "goja-auth-host-demo")
+	authorize.Set("scope", "openid profile")
+	authorize.Set("tinyidp_signup", "1")
+	response, err := client.Get(server.URL + "/authorize?" + authorize.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `name="invite_code"`) {
+		t.Fatalf("invite signup page status=%d body=%s", response.StatusCode, body)
+	}
+	form := parseInteractionInputs(string(body))
+	form.Set(idpui.ActionFieldName, "submit")
+	form.Set("display_name", "Invited User")
+	form.Set("email", "invited@example.test")
+	form.Set("password", "correct horse battery staple 2026")
+	form.Set("password_confirmation", "correct horse battery staple 2026")
+	form.Set("invite_code", "invalid-invite")
+
+	response = submitRegistration(t, client, server.URL, form)
+	invalidBody, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest || !strings.Contains(string(invalidBody), `name="invite_code"`) || !strings.Contains(string(invalidBody), `aria-invalid="true"`) {
+		t.Fatalf("invalid invite response status=%d body=%s", response.StatusCode, invalidBody)
+	}
+	if _, err := store.GetUserByLogin(ctx, "invited@example.test"); err == nil {
+		t.Fatal("invalid invitation created an account")
+	}
+
+	form.Set("invite_code", "valid-invite")
+	response = submitRegistration(t, client, server.URL, form)
+	response.Body.Close()
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("valid invite signup status=%d", response.StatusCode)
+	}
+	if _, err := store.GetUserByLogin(ctx, "invited@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invitations.Inspect(ctx, "valid-invite", "goja-auth-host-demo", time.Now()); !errors.Is(err, idpstore.ErrAlreadyConsumed) {
+		t.Fatalf("consumed invitation inspection error=%v", err)
+	}
+	consumedAudit := false
+	for _, event := range audit.Events() {
+		if event.Name == "signup_invitation.consumed" && event.Fields["invitation_id"] == "invite-1" {
+			consumedAudit = true
+		}
+		encoded, _ := json.Marshal(event)
+		if strings.Contains(string(encoded), "valid-invite") {
+			t.Fatalf("audit leaked raw invitation: %s", encoded)
+		}
+	}
+	if !consumedAudit {
+		t.Fatal("missing signup_invitation.consumed audit event")
 	}
 }
 
@@ -248,7 +442,7 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 		SecretKey:             []byte("provider-registration-test-secret-key"),
 		Audit:                 audit,
 		Authenticator:         accounts,
-		Consent:               fositeadapter.AlwaysSkipConsent{},
+		Consent:               fositeadapter.NewStoredConsent(store, 0),
 		Registration:          fositeadapter.RegistrationConfig{Enabled: true, Accounts: accounts},
 		ScriptedSignupManager: manager,
 		WorkflowContinuations: store,
@@ -357,9 +551,19 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 		t.Fatalf("password page status=%d body=%s", response.StatusCode, body)
 	}
 	replay := submitRegistration(t, client, server.URL, codeForm)
+	replayBody, err := io.ReadAll(replay.Body)
 	replay.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if replay.StatusCode != http.StatusBadRequest {
 		t.Fatalf("verified-code replay status=%d", replay.StatusCode)
+	}
+	if contentType := replay.Header.Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+		t.Fatalf("verified-code replay content type=%q", contentType)
+	}
+	if body := string(replayBody); !strings.Contains(body, "Registration needs to be restarted") || !strings.Contains(body, "Return to the application and begin registration again.") || strings.Contains(body, "registration request was not accepted") {
+		t.Fatalf("verified-code replay has unsafe terminal page: %s", body)
 	}
 	passwordForm := parseInteractionInputs(string(body))
 	passwordForm.Set(idpui.ActionFieldName, "submit")
@@ -367,10 +571,24 @@ func TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification(t *tes
 	passwordForm.Set(idpui.PasswordConfirmationFieldName, "correct horse battery staple 2026")
 
 	response = submitRegistration(t, client, server.URL, passwordForm)
+	body, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), "Approve access") {
+		t.Fatalf("verified signup consent status=%d body=%s", response.StatusCode, body)
+	}
+	if got, want := response.Header.Get("Content-Security-Policy"), "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self' http://localhost; base-uri 'none'"; got != want {
+		t.Fatalf("verified signup consent CSP=%q want=%q", got, want)
+	}
+	consentForm := parseInteractionInputs(string(body))
+	consentForm.Set(idpui.ActionFieldName, string(idpui.ActionApprove))
+	response = submitRegistration(t, client, server.URL, consentForm)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusSeeOther {
 		body, _ = io.ReadAll(response.Body)
-		t.Fatalf("verified signup status=%d body=%s", response.StatusCode, body)
+		t.Fatalf("verified signup approval status=%d body=%s", response.StatusCode, body)
 	}
 	user, err := store.GetUserByLogin(ctx, "verified-user@example.test")
 	if err != nil || !user.EmailVerified || user.Name != "Verified User" {

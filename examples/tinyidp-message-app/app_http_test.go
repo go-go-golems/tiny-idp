@@ -325,6 +325,29 @@ func TestMessageAppServesEmbeddedRetroFrontendOnlyAtStaticPrefix(t *testing.T) {
 	}
 }
 
+func TestMessageAppRendersCallbackFailuresAsSafeRecoveryHTML(t *testing.T) {
+	app := newMessageApp(nil, nil, nil, nil, false)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/auth/callback?error=access_denied&error_description=untrusted+provider+text", nil)
+	app.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("callback error status=%d", response.Code)
+	}
+	if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("callback error content type=%q", got)
+	}
+	body := response.Body.String()
+	for _, required := range []string{"Sign-in was cancelled", "/static/app/assets/index.css", "Try signing in again", "Return to Message Desk"} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("callback recovery page lacks %q: %s", required, body)
+		}
+	}
+	if strings.Contains(body, "untrusted provider text") || strings.Contains(body, "access_denied") {
+		t.Fatalf("callback recovery page reflected protocol error: %s", body)
+	}
+}
+
 func TestCreateMessageUsesVerifiedSessionAuthorAndCSRF(t *testing.T) {
 	ctx := context.Background()
 	store, err := openAppStore(ctx, filepath.Join(t.TempDir(), "messages.sqlite"))

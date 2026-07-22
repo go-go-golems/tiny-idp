@@ -13,12 +13,14 @@
       <p class="kicker">{{.Theme.ProductName}} / identity</p>
       <h1>{{.Page.DocumentTitle}}</h1>
     </header>
+    {{with .Page.Error}}<p class="error" role="alert">{{.Summary}} {{if $.Page.Form.RedirectOrigin}}<a href="{{$.Page.Form.RedirectOrigin}}">Return to application</a>{{end}}</p>{{end}}
     <form method="post" action="{{.Page.Form.ActionURL}}">
       {{range .Page.Fields}}
       {{$error := $.Page.ErrorFor .Descriptor.ID}}
       <div class="field-group">
         <label for="tinyidp-workflow-{{.Descriptor.InputName}}">{{.Descriptor.Label}}</label>
-        <input id="tinyidp-workflow-{{.Descriptor.InputName}}" name="{{.Descriptor.InputName}}" type="{{if .Descriptor.Sensitive}}password{{else}}{{.Descriptor.Kind}}{{end}}" value="{{.Value}}" autocomplete="{{.Descriptor.Autocomplete}}" maxlength="{{.Descriptor.MaxLength}}"{{if .Descriptor.Required}} required{{end}}{{with $error}} aria-invalid="true" aria-describedby="tinyidp-error-{{.Field}}"{{end}}>
+        <input id="tinyidp-workflow-{{.Descriptor.InputName}}" name="{{.Descriptor.InputName}}" type="{{if .Descriptor.Sensitive}}password{{else}}{{.Descriptor.Kind}}{{end}}" value="{{.Value}}" autocomplete="{{.Descriptor.Autocomplete}}" minlength="{{.Descriptor.MinLength}}" maxlength="{{.Descriptor.MaxLength}}"{{if .Descriptor.Required}} required{{end}}{{with $error}} aria-invalid="true" aria-describedby="tinyidp-error-{{.Field}}"{{end}}>
+        {{if .Descriptor.Sensitive}}<p>Use at least {{.Descriptor.MinLength}} characters.</p>{{end}}
         {{with $error}}<p id="tinyidp-error-{{.Field}}" class="error" role="alert">{{.Summary}}</p>{{end}}
       </div>
       {{end}}

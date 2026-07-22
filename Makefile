@@ -1,4 +1,4 @@
-.PHONY: test build lint lintmax fmt fmt-check gosec vuln verify auditlint logcopter-generate logcopter-check docs-export goreleaser tag-major tag-minor tag-patch release install glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems image-tinyidp image-message-desk image-build image-smoke image-flow
+.PHONY: test test-fast test-fosite test-k3s-harness test-full build lint lintmax fmt fmt-check gosec vuln verify auditlint logcopter-generate logcopter-check docs-export goreleaser tag-major tag-minor tag-patch release install glazed-lint-build glazed-lint idpui-analyzer-build idpui-analyzer bump-go-go-golems image-tinyidp image-message-desk image-build image-smoke image-flow
 
 GO_PACKAGES ?= ./...
 LOGCOPTER_PACKAGES ?= ./cmd/... ./internal/... ./pkg/...
@@ -37,8 +37,30 @@ IDPUI_ANALYZER_DIRS ?= ./pkg/idpui/... ./internal/fositeadapter ./cmd/tinyidp-xa
 AUDITLINT_PKG ?= ./ttmp/2026/07/09/TINYIDP-PROD-REVIEW-001--production-readiness-review-for-tiny-idp/scripts/auditlint
 AUDITLINT_DIRS ?= ./pkg/... ./internal/... ./cmd/tinyidp-xapp/... ./examples/...
 
-test:
-	GOWORK=off go test $(GO_PACKAGES)
+# `test` and `test-fast` are deliberately limited to reusable packages and the
+# Message Desk application. They are the ordinary local feedback loop. The
+# Fosite adapter and production two-process harness are opt-in locally and are
+# collected by `test-full` before a push.
+test: test-fast
+
+test-fast:
+	GOWORK=off go test ./pkg/... ./examples/tinyidp-message-app/...
+
+# Fosite owns the strict OAuth/OIDC protocol boundary. Its suite is a focused,
+# explicit check for changes at that boundary rather than a tax on every edit.
+test-fosite:
+	GOWORK=off go test ./internal/fositeadapter -count=1
+
+# This is named after the k3s deployment ticket, but it does not start k3s. It
+# builds both deployable binaries and places a test-local trusted proxy in front
+# of their private HTTP listeners to prove the production process topology.
+test-k3s-harness:
+	GOWORK=off go test ./ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness -count=1
+
+# Explicit full-suite entrypoint for a release, CI-equivalent local check, or
+# Lefthook pre-push. It includes every package beneath ttmp as well.
+test-full:
+	GOWORK=off go test $(GO_PACKAGES) -count=1
 
 build:
 	GOWORK=off go build $(GO_PACKAGES)
@@ -62,7 +84,7 @@ $(GOSEC_BIN):
 gosec: $(GOSEC_BIN)
 	GOWORK=off $(GOSEC_BIN) -quiet -exclude-generated -exclude=G101,G204,G304,G301,G306 -exclude-dir=ttmp ./...
 
-verify: build test lint auditlint gosec vuln
+verify: build test-full lint auditlint gosec vuln
 
 auditlint:
 	@for package in $(AUDITLINT_DIRS); do \

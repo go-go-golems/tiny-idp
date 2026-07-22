@@ -47,6 +47,12 @@ func (s *Store) VerifyEmailChallenge(ctx context.Context, id string, hash []byte
 		if err := s.save(ctx, tx, c); err != nil {
 			return idpemailchallenge.VerifiedEmailEvidence{}, err
 		}
+		// A rejected verification is itself a durable security transition. Commit
+		// it before returning the typed rejection so a caller cannot evade the
+		// configured attempt limit by making each failed request roll back.
+		if err := tx.Commit(); err != nil {
+			return idpemailchallenge.VerifiedEmailEvidence{}, err
+		}
 		if c.Attempts >= c.MaximumAttempts {
 			return idpemailchallenge.VerifiedEmailEvidence{}, idpemailchallenge.ErrAttemptsExceeded
 		}
@@ -116,6 +122,10 @@ func (s *Store) ResendEmailChallenge(ctx context.Context, id string, hash []byte
 		return idpemailchallenge.PendingChallenge{}, idpemailchallenge.ErrResendLimited
 	}
 	c.CodeHash = append([]byte(nil), hash...)
+	// A resend starts a fresh code generation. Preserve the durable workflow
+	// binding and resend budget, but reset the incorrect-code counter so the
+	// replacement code is actually usable after an exhausted generation.
+	c.Attempts = 0
 	c.Resends++
 	c.LastSentAt = now.UTC()
 	if err = s.save(ctx, tx, c); err != nil {

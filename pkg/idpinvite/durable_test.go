@@ -37,7 +37,12 @@ func TestDurableInvitationRejectsExpiryRevocationAndAudienceMismatch(t *testing.
 	require.NoError(t, service.Issue(context.Background(), idpinvite.DurableIssue{Code: "revoked", ID: "invite-r", Audience: "message-app", PolicyVersion: "v1", ExpiresAt: now.Add(time.Hour)}))
 	_, err = service.Redeem(context.Background(), "revoked", "other-app", now)
 	assert.ErrorIs(t, err, idpstore.ErrNotFound)
-	require.NoError(t, service.Revoke(context.Background(), "revoked", now))
+	revoked, err := service.Revoke(context.Background(), "revoked", now)
+	require.NoError(t, err)
+	assert.Equal(t, "invite-r", revoked.InvitationID)
+	assert.Equal(t, "message-app", revoked.Audience)
+	assert.Equal(t, "v1", revoked.PolicyVersion)
+	assert.Equal(t, now, revoked.RevokedAt)
 	_, err = service.Redeem(context.Background(), "revoked", "message-app", now)
 	assert.ErrorIs(t, err, idpstore.ErrInvitationRevoked)
 	require.NoError(t, service.Issue(context.Background(), idpinvite.DurableIssue{Code: "expired", ID: "invite-expired", Audience: "message-app", PolicyVersion: "v1", ExpiresAt: now.Add(time.Second)}))
@@ -89,4 +94,27 @@ func TestDurableInvitationSurvivesSQLiteRestartAndRemainsOneTime(t *testing.T) {
 	require.NoError(t, err)
 	_, err = service.Redeem(context.Background(), "restart", "message-app", now)
 	assert.ErrorIs(t, err, idpstore.ErrAlreadyConsumed)
+}
+
+func TestDurableInvitationRedemptionRollsBackWithCallerTransaction(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	service, err := idpinvite.NewDurableService(store, []byte("0123456789abcdef0123456789abcdef"))
+	require.NoError(t, err)
+	now := time.Date(2026, time.July, 21, 20, 0, 0, 0, time.UTC)
+	require.NoError(t, service.Issue(ctx, idpinvite.DurableIssue{Code: "rollback", ID: "invite-rollback", Audience: "goja-client", PolicyVersion: "v1", ExpiresAt: now.Add(time.Hour)}))
+
+	injected := errors.New("injected account commit failure")
+	err = store.Update(ctx, func(tx idpstore.TxStore) error {
+		if _, redeemErr := service.RedeemInTransaction(ctx, tx, "rollback", "goja-client", now); redeemErr != nil {
+			return redeemErr
+		}
+		return injected
+	})
+	require.ErrorIs(t, err, injected)
+	inspection, err := service.Inspect(ctx, "rollback", "goja-client", now)
+	require.NoError(t, err)
+	assert.Equal(t, "invite-rollback", inspection.InvitationID)
 }

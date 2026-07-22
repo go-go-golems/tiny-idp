@@ -17,8 +17,10 @@ const (
 )
 
 // Submission is the native projection of one workflow form POST. PublicValues
-// contain only fields that may be redisplayed. SecretValues are byte slices so
-// callers cannot accidentally mix them with normal JavaScript input strings.
+// contain only fields that may be redisplayed. Secrets contains both descriptor
+// secrets and non-redisplayable verification values as request-scoped handles,
+// so callers cannot accidentally mix those values with normal JavaScript input
+// strings or persisted presentation state.
 type Submission struct {
 	Interaction  string
 	Continuation string
@@ -107,8 +109,8 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 			if !action.SkipFormValidation && field.Required && raw == "" {
 				return Submission{}, errors.Errorf("workflow field %q is required", field.ID)
 			}
-			if !action.SkipFormValidation && utf8.RuneCountInString(raw) > field.MaxLength {
-				return Submission{}, errors.Errorf("workflow field %q exceeds maximum length", field.ID)
+			if !action.SkipFormValidation && (utf8.RuneCountInString(raw) < field.MinLength || utf8.RuneCountInString(raw) > field.MaxLength) {
+				return Submission{}, errors.Errorf("workflow field %q is outside length bounds", field.ID)
 			}
 			secretValues[field.ID] = append([]byte(nil), raw...)
 			continue
@@ -131,6 +133,11 @@ func ParseSubmission(fields []FieldDescriptor, actions []ActionDescriptor, form 
 		}
 		if field.Redisplay == RedisplayPublic {
 			result.PublicValues[field.ID] = normalized
+		} else {
+			// A non-sensitive field can still be authentication evidence, such
+			// as an emailed one-time code. Keep it available for the native
+			// verifier during this request, but never serialize or render it.
+			secretValues[field.ID] = append([]byte(nil), normalized...)
 		}
 	}
 	secretSet, handles, err := newSecretSet(secretValues)

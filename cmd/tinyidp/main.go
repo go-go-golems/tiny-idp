@@ -102,7 +102,9 @@ func main() {
 	rootCmd.AddCommand(scriptCmd)
 
 	// `tinyidp admin` — operational user/password administration commands.
-	rootCmd.AddCommand(cmds.NewAdminCommand())
+	adminCmd, err := cmds.NewAdminCommand()
+	cobra.CheckErr(err)
+	rootCmd.AddCommand(adminCmd)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

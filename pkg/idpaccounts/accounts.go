@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/go-go-golems/tiny-idp/internal/user"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
@@ -27,6 +30,10 @@ type CreateRequest struct {
 	Roles             []string
 	Tenant            string
 	Locale            string
+	// RequireUniqueDisplayName asks the native account transaction to reserve
+	// the normalized display-name key. It is a policy choice, not a global
+	// property of User.Name.
+	RequireUniqueDisplayName bool
 }
 
 // PreparedCreate is a validated account and password credential ready to be
@@ -34,9 +41,10 @@ type CreateRequest struct {
 // plaintext password. Callers must commit it immediately and must not retain
 // it beyond the request that prepared it.
 type PreparedCreate struct {
-	Login      string
-	User       idpstore.User
-	Credential idpstore.PasswordCredential
+	Login                    string
+	User                     idpstore.User
+	Credential               idpstore.PasswordCredential
+	RequireUniqueDisplayName bool
 }
 
 // NormalizeLogin returns the canonical login representation used by account
@@ -45,6 +53,14 @@ type PreparedCreate struct {
 // it as proof that an account exists.
 func NormalizeLogin(login string) string {
 	return user.Normalize(login)
+}
+
+// NormalizeDisplayName returns the comparison key used by optional display
+// name claims. It preserves the original User.Name for presentation while
+// making surrounding whitespace, repeated whitespace, Unicode composition,
+// and case differences compare equal.
+func NormalizeDisplayName(name string) string {
+	return cases.Fold().String(norm.NFC.String(strings.Join(strings.Fields(name), " ")))
 }
 
 // Create atomically persists a user and its initial password credential.
@@ -79,7 +95,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (idpstore.User,
 	if err != nil {
 		return idpstore.User{}, err
 	}
-	if err := s.store.CreateUserWithCredential(ctx, prepared.Login, prepared.User, prepared.Credential); err != nil {
+	if err := s.store.Update(ctx, func(tx idpstore.TxStore) error {
+		return s.CommitPrepared(ctx, tx, prepared)
+	}); err != nil {
 		return idpstore.User{}, err
 	}
 	err = s.auditCommitted(ctx, idp.Event{Time: prepared.User.CreatedAt, Name: "identity.account.created", Subject: prepared.User.Sub, Result: "accepted"})
@@ -111,6 +129,19 @@ func (s *Service) CommitPrepared(ctx context.Context, tx idpstore.TxStore, prepa
 	}
 	if prepared.Login == "" || prepared.User.ID == "" || prepared.Credential.UserID != prepared.User.ID || prepared.Credential.Login != prepared.Login {
 		return fmt.Errorf("prepared account is invalid")
+	}
+	if prepared.RequireUniqueDisplayName {
+		claims, ok := tx.(idpstore.DisplayNameStore)
+		if !ok {
+			return fmt.Errorf("transaction store does not support display-name claims")
+		}
+		key := NormalizeDisplayName(prepared.User.Name)
+		if key == "" {
+			return fmt.Errorf("display name is required when uniqueness is requested")
+		}
+		if err := claims.ReserveDisplayName(ctx, key, prepared.User.ID); err != nil {
+			return err
+		}
 	}
 	if err := tx.PutUser(ctx, prepared.Login, prepared.User); err != nil {
 		return err
@@ -145,7 +176,7 @@ func (s *Service) prepareCreate(ctx context.Context, req CreateRequest, login st
 	if err != nil {
 		return PreparedCreate{}, err
 	}
-	return PreparedCreate{Login: login, User: u, Credential: credential}, nil
+	return PreparedCreate{Login: login, User: u, Credential: credential, RequireUniqueDisplayName: req.RequireUniqueDisplayName}, nil
 }
 
 // SetPasswordRequest identifies an account and its replacement password.

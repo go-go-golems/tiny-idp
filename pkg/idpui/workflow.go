@@ -23,6 +23,7 @@ type WorkflowPage struct {
 	Fields   []WorkflowField
 	Actions  []WorkflowAction
 	Errors   []WorkflowFieldError
+	Error    *WorkflowGlobalError
 }
 
 type WorkflowForm struct {
@@ -49,6 +50,35 @@ type WorkflowAction struct {
 type WorkflowFieldError struct {
 	Field idpworkflow.FieldID
 	Code  idpworkflow.FieldErrorCode
+}
+
+// WorkflowGlobalErrorCode identifies a provider-owned error that applies to a
+// live workflow but cannot truthfully be attached to a field on the current
+// page. A duplicate email is discovered after this workflow has advanced to
+// password selection, where no email input is rendered.
+type WorkflowGlobalErrorCode string
+
+const (
+	WorkflowErrorDuplicateIdentity    WorkflowGlobalErrorCode = "duplicate_identity"
+	WorkflowErrorDuplicateDisplayName WorkflowGlobalErrorCode = "duplicate_display_name"
+)
+
+func (c WorkflowGlobalErrorCode) Valid() bool {
+	return c == WorkflowErrorDuplicateIdentity || c == WorkflowErrorDuplicateDisplayName
+}
+
+type WorkflowGlobalError struct {
+	Code WorkflowGlobalErrorCode
+}
+
+func (e WorkflowGlobalError) Summary() string {
+	if e.Code == WorkflowErrorDuplicateIdentity {
+		return "An account already uses this email address. Return to the application to sign in, or restart signup with a different email address."
+	}
+	if e.Code == WorkflowErrorDuplicateDisplayName {
+		return "That display name was claimed while your signup was in progress. Return to the application and restart signup with a different display name."
+	}
+	return "This request could not be completed."
 }
 
 func (p WorkflowPage) Validate() error {
@@ -109,6 +139,9 @@ func (p WorkflowPage) Validate() error {
 			return fmt.Errorf("invalid workflow field error")
 		}
 	}
+	if p.Error != nil && !p.Error.Code.Valid() {
+		return fmt.Errorf("invalid workflow global error")
+	}
 	return nil
 }
 
@@ -117,6 +150,10 @@ func (p WorkflowPage) Clone() WorkflowPage {
 	clone.Fields = append([]WorkflowField(nil), p.Fields...)
 	clone.Actions = append([]WorkflowAction(nil), p.Actions...)
 	clone.Errors = append([]WorkflowFieldError(nil), p.Errors...)
+	if p.Error != nil {
+		errorCopy := *p.Error
+		clone.Error = &errorCopy
+	}
 	return clone
 }
 
@@ -127,7 +164,28 @@ func (e WorkflowFieldError) Summary() string {
 	case idpworkflow.ErrorMismatch:
 		return "The values do not match."
 	case idpworkflow.ErrorRejected:
+		if e.Field == idpworkflow.FieldPassword || e.Field == idpworkflow.FieldPasswordConfirmation {
+			return "Use at least 15 characters and choose a password that is difficult to guess."
+		}
+		if e.Field == idpworkflow.FieldDisplayName {
+			return "That display name is already in use. Choose another."
+		}
 		return "This value could not be accepted."
+	case idpworkflow.ErrorExpired:
+		if e.Field == idpworkflow.FieldEmailCode {
+			return "This verification code has expired. Restart registration to receive a new code."
+		}
+		return "This value has expired. Restart and try again."
+	case idpworkflow.ErrorAttemptsExceeded:
+		if e.Field == idpworkflow.FieldEmailCode {
+			return "Too many incorrect verification codes were entered. Request a new code to try again."
+		}
+		return "Too many attempts were made. Restart and try again."
+	case idpworkflow.ErrorResendLimited:
+		if e.Field == idpworkflow.FieldEmailCode {
+			return "No more verification codes can be sent for this registration. Enter the most recent code or restart registration."
+		}
+		return "No more retry requests can be made. Restart and try again."
 	case idpworkflow.ErrorInvalid:
 		return "Enter a valid value."
 	default:

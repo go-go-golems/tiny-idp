@@ -30,6 +30,27 @@ func TestParseSubmissionProjectsPublicValuesAndSecretsSeparately(t *testing.T) {
 	assert.False(t, present, "a secret must not enter the public projection")
 }
 
+func TestParseSubmissionDoesNotRedisplayEmailVerificationCodes(t *testing.T) {
+	registry := idpworkflow.DefaultRegistry()
+	fields := selectedFields(t, registry, idpworkflow.FieldEmailCode)
+	actions := selectedActions(t, registry, idpworkflow.ActionSubmit, idpworkflow.ActionDeny, idpworkflow.ActionResend)
+	result, err := idpworkflow.ParseSubmission(fields, actions, url.Values{
+		idpui.InteractionFieldName:          {"interaction"},
+		idpui.WorkflowContinuationFieldName: {"continuation"},
+		idpui.CSRFFieldName:                 {"csrf"},
+		idpui.ActionFieldName:               {"submit"},
+		"email_code":                        {"ABCDEFGH"},
+	})
+	require.NoError(t, err)
+	_, present := result.PublicValues[idpworkflow.FieldEmailCode]
+	assert.False(t, present, "email verification code must not enter the redisplay projection")
+	emailCode, ok := result.ResolveSecret(result.Secrets[idpworkflow.FieldEmailCode])
+	require.True(t, ok)
+	assert.Equal(t, "ABCDEFGH", string(emailCode))
+	clear(emailCode)
+	result.DestroySecrets()
+}
+
 func TestParseSubmissionRejectsMalformedShapeAndValues(t *testing.T) {
 	registry := idpworkflow.DefaultRegistry()
 	fields := selectedFields(t, registry, idpworkflow.FieldDisplayName, idpworkflow.FieldEmail, idpworkflow.FieldPassword)
@@ -45,7 +66,8 @@ func TestParseSubmissionRejectsMalformedShapeAndValues(t *testing.T) {
 		{name: "unknown action", edit: func(v url.Values) { v.Set(idpui.ActionFieldName, "admin") }, want: "unsupported action"},
 		{name: "required empty", edit: func(v url.Values) { v.Set("display_name", "  ") }, want: "required"},
 		{name: "bad email", edit: func(v url.Values) { v.Set("email", "not an email") }, want: "valid email"},
-		{name: "long password", edit: func(v url.Values) { v.Set("password", string(make([]byte, 1025))) }, want: "maximum length"},
+		{name: "short password", edit: func(v url.Values) { v.Set("password", "too short") }, want: "length bounds"},
+		{name: "long password", edit: func(v url.Values) { v.Set("password", string(make([]byte, 1025))) }, want: "length bounds"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

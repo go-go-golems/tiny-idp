@@ -72,3 +72,31 @@ func TestChallengeAttemptsExpiryResendAndCleanupFailClosed(t *testing.T) {
 	require.Len(t, expiredRows, 1)
 	require.NoError(t, store.DeleteExpiredEmailChallenge(context.Background(), expired.ID, now))
 }
+
+func TestSQLiteChallengeResendRestoresAttemptBudgetAndInvalidatesOldCode(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	store, err := sqlitestore.Open(ctx, sqlitestore.DefaultConfig(filepath.Join(t.TempDir(), "idp.db")))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	challenge := testChallenge(now)
+	challenge.MaximumAttempts = 2
+	challenge.MaximumResends = 1
+	require.NoError(t, store.CreateEmailChallenge(ctx, challenge))
+	wrongCodeHash := []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	_, err = store.VerifyEmailChallenge(ctx, challenge.ID, wrongCodeHash, testBindings(), now)
+	assert.ErrorIs(t, err, idpemailchallenge.ErrConflict)
+	_, err = store.VerifyEmailChallenge(ctx, challenge.ID, wrongCodeHash, testBindings(), now)
+	assert.ErrorIs(t, err, idpemailchallenge.ErrAttemptsExceeded)
+
+	newCodeHash := []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	resend, err := store.ResendEmailChallenge(ctx, challenge.ID, newCodeHash, testBindings(), now)
+	require.NoError(t, err)
+	assert.Zero(t, resend.Attempts)
+	assert.Equal(t, uint32(1), resend.Resends)
+	_, err = store.VerifyEmailChallenge(ctx, challenge.ID, challenge.CodeHash, testBindings(), now)
+	assert.ErrorIs(t, err, idpemailchallenge.ErrConflict)
+	_, err = store.VerifyEmailChallenge(ctx, challenge.ID, newCodeHash, testBindings(), now)
+	require.NoError(t, err)
+}
