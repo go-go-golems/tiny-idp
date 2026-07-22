@@ -128,7 +128,7 @@ func (m *Mailer) SendEmailChallenge(ctx context.Context, request idpemailchallen
 	if err != nil {
 		return permanent(errors.Wrap(err, "render email challenge template"))
 	}
-	message := renderMessage(m.fromHead, recipient, template.Subject, body)
+	message := renderMessage(time.Now().UTC(), m.fromHead, recipient, template.Subject, body)
 	if err := m.send(ctx, recipient, strings.NewReader(message)); err != nil {
 		return classify(err)
 	}
@@ -197,9 +197,10 @@ func (m *Mailer) send(ctx context.Context, recipient string, message io.Reader) 
 	return nil
 }
 
-func renderMessage(from, recipient, subject, body string) string {
+func renderMessage(date time.Time, from, recipient, subject, body string) string {
 	var builder strings.Builder
 	writer := bufio.NewWriter(&builder)
+	_, _ = fmt.Fprintf(writer, "Date: %s\r\n", date.UTC().Format(time.RFC1123Z))
 	_, _ = fmt.Fprintf(writer, "From: %s\r\n", from)
 	_, _ = fmt.Fprintf(writer, "To: %s\r\n", recipient)
 	_, _ = fmt.Fprintf(writer, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))

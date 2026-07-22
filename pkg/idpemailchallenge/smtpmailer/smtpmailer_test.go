@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/mail"
 	"strings"
 	"testing"
 	"time"
@@ -26,14 +27,27 @@ func TestPrivateSMTPDeliversFixedSignupTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := idpemailchallenge.MailRequest{Recipient: "user@example.test", Template: "signup-code", Code: "ABC23456", ExpiresAt: time.Date(2026, 7, 21, 21, 0, 0, 0, time.UTC)}
+	beforeSend := time.Now().UTC().Add(-time.Second)
 	if err := mailer.SendEmailChallenge(context.Background(), request); err != nil {
 		t.Fatal(err)
 	}
+	afterSend := time.Now().UTC().Add(time.Second)
 	message := server.message(t)
 	for _, expected := range []string{"From: \"TinyIDP\" <accounts@example.test>", "To: user@example.test", "ABC23456", "2026-07-21T21:00:00Z"} {
 		if !strings.Contains(message, expected) {
 			t.Fatalf("message does not contain %q:\n%s", expected, message)
 		}
+	}
+	parsed, err := mail.ReadMessage(strings.NewReader(message))
+	if err != nil {
+		t.Fatalf("parse SMTP message: %v", err)
+	}
+	messageDate, err := mail.ParseDate(parsed.Header.Get("Date"))
+	if err != nil {
+		t.Fatalf("parse Date header: %v", err)
+	}
+	if messageDate.Before(beforeSend) || messageDate.After(afterSend) {
+		t.Fatalf("Date header %s is outside send window [%s, %s]", messageDate, beforeSend, afterSend)
 	}
 }
 
