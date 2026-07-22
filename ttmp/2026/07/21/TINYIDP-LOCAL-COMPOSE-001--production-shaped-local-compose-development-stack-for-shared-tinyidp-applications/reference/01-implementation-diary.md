@@ -11,6 +11,10 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://Makefile
+      Note: Defines fast, Fosite-only, two-process, and full test gates (commit a99b0ed)
+    - Path: repo://README.md
+      Note: Documents the explicit test-level contract (commit a99b0ed)
     - Path: repo://examples/tinyidp-message-app/app_http.go
       Note: Safe non-reflective Message Desk callback recovery page (commit 9c70f31)
     - Path: repo://examples/tinyidp-message-app/app_http_test.go
@@ -55,7 +59,9 @@ RelatedFiles:
     - Path: repo://internal/productionui/renderer.go
       Note: Per-client error theme selection (commit dffc6c4)
     - Path: repo://lefthook.yml
-      Note: Fast pre-commit and full pre-push validation policy (commit bd4c424)
+      Note: |-
+        Fast pre-commit and full pre-push validation policy (commit bd4c424)
+        Runs the complete suite only before pushes (commit a99b0ed)
     - Path: repo://pkg/idpui/browser_error.go
       Note: Bounded terminal error model (commit dffc6c4)
     - Path: repo://pkg/idpui/workflow.go
@@ -74,6 +80,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -2391,4 +2398,115 @@ valid email-code POST -> consume continuation -> password page
 captured old email-code POST -> continuation load rejects
                            -> BrowserErrorPage(client theme)
                            -> restart registration guidance
+```
+
+## Step 25: Split the ordinary test loop from the strict provider and process proofs
+
+The repository had already moved its pre-commit hook to `make test-fast`, but
+the public `make test` target still meant `go test ./...`. That collected the
+strict Fosite adapter suite and every executable experiment below `ttmp/`,
+including a production-shaped two-process harness. This step makes the cost and
+purpose of each level explicit without removing release coverage.
+
+The result is intentionally a routing change, not a reduction in assurance:
+ordinary edits get a short feedback loop; a local push and CI still execute the
+full module package graph. A developer can now request exactly the Fosite or
+two-process proof that is relevant to their change.
+
+### Prompt Context
+
+**User prompt (verbatim):** "yes thanks"
+
+**Assistant interpretation:** Apply the proposed separation between the fast
+daily gate and the expensive protocol/production-topology checks, and explain
+the harness by naming it accurately in the developer interface.
+
+**Inferred user intent:** Keep the high-assurance checks available and required
+before sharing work, but do not make unrelated local commits wait on them.
+
+**Commit (code):** `a99b0ed` — "build: split fast and production test gates"
+
+### What I did
+
+- Made `make test` delegate to the existing fast package and Message Desk loop.
+- Added `make test-fosite` for `./internal/fositeadapter` and `make
+  test-k3s-harness` for the deployment ticket's two-process test package.
+- Added `make test-full` for `go test ./... -count=1` and wired Lefthook
+  pre-push to that target.
+- Kept `verify` conservative by making it depend on `test-full`.
+- Documented the commands and corrected the misleading shorthand: the harness
+  is stored under the k3s ticket, but does not start or require a k3s cluster.
+
+### Why
+
+- Fosite tests exercise the strict OAuth/OIDC provider boundary and are slower
+  than package-local checks.
+- The two-process harness builds real deployable binaries and proves trusted
+  reverse-proxy behavior; it is production evidence, not an edit-time unit
+  test.
+- Explicit target names let an implementer select the smallest adequate check
+  while preserving a full pre-push and CI gate.
+
+### What worked
+
+- `make test` passed in 9.3 seconds.
+- `make -n test-fosite test-k3s-harness test-full` showed the intended,
+  distinct commands without running the expensive variants.
+- `git diff --check` passed before commit.
+
+### What didn't work
+
+- N/A. This was a build-contract refactor; no test failures were observed.
+
+### What I learned
+
+- The expensive test had been entering the normal developer workflow through
+  the ambiguous `make test` name, despite the pre-commit hook already using
+  `test-fast`.
+- A ticket directory name is not an execution environment: the so-called k3s
+  harness is a local Go process/proxy integration test.
+
+### What was tricky to build
+
+- The required assurance split has two independent controls: developer targets
+  and hooks. Changing only `make test` would make a push fast by accident;
+  changing only Lefthook would leave everyday manual commands surprising. The
+  implementation therefore adds named targets, points pre-push at `test-full`,
+  and keeps CI's direct `go test ./... -count=1` unchanged.
+
+### What warrants a second pair of eyes
+
+- Confirm that projects invoking `make test` in external automation want the
+  new fast semantics. This repository's GitHub CI uses direct full `go test
+  ./... -count=1`, and `verify`/pre-push remain full, so release coverage is
+  not reduced.
+
+### What should be done in the future
+
+- If the two-process proof remains confusing, move it from the dated ticket
+  `ttmp/` directory to a stable `test/integration/` location in a separately
+  scoped cleanup. Do not do that as part of the browser UX ticket.
+
+### Code review instructions
+
+- Read the test-target comments and commands in `Makefile`, then the matching
+  `pre-push` command in `lefthook.yml`.
+- Run `make test` for the fast loop; inspect `make -n test-fosite
+  test-k3s-harness test-full` to verify target selection. Run `make test-full`
+  deliberately before a release or when validating the entire repository.
+
+### Technical details
+
+```text
+ordinary edit / pre-commit
+  -> make test (= test-fast) + lint
+
+provider change (explicit)
+  -> make test-fosite
+
+production process/proxy change (explicit)
+  -> make test-k3s-harness
+
+git push / CI-equivalent local check
+  -> make test-full (= go test ./... -count=1)
 ```

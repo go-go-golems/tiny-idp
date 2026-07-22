@@ -168,3 +168,13 @@ Replaced raw consumed-signup-continuation responses with themed terminal restart
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Terminal signup replay boundary
 
+
+## 2026-07-21
+
+Step 25: Split fast, Fosite, two-process, and full test gates; preserve full pre-push coverage (commit a99b0ed).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/Makefile — Test target contract
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/lefthook.yml — Pre-push full test gate
+
