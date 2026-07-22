@@ -493,6 +493,9 @@ func validateProductionSignupProgram(program idpprogram.Program, services produc
 	if usesInvitationEffect && !durableProvider {
 		unsupported["effect:consumeInvitation_without_durable_provider"] = struct{}{}
 	}
+	if durableProvider && !usesInvitationEffect {
+		unsupported["durable_invitation_provider_without_consumeInvitation"] = struct{}{}
+	}
 	if len(unsupported) == 0 {
 		return nil
 	}

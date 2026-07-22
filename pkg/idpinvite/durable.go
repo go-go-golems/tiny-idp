@@ -46,6 +46,16 @@ type DurableInspection struct {
 	ExpiresAt     time.Time `json:"expiresAt"`
 }
 
+// DurableRevocation is the redacted, authoritative metadata returned after a
+// durable invitation is revoked. Administrative callers use the stored
+// audience rather than accepting an operator-supplied audit attribution.
+type DurableRevocation struct {
+	InvitationID  string
+	Audience      string
+	PolicyVersion string
+	RevokedAt     time.Time
+}
+
 // DurableService applies the invitation-code secrecy boundary before asking
 // the shared store to create or consume durable state.
 type DurableService struct {
@@ -120,11 +130,22 @@ func (s *DurableService) Redeem(ctx context.Context, code, audience string, now 
 
 // Revoke invalidates an unconsumed invitation by its browser-visible code
 // without exposing the derived lookup hash to callers.
-func (s *DurableService) Revoke(ctx context.Context, code string, now time.Time) error {
+func (s *DurableService) Revoke(ctx context.Context, code string, now time.Time) (DurableRevocation, error) {
 	if s == nil || s.store == nil || !validText(code) || now.IsZero() {
-		return errors.New("durable invitation revocation request is invalid")
+		return DurableRevocation{}, errors.New("durable invitation revocation request is invalid")
 	}
-	return s.store.RevokeDurableInvitation(ctx, s.codeHash(code), now.UTC())
+	codeHash := s.codeHash(code)
+	if err := s.store.RevokeDurableInvitation(ctx, codeHash, now.UTC()); err != nil {
+		return DurableRevocation{}, err
+	}
+	invitation, err := s.store.GetDurableInvitation(ctx, codeHash)
+	if err != nil {
+		return DurableRevocation{}, err
+	}
+	if invitation.RevokedAt == nil {
+		return DurableRevocation{}, errors.New("durable invitation revocation was not persisted")
+	}
+	return DurableRevocation{InvitationID: invitation.ID, Audience: invitation.Audience, PolicyVersion: invitation.PolicyVersion, RevokedAt: invitation.RevokedAt.UTC()}, nil
 }
 
 // RedeemInTransaction is the only durable-invitation operation a native

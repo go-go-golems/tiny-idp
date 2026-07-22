@@ -167,6 +167,10 @@ func TestNewProductionSignupManagerChecksAndActivatesOnlySupportedPrograms(t *te
 	if err != nil || !productionProgramRequiresDurableInvitations(inviteArtifact.Program()) {
 		t.Fatalf("durable invitation requirement was not detected: %v", err)
 	}
+	providerWithoutConsumption := strings.Replace(idpsignup.InviteRequiredSource, `, "consumeInvitation"`, "", 1)
+	if _, err := newProductionSignupManager(context.Background(), providerWithoutConsumption, idp.NewMemorySink(), productionSignupServices{}); err == nil || !strings.Contains(err.Error(), "durable_invitation_provider_without_consumeInvitation") {
+		t.Fatalf("durable provider without consumption error = %v", err)
+	}
 	capabilityProgram := `const A = require("tinyidp").v1;
 module.exports = A.program("unsupported-capability", p => {
   p.capabilities({"clock.now": {version:1}});

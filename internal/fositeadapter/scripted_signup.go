@@ -178,6 +178,11 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
+	requiresInvitationConsumption, err := signupInputRequiresInvitationConsumption(input)
+	if err != nil {
+		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
+		return
+	}
 	if workflowHasField(fields, idpworkflow.FieldInviteCode) {
 		invitationEvidence, invitationErr := p.validateSignupInvitationProviders(r.Context(), executor, input, record.ClientID)
 		if invitationErr != nil {
@@ -235,7 +240,7 @@ func (p *Provider) resumeScriptedSignup(w http.ResponseWriter, r *http.Request, 
 		p.renderScriptedSignupError(w, r, record, interactionHandle, continuationHandle, fields, actions, submission.PublicValues)
 		return
 	}
-	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, continuationBindings, record, clientAddress, verifiedEmail)
+	registered, err := p.commitScriptedSignup(r.Context(), outcome, submission, continuation, continuationBindings, record, clientAddress, verifiedEmail, requiresInvitationConsumption)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "account.self_registration", ClientID: record.ClientID, Result: "rejected", Reason: signupCommitFailureReason(err)})
 		if errors.Is(err, idpstore.ErrDisplayNameTaken) {
@@ -446,8 +451,12 @@ type signupCommitResult struct {
 // workflow consumption, and authorization interaction together. JavaScript
 // cannot call this operation directly; it can only return a declared effect
 // plan that this method revalidates.
-func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress, verifiedEmail string) (signupCommitResult, error) {
-	if len(outcome.Effects) != 2 && len(outcome.Effects) != 3 || outcome.Effects[0].Kind != idpprogram.EffectCreateLocalIdentity || outcome.Effects[1].Kind != idpprogram.EffectAttachPasswordCredential || len(outcome.Effects) == 3 && outcome.Effects[2].Kind != idpprogram.EffectConsumeInvitation {
+func (p *Provider) commitScriptedSignup(ctx context.Context, outcome idpprogram.Outcome, submission idpworkflow.Submission, continuation idpcontinuation.WorkflowContinuation, bindings idpcontinuation.Bindings, record idpstore.InteractionRecord, clientAddress, verifiedEmail string, requiresInvitationConsumption bool) (signupCommitResult, error) {
+	expectedEffectCount := 2
+	if requiresInvitationConsumption {
+		expectedEffectCount = 3
+	}
+	if !validSignupEffectSequence(outcome.Effects, expectedEffectCount, requiresInvitationConsumption) {
 		p.recordSecurity(ctx, securitytrace.Event{Kind: securitytrace.EffectValidationCompleted, InteractionID: interactionTraceID(record), Transition: assurance.StepEffectValidate, Outcome: assurance.TransitionRejected})
 		return signupCommitResult{}, errors.New("signup script emitted an invalid effect sequence")
 	}
@@ -567,6 +576,23 @@ func workflowHasField(fields []idpworkflow.FieldDescriptor, expected idpworkflow
 		}
 	}
 	return false
+}
+
+func signupInputRequiresInvitationConsumption(input json.RawMessage) (bool, error) {
+	var submitted struct {
+		InviteCode string `json:"inviteCode"`
+	}
+	if err := json.Unmarshal(input, &submitted); err != nil {
+		return false, errors.Wrap(err, "decode signup invitation requirement")
+	}
+	return strings.TrimSpace(submitted.InviteCode) != "", nil
+}
+
+func validSignupEffectSequence(effects []idpprogram.EffectPlan, expectedEffectCount int, requiresInvitationConsumption bool) bool {
+	return len(effects) == expectedEffectCount &&
+		effects[0].Kind == idpprogram.EffectCreateLocalIdentity &&
+		effects[1].Kind == idpprogram.EffectAttachPasswordCredential &&
+		(!requiresInvitationConsumption || effects[2].Kind == idpprogram.EffectConsumeInvitation)
 }
 
 func submissionSecrets(submission idpworkflow.Submission, passwordToken, confirmationToken string) ([]byte, []byte, bool) {

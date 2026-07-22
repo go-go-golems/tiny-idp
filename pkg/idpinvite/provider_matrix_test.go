@@ -33,7 +33,8 @@ func TestProviderOutcomeMatrix(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, durable.Issue(ctx, idpinvite.DurableIssue{ID: "durable-1", Code: "one-time", Audience: "message-app", PolicyVersion: "v1", ExpiresAt: now.Add(time.Hour)}))
 	require.NoError(t, durable.Issue(ctx, idpinvite.DurableIssue{ID: "durable-revoked", Code: "revoked", Audience: "message-app", PolicyVersion: "v1", ExpiresAt: now.Add(time.Hour)}))
-	require.NoError(t, durable.Revoke(ctx, "revoked", now))
+	_, err = durable.Revoke(ctx, "revoked", now)
+	require.NoError(t, err)
 	capability, err := idpinvite.NewEligibilityCapability(func(_ context.Context, probe idpinvite.EligibilityProbe) (idpinvite.EligibilityDecision, error) {
 		if probe.Email == "failure@example.test" {
 			return idpinvite.EligibilityDecision{}, errors.New("directory unavailable")

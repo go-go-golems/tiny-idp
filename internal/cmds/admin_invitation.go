@@ -31,7 +31,6 @@ type adminInvitationIssueSettings struct {
 }
 
 type adminInvitationRevokeSettings struct {
-	Audience      string `glazed:"audience"`
 	LookupKeyFile string `glazed:"lookup-key-file"`
 	CodeFile      string `glazed:"code-file"`
 }
@@ -108,7 +107,6 @@ func newAdminInvitationRevokeCommand(dbPath *string) (*AdminInvitationRevokeComm
 	description := cmds.NewCommandDescription("revoke",
 		cmds.WithShort("Revoke one unused signup invitation read from an owner-only file"),
 		cmds.WithFlags(
-			fields.New("audience", fields.TypeString, fields.WithRequired(true), fields.WithHelp("OIDC client ID recorded in the revocation audit event")),
 			fields.New("lookup-key-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Owner-only file containing the durable invitation HMAC lookup key")),
 			fields.New("code-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Owner-only file containing exactly the invitation code to revoke")),
 		),
@@ -144,13 +142,16 @@ func (c *AdminInvitationIssueCommand) RunIntoGlazeProcessor(ctx context.Context,
 	if err := service.Issue(ctx, idpinvite.DurableIssue{Code: code, ID: id, Audience: cfg.Audience, PolicyVersion: cfg.PolicyVersion, ExpiresAt: expiresAt}); err != nil {
 		return err
 	}
+	if err := processor.AddRow(ctx, types.NewRow(
+		types.MRP("status", "issued"), types.MRP("invitation_id", id), types.MRP("audience", cfg.Audience),
+		types.MRP("policy_version", cfg.PolicyVersion), types.MRP("expires_at", expiresAt), types.MRP("code", code),
+	)); err != nil {
+		return err
+	}
 	if err := emitAdminAudit(ctx, valueOf(c.dbPath), idp.Event{Time: now, Name: "signup_invitation.issued", ClientID: cfg.Audience, Result: "accepted", Fields: map[string]string{"invitation_id": id, "policy_version": cfg.PolicyVersion, "expires_at": expiresAt.Format(time.RFC3339)}}); err != nil {
 		return err
 	}
-	return processor.AddRow(ctx, types.NewRow(
-		types.MRP("status", "issued"), types.MRP("invitation_id", id), types.MRP("audience", cfg.Audience),
-		types.MRP("policy_version", cfg.PolicyVersion), types.MRP("expires_at", expiresAt), types.MRP("code", code),
-	))
+	return nil
 }
 
 func (c *AdminInvitationRevokeCommand) RunIntoGlazeProcessor(ctx context.Context, vals *values.Values, processor middlewares.Processor) error {
@@ -169,13 +170,14 @@ func (c *AdminInvitationRevokeCommand) RunIntoGlazeProcessor(ctx context.Context
 	}
 	defer closeFn()
 	now := c.now().UTC()
-	if err := service.Revoke(ctx, string(code), now); err != nil {
+	revoked, err := service.Revoke(ctx, string(code), now)
+	if err != nil {
 		return err
 	}
-	if err := emitAdminAudit(ctx, valueOf(c.dbPath), idp.Event{Time: now, Name: "signup_invitation.revoked", ClientID: cfg.Audience, Result: "accepted"}); err != nil {
+	if err := emitAdminAudit(ctx, valueOf(c.dbPath), idp.Event{Time: now, Name: "signup_invitation.revoked", ClientID: revoked.Audience, Result: "accepted", Fields: map[string]string{"invitation_id": revoked.InvitationID, "policy_version": revoked.PolicyVersion}}); err != nil {
 		return err
 	}
-	return processor.AddRow(ctx, types.NewRow(types.MRP("status", "revoked"), types.MRP("audience", cfg.Audience)))
+	return processor.AddRow(ctx, types.NewRow(types.MRP("status", "revoked"), types.MRP("invitation_id", revoked.InvitationID), types.MRP("audience", revoked.Audience), types.MRP("policy_version", revoked.PolicyVersion), types.MRP("revoked_at", revoked.RevokedAt)))
 }
 
 func valueOf(value *string) string {
