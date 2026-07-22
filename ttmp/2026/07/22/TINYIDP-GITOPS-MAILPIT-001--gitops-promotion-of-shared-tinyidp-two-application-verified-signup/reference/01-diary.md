@@ -163,3 +163,87 @@ infrastructure commit is `78308e6`.
 - Vault path: `kv/apps/tiny-message-desk/prod/idp`.
 - Published image: `ghcr.io/go-go-golems/tiny-idp:sha-bdbad44`.
 - Mailpit ports: SMTP 1025, operator HTTP 8025.
+
+## Step 3: Merge, synchronize, and exercise the live deployment
+
+I published the infrastructure change as PR 194, merged it, and forced an Argo
+CD refresh. The application converged to the merge revision with all three
+Deployments healthy. The complete Message Desk open-signup journey then passed
+against the public sites, including retrieving its email verification code
+from the private Mailpit instance through a Kubernetes port-forward.
+
+The second application's invited-signup journey exposed a separate release
+boundary: the deployed Goja Auth image returns 404 for `/auth/register`. Source
+and history inspection proved that the route was added by `41cc3f6`, one of six
+commits after the currently deployed `cd1429f` image. This is not a TinyIDP,
+invitation, email, or network failure. Publication of the existing Goja Auth
+branch is the remaining prerequisite.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Carry the reviewed GitOps change through merge,
+Argo synchronization, and real browser acceptance for both relying parties.
+
+**Inferred user intent:** Leave the deployment genuinely usable and identify
+cross-repository blockers with concrete evidence rather than declaring success
+from Kubernetes readiness alone.
+
+**Commit (code):** `62025f1` — "Document verified signup acceptance"
+
+### What I did
+- Pushed the rebased infrastructure branch explicitly, opened and merged PR 194, and refreshed `tiny-message-desk` in Argo CD.
+- Waited for `tinyidp`, `message-desk`, and `mailpit` to become ready and inspected their startup logs.
+- Extended the Playwright harness so public origins, the Mailpit endpoint, and invitation issuance can target either Compose or Kubernetes.
+- Port-forwarded private Mailpit as `127.0.0.1:18025` in tmux.
+- Ran the complete Message Desk open-signup journey against the public deployment; it passed.
+- Issued a real Goja Auth invitation through the TinyIDP admin CLI and started the invited-signup browser journey.
+- Traced the Goja 404 through live logs, the deployed image pin, source history, and the existing production branch.
+- Ran the targeted Goja Auth OIDC, host, and program-auth suites; all passed.
+- Attempted twice to push the six ready Goja commits. In both attempts the pre-push hook launched the repository-wide lint/test gate but never updated the remote ref or emitted a useful final error.
+
+### Why
+- Pod health proves process availability, not the browser, SMTP, OIDC, consent, or callback sequence.
+- The failing Goja path needed attribution before changing TinyIDP or weakening the acceptance criteria.
+
+### What worked
+- Infrastructure PR 194 merged at `137561597dd8fff2858ad89cee8c46a9153cbfce`.
+- Argo CD reached `Synced/Healthy` at that revision.
+- TinyIDP and Mailpit logs show their production listener, SMTP listener, and HTTP listener active.
+- Message Desk completed public signup, email verification, password creation, consent, callback, and application session establishment.
+- Cluster Mailpit contained the expected verification message and remained accessible only through port-forward.
+- `go test ./pkg/gojahttp/auth/oidcauth ./pkg/xgoja/hostauth ./pkg/gojahttp/auth/programauth` passed.
+
+### What didn't work
+- Forwarding Mailpit to local port 8025 initially bound only IPv6 because the local Compose Mailpit already occupied IPv4 port 8025. The browser queried the old authenticated local outbox and found no live code. Moving the cluster forward to port 18025 fixed the operator path.
+- Goja Auth `/auth/register?return_to=/` returns HTTP 404 in the deployed image.
+- Two `git push` attempts ran the pre-push `make lint` and `make test` gate without advancing `wesen/task/prod-tiny-idp` beyond `9eaacaf`. A direct `make test` run completed its visible generation and tests successfully, but the hook did not expose a terminal diagnostic suitable for a safe third fix attempt.
+
+### What I learned
+- The deployed Goja image `sha-cd1429f` predates `41cc3f6`, which registers `GET /auth/register` and preserves the pending membership invitation across OIDC signup.
+- A shared IDP rollout can be healthy for one relying party while another relying party lacks its own signup entry route; acceptance must cover each application boundary independently.
+- Local port-forward ports belong in the acceptance configuration rather than being assumed globally free.
+
+### What was tricky to build
+- The live browser test spans four independent state holders: relying-party cookies, TinyIDP cookies and continuations, durable account/invitation state, and an operator-only outbox. Parameterizing endpoints preserved the same test logic without weakening those boundaries.
+
+### What warrants a second pair of eyes
+- Diagnose why the Goja repository's pre-push hook exits without a useful final failure even though its targeted suites and direct visible `make test` work pass.
+- Review and publish commits `7761bdd..f8ff1af`, then pin the resulting auth-host image in GitOps.
+
+### What should be done in the future
+- After the Goja image is published, update its GitOps pin, synchronize Argo, and rerun the invited Goja signup test through Mailpit.
+- Replace ephemeral Mailpit with the separately designed outbound email transport after operator acceptance.
+
+### Code review instructions
+- Verify live status with `argocd app get tiny-message-desk` and `kubectl -n tiny-message-desk get pods`.
+- Run the Message Desk live Playwright case with the four public/outbox environment variables and `TINYIDP_TEST_KUBECTL_NAMESPACE=tiny-message-desk`.
+- In `go-go-goja`, compare `git show cd1429f:pkg/xgoja/hostauth/builder.go` with commit `41cc3f6` and confirm the latter registers `/auth/register`.
+
+### Technical details
+- Infrastructure PR: `https://github.com/wesen/2026-03-27--hetzner-k3s/pull/194`.
+- Live TinyIDP image: `ghcr.io/go-go-golems/tiny-idp:sha-bdbad44`.
+- Live Goja image: `ghcr.io/go-go-golems/go-go-goja-auth-host:sha-cd1429f`.
+- Required Goja route commit: `41cc3f6`.
+- Active operator forward during acceptance: tmux session `tinyidp-mailpit-forward`, `18025:8025`.
