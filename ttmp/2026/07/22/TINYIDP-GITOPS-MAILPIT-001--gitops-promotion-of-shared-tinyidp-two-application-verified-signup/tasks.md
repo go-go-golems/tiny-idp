@@ -7,4 +7,4 @@
 - [x] Add Vault-backed invitation and email challenge keys to the TinyIDP pod <!-- t:q1if -->
 - [x] Deploy private Mailpit service and restrict network access <!-- t:cdwh -->
 - [x] Add operator port-forward and two-application acceptance instructions <!-- t:f3cc -->
-- [ ] Render, validate, and smoke-test the GitOps deployment <!-- t:yoak -->
+- [x] Render, validate, and smoke-test the GitOps deployment <!-- t:yoak -->

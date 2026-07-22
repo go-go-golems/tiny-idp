@@ -201,7 +201,7 @@ from Kubernetes readiness alone.
 - Issued a real Goja Auth invitation through the TinyIDP admin CLI and started the invited-signup browser journey.
 - Traced the Goja 404 through live logs, the deployed image pin, source history, and the existing production branch.
 - Ran the targeted Goja Auth OIDC, host, and program-auth suites; all passed.
-- Attempted twice to push the six ready Goja commits. In both attempts the pre-push hook launched the repository-wide lint/test gate but never updated the remote ref or emitted a useful final error.
+- Published the six ready Goja commits after the repository pre-push gate completed, opening Goja Auth PR 102.
 
 ### Why
 - Pod health proves process availability, not the browser, SMTP, OIDC, consent, or callback sequence.
@@ -218,7 +218,7 @@ from Kubernetes readiness alone.
 ### What didn't work
 - Forwarding Mailpit to local port 8025 initially bound only IPv6 because the local Compose Mailpit already occupied IPv4 port 8025. The browser queried the old authenticated local outbox and found no live code. Moving the cluster forward to port 18025 fixed the operator path.
 - Goja Auth `/auth/register?return_to=/` returns HTTP 404 in the deployed image.
-- Two `git push` attempts ran the pre-push `make lint` and `make test` gate without advancing `wesen/task/prod-tiny-idp` beyond `9eaacaf`. A direct `make test` run completed its visible generation and tests successfully, but the hook did not expose a terminal diagnostic suitable for a safe third fix attempt.
+- The pre-push hook initially returned before its child `make test` process had completed, which made the push state look ambiguous. Subsequent remote inspection confirmed it completed successfully and advanced the branch to `f8ff1af`.
 
 ### What I learned
 - The deployed Goja image `sha-cd1429f` predates `41cc3f6`, which registers `GET /auth/register` and preserves the pending membership invitation across OIDC signup.
@@ -229,11 +229,9 @@ from Kubernetes readiness alone.
 - The live browser test spans four independent state holders: relying-party cookies, TinyIDP cookies and continuations, durable account/invitation state, and an operator-only outbox. Parameterizing endpoints preserved the same test logic without weakening those boundaries.
 
 ### What warrants a second pair of eyes
-- Diagnose why the Goja repository's pre-push hook exits without a useful final failure even though its targeted suites and direct visible `make test` work pass.
-- Review and publish commits `7761bdd..f8ff1af`, then pin the resulting auth-host image in GitOps.
+- Consider making the pre-push wrapper wait and report the child gate's final status more clearly.
 
 ### What should be done in the future
-- After the Goja image is published, update its GitOps pin, synchronize Argo, and rerun the invited Goja signup test through Mailpit.
 - Replace ephemeral Mailpit with the separately designed outbound email transport after operator acceptance.
 
 ### Code review instructions
@@ -247,3 +245,83 @@ from Kubernetes readiness alone.
 - Live Goja image: `ghcr.io/go-go-golems/go-go-goja-auth-host:sha-cd1429f`.
 - Required Goja route commit: `41cc3f6`.
 - Active operator forward during acceptance: tmux session `tinyidp-mailpit-forward`, `18025:8025`.
+
+## Step 4: Publish Goja Auth, update GitOps, and finish two-app acceptance
+
+I traced the first Goja acceptance failure to the deployed relying-party image,
+not to TinyIDP. The existing branch already contained the missing registration
+route, but GitHub Actions rejected it for reachable vulnerability
+`GO-2026-5970` in `golang.org/x/text v0.37.0`. I upgraded that dependency to
+v0.39.0, verified the targeted suites and `govulncheck`, merged Goja Auth PR
+102, and waited for the immutable main image `sha-32a94aa`.
+
+The image workflow's automatic GitOps handoff correctly built the image but
+could not authenticate to the private infrastructure repository. I therefore
+opened the equivalent one-line infrastructure PR 195, merged it, and requested
+an Argo refresh through the in-cluster Application resource. Argo converged on
+the new image. The exact production invited-signup Playwright test then passed.
+
+### Prompt Context
+
+**User prompt (verbatim):** "yes"
+
+**Assistant interpretation:** Apply the focused security remediation and
+continue the release through the live two-application acceptance criterion.
+
+**Inferred user intent:** Do not leave an otherwise ready production rollout
+blocked on a routine, verified dependency remediation.
+
+**Commit (code):** `e970f6b` — "build: remediate golang.org/x/text vulnerability"
+
+### What I did
+- Upgraded `golang.org/x/text` from v0.37.0 to v0.39.0 and accepted the Go module solver's compatible `x/*` updates.
+- Ran the Goja OIDC, hostauth, and programauth suites plus `govulncheck ./...`.
+- Pushed and merged Goja Auth PR 102 at merge commit `32a94aa4caeab082ffe57017a2c1646f168b1e04`.
+- Waited for the main image workflow to publish `ghcr.io/go-go-golems/go-go-goja-auth-host:sha-32a94aa`.
+- Created and merged infrastructure PR 195 at `72bad1129f162fbdb84ee36c1a6a25e196303f79` to pin that image.
+- Verified the rendered Goja Auth kustomization with Kubernetes client dry-run.
+- Refreshed the Argo Application and waited for `Synced Healthy` at the PR 195 revision.
+- Ran the live, invitation-required Goja Auth Playwright journey with Kubernetes-issued invitation and private Mailpit on local port 18025.
+
+### Why
+- A relying-party registration route is required before TinyIDP can present the invitation and email-verification workflow for that application.
+- The production tag must be a published main image and be referenced by GitOps; a local container or a pull-request image is not a deployment artifact.
+
+### What worked
+- `go test ./pkg/gojahttp/auth/oidcauth ./pkg/xgoja/hostauth ./pkg/gojahttp/auth/programauth` passed.
+- `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` reported no reachable vulnerabilities.
+- All PR 102 checks passed: test, lint, container build, CodeQL, GoSec, dependency review, and vulnerability scan.
+- The main auth-host image workflow completed successfully and published `sha-32a94aa`.
+- `kubectl kustomize gitops/kustomize/goja-auth-host-demo | kubectl apply --dry-run=client -f -` passed.
+- Argo reports `goja-auth-host-demo` as `Synced Healthy` at `72bad112...`; its Deployment uses `sha-32a94aa`.
+- The production Playwright case `invited Goja signup verifies email and establishes an application session` passed in 4.6 seconds.
+
+### What didn't work
+- The automation workflow's GitOps PR sub-job could not clone the private infrastructure repository because its configured token was invalid for Git HTTPS access. Image publication remained successful; PR 195 provided the audited manual handoff.
+- The first immediate outbox readiness probe raced the new port-forward process. The port-forward was ready by the time Playwright requested the verification code, and the full test passed. Future harnesses may wait for `/livez` rather than using a fixed short delay.
+- An evidence query used an outdated Mailpit pod label and returned an empty list. Direct pod inspection already showed Mailpit `Running`; this did not affect deployment or browser acceptance.
+
+### What I learned
+- Go module upgrades should be checked with both `govulncheck` and the affected behavioral tests; `govulncheck` distinguishes a reachable vulnerability from unrelated dependency advisories.
+- GitOps image publication and GitOps repository write access are separate capabilities. A successful image build should not be mistaken for a completed deployment.
+- The route endpoint now returns HTTP 302 as expected, beginning the registered OIDC authorization flow rather than returning the former HTTP 404.
+
+### What was tricky to build
+- The final test required coordinating a public browser flow with a deliberately private outbox. The test issued its invitation within the cluster, exposed Mailpit only through a temporary tmux port-forward, and left neither the SMTP service nor the outbox UI public.
+
+### What warrants a second pair of eyes
+- Fix the `GITOPS_PR_TOKEN` used by the Goja image workflow so future successful image publications can create their infrastructure PR automatically.
+
+### What should be done in the future
+- Replace ephemeral Mailpit with reviewed outbound SMTP and remove the operator relay step.
+
+### Code review instructions
+- Review Goja Auth PR 102 and infrastructure PR 195 together: the former supplies `/auth/register`; the latter selects its immutable image.
+- Verify `goja-auth-host-demo` is `Synced Healthy`, the Deployment image is `sha-32a94aa`, and `GET /auth/register?return_to=/` returns a redirect.
+- Re-run the live invited journey using the environment-configurable Playwright harness and an operator-only Mailpit port-forward.
+
+### Technical details
+- Goja Auth PR: `https://github.com/go-go-golems/go-go-goja/pull/102`.
+- Infrastructure PR: `https://github.com/wesen/2026-03-27--hetzner-k3s/pull/195`.
+- Live Goja image: `ghcr.io/go-go-golems/go-go-goja-auth-host:sha-32a94aa`.
+- Live Argo revision: `72bad1129f162fbdb84ee36c1a6a25e196303f79`.
