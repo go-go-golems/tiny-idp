@@ -19,6 +19,7 @@ RelatedFiles:
         Playwright duplicate-email regression (commit 21456f9)
         Themed unknown-login and wrong-password browser coverage (commit 882790a)
         Goja Auth invalid-credential and client-theme browser coverage (commit 98821fa)
+        Native display-name and password browser validation coverage (commit f5f9eaf)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/fositeadapter/provider.go
@@ -49,6 +50,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1416,4 +1418,90 @@ Goja Auth login URL -> TinyIDP authorize(client_id=goja-auth-host-demo)
                    -> invalid credentials
                    -> generic public error; login retained; password cleared
                    -> /static/themes/goja-auth-lab.css
+```
+
+## Step 15: Cover browser-native signup validation boundaries
+
+This step covered two validation rows that the browser can reject before a
+workflow request reaches TinyIDP. The identity form requires a display name and
+publishes the durable 120-character boundary. After email verification, the
+password form rejects a 14-character secret using its public 15-character
+minimum without posting the password page.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 12)
+
+**Assistant interpretation:** Continue filling the browser UX matrix with
+focused tests rather than repeatedly exercising unrelated full suites.
+
+**Inferred user intent:** Form validation should be immediately understandable
+and should avoid creating misleading server-side error pages for values the
+browser can reject safely.
+
+**Commit (code):** `f5f9eaf` — "test: cover native signup validation UX"
+
+### What I did
+
+- Added a display-name validation journey that asserts `maxlength="120"` and
+  native required-field focus behavior.
+- Added a verified-email password journey that submits a 14-character password
+  and asserts the browser's `validity.tooShort` result and password focus.
+- Ran `pnpm exec playwright test -g 'display names|short password'`.
+
+### Why
+
+- The browser's built-in constraint validation gives instant, accessible
+  feedback and prevents a needless request containing invalid user input.
+- The server still enforces the same descriptor limits; the tests cover the UI
+  boundary, not a replacement for native validation.
+
+### What worked
+
+- Both Chromium tests passed in 2.0 seconds.
+- Both assertions remained on the client-themed TinyIDP page, and the short
+  password flow reached the real email-code/password stage before validation.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- A browser cannot type beyond the input's `maxlength`; testing the rendered
+  bound is the correct end-user assertion for the over-limit display-name
+  case.
+- `minlength` on a password input is observable through `validity.tooShort`
+  without retaining or rendering the secret.
+
+### What was tricky to build
+
+- The password validation case must first pass the real email challenge; a
+  shallow DOM-only test would not prove that the dynamic password presentation
+  carries the descriptor constraints.
+
+### What warrants a second pair of eyes
+
+- Verify any future custom workflow renderer preserves `required`, `minlength`,
+  and `maxlength` attributes from the provider-owned descriptors.
+
+### What should be done in the future
+
+- Cover server-side malformed/replayed submissions separately, because browser
+  constraint validation cannot protect non-browser clients or crafted POSTs.
+
+### Code review instructions
+
+- Review the two native-validation tests in `authentication-ux.spec.ts`.
+- Run `pnpm exec playwright test -g 'display names|short password'` from the
+  browser-tests directory.
+
+### Technical details
+
+```text
+display name: required + maxlength=120 -> browser prevents empty submit
+password: minlength=15                  -> browser prevents 14-character POST
+
+The provider-owned workflow descriptor remains the single source of both
+HTML constraints and server-side ParseSubmission bounds.
 ```

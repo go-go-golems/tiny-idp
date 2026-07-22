@@ -84,3 +84,12 @@ Recorded protocol-control evidence for the outstanding Playwright approval-navig
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Cross-client invalid credential browser journey
 
+
+## 2026-07-21
+
+Added focused Chromium coverage for native display-name and password validation boundaries (commit f5f9eaf).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Native signup validation journeys
+
