@@ -207,3 +207,13 @@ Step 27: Made SQLite email-code attempt exhaustion durable, made resend rotate a
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Real HTTPS exhaustion and resend regression
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/pkg/sqlitestore/email_challenge.go — Commit rejected verification counters before returning errors
 
+
+## 2026-07-22
+
+Step 28: Fixed the post-signup consent CSP by preserving the canonical RP origin and verified the full new-account Chromium journey (commit cfc1d08).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/registration_test.go — Consent CSP and redirect regression
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Signup-to-consent canonical request handoff
+

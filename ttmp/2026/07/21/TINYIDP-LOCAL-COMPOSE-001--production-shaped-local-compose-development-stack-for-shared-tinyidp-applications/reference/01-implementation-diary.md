@@ -38,6 +38,7 @@ RelatedFiles:
         Live Goja callback recovery regression (uncommitted matrix work)
         Live Goja callback recovery regression (commit a62d319)
         Chromium recovery journey through the trusted local stack
+        Complete Chromium new-account journey
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: |-
         Local shared IdP enables reviewed chooser policy (commit d940253)
@@ -53,6 +54,7 @@ RelatedFiles:
         Active-session second-signup regression coverage (commit 1a15439)
         Provider regression (commit c7a2cb7)
         Provider replay terminal-page regression (commit 73b0c0d)
+        Provider regression for callback-aware consent CSP and approval redirect
     - Path: repo://internal/fositeadapter/rendering.go
       Note: Terminal browser error response boundary (commit dffc6c4)
     - Path: repo://internal/fositeadapter/scripted_signup.go
@@ -61,6 +63,7 @@ RelatedFiles:
         Duplicate commit mapping (commit 21456f9)
         Native email-code verification and closed error mapping (commit cd93fec)
         Themed terminal handling for unavailable signup continuations (commit 73b0c0d)
+        Preserves the validated RP origin across the signup-to-consent handoff
     - Path: repo://internal/productionui/renderer.go
       Note: Per-client error theme selection (commit dffc6c4)
     - Path: repo://lefthook.yml
@@ -95,6 +98,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -2809,4 +2813,135 @@ permitted resend
   -> send the new code
 
 old code -> rejected; replacement code -> verified evidence -> password page
+```
+
+## Step 28: Preserve the relying-party origin across signup and consent
+
+The complete new-account journey stopped on an otherwise valid consent page.
+The browser trace showed that account creation, the TinyIDP session cookie,
+and the consent interaction were all successful. Chromium then refused the
+Approve submission because the consent document's CSP allowed only a
+same-origin form action, while CSP evaluates the entire resulting redirect
+chain and the authorization response terminates at Message Desk.
+
+The signup completion path constructed the consent presentation with a nil
+request even though the newly stored interaction retained the validated
+canonical OAuth request. The fix passes that canonical request into the same
+bounded presentation builder used by other consent paths. The builder extracts
+only the already-validated callback origin for `form-action`; it does not expose
+the redirect URI or make browser input authoritative.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Go ahead, figure it out and fix it."
+
+**Assistant interpretation:** Diagnose the committed full-signup browser
+failure, repair its root cause, and prove that a new account can approve
+consent and reach Message Desk.
+
+**Inferred user intent:** Restore a complete production-shaped signup path so
+the browser matrix tests real product behavior rather than stopping at the
+last authorization step.
+
+**Commit (code):** `cfc1d08` — "fix: allow post-signup consent redirect"
+
+### What I did
+
+- Reproduced the committed Playwright journey and retained its screenshot,
+  video, and trace.
+- Read the trace's final request and console event. Chromium reported:
+  `Refused to send form data to 'https://idp.localhost:8443/authorize'
+  because it violates ... "form-action 'self'".`
+- Confirmed that the prior password POST created the account and returned both
+  `tinyidp_session` and `tinyidp_csrf` cookies.
+- Traced the consent page to `completeScriptedSignup`, where
+  `newInteractionPage` received a nil canonical request.
+- Passed `record.CanonicalRequest` into the consent presentation builder so it
+  can derive the validated Message Desk origin for the response CSP.
+- Extended the email-verified signup provider test to require stored consent,
+  assert the exact callback-aware CSP, submit approval, and observe the OAuth
+  redirect.
+- Rebuilt the local IDP container and reran the full Chromium signup journey.
+
+### Why
+
+- `form-action` constrains redirects caused by form submission as well as the
+  initial form target. A same-origin `/authorize` POST can therefore be blocked
+  when it returns the expected cross-origin RP callback redirect.
+- The RP callback origin was already authenticated by client registration and
+  persisted in the canonical interaction. Reusing it preserves the security
+  model; inventing an origin from the current POST would not.
+
+### What worked
+
+- `go test ./internal/fositeadapter -run
+  TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification
+  -count=1` passed.
+- The pre-commit package, lint, custom analyzer, and vet gates passed.
+- The rebuilt IDP became healthy.
+- The focused Playwright journey passed in Chromium and reached signed-in
+  Message Desk in 2.6 seconds.
+
+### What didn't work
+
+- The first test edit changed the consent policy in a different signup test
+  because several provider fixtures used the same option line. The focused
+  run still returned `303` immediately and reported
+  `verified signup consent status=303 body=`. The unrelated fixture change was
+  reverted, and the intended email-verified fixture was updated using its
+  surrounding configuration as context.
+
+### What I learned
+
+- The `net::ERR_ABORTED` network entry was a browser policy decision, not a
+  failed TinyIDP request. The decisive evidence was the associated console
+  event in the Playwright trace.
+- A presentation field can be security-critical without being authorization
+  authority. `RedirectOrigin` carries a reduced, validated value solely to
+  compile an accurate CSP.
+
+### What was tricky to build
+
+- The blocked POST appeared in the network archive with no cookies and no
+  response, which initially resembled a session or CSRF handoff bug. The cookie
+  snapshot immediately before the click proved both cookies existed; the
+  console trace then identified CSP as the actual enforcement layer.
+- The policy must include only the canonical origin, not the complete callback
+  URI. `newInteractionPage` already enforces this reduction through
+  `interactionRedirectOrigin`, so the fix reuses that established seam.
+
+### What warrants a second pair of eyes
+
+- Review that every interaction page capable of ending in an OAuth redirect is
+  constructed with the stored canonical request. The signup and
+  account-selection consent transitions now follow the same pattern.
+- Confirm the exact-CSP regression remains intentional if future directives are
+  added; it currently protects both the RP origin and the otherwise restrictive
+  policy.
+
+### What should be done in the future
+
+- Finish the remaining validation rows and run the complete matrix against
+  fresh and retained Compose state.
+
+### Code review instructions
+
+- Start at `completeScriptedSignup` in
+  `internal/fositeadapter/scripted_signup.go` and compare it with the
+  account-selection consent transition in `provider.go`.
+- Review the final section of
+  `TestEmailVerifiedScriptedSignupCollectsPasswordAfterCodeVerification`.
+- Run the focused Go and Playwright commands listed above.
+
+### Technical details
+
+```text
+password commit
+  -> new TinyIDP session
+  -> new consent interaction stores canonical OAuth request
+  -> consent page derives https://message.localhost:8443
+  -> CSP form-action 'self' https://message.localhost:8443
+  -> Approve POST /authorize
+  -> 303 Message Desk callback
+  -> signed-in application
 ```

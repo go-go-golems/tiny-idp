@@ -20,3 +20,4 @@
 - [ ] Classify browser-test failures in the defect ledger and implement the provider or application UX fixes without weakening security checks. <!-- t:8vbu -->
 - [ ] Run the complete Playwright matrix against a fresh and retained local stack, document evidence, and close the discovered defects. <!-- t:1lta -->
 - [x] Verify durable email-code exhaustion recovery: committed SQLite attempts, rotated resend code, and real-browser replacement-code success <!-- t:u4n1 -->
+- [x] Fix and verify the new-account consent approval redirect through Message Desk <!-- t:pe9i -->
