@@ -52,10 +52,10 @@ async function submitIdentity(page: Page, displayName: string, email: string): P
   await page.getByRole("button", { name: "Create account" }).click();
 }
 
-async function loginToMessageDesk(page: Page): Promise<void> {
+async function loginToMessageDesk(page: Page, login = "admin@example.test", password = "local-admin-password-2026!"): Promise<void> {
   await page.goto(`${messageOrigin}/auth/login?return_to=/`);
-  await page.getByLabel("Login").fill("admin@example.test");
-  await page.getByLabel("Password").fill("local-admin-password-2026!");
+  await page.getByLabel("Login").fill(login);
+  await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: /continue|sign in|approve/i }).first().click();
   if (page.url().startsWith(idpOrigin)) {
     await page.getByRole("button", { name: /approve|continue/i }).first().click();
@@ -128,6 +128,32 @@ test("logging out everywhere clears Message Desk and TinyIDP browser sessions", 
   await expect(page.getByText("GUEST MODE")).toBeVisible();
   const idpCookies = await context.cookies(idpOrigin);
   expect(idpCookies.some(cookie => cookie.name === "tinyidp_session" && cookie.value !== "")).toBe(false);
+});
+
+test("account chooser remembers two password logins and supports switching accounts", async ({ page }) => {
+  await loginToMessageDesk(page);
+  await page.getByRole("link", { name: "Change account" }).click();
+  await expect(page.getByRole("heading", { name: "Choose an account" })).toBeVisible();
+  await expect(page.getByLabel("Local Administrator")).toBeVisible();
+  await page.getByRole("button", { name: "Use another account" }).click();
+
+  await page.getByLabel("Login").fill("invitee@example.test");
+  await page.getByLabel("Password").fill("local-invitee-password-2026!");
+  await page.getByRole("button", { name: /continue|sign in|approve/i }).first().click();
+  if (page.url().startsWith(idpOrigin)) {
+    await page.getByRole("button", { name: /approve|continue/i }).first().click();
+  }
+  await expect(page).toHaveURL(new RegExp(`^${messageOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+  await expect(page.getByText("Local Invitee", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Change account" }).click();
+  await expect(page.getByRole("heading", { name: "Choose an account" })).toBeVisible();
+  await expect(page.getByLabel("Local Administrator")).toBeVisible();
+  await expect(page.getByLabel("Local Invitee")).toBeVisible();
+  await page.getByLabel("Local Administrator").check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page).toHaveURL(new RegExp(`^${messageOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+  await expect(page.getByText("Local Administrator", { exact: true })).toBeVisible();
 });
 
 test("short password is rejected by native validation before the password workflow posts", async ({ page }) => {
