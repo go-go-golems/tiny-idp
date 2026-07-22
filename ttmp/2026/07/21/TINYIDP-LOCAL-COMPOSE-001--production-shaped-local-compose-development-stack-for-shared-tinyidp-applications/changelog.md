@@ -237,3 +237,13 @@ Step 30: Added native password-mismatch presentation and expanded the Goja invit
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Chromium coverage
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/fositeadapter/scripted_signup.go — Cross-field secret validation
 
+
+## 2026-07-22
+
+Step 31: Passed all 25 Chromium cases against retained and fresh volumes and made the Caddy backend address deterministic (commit 69f3283).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/compose.yaml — Fresh topology fix
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/21/TINYIDP-LOCAL-COMPOSE-001--production-shaped-local-compose-development-stack-for-shared-tinyidp-applications/design-doc/03-playwright-browser-state-and-authentication-ux-test-matrix.md — Final defect ledger and evidence
+

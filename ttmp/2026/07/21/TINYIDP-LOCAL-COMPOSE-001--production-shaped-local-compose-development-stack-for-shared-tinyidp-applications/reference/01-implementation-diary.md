@@ -21,6 +21,8 @@ RelatedFiles:
       Note: Callback recovery page contract (commit 9c70f31)
     - Path: repo://examples/tinyidp-message-app/ui/src/App.tsx
       Note: Separated account action navigation (commit 4b15802)
+    - Path: repo://examples/tinyidp-shared-two-apps/README.md
+      Note: Fresh-reset topology contract (commit 69f3283)
     - Path: repo://examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts
       Note: |-
         Playwright journeys (commit 34959ea)
@@ -45,6 +47,7 @@ RelatedFiles:
         Local shared IdP enables reviewed chooser policy (commit d940253)
         Configures Goja local callback stylesheet (commit 9c37b66)
         Finite local exhaustive-test rate budget (commit 595742b)
+        Deterministic proxy address and dynamic pool (commit 69f3283)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
       Note: Live HTTPS rejection validation (commit 0ce1fa6)
     - Path: repo://internal/cmds/serve_production.go
@@ -105,6 +108,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -3180,4 +3184,134 @@ password form POST
   -> clear resolved copies
   -> mismatch: themed 400 on confirmation field
   -> match: invoke signup lambda, then independently revalidate at commit
+```
+
+## Step 31: Prove retained and fresh stacks and reserve the proxy address
+
+All 25 Chromium scenarios passed against the retained local stack. A subsequent
+application-volume reset uncovered that the documented container-side
+`idp.localhost` resolution depended on Caddy receiving `172.31.0.2`, but the
+Compose network did not reserve that address. Mailpit could receive `.2` first
+during concurrent startup, leaving TinyIDP's TLS readiness probe unable to
+reach the proxy.
+
+Caddy now receives an explicit `.2` endpoint and dynamic IDP-backend addresses
+come only from `.128/25`. After recreating the network, Caddy owned `.2`, the
+one-shot CA and application bootstrap jobs exited successfully, all long-lived
+services reached their intended states, and the fresh-stack suite passed 25 of
+25 scenarios.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 29)
+
+**Assistant interpretation:** Finish validation to completion, including both
+retained and truly recreated local application state, and repair discovered
+defects.
+
+**Inferred user intent:** Leave a reproducible local system that another
+implementer can reset and validate without relying on historical Docker
+allocation order.
+
+**Commit (code):** `69f3283` — "fix: make fresh local topology deterministic"
+
+### What I did
+
+- Ran the complete 25-test matrix against retained volumes: 25 passed in 33.2
+  seconds.
+- Deleted only project-owned application volumes with `docker compose down
+  -v`; the external protected CA volume was retained by design.
+- Reinitialized local secrets and recreated the complete service graph.
+- Diagnosed failed IDP readiness through Docker health history and network
+  endpoint inspection.
+- Assigned Caddy `172.31.0.2` and confined dynamic IDP-backend allocation to
+  `172.31.0.128/25`.
+- Recreated the network, verified endpoint addresses and service/bootstrap
+  states, and reran the complete matrix: 25 passed in 54.3 seconds.
+- Updated the operator README, defect ledger, final evidence, and task states.
+
+### Why
+
+- A fresh-stack proof must validate orchestration assumptions, not merely
+  application behavior against already allocated networks and initialized
+  databases.
+- Container TLS clients intentionally resolve the public issuer through Caddy.
+  Therefore its backend address is a real declared topology contract and must
+  not be left to dynamic allocation order.
+
+### What worked
+
+- The retained-state suite passed every validation, session, theme, callback,
+  replay, and signup scenario.
+- After the IPAM correction, Docker reported Caddy at `172.31.0.2` and dynamic
+  services at `.129` through `.132`.
+- `ca-export` and `goja-bootstrap` exited with status 0; TinyIDP, Mailpit,
+  PostgreSQL, and Message Desk were healthy.
+- The fresh-state suite passed all 25 Chromium cases.
+
+### What didn't work
+
+- The first fresh startup left TinyIDP in `health: starting`. Docker recorded:
+  `curl: (7) Failed to connect to idp.localhost port 8443 after 0 ms: Couldn't
+  connect to server`. Inspection showed Mailpit at `172.31.0.2` and Caddy at
+  `172.31.0.3`.
+- Assigning only a static `.2` address to Caddy was insufficient because
+  independent services start concurrently. Mailpit dynamically claimed `.2`
+  before Caddy attached, and Docker returned `Error response from daemon:
+  Address already in use`.
+- One validation command used a repository-relative Compose path after its
+  working directory had already changed into the example and returned `stat
+  .../examples/tinyidp-shared-two-apps/examples/tinyidp-shared-two-apps/compose.yaml:
+  no such file or directory`. Reissuing it as `docker compose -f compose.yaml
+  config --quiet` succeeded.
+
+### What I learned
+
+- Docker's dynamic allocator does not reserve a service's requested static
+  address before that endpoint is attached. A disjoint `ip_range` is required
+  when concurrent dynamic endpoints share the subnet.
+- Retained-stack and fresh-stack runs answer different questions. Both are
+  required for a stateful authentication topology.
+
+### What was tricky to build
+
+- The TLS topology uses the public hostname inside containers on purpose, so
+  replacing the health check with a direct `idp:8081` request would have
+  bypassed the listener, certificate, proxy headers, and issuer path under
+  test. The correction had to preserve the proxy traversal.
+- The subnet must contain both the fixed `.2` address and the dynamic range,
+  while TinyIDP continues trusting the complete explicitly private `/24` as
+  its proxy network.
+
+### What warrants a second pair of eyes
+
+- Review whether future fixed infrastructure endpoints need addresses below
+  `.128`; that range is now intentionally excluded from dynamic allocation.
+- Confirm the external CA volume remains outside `docker compose down -v` in
+  future Compose changes.
+
+### What should be done in the future
+
+- N/A for the scoped browser matrix. The published guide should be refreshed
+  on reMarkable after final ticket bookkeeping.
+
+### Code review instructions
+
+- Review the proxy service network mapping and IDP-backend IPAM config in
+  `compose.yaml` together with every `.2` resolution site.
+- Run `docker compose config --quiet`, recreate the project network, inspect
+  its endpoints, then run the complete Playwright command.
+
+### Technical details
+
+```text
+idp-backend subnet:       172.31.0.0/24
+Caddy fixed endpoint:     172.31.0.2
+dynamic allocation pool: 172.31.0.128/25
+TinyIDP trusted proxies:  172.31.0.0/24
+
+container TLS client
+  -> idp.localhost:8443 resolves to 172.31.0.2
+  -> Caddy terminates TLS
+  -> trusted-proxy HTTP to TinyIDP
 ```

@@ -222,9 +222,33 @@ Failures are recorded in this document's ledger before repair:
 | UX-003 | RP OAuth callback error | Message Desk previously returned `400 text/plain`; it now renders a CSP-bound recovery page (`9c70f31`, Chromium `cb5d2ca`). Goja Auth still returns `401 text/plain: oidc error: access_denied` from its separate repository handler. | RP callback presentation | Message Desk resolved; Goja follow-up required |
 | UX-004 | Email-code attempt exhaustion | SQLite rolled back each rejected verification counter, so the live attempt limit was never reached. A resend also rotated a code without restoring an exhausted attempt budget. Both transitions are now durable: rejected attempts commit, a permitted resend resets the new generation's counter, and Chromium verifies old-code rejection plus replacement-code success (`a41087c`, `263603a`). | SQLite email challenge transition / recovery presentation | Resolved |
 | UX-005 | New-account consent approval | The post-signup consent page discarded the canonical authorization request while constructing its presentation model. Its CSP therefore contained only `form-action 'self'`; Chromium applied that directive to the form's redirect chain and blocked the validated Message Desk callback with `net::ERR_ABORTED`. The page now derives the RP origin from the stored canonical request (`cfc1d08`), and the complete Chromium signup reaches Message Desk. | Signup-to-consent presentation / CSP | Resolved |
+| UX-006 | Long sequential browser matrix | The default 30-request address window masked later cases with `429 text/plain: rate limited`. Authorization throttling now uses the terminal browser-error renderer, while the local exhaustive stack has a finite 500-request budget (`595742b`). | Provider browser-error presentation / local harness policy | Resolved |
+| UX-007 | Password confirmation mismatch | Native commit rejected unequal secrets only after lambda invocation and rendered generic password-policy copy. Cross-field equality is now checked before JavaScript, resolved secret copies are cleared, and the confirmation field receives the closed mismatch error (`647d540`). | Native workflow submission validation | Resolved |
+| UX-008 | Fresh Compose recreation | Health checks and backend TLS clients resolved `idp.localhost` to documented Caddy address `172.31.0.2`, but dynamic allocation could give that address to the first concurrently started service. Caddy now has an explicit `.2` endpoint and dynamic allocation is confined to `.128/25`. | Compose network address contract | Resolved |
 
 New rows must include the first failing trace, expected behavior, owner layer,
 fix commit, and passing test name.
+
+### Final execution evidence
+
+The final single-worker Chromium suite contains 25 scenarios. It passed in
+both required state modes on 2026-07-22:
+
+- retained application and identity volumes: `25 passed (33.2s)`;
+- application volumes deleted and recreated, persistent local CA retained:
+  `25 passed (54.3s)`.
+
+The fresh run also proved that the one-shot CA export and goja administrator
+bootstrap exited successfully, TinyIDP and Message Desk became healthy, and
+Caddy owned `172.31.0.2` while dynamic IDP-backend services received addresses
+from the reserved `.128/25` pool.
+
+Invitation coverage is layered intentionally. Chromium exercises missing,
+unknown, expired, and wrong-audience codes as indistinguishable themed field
+errors. The production-shaped HTTP acceptance script exercises valid one-time
+consumption and consumed-code replay. The `pkg/idpinvite` provider matrix
+exhausts revoked and remaining internal state classifications without exposing
+those distinctions in browser copy.
 
 ## Design Decisions
 
