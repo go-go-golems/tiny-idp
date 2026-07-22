@@ -23,6 +23,7 @@ RelatedFiles:
         Email-code resend browser recovery coverage (commit 137ebd3)
         Browser provider-logout coverage (commit 9d25a40)
         Two-account Chromium switch regression (commit fadfc08)
+        Two-account switching and removal regression (commits fadfc08 and 492a659)
     - Path: repo://examples/tinyidp-shared-two-apps/compose.yaml
       Note: Local shared IdP enables reviewed chooser policy (commit d940253)
     - Path: repo://examples/tinyidp-shared-two-apps/scripts/03-browser-acceptance.py
@@ -61,6 +62,7 @@ LastUpdated: 2026-07-21T13:18:51.810017936-04:00
 WhatFor: Review what changed, why the local trust boundary is shaped this way, which failures occurred, and how to validate the result.
 WhenToUse: Read before resuming or reviewing TINYIDP-LOCAL-COMPOSE-001.
 ---
+
 
 
 
@@ -1917,4 +1919,83 @@ Message Desk Change account
   -> password login [Local Invitee]
   -> remembered context: Administrator + Invitee
   -> Choose an account -> Administrator -> Message Desk
+```
+
+## Step 20: Cover remembered-account removal
+
+Account selection is not complete if the browser can only accumulate remembered
+identities. The existing chooser contract permits a user to remove one opaque
+remembered entry without deleting the TinyIDP account or the other remembered
+entries. This step extends the same real browser context after two-account
+switching and verifies that distinction.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 19)
+
+**Assistant interpretation:** Complete the remaining account-chooser state
+transition while the stack and two seeded identities are available.
+
+**Inferred user intent:** A browser identity-management UI must be reversible
+and unsurprising, not merely capable of selecting an account once.
+
+**Commit (code):** `492a659` — "test: cover remembered account removal"
+
+### What I did
+
+- Extended the two-identity Chromium journey after it switched back to Local
+  Administrator.
+- Re-opened account selection, selected Local Invitee, and submitted the real
+  `Remove account` action.
+- Asserted that Local Invitee disappears while Local Administrator remains
+  available.
+
+### Why
+
+- Removing a remembered browser choice must not delete the durable user or
+  accidentally leave a stale chooser entry that can later be activated.
+
+### What worked
+
+- `pnpm --dir examples/tinyidp-shared-two-apps/browser-tests exec playwright
+  test -g 'account chooser remembers two password'` passed in 4.6 seconds.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The production renderer exposes removal as a normal server-owned form action;
+  no client-side cookie or database manipulation is needed to test it.
+
+### What was tricky to build
+
+- The test keeps the administrator selected as the active browser identity,
+  then removes the invitee from the remembered set. This proves the correct
+  scope of removal: remembered membership changes while the current provider
+  session and durable accounts remain intact.
+
+### What warrants a second pair of eyes
+
+- Confirm the product wording makes clear that removal only forgets an account
+  on this browser and does not delete the identity.
+
+### What should be done in the future
+
+- Add a visual/help-copy review for the removal scope if the chooser becomes
+  enabled in the public production deployment.
+
+### Code review instructions
+
+- Read the final section of the named chooser test.
+- Run the focused Playwright command above against the Compose stack.
+
+### Technical details
+
+```text
+chooser [Administrator, Invitee]
+  -> select Invitee + Remove account
+  -> chooser [Administrator]
+  -> durable Invitee account unchanged
 ```

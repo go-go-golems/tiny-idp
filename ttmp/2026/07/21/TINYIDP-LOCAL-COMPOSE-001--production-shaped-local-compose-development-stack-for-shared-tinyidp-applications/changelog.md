@@ -131,3 +131,12 @@ Enabled an opt-in production account chooser, wired it into the shared local Com
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Live two-account chooser coverage
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Reviewed browser-visible remembered-account policy
 
+
+## 2026-07-21
+
+Extended the real Chromium chooser journey to remove a remembered account while retaining another selectable identity (commit 492a659).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-shared-two-apps/browser-tests/tests/authentication-ux.spec.ts — Remembered-account removal coverage
+
