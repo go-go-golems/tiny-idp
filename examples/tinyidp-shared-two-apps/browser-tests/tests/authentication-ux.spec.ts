@@ -101,6 +101,23 @@ test("remembered TinyIDP session can submit the first add-account signup step", 
   await expectMessageDeskTheme(page);
 });
 
+for (const [name, login, password] of [
+  ["unknown login", "not-a-real-account@example.test", "not-the-right-password-2026!"],
+  ["wrong password", "admin@example.test", "not-the-right-password-2026!"],
+]) {
+  test(`${name} retains the login name and presents a themed generic credential error`, async ({ page }) => {
+    await page.goto(`${messageOrigin}/auth/login?return_to=/`);
+    await page.getByLabel("Login").fill(login);
+    await page.getByLabel("Password").fill(password);
+    await page.getByRole("button", { name: /continue|sign in|approve/i }).first().click();
+
+    await expect(page.getByText("Invalid login or password.")).toBeVisible();
+    await expect(page.getByLabel("Login")).toHaveValue(login);
+    await expect(page.getByLabel("Password")).toHaveValue("");
+    await expectMessageDeskTheme(page);
+  });
+}
+
 test("duplicate email produces a themed actionable signup error", async ({ page }) => {
   const email = "admin@example.test";
   await beginMessageSignup(page);
