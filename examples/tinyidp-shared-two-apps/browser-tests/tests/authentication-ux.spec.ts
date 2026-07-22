@@ -117,6 +117,27 @@ test("signup identity form enforces required and bounded display names before su
   await expectMessageDeskTheme(page);
 });
 
+test("open Message Desk signup reaches the signed-in application through TinyIDP", async ({ page, context }) => {
+  const suffix = Date.now();
+  const displayName = `Playwright Happy Signup ${suffix}`;
+  const email = `playwright-happy-signup-${suffix}@example.test`;
+  await beginMessageSignup(page);
+  await submitIdentity(page, displayName, email);
+  await page.getByLabel("Email verification code").fill(await latestEmailCode(page, email));
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await page.getByLabel("Password", { exact: true }).fill("playwright happy signup password 2026!");
+  await page.getByLabel("Confirm password").fill("playwright happy signup password 2026!");
+  await page.getByRole("button", { name: "Create account" }).click();
+  if (page.url().startsWith(idpOrigin)) {
+    await expect.poll(async () => (await context.cookies(idpOrigin)).some(cookie => cookie.name === "tinyidp_session" && cookie.value !== "")).toBe(true);
+    await page.getByRole("button", { name: /approve|continue/i }).first().click();
+  }
+  await expect(page).toHaveURL(new RegExp(`^${messageOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+  await expect(page.getByText(displayName, { exact: true })).toBeVisible();
+  await expect(page.getByText("SIGNED IN")).toBeVisible();
+});
+
 test("remembered TinyIDP session can submit the first add-account signup step", async ({ page }) => {
   await loginToMessageDesk(page);
   await page.getByRole("button", { name: "Log out of Message Desk" }).click();
