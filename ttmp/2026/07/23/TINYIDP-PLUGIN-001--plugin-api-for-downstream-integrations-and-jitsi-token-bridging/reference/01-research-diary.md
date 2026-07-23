@@ -1523,3 +1523,99 @@ parallel harness B:
   public 127.0.0.1:<ephemeral-C>
   admin  127.0.0.1:<ephemeral-D>
 ```
+
+## Step 13: Fail closed when rejection audit delivery fails
+
+PR 18's repository-specific audit analyzer identified one discarded audit
+error in the Jitsi rejection path. Successful token issuance already failed
+closed on audit delivery. Rejections now follow an equally explicit contract:
+if the required rejection record cannot be delivered, the browser receives a
+themed 503 response and no token or redirect is produced.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Address the PR gate as a production correctness
+issue, not as an analyzer suppression.
+
+**Inferred user intent:** Preserve durable security evidence and safe browser
+behavior across both successful and rejected plugin operations.
+
+**Commit (code):** `574990b` — "fix(jitsi): fail closed on rejection audit errors"
+
+### What I did
+
+- Inspected CI run 30051961501, job 89355740063.
+- Replaced the discarded `Audit.Emit` result in `Runtime.reject`.
+- Logged a structured delivery failure without including token or identity
+  material.
+- Returned HTTP 503 through the existing themed renderer when delivery fails.
+- Added a failing audit sink and a regression test proving the response is
+  fail-closed and does not expose either internal reason string.
+- Ran `make auditlint` and the focused Jitsi suite.
+
+### Why
+
+- A rejection is security-relevant evidence. Silently losing it makes the
+  audit record incomplete and hides storage failure from readiness operators.
+- Returning the original 400 after audit failure would falsely imply that the
+  request was handled normally.
+- The browser must not receive raw `audit_delivery_failed` or `invalid_room`
+  identifiers.
+
+### What worked
+
+- The repository audit analyzer completed with no findings.
+- `go test ./internal/plugins/jitsi -count=1` passed in 0.118s.
+- The pre-commit fast suite, golangci-lint, Glazed lint, and UI analyzer passed.
+
+### What didn't work
+
+- The first sandboxed `make auditlint` invocation reported
+  `auditlint: ./pkg/... matched no packages`; the same repository command ran
+  correctly with the permissions used by CI.
+- The first regression assertion expected the internal
+  `audit_delivery_failed` code in HTML. The renderer correctly produced the
+  stable sentence `No meeting token was issued.` instead. The test now asserts
+  that user-facing sentence and explicitly forbids both internal reason codes.
+
+### What I learned
+
+- The themed error renderer is part of the security boundary: tests should
+  assert stable public language and the absence of internal identifiers.
+- The repository-specific analyzer covers semantic production requirements
+  that the normal lint target does not.
+
+### What was tricky to build
+
+- The rejection path has already failed its primary operation. The secondary
+  audit failure must change status and operator evidence without recursively
+  attempting another audit record.
+
+### What warrants a second pair of eyes
+
+- Confirm HTTP 503 is the desired public status for all rejection-audit
+  failures and that reverse proxies do not replace the themed body.
+
+### What should be done in the future
+
+- Push the repair and obtain a completely green PR 18 CI run.
+
+### Code review instructions
+
+- Review `Runtime.reject` and
+  `TestRuntimeFailsClosedWhenRejectionAuditCannotBeDelivered`.
+- Run `make auditlint` and `go test ./internal/plugins/jitsi -count=1`.
+
+### Technical details
+
+```text
+request rejected
+  -> emit integration.jitsi.rejected
+     -> success: themed 400
+     -> failure: structured error log + themed 503
+        -> no token
+        -> no meeting redirect
+        -> no recursive audit attempt
+```
