@@ -136,3 +136,24 @@ Step 13: made Jitsi rejection handling fail closed when durable audit delivery f
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/plugins/jitsi/runtime.go — Explicit rejection-audit delivery semantics
+
+## 2026-07-23
+
+Step 14: published the merged plugin image, added and merged the multi-source
+Argo/Vault/Hetzner deployment in infrastructure PR 200, provisioned scoped
+Vault records, and applied the one-rule JVB firewall update (infrastructure
+commits 60d11f2, 6527960, and 608c1b3).
+
+### Related Files
+
+- /home/manuel/code/wesen/2026-03-27--hetzner-k3s/gitops/applications/tinyidp-jitsi.yaml — Pinned multi-source production application
+- /home/manuel/code/wesen/2026-03-27--hetzner-k3s/main.tf — JVB UDP 10000 firewall rule
+
+## 2026-07-23
+
+Step 15: diagnosed the live local-path WaitForFirstConsumer/Argo wave deadlock
+and moved the PVC beside its Deployment consumer (commit 9e9befb, PR 19).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/persistent-volume-claim.yaml — PVC/consumer sync-wave invariant

@@ -3,7 +3,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: tinyidp-state
   annotations:
-    argocd.argoproj.io/sync-wave: "0"
+    # local-path uses WaitForFirstConsumer. Keep the claim in the same wave as
+    # the TinyIDP Deployment so Kubernetes can schedule the consumer and bind
+    # the volume without Argo waiting on an intentionally Pending claim.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   accessModes:
     - ReadWriteOnce
