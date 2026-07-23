@@ -18,12 +18,16 @@ RelatedFiles:
         Registers the compiled-in Jitsi plugin with the production command (commit c6f98bd)
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/README.md
       Note: Production Kubernetes, VSO, and pinned Jitsi Helm deployment contract
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/deployment.yaml
+      Note: Local-path state permissions repair commit 8f41210
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/jitsi-values.yaml
       Note: Prosody token mode and Jitsi runtime configuration
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/rotation-runbook.md
       Note: Ordered HS256 rotation and rollback procedure
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/runtime-secret.yaml
       Note: Shared Vault-backed runtime Secret and coordinated restart targets
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh
+      Note: Ordering invariant regression guard commit 8f41210
     - Path: repo://examples/tinyidp-jitsi/browser-tests/tests/jitsi-plugin.spec.ts
       Note: Eight-case browser, provider-logout, and media-connected conference matrix (commits e9c25b9, fe59277, and f552483)
     - Path: repo://examples/tinyidp-jitsi/compose.yaml
@@ -74,6 +78,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
