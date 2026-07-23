@@ -39,7 +39,7 @@ tinyidp admin --db ./tinyidp.db client enable --id web-app
 tinyidp admin --db ./tinyidp.db client rotate-secret --id web-app
 ```
 
-Client command output redacts stored secret hashes. Generated secrets are returned once in command output. For operator-managed or container-mounted secrets, use `--secret-file /run/secrets/<name>` instead of placing a value in argv. `--secret`, `--secret-file`, and `--generate-secret` are mutually exclusive. Secret files must be regular, non-symlink files no larger than 4096 bytes; surrounding whitespace is removed, empty files fail closed, and the resulting client secret must not exceed bcrypt's 72-byte input limit.
+Client command output redacts stored secret hashes. Generated secrets are returned once in command output. For operator-managed or container-mounted secrets on POSIX systems, use `--secret-file /run/secrets/<name>` instead of placing a value in argv. `--secret`, `--secret-file`, and `--generate-secret` are mutually exclusive. Secret files are opened without following symlinks and validated through that descriptor; they must be regular files no larger than 4096 bytes. Surrounding whitespace is removed, empty files fail closed, and the resulting client secret must not exceed bcrypt's 72-byte input limit. Non-POSIX secret-file input fails closed until equivalent native reparse-point and file-identity protections are implemented.
 
 ## Users
 

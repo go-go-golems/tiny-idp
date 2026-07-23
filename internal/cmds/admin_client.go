@@ -1,7 +1,6 @@
 package cmds
 
 import (
-	"os"
 	"strings"
 	"time"
 
@@ -87,19 +86,9 @@ func resolveClientSecret(value, path string, generate bool) (string, error) {
 	if path == "" {
 		return value, nil
 	}
-	info, err := os.Lstat(path)
+	data, err := readClientSecretFile(path)
 	if err != nil {
-		return "", errors.Wrap(err, "inspect client secret file")
-	}
-	if !info.Mode().IsRegular() {
-		return "", errors.New("client secret file must be regular and not a symlink")
-	}
-	if info.Size() > 4096 {
-		return "", errors.New("client secret file is too large")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", errors.Wrap(err, "read client secret file")
+		return "", err
 	}
 	secret := strings.TrimSpace(string(data))
 	if secret == "" {
