@@ -20,6 +20,9 @@ RelatedFiles:
       Note: |-
         Production host now decodes the reusable section in commit 294e343
         Builds mounts observes and closes plugin runtimes in production (commit c6f98bd)
+        Runs the public and internal listeners in one production lifecycle (commit 91f81f5)
+    - Path: repo://internal/observability/prometheus.go
+      Note: Owns the isolated Prometheus exporter and internal administration handler (commit 91f81f5)
     - Path: repo://internal/pluginapi/api.go
       Note: Trusted plugin authority and lifecycle contracts from commit 513b7b9
     - Path: repo://internal/pluginapi/registry.go
@@ -35,11 +38,15 @@ RelatedFiles:
     - Path: repo://internal/plugins/jitsi/policy.go
       Note: Bounded versioned Jitsi policy executor from commit a5eecf1
     - Path: repo://internal/plugins/jitsi/runtime.go
-      Note: Implements Jitsi start and callback browser paths for Phase 5 (commit a0437f6)
+      Note: |-
+        Implements Jitsi start and callback browser paths for Phase 5 (commit a0437f6)
+        Records bounded Jitsi metrics and trace spans (commit 91f81f5)
     - Path: repo://internal/plugins/jitsi/token.go
       Note: Implements exact bounded HS256 Jitsi token signing for Phase 5 (commit a0437f6)
     - Path: repo://internal/sections/production/section.go
-      Note: Canonical production Glazed section introduced in commit 294e343
+      Note: |-
+        Canonical production Glazed section introduced in commit 294e343
+        Defines the internal administration listener through Glazed (commit 91f81f5)
     - Path: repo://pkg/idpprogram/schema.go
       Note: Array schema contract required by typed roles and groups in commit a5eecf1
     - Path: repo://pkg/sqlitestore/migrations/015_integration_transactions.sql
@@ -50,6 +57,10 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
+
+
+
 
 
 
@@ -766,4 +777,117 @@ registry sections
     -> MountAll(/integrations/<id>/)
     -> serve
     -> CloseAll(reverse order)
+```
+
+## Step 7: Add internal administration and plugin telemetry
+
+This step added the process-owned observability layer required to operate
+plugins professionally. TinyIDP now creates an isolated OpenTelemetry meter
+provider backed by a Prometheus exporter and serves liveness, aggregate
+readiness, and metrics on a separate administration listener.
+
+The Jitsi runtime records only bounded, low-cardinality dimensions and creates
+spans for its start and callback operations. User identifiers, email
+addresses, rooms, OAuth values, tokens, and error strings never become metric
+labels or span attributes.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Implement Phase 6.1 with a real Prometheus
+exporter, internal health/readiness endpoints, and instrumented Jitsi browser
+operations.
+
+**Inferred user intent:** Make the plugin deployable and diagnosable without
+expanding the public attack surface or leaking identity and authorization data.
+
+**Commit (code):** `91f81f5` — "feat(observability): expose plugin health and metrics"
+
+### What I did
+
+- Added an isolated Prometheus registry and OpenTelemetry meter provider in
+  `internal/observability`.
+- Added `/healthz`, `/readyz`, and `/metrics` to an internal-only handler.
+- Added the Glazed `production.admin-addr` field with a loopback default.
+- Started and stopped the public and administration servers in the same
+  `errgroup` lifecycle.
+- Passed the process meter to plugin construction.
+- Instrumented Jitsi start, callback, OIDC completion, policy decisions, token
+  issuance, and request duration.
+- Added trace spans with stable operation/outcome/reason-class attributes.
+- Added scrape, readiness degradation, metric-emission, and span tests.
+- Checked task `p6s1`.
+
+### Why
+
+- A global no-op meter proved only API shape; it did not provide observable
+  production behavior.
+- Health and metrics should not be routed through public Traefik ingress.
+- Exporter ownership belongs to the host, while plugins remain
+  exporter-neutral.
+
+### What worked
+
+- Focused observability, Jitsi, plugin-host, production-section, and command
+  tests passed.
+- The Prometheus test scrape contained both request and token counters.
+- Span tests observed one start span and one callback span.
+- The repository pre-commit test, golangci-lint, Glazed lint, and UI analyzer
+  gates passed.
+
+### What didn't work
+
+- The first `go mod tidy` used the default cache and failed repeatedly with
+  `open /home/manuel/.cache/go-build/...: read-only file system`. Re-running
+  with `GOCACHE=/tmp/tinyidp-plugin-go-cache` succeeded.
+- A test that manually constructed `Runtime` bypassed telemetry initialization
+  and panicked at `runtime.go:116`. Moving the fixture through `newRuntime`
+  restored the constructor invariant.
+- The first commit gate reported
+  `Error return value of tracerProvider.Shutdown is not checked (errcheck)`.
+  A cleanup closure now reports shutdown errors through the test.
+
+### What I learned
+
+- OpenTelemetry Prometheus exporter `v0.65.0` is the compatible release for
+  the repository's OpenTelemetry `v1.43.0` dependencies.
+- A private Prometheus registry avoids global collector collisions in tests and
+  embedded hosts.
+
+### What was tricky to build
+
+- Runtime instrumentation must be created during construction so a broken
+  instrument fails startup; direct struct literals must not bypass that
+  invariant.
+- Both HTTP servers must terminate when either listener or the parent context
+  fails, while plugin runtimes remain alive until both servers stop.
+
+### What warrants a second pair of eyes
+
+- Confirm the Kubernetes Service and NetworkPolicy make the administration
+  port reachable only by probes and monitoring.
+- Review the allowed telemetry attributes whenever a new plugin operation is
+  added.
+
+### What should be done in the future
+
+- Add trace exporter configuration only when the deployment has an explicit
+  collector endpoint and retention policy.
+
+### Code review instructions
+
+- Start with `internal/observability/prometheus.go`, then the server lifecycle
+  in `internal/cmds/serve_production.go`, and finally Jitsi instrumentation in
+  `internal/plugins/jitsi/runtime.go`.
+- Run
+  `go test ./internal/observability ./internal/plugins/jitsi ./internal/pluginhost ./internal/sections/production -count=1`.
+
+### Technical details
+
+```text
+public :8443                  internal :9090
+  OIDC/provider routes          /healthz
+  /integrations/jitsi/*         /readyz -> core + plugin checks
+                                /metrics -> private Prometheus registry
 ```

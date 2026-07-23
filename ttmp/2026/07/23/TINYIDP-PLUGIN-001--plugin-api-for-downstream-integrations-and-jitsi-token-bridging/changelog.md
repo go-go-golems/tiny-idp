@@ -77,3 +77,11 @@ Step 6: wired compiled plugins into serve-production with lifecycle and readines
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Production preparation build mounting readiness and cleanup
+
+## 2026-07-23
+
+Step 7: added the internal administration listener, Prometheus exporter, and bounded Jitsi OpenTelemetry instrumentation (commit 91f81f5)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/observability/prometheus.go — Internal health readiness and Prometheus surface
