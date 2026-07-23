@@ -63,8 +63,8 @@ func (s *Service) CreateClient(ctx context.Context, req CreateClientRequest) (id
 		if secret == "" {
 			return idpstore.Client{}, SecretResult{}, fmt.Errorf("client secret is required for confidential clients")
 		}
-		if len([]byte(secret)) > 72 {
-			return idpstore.Client{}, SecretResult{}, fmt.Errorf("client secret must not exceed 72 bytes")
+		if err := ValidateClientSecret(secret); err != nil {
+			return idpstore.Client{}, SecretResult{}, err
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
 		if err != nil {
@@ -84,6 +84,15 @@ func (s *Service) CreateClient(ctx context.Context, req CreateClientRequest) (id
 	}
 	err := s.auditCommitted(ctx, idp.Event{Time: now, Name: "admin.client.created", ClientID: c.ID, Result: "accepted"})
 	return c, result, err
+}
+
+// ValidateClientSecret enforces the input ceiling of the configured bcrypt
+// password hashing primitive before a secret reaches storage.
+func ValidateClientSecret(secret string) error {
+	if len([]byte(secret)) > 72 {
+		return fmt.Errorf("client secret must not exceed 72 bytes")
+	}
+	return nil
 }
 
 func (s *Service) ListClients(ctx context.Context) ([]idpstore.Client, error) {

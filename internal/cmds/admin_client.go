@@ -105,6 +105,9 @@ func resolveClientSecret(value, path string, generate bool) (string, error) {
 	if secret == "" {
 		return "", errors.New("client secret file is empty")
 	}
+	if err := admin.ValidateClientSecret(secret); err != nil {
+		return "", err
+	}
 	return secret, nil
 }
 
