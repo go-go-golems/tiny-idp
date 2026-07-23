@@ -3,7 +3,6 @@ package jitsi
 import (
 	"bytes"
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,7 +11,10 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/go-go-golems/tiny-idp/internal/observability"
 	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 )
@@ -34,18 +36,35 @@ func TestRuntimeStartCallbackIssuesTokenAndAuditsWithoutSecrets(t *testing.T) {
 	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
 	broker := &fakeBroker{}
 	audit := idp.NewMemorySink()
+	metrics, err := observability.NewMetrics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metrics.Close(context.Background())
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	t.Cleanup(func() {
+		if err := tracerProvider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shut down tracer provider: %v", err)
+		}
+	})
 	services := pluginapi.RuntimeServices{
 		OIDC: broker, Audit: audit, Logger: zerolog.Nop(), Clock: fixedClock{now},
 		Random: bytes.NewReader(bytes.Repeat([]byte{7}, 64)),
+		Meter:  metrics.Provider().Meter("tinyidp/plugins"),
+		Tracer: tracerProvider.Tracer("tinyidp/plugins"),
 	}
 	signer, err := NewSigner([]byte("0123456789abcdef0123456789abcdef"), "app", "meet.example.test", 5*time.Minute, fixedClock{now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime := newRuntime(Settings{
+	runtime, err := newRuntime(Settings{
 		PublicOrigin: "https://meet.example.test", XMPPDomain: "meet.example.test",
 		AppID: "app", OIDCClientID: "jitsi-client",
 	}, services, signer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer runtime.Close(context.Background())
 
 	start := httptest.NewRecorder()
@@ -84,20 +103,37 @@ func TestRuntimeStartCallbackIssuesTokenAndAuditsWithoutSecrets(t *testing.T) {
 	if strings.Contains(encoded, target.Query().Get("jwt")) || strings.Contains(encoded, "user@example.test") {
 		t.Fatal("audit event leaked token or email")
 	}
+	scrape := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if scrape.Code != http.StatusOK ||
+		!strings.Contains(scrape.Body.String(), "tinyidp_plugin_requests_total") ||
+		!strings.Contains(scrape.Body.String(), "tinyidp_jitsi_tokens_issued_total") {
+		t.Fatalf("Jitsi metrics scrape = %d %s", scrape.Code, scrape.Body.String())
+	}
+	spans := spanRecorder.Ended()
+	if len(spans) != 2 || spans[0].Name() != "tinyidp.jitsi.start" || spans[1].Name() != "tinyidp.jitsi.callback" {
+		t.Fatalf("Jitsi spans = %#v", spans)
+	}
 }
 
 func TestRuntimeRendersStableHTMLForInputAndCancellationErrors(t *testing.T) {
-	runtime := &Runtime{
-		descriptor: (Definition{}).Descriptor(),
-		settings:   Settings{OIDCClientID: "jitsi-client"},
-		services: pluginapi.RuntimeServices{
-			Audit: idp.NewMemorySink(), Logger: zerolog.New(io.Discard), Clock: fixedClock{time.Now()},
-		},
+	now := time.Now()
+	signer, err := NewSigner([]byte("0123456789abcdef0123456789abcdef"), "app", "meet.example.test", 5*time.Minute, fixedClock{now})
+	if err != nil {
+		t.Fatal(err)
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/start", runtime.start)
-	mux.HandleFunc("/callback", runtime.callback)
-	runtime.handler = mux
+	runtime, err := newRuntime(
+		Settings{OIDCClientID: "jitsi-client"},
+		pluginapi.RuntimeServices{
+			Audit: idp.NewMemorySink(), Logger: zerolog.Nop(), Clock: fixedClock{now},
+		},
+		signer,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
 	for _, target := range []string{"/start?room=../admin", "/callback?error=access_denied"} {
 		response := httptest.NewRecorder()
 		runtime.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, target, nil))

@@ -161,7 +161,15 @@ func (p *prepared) Build(ctx context.Context, services pluginapi.RuntimeServices
 			return nil, err
 		}
 	}
-	return newRuntime(p.settings, services, signer, policy), nil
+	runtime, err := newRuntime(p.settings, services, signer, policy)
+	if err != nil {
+		if policy != nil {
+			_ = policy.Close(context.Background())
+		}
+		_ = signer.Close()
+		return nil, err
+	}
+	return runtime, nil
 }
 
 func readPolicy(path string) (string, error) {

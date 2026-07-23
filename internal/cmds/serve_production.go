@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/go-go-golems/tiny-idp/internal/observability"
 	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
 	"github.com/go-go-golems/tiny-idp/internal/pluginhost"
 	"github.com/go-go-golems/tiny-idp/internal/pluginhost/oidcbroker"
@@ -118,6 +119,12 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 	}
 	if settings.RateLimit <= 0 || settings.MaxRequestBytes <= 0 {
 		return fmt.Errorf("rate-limit and max-request-bytes must be positive")
+	}
+	if strings.TrimSpace(settings.AdminAddr) == "" {
+		return fmt.Errorf("--admin-addr is required")
+	}
+	if settings.AdminAddr == settings.Addr {
+		return fmt.Errorf("--admin-addr must differ from --addr")
 	}
 	listenerMode, err := parseProductionListenerMode(settings.ListenerMode)
 	if err != nil {
@@ -266,9 +273,20 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 		_ = store.Close()
 		return err
 	}
+	telemetry, err := observability.NewMetrics()
+	if err != nil {
+		_ = provider.Close(context.Background())
+		_ = signupManager.Close(context.Background())
+		_ = audit.Close()
+		_ = store.Close()
+		return fmt.Errorf("construct production metrics: %w", err)
+	}
+	defer func() {
+		_ = telemetry.Close(context.Background())
+	}()
 	runtimes, err := pluginhost.Build(ctx, prepared, pluginapi.RuntimeServices{
 		OIDC: broker, Secrets: pluginhost.FileSecretResolver{}, Audit: audit,
-		Logger: log.Raw(), Meter: otel.Meter("tinyidp/plugins"), Tracer: otel.Tracer("tinyidp/plugins"),
+		Logger: log.Raw(), Meter: telemetry.Provider().Meter("tinyidp/plugins"), Tracer: otel.Tracer("tinyidp/plugins"),
 		Clock: pluginhost.SystemClock{}, Random: rand.Reader,
 	})
 	if err != nil {
@@ -337,6 +355,26 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 		MaxHeaderBytes:    1 << 20,
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 	}
+	adminHandler, err := observability.NewAdminHandler(telemetry.Handler(), func(readinessCtx context.Context) idp.ReadinessReport {
+		return pluginhost.CombineReadiness(provider.Readiness(readinessCtx), pluginhost.Readiness(readinessCtx, runtimes))
+	})
+	if err != nil {
+		_ = pluginhost.Close(context.Background(), runtimes)
+		_ = provider.Close(context.Background())
+		_ = signupManager.Close(context.Background())
+		_ = audit.Close()
+		_ = store.Close()
+		return err
+	}
+	adminServer := &http.Server{
+		Addr:              settings.AdminAddr,
+		Handler:           adminHandler,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    1 << 20,
+	}
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		log.Info().Str("addr", settings.Addr).Str("issuer", settings.Issuer).Str("listener_mode", string(listenerMode)).Msg("tinyidp production host listening")
@@ -348,6 +386,14 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 		}
 		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			return fmt.Errorf("serve production listener: %w", serveErr)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		log.Info().Str("addr", settings.AdminAddr).Msg("tinyidp internal administration listener active")
+		serveErr := adminServer.ListenAndServe()
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			return fmt.Errorf("serve production administration listener: %w", serveErr)
 		}
 		return nil
 	})
@@ -369,7 +415,7 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 		<-groupCtx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-		return httpServer.Shutdown(shutdownCtx)
+		return errors.Join(httpServer.Shutdown(shutdownCtx), adminServer.Shutdown(shutdownCtx))
 	})
 	runErr := group.Wait()
 	closeErr := errors.Join(pluginhost.Close(context.Background(), runtimes), provider.Close(context.Background()), signupManager.Close(context.Background()), audit.Close(), store.Close())

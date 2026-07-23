@@ -311,6 +311,10 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	if !ok || chooser.Required {
 		t.Fatal("optional account-chooser flag is unavailable")
 	}
+	adminAddr, ok := section.GetDefinitions().Get("admin-addr")
+	if !ok || adminAddr.Default == nil || *adminAddr.Default != "127.0.0.1:9090" {
+		t.Fatalf("internal administration listener field = %#v, %v", adminAddr, ok)
+	}
 	for _, required := range []string{"clients-file", "theme-dir", "theme-catalog-file"} {
 		definition, ok := section.GetDefinitions().Get(required)
 		if !ok || !definition.Required {

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"net/http"
@@ -17,6 +18,12 @@ import (
 
 	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 var roomPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
@@ -31,20 +38,55 @@ type Runtime struct {
 	policy     *PolicyExecutor
 	handler    http.Handler
 	closed     atomic.Bool
+	tracer     trace.Tracer
+	requests   metric.Int64Counter
+	duration   metric.Float64Histogram
+	tokens     metric.Int64Counter
+	oidc       metric.Int64Counter
+	policies   metric.Int64Counter
 }
 
 var _ pluginapi.Runtime = (*Runtime)(nil)
 
-func newRuntime(settings Settings, services pluginapi.RuntimeServices, signer *Signer, policy *PolicyExecutor) *Runtime {
+func newRuntime(settings Settings, services pluginapi.RuntimeServices, signer *Signer, policy *PolicyExecutor) (*Runtime, error) {
+	meter := services.Meter
+	if meter == nil {
+		meter = metricnoop.NewMeterProvider().Meter("tinyidp/plugins/jitsi")
+	}
+	tracer := services.Tracer
+	if tracer == nil {
+		tracer = tracenoop.NewTracerProvider().Tracer("tinyidp/plugins/jitsi")
+	}
+	requests, err := meter.Int64Counter("tinyidp.plugin.requests", metric.WithDescription("Plugin HTTP requests"))
+	if err != nil {
+		return nil, fmt.Errorf("create Jitsi request counter: %w", err)
+	}
+	duration, err := meter.Float64Histogram("tinyidp.plugin.request.duration", metric.WithUnit("s"), metric.WithDescription("Plugin HTTP request duration"))
+	if err != nil {
+		return nil, fmt.Errorf("create Jitsi request duration: %w", err)
+	}
+	tokens, err := meter.Int64Counter("tinyidp.jitsi.tokens.issued", metric.WithDescription("Jitsi tokens issued"))
+	if err != nil {
+		return nil, fmt.Errorf("create Jitsi token counter: %w", err)
+	}
+	oidc, err := meter.Int64Counter("tinyidp.jitsi.oidc.transactions", metric.WithDescription("Jitsi OIDC transaction outcomes"))
+	if err != nil {
+		return nil, fmt.Errorf("create Jitsi OIDC counter: %w", err)
+	}
+	policies, err := meter.Int64Counter("tinyidp.jitsi.policy.invocations", metric.WithDescription("Jitsi policy invocation outcomes"))
+	if err != nil {
+		return nil, fmt.Errorf("create Jitsi policy counter: %w", err)
+	}
 	runtime := &Runtime{
 		descriptor: (Definition{}).Descriptor(), settings: settings, services: services,
-		signer: signer, policy: policy,
+		signer: signer, policy: policy, tracer: tracer, requests: requests,
+		duration: duration, tokens: tokens, oidc: oidc, policies: policies,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/start", runtime.start)
 	mux.HandleFunc("/callback", runtime.callback)
 	runtime.handler = mux
-	return runtime
+	return runtime, nil
 }
 
 func (r *Runtime) Descriptor() pluginapi.Descriptor { return r.descriptor }
@@ -70,6 +112,19 @@ func (r *Runtime) Close(ctx context.Context) error {
 }
 
 func (r *Runtime) start(writer http.ResponseWriter, request *http.Request) {
+	started := time.Now()
+	ctx, span := r.tracer.Start(request.Context(), "tinyidp.jitsi.start",
+		trace.WithAttributes(attribute.String("plugin", "jitsi"), attribute.String("operation", "start")))
+	request = request.WithContext(ctx)
+	outcome, reasonClass := "failed", "validation"
+	defer func() {
+		r.observe(request.Context(), "start", outcome, reasonClass, time.Since(started))
+		span.SetAttributes(attribute.String("outcome", outcome), attribute.String("reason_class", reasonClass))
+		if outcome == "failed" {
+			span.SetStatus(codes.Error, reasonClass)
+		}
+		span.End()
+	}()
 	if request.Method != http.MethodGet {
 		writer.Header().Set("Allow", http.MethodGet)
 		r.renderError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
@@ -93,19 +148,38 @@ func (r *Runtime) start(writer http.ResponseWriter, request *http.Request) {
 		BrowserBinding: binding, TTL: 10 * time.Minute,
 	})
 	if err != nil {
+		reasonClass = "oauth"
 		r.reject(request.Context(), writer, "authentication_start_failed", err)
 		return
 	}
+	outcome, reasonClass = "accepted", "none"
+	r.oidc.Add(request.Context(), 1, metric.WithAttributes(
+		attribute.String("plugin", "jitsi"), attribute.String("operation", "start"), attribute.String("outcome", "accepted"),
+	))
 	http.Redirect(writer, request, result.AuthorizationURL, http.StatusSeeOther)
 }
 
 func (r *Runtime) callback(writer http.ResponseWriter, request *http.Request) {
+	started := time.Now()
+	ctx, span := r.tracer.Start(request.Context(), "tinyidp.jitsi.callback",
+		trace.WithAttributes(attribute.String("plugin", "jitsi"), attribute.String("operation", "callback")))
+	request = request.WithContext(ctx)
+	outcome, reasonClass := "failed", "validation"
+	defer func() {
+		r.observe(request.Context(), "callback", outcome, reasonClass, time.Since(started))
+		span.SetAttributes(attribute.String("outcome", outcome), attribute.String("reason_class", reasonClass))
+		if outcome != "accepted" {
+			span.SetStatus(codes.Error, reasonClass)
+		}
+		span.End()
+	}()
 	if request.Method != http.MethodGet {
 		writer.Header().Set("Allow", http.MethodGet)
 		r.renderError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
 	if oauthError := request.URL.Query().Get("error"); oauthError != "" {
+		outcome, reasonClass = "denied", "oauth"
 		r.reject(request.Context(), writer, "authentication_canceled", errors.New("OIDC authorization returned an error"))
 		return
 	}
@@ -120,9 +194,16 @@ func (r *Runtime) callback(writer http.ResponseWriter, request *http.Request) {
 		PluginID: r.descriptor.ID, BrowserBinding: cookie.Value, State: state, Code: code,
 	})
 	if err != nil {
+		reasonClass = "oauth"
+		r.oidc.Add(request.Context(), 1, metric.WithAttributes(
+			attribute.String("plugin", "jitsi"), attribute.String("operation", "complete"), attribute.String("outcome", "failed"),
+		))
 		r.reject(request.Context(), writer, "authentication_callback_rejected", err)
 		return
 	}
+	r.oidc.Add(request.Context(), 1, metric.WithAttributes(
+		attribute.String("plugin", "jitsi"), attribute.String("operation", "complete"), attribute.String("outcome", "accepted"),
+	))
 	var pluginState struct {
 		Room   string `json:"room"`
 		Tenant string `json:"tenant"`
@@ -144,16 +225,29 @@ func (r *Runtime) callback(writer http.ResponseWriter, request *http.Request) {
 			completion.Identity, r.descriptor.ID, pluginState.Room, pluginState.Tenant,
 		))
 		if err != nil {
+			reasonClass = "policy"
+			r.policies.Add(request.Context(), 1, metric.WithAttributes(
+				attribute.String("plugin", "jitsi"), attribute.String("outcome", "failed"),
+			))
 			r.reject(request.Context(), writer, "policy_unavailable", err)
 			return
 		}
+		policyOutcome := "accepted"
+		if !decision.Allowed {
+			policyOutcome = "denied"
+		}
+		r.policies.Add(request.Context(), 1, metric.WithAttributes(
+			attribute.String("plugin", "jitsi"), attribute.String("outcome", policyOutcome),
+		))
 	}
 	if !decision.Allowed {
+		outcome, reasonClass = "denied", "policy"
 		r.reject(request.Context(), writer, decision.DiagnosticID, nil)
 		return
 	}
 	token, err := r.signer.Issue(IssueRequest{Identity: completion.Identity, Room: pluginState.Room, Decision: decision})
 	if err != nil {
+		reasonClass = "signing"
 		r.reject(request.Context(), writer, "token_issue_failed", err)
 		return
 	}
@@ -162,11 +256,27 @@ func (r *Runtime) callback(writer http.ResponseWriter, request *http.Request) {
 		ClientID: r.settings.OIDCClientID, Subject: completion.Identity.Subject, Result: "accepted",
 		Fields: map[string]string{"room": pluginState.Room, "moderator": boolString(decision.Moderator)},
 	}); err != nil {
+		reasonClass = "audit"
 		r.renderError(writer, http.StatusServiceUnavailable, "audit_delivery_failed")
 		return
 	}
+	outcome, reasonClass = "accepted", "none"
+	r.tokens.Add(request.Context(), 1, metric.WithAttributes(
+		attribute.String("plugin", "jitsi"), attribute.String("outcome", "accepted"),
+	))
 	target := r.settings.PublicOrigin + "/" + url.PathEscape(pluginState.Room) + "?jwt=" + url.QueryEscape(token)
 	http.Redirect(writer, request, target, http.StatusSeeOther)
+}
+
+func (r *Runtime) observe(ctx context.Context, operation, outcome, reasonClass string, elapsed time.Duration) {
+	attributes := metric.WithAttributes(
+		attribute.String("plugin", "jitsi"),
+		attribute.String("operation", operation),
+		attribute.String("outcome", outcome),
+		attribute.String("reason_class", reasonClass),
+	)
+	r.requests.Add(ctx, 1, attributes)
+	r.duration.Record(ctx, elapsed.Seconds(), attributes)
 }
 
 func (r *Runtime) browserBinding(writer http.ResponseWriter, request *http.Request) (string, error) {

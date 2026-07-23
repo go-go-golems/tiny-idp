@@ -16,6 +16,7 @@ const Slug = "production"
 // settings are file references; secret contents never enter Glazed values.
 type Settings struct {
 	Addr                    string   `glazed:"addr"`
+	AdminAddr               string   `glazed:"admin-addr"`
 	ListenerMode            string   `glazed:"listener-mode"`
 	Issuer                  string   `glazed:"issuer"`
 	ClientsFile             string   `glazed:"clients-file"`
@@ -60,6 +61,7 @@ func NewSection() (schema.Section, error) {
 		"Production host configuration",
 		schema.WithFields(
 			fields.New("addr", fields.TypeString, fields.WithDefault(":8443"), fields.WithHelp("Listener address")),
+			fields.New("admin-addr", fields.TypeString, fields.WithDefault("127.0.0.1:9090"), fields.WithHelp("Internal health, readiness, and Prometheus listener address")),
 			fields.New("listener-mode", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Required listener mode: direct-tls or trusted-proxy-http")),
 			fields.New("issuer", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Canonical HTTPS issuer URL")),
 			fields.New("clients-file", fields.TypeString, fields.WithRequired(true), fields.WithHelp("Reviewed non-secret JSON catalog of exact production browser clients")),
