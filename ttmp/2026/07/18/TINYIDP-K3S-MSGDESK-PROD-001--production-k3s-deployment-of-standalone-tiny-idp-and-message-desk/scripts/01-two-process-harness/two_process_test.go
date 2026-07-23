@@ -421,6 +421,7 @@ type harness struct {
 	repo           string
 	binRoot        string
 	idpAddress     string
+	adminAddress   string
 	messageAddress string
 	idpLog         string
 	messageLog     string
@@ -437,12 +438,14 @@ func newHarness(t *testing.T) *harness {
 	root := t.TempDir()
 	return &harness{
 		t: t, root: root, repo: repo, binRoot: filepath.Join(root, "bin"),
-		idpAddress: unusedLoopbackAddress(t), messageAddress: unusedLoopbackAddress(t),
-		idpLog:       filepath.Join(root, "logs", "tinyidp.log"),
-		messageLog:   filepath.Join(root, "logs", "message-desk.log"),
-		idpAudit:     filepath.Join(root, "tinyidp", "audit", "events.jsonl"),
-		idpDatabase:  filepath.Join(root, "tinyidp", "state", "tinyidp.sqlite"),
-		messageState: filepath.Join(root, "message-desk"),
+		idpAddress:     unusedLoopbackAddress(t),
+		adminAddress:   unusedLoopbackAddress(t),
+		messageAddress: unusedLoopbackAddress(t),
+		idpLog:         filepath.Join(root, "logs", "tinyidp.log"),
+		messageLog:     filepath.Join(root, "logs", "message-desk.log"),
+		idpAudit:       filepath.Join(root, "tinyidp", "audit", "events.jsonl"),
+		idpDatabase:    filepath.Join(root, "tinyidp", "state", "tinyidp.sqlite"),
+		messageState:   filepath.Join(root, "message-desk"),
 	}
 }
 
@@ -513,6 +516,7 @@ func (h *harness) startTinyIDP() {
 	}
 	h.start("tinyidp", h.idpLog, filepath.Join(h.binRoot, "tinyidp"), "serve-production",
 		"--addr", h.idpAddress,
+		"--admin-addr", h.adminAddress,
 		"--listener-mode", "trusted-proxy-http",
 		"--issuer", idpIssuer,
 		"--clients-file", clients,
