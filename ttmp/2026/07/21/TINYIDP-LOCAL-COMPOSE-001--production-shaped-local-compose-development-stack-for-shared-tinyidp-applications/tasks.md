@@ -21,3 +21,5 @@
 - [x] Run the complete Playwright matrix against a fresh and retained local stack, document evidence, and close the discovered defects. <!-- t:1lta -->
 - [x] Verify durable email-code exhaustion recovery: committed SQLite attempts, rotated resend code, and real-browser replacement-code success <!-- t:u4n1 -->
 - [x] Fix and verify the new-account consent approval redirect through Message Desk <!-- t:pe9i -->
+- [x] Audit the browser matrix against its documented state transitions and add direct Chromium coverage for RP-local logout isolation and consumed invitation replay. <!-- t:uxmatrix20260723 -->
+- [x] Re-run all browser journeys against retained and freshly recreated Compose state while preserving the external local CA. <!-- t:uxmatrixfresh20260723 -->

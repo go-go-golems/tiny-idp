@@ -3,16 +3,27 @@ import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
-const messageOrigin = "https://message.localhost:8443";
-const idpOrigin = "https://idp.localhost:8443";
-const gojaOrigin = "https://goja.localhost:8443";
-const outboxOrigin = "http://127.0.0.1:8025";
-const outboxAuthorization = `Basic ${Buffer.from("operator:local-outbox-password-2026!").toString("base64")}`;
+const messageOrigin = process.env.TINYIDP_TEST_MESSAGE_ORIGIN ?? "https://message.localhost:8443";
+const idpOrigin = process.env.TINYIDP_TEST_IDP_ORIGIN ?? "https://idp.localhost:8443";
+const gojaOrigin = process.env.TINYIDP_TEST_GOJA_ORIGIN ?? "https://goja.localhost:8443";
+const outboxOrigin = process.env.TINYIDP_TEST_OUTBOX_ORIGIN ?? "http://127.0.0.1:8025";
+const outboxAuthorization = process.env.TINYIDP_TEST_OUTBOX_AUTHORIZATION ??
+  `Basic ${Buffer.from("operator:local-outbox-password-2026!").toString("base64")}`;
 const execFileAsync = promisify(execFile);
 const composeFile = resolve(process.cwd(), "../compose.yaml");
 
 async function issueSignupInvitation(audience: string, ttl = "1h"): Promise<string> {
-  const { stdout } = await execFileAsync("docker", [
+  const namespace = process.env.TINYIDP_TEST_KUBECTL_NAMESPACE;
+  const command = namespace ? "kubectl" : "docker";
+  const args = namespace ? [
+    "-n", namespace, "exec", "deploy/tinyidp", "--",
+    "tinyidp", "admin", "--db=/var/lib/tinyidp/tinyidp.sqlite", "invitation", "issue",
+    `--audience=${audience}`,
+    "--policy-version=signup-invite-v1",
+    `--ttl=${ttl}`,
+    "--lookup-key-file=/run/tinyidp-secrets/invitation-lookup.key",
+    "--output=json"
+  ] : [
     "compose", "-f", composeFile, "exec", "-T", "idp",
     "tinyidp", "admin", "--db=/state/tinyidp.sqlite", "invitation", "issue",
     `--audience=${audience}`,
@@ -20,7 +31,8 @@ async function issueSignupInvitation(audience: string, ttl = "1h"): Promise<stri
     `--ttl=${ttl}`,
     "--lookup-key-file=/state/.secrets/invitation_lookup_key",
     "--output=json"
-  ]);
+  ];
+  const {stdout} = await execFileAsync(command, args);
   const rows = JSON.parse(stdout) as Array<{ code?: string }>;
   if (rows.length !== 1 || !rows[0].code) throw new Error("invitation issue command returned no one-time code");
   return rows[0].code;
@@ -56,17 +68,18 @@ async function beginGojaSignup(page: Page): Promise<void> {
 
 async function latestEmailCode(page: Page, recipient: string): Promise<string> {
   const query = encodeURIComponent(`to:"${recipient}"`);
+  const headers = outboxAuthorization ? {Authorization: outboxAuthorization} : undefined;
   await expect
     .poll(async () => {
       const response = await page.request.get(`${outboxOrigin}/view/latest.txt?query=${query}`, {
-        headers: { Authorization: outboxAuthorization }
+        headers
       });
       if (!response.ok()) return "";
       return (await response.text()).match(/verification code is:\s*([A-Z2-7]{8})/)?.[1] ?? "";
     })
     .not.toBe("");
   const response = await page.request.get(`${outboxOrigin}/view/latest.txt?query=${query}`, {
-    headers: { Authorization: outboxAuthorization }
+    headers
   });
   const code = (await response.text()).match(/verification code is:\s*([A-Z2-7]{8})/)?.[1];
   if (!code) throw new Error(`Mailpit did not expose a verification code for ${recipient}`);
@@ -89,6 +102,23 @@ async function loginToMessageDesk(page: Page, login = "admin@example.test", pass
   }
   await expect(page).toHaveURL(new RegExp(`^${messageOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
   await expect(page.getByText("SIGNED IN")).toBeVisible();
+}
+
+async function loginToGojaAuth(page: Page, login = "admin@example.test", password = "local-admin-password-2026!"): Promise<void> {
+  await page.goto(`${gojaOrigin}/auth/login?return_to=/`);
+  if (page.url().startsWith(idpOrigin)) {
+    const loginField = page.getByLabel("Login");
+    if (await loginField.isVisible()) {
+      await loginField.fill(login);
+      await page.getByLabel("Password").fill(password);
+      await page.getByRole("button", { name: /continue|sign in|approve/i }).first().click();
+    }
+    if (page.url().startsWith(idpOrigin)) {
+      await page.getByRole("button", { name: /approve|continue/i }).first().click();
+    }
+  }
+  await expect(page).toHaveURL(new RegExp(`^${gojaOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+  await expect(page.locator("#session-status")).toContainText("Logged in");
 }
 
 test.beforeEach(async ({ page }) => {
@@ -167,6 +197,25 @@ test("remembered TinyIDP session can submit the first add-account signup step", 
   await submitIdentity(page, "Playwright Add Account", email);
   await expect(page.getByLabel("Email verification code")).toBeVisible();
   await expectMessageDeskTheme(page);
+});
+
+test("Message Desk local logout leaves the TinyIDP and Goja Auth sessions usable", async ({ page }) => {
+  await loginToMessageDesk(page);
+  await loginToGojaAuth(page);
+  const beforeLogout = await page.request.get(`${gojaOrigin}/auth/session`);
+  expect(beforeLogout.ok()).toBe(true);
+  expect((await beforeLogout.json()).email).toBe("admin@example.test");
+
+  await page.goto(messageOrigin);
+  await expect(page.getByText("SIGNED IN")).toBeVisible();
+  await page.getByRole("button", { name: "Log out of Message Desk" }).click();
+  await expect(page.getByText("GUEST MODE")).toBeVisible();
+
+  const afterLogout = await page.request.get(`${gojaOrigin}/auth/session`);
+  expect(afterLogout.ok()).toBe(true);
+  expect((await afterLogout.json()).email).toBe("admin@example.test");
+  await page.goto(gojaOrigin);
+  await expect(page.locator("#session-status")).toContainText("Logged in");
 });
 
 test("logging out everywhere clears Message Desk and TinyIDP browser sessions", async ({ page, context }) => {
@@ -404,6 +453,60 @@ test("Goja signup rejects a missing invitation with a themed field error", async
 
   await expect(invite).toHaveAttribute("aria-invalid", "true");
   await expect(page.getByText("This value could not be accepted.")).toBeVisible();
+  await expect(page.getByLabel("Email verification code")).toHaveCount(0);
+  await expectGojaAuthTheme(page);
+});
+
+test("invited Goja signup verifies email and establishes an application session", async ({ page }) => {
+  const suffix = Date.now();
+  const email = `playwright-goja-happy-${suffix}@example.test`;
+  const invitation = await issueSignupInvitation("goja-auth-host-demo");
+  await beginGojaSignup(page);
+  await page.getByLabel("Display name").fill(`Goja Happy Signup ${suffix}`);
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Invite code").fill(invitation);
+  await page.getByRole("button", {name: "Create account"}).click();
+  await page.getByLabel("Email verification code").fill(await latestEmailCode(page, email));
+  await page.getByRole("button", {name: /create account|continue/i}).click();
+  await page.getByLabel("Password", {exact: true}).fill("playwright invited goja signup password 2026!");
+  await page.getByLabel("Confirm password").fill("playwright invited goja signup password 2026!");
+  await page.getByRole("button", {name: "Create account"}).click();
+  if (page.url().startsWith(idpOrigin)) {
+    await page.getByRole("button", {name: /approve|continue/i}).first().click();
+  }
+  await expect(page).toHaveURL(new RegExp(`^${gojaOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+  const response = await page.request.get(`${gojaOrigin}/auth/session`);
+  expect(response.ok()).toBe(true);
+  expect((await response.json()).email).toBe(email);
+});
+
+test("a consumed Goja signup invitation remains a themed non-revealing field error", async ({ page }) => {
+  const suffix = Date.now();
+  const invitation = await issueSignupInvitation("goja-auth-host-demo");
+  const firstEmail = `playwright-goja-consume-first-${suffix}@example.test`;
+  await beginGojaSignup(page);
+  await page.getByLabel("Display name").fill(`Goja Consume First ${suffix}`);
+  await page.getByLabel("Email").fill(firstEmail);
+  await page.getByLabel("Invite code").fill(invitation);
+  await page.getByRole("button", {name: "Create account"}).click();
+  await page.getByLabel("Email verification code").fill(await latestEmailCode(page, firstEmail));
+  await page.getByRole("button", {name: /create account|continue/i}).click();
+  await page.getByLabel("Password", {exact: true}).fill("playwright consumed invitation password 2026!");
+  await page.getByLabel("Confirm password").fill("playwright consumed invitation password 2026!");
+  await page.getByRole("button", {name: "Create account"}).click();
+  if (page.url().startsWith(idpOrigin)) {
+    await page.getByRole("button", {name: /approve|continue/i}).first().click();
+  }
+  await expect(page).toHaveURL(new RegExp(`^${gojaOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+
+  await beginGojaSignup(page);
+  await page.getByLabel("Display name").fill(`Goja Consume Replay ${suffix}`);
+  await page.getByLabel("Email").fill(`playwright-goja-consume-replay-${suffix}@example.test`);
+  const replayedInvitation = page.getByLabel("Invite code");
+  await replayedInvitation.fill(invitation);
+  await page.getByRole("button", {name: "Create account"}).click();
+  await expect(page.getByText("This value could not be accepted.")).toBeVisible();
+  await expect(replayedInvitation).toHaveAttribute("aria-invalid", "true");
   await expect(page.getByLabel("Email verification code")).toHaveCount(0);
   await expectGojaAuthTheme(page);
 });

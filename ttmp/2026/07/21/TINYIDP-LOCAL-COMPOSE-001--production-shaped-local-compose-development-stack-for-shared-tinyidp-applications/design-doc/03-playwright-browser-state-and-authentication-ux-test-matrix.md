@@ -231,12 +231,28 @@ fix commit, and passing test name.
 
 ### Final execution evidence
 
-The final single-worker Chromium suite contains 25 scenarios. It passed in
-both required state modes on 2026-07-22:
+The single-worker Chromium suite contains 28 scenarios. The 2026-07-23
+retained-state run passed with `28 passed (17.7s)`. It adds two direct browser
+proofs that were absent from the earlier 25-scenario claim:
 
-- retained application and identity volumes: `25 passed (33.2s)`;
-- application volumes deleted and recreated, persistent local CA retained:
-  `25 passed (54.3s)`.
+- **RP-local logout isolation:** after one browser context establishes both
+  Message Desk and Goja Auth sessions through the same TinyIDP identity,
+  `Log out of Message Desk` leaves Message Desk in guest mode while Goja's
+  `/auth/session` endpoint and rendered dashboard remain authenticated.
+- **Consumed invitation replay:** a real Goja signup consumes an
+  operator-issued one-time invitation, then a second browser signup presents
+  the exact same code. The second submission remains on the Goja-themed
+  identity form, marks the invite field invalid, shows only the closed
+  `This value could not be accepted.` copy, and never sends an email code.
+
+The fresh-state run was also green on 2026-07-23: `28 passed (16.2s)`. It used
+`docker compose down -v`, which destroyed only Compose-project application
+volumes. The explicitly external `tinyidp-local-caddy-pki` CA volume remained
+protected and was reused by the subsequent stack startup. The post-reset smoke
+check proved readiness at all three public origins and the two OAuth login
+redirects before Chromium began. Retained-state success alone is not evidence
+that bootstrap, operator fixtures, or fresh database behavior still work; both
+execution modes are required whenever the suite or local topology changes.
 
 The fresh run also proved that the one-shot CA export and goja administrator
 bootstrap exited successfully, TinyIDP and Message Desk became healthy, and
@@ -244,11 +260,13 @@ Caddy owned `172.31.0.2` while dynamic IDP-backend services received addresses
 from the reserved `.128/25` pool.
 
 Invitation coverage is layered intentionally. Chromium exercises missing,
-unknown, expired, and wrong-audience codes as indistinguishable themed field
-errors. The production-shaped HTTP acceptance script exercises valid one-time
-consumption and consumed-code replay. The `pkg/idpinvite` provider matrix
-exhausts revoked and remaining internal state classifications without exposing
-those distinctions in browser copy.
+unknown, expired, wrong-audience, and consumed codes as indistinguishable
+themed field errors; it also proves a valid code starts and completes a real
+signup. The `pkg/idpinvite` provider matrix exhausts revoked and remaining
+internal state classifications without exposing those distinctions in browser
+copy. Revocation is not a normal browser-created state because issuing and
+revoking a bearer capability are explicit operator actions, but its externally
+visible error class remains the same closed invite-field response.
 
 ## Design Decisions
 
