@@ -3425,3 +3425,153 @@ unsafe source: one quoted line containing escaped newline markers
 safe source:   blockquote containing first line, blank line, second line
 output:        Pandoc -> XeLaTeX -> PDF -> reMarkable cloud
 ```
+
+## Step 33: Close the browser-matrix coverage audit with real state transitions
+
+The earlier matrix claimed that session navigation and invitation behavior were
+covered, but its browser evidence did not actually prove two of the documented
+rows. The former Message Desk logout test established only that Message Desk
+became anonymous; it never established a second relying-party session and
+showed that it survived. Likewise, invitation coverage tested missing,
+unknown, expired, and wrong-audience codes, but valid one-time consumption and
+replay existed only in a lower-layer HTTP acceptance script.
+
+This step made those two transitions direct Chromium requirements, then ran the
+complete suite against both retained and fresh Compose state.
+
+### Prompt Context
+
+**User prompt (verbatim):**
+
+> cover the browser UX matrix.
+
+**Assistant interpretation:** Treat the ticket's written matrix as the source
+of truth, find unproven user-visible transitions, add only the missing browser
+journeys, and require evidence from both retained and freshly initialized local
+state before claiming completion.
+
+**Inferred user intent:** A green test count is insufficient if it fails to
+exercise the cookie and one-time-capability boundaries that users will actually
+encounter across the two applications.
+
+**Commit (code):** `28ee07a` — "test: complete browser UX matrix coverage"
+
+### What I did
+
+- Audited every matrix row against the existing 26-scenario Playwright file.
+- Added `loginToGojaAuth`, a semantic helper that establishes the Goja Auth
+  relying-party session using the normal TinyIDP authorization flow.
+- Added `Message Desk local logout leaves the TinyIDP and Goja Auth sessions
+  usable`. It logs into Message Desk and Goja Auth as the same identity, uses
+  the Message Desk-only logout control, then proves Message Desk is in guest
+  mode while Goja's session endpoint and rendered dashboard remain signed in.
+- Added `a consumed Goja signup invitation remains a themed non-revealing field
+  error`. It issues an operator fixture, completes a real invited signup,
+  reuses that exact one-time code in a second browser signup, and asserts the
+  closed Goja-themed invite-field error with no email challenge.
+- Corrected the design document's stale `25 scenarios` claim and documented
+  the new retained and fresh execution evidence.
+- Performed `docker compose down -v` only for the explicitly scoped local
+  project, restarted it in tmux, exported the still-persistent public CA, ran
+  the normal smoke check, and reran Chromium from fresh data volumes.
+
+### Why
+
+- RP-local logout is a multi-origin cookie contract. A test that observes only
+  the originating application cannot detect accidental provider-wide or
+  cross-application session destruction.
+- A one-time invitation is an externally visible authorization capability. Its
+  replay must be rejected after real consumption without leaking whether the
+  code was once valid, expired, revoked, or intended for another audience.
+- Fresh-state execution proves that local bootstrap, seeded identities, Goja
+  database initialization, CA export, and operator fixtures work together; a
+  retained state run cannot prove those setup paths.
+
+### What worked
+
+- Initial retained-state smoke check passed all three readiness endpoints and
+  both OAuth redirect contracts.
+- The prior 26 tests passed before modification.
+- The two new targeted tests passed: `2 passed (3.6s)`.
+- The complete retained-state suite passed: `28 passed (17.7s)`.
+- After the application-volume reset, the smoke check again passed all three
+  readiness endpoints and both login redirects.
+- The complete fresh-state suite passed: `28 passed (16.2s)`.
+- The external `tinyidp-local-caddy-pki` volume was not listed among the
+  removed project volumes; Caddy reused its CA and `ca-export` completed
+  successfully after the restart.
+
+### What didn't work
+
+- The first non-escalated Playwright invocation did not reach a test. Chromium
+  exited during process launch with `FATAL:sandbox_host_linux.cc(41): Check
+  failed: . shutdown: Operation not permitted (1)`. The test command needed
+  the normal OS permissions for a headless browser; rerunning the exact command
+  outside the workspace sandbox passed without source changes.
+- The first smoke attempt immediately after reset returned `no container found
+  for service "ca-export"` because Docker was still compiling the two local Go
+  images. Waiting for Compose to finish, rather than changing the topology or
+  test, resolved it.
+- Sending Ctrl-C to the original foreground Compose process caused its owning
+  tmux server to exit, so the post-reset start had to create a new
+  `tinyidp-ux-matrix` session. The process remained tmux-managed throughout.
+
+### What I learned
+
+- `page.request` shares the Playwright context cookie jar, so it can verify an
+  application session after another origin's visible UI has changed. The test
+  also loads the Goja dashboard and asserts its rendered session state, keeping
+  the assertion user-visible rather than API-only.
+- Browser coverage should own user-created state transitions. Revocation stays
+  in the provider matrix because only an operator can create that fixture;
+  users nevertheless observe the same closed, themed field-error class.
+- Docker image rebuilding dominates fresh verification time here (about two
+  minutes), while a complete single-worker Chromium matrix takes about
+  sixteen to eighteen seconds once services are ready.
+
+### What was tricky to build
+
+- The Goja app can receive an existing TinyIDP identity without showing a
+  credential form, or it can show login and consent depending on browser
+  state. The helper deliberately handles both authorized paths before asserting
+  the relying-party dashboard.
+- The consumed-code test must keep the original raw invitation code only in
+  Playwright process memory. It is never written to ticket documentation,
+  command output, fixtures, or a committed source file.
+- `docker compose down -v` is destructive for application data, so the exact
+  Compose project directory and the external CA-volume design were verified
+  before issuing it.
+
+### What warrants a second pair of eyes
+
+- Confirm future Goja dashboard changes retain a stable, accessible sign-in
+  indicator or update the test's `#session-status` assertion deliberately.
+- Confirm any future invitation UI keeps the same closed public error class;
+  do not reveal why a capability was rejected.
+
+### What should be done in the future
+
+- N/A for the documented matrix rows. Add a new matrix row and browser test
+  whenever a new end-user authentication state transition is introduced.
+
+### Code review instructions
+
+- Read `loginToGojaAuth` and the Message Desk-local-logout test together; the
+  value is that both relying parties are established before the local logout.
+- Read the consumed-invitation test from issuance through replay and verify the
+  post-replay assertions exclude email verification and include the Goja theme.
+- Run the full Playwright command once with retained volumes and once after
+  `docker compose down -v`; both should report 28 passing tests.
+
+### Technical details
+
+```text
+one browser context
+  TinyIDP current identity: admin@example.test
+  Message Desk session:     authenticated --local logout--> guest
+  Goja Auth session:        authenticated -----------------> authenticated
+
+one invitation code
+  operator issue -> first Goja signup completes -> capability consumed
+  replayed code -> themed invite field error -> no email challenge
+```
