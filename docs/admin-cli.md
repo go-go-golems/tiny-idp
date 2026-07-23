@@ -47,7 +47,30 @@ tinyidp admin --db ./tinyidp.db client enable --id web-app
 tinyidp admin --db ./tinyidp.db client rotate-secret --id web-app
 ```
 
-Client command output redacts stored secret hashes. Generated secrets are returned once in command output. For operator-managed or container-mounted secrets on POSIX systems, use `--secret-file /run/secrets/<name>` instead of placing a value in argv. `--secret`, `--secret-file`, and `--generate-secret` are mutually exclusive. Secret files are opened without following symlinks and validated through that descriptor; they must be regular files no larger than 4096 bytes. Surrounding whitespace is removed, empty files fail closed, and the resulting client secret must not exceed bcrypt's 72-byte input limit. Non-POSIX secret-file input fails closed until equivalent native reparse-point and file-identity protections are implemented.
+Client command output redacts stored secret hashes. Generated secrets are returned once in command output. For operator-managed or container-mounted secrets on POSIX systems, use `--secret-file /run/secrets/<name>` instead of placing a value in argv. `--secret`, `--secret-file`, and `--generate-secret` are mutually exclusive. Secret files are opened without following symlinks and validated through that descriptor; they must be regular files no larger than 4096 bytes. Special files such as FIFOs are rejected without blocking. Surrounding whitespace is removed, empty files fail closed, and the resulting client secret must not exceed bcrypt's 72-byte input limit. Non-POSIX secret-file input fails closed until equivalent native reparse-point and file-identity protections are implemented.
+
+### Client primitive profiles
+
+TinyIDP does not persist a separate client-kind enum. An operator composes a client from explicit primitives, so every enabled capability is visible in the registration. The following named profiles are conventions for common compositions, not additional stored types.
+
+| Profile | Required primitives | Deliberate restrictions |
+| --- | --- | --- |
+| Browser application | `--public`, authorization-code grant, exact `--redirect-uri`, scopes, and PKCE | A public client cannot introspect and must use PKCE. Add refresh-token only when the application needs it. |
+| Device client | device-code grant, scopes, and any API `--audience` values; it may be public or confidential | A public device client must satisfy TinyIDP's PKCE invariant. It receives no browser redirect URI merely because it uses the device flow. |
+| Resource server | confidential secret, `--can-introspect`, one or more `--audience` values, and **no** `--grant-type` | It may authenticate to introspect tokens for its own audiences, but it cannot obtain tokens through authorization-code or device grants. |
+
+For example, a public device client that may request the Message API resource is registered explicitly as:
+
+```bash
+tinyidp admin --db ./tinyidp.db client create \
+  --id message-cli \
+  --public --require-pkce \
+  --scope openid --scope profile \
+  --grant-type urn:ietf:params:oauth:grant-type:device_code \
+  --audience https://api.example.test
+```
+
+These profiles are intentionally documentation and test contracts rather than configuration shortcuts. A future provisioning workflow, including a Goja workflow, can compose the same primitives without TinyIDP hardcoding an application-specific client kind.
 
 ## Users
 
