@@ -22,6 +22,8 @@ import (
 
 	"github.com/go-go-golems/tiny-idp/cmd/tinyidp/doc"
 	"github.com/go-go-golems/tiny-idp/internal/cmds"
+	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
+	jitsiplugin "github.com/go-go-golems/tiny-idp/internal/plugins/jitsi"
 )
 
 // version is overridden at link time (-ldflags "-X main.version=...").
@@ -73,9 +75,18 @@ func main() {
 	cobra.CheckErr(err)
 	rootCmd.AddCommand(serveCobraCmd)
 
-	productionCmd, err := cmds.NewServeProductionCommand()
+	pluginRegistry, err := pluginapi.NewRegistry(jitsiplugin.Definition{})
 	cobra.CheckErr(err)
-	productionCobraCmd, err := cli.BuildCobraCommand(productionCmd)
+	productionCmd, err := cmds.NewServeProductionCommand(pluginRegistry)
+	cobra.CheckErr(err)
+	productionCobraCmd, err := cli.BuildCobraCommand(productionCmd,
+		cli.WithParserConfig(cli.CobraParserConfig{
+			AppName:           "tinyidp",
+			ConfigPlanBuilder: cmds.ConfigFilePlanBuilder,
+			MiddlewaresFunc:   cmds.ProfileMiddlewaresFunc("tinyidp", cmds.ConfigFilePlanBuilder),
+		}),
+		cli.WithProfileSettingsSection(),
+	)
 	cobra.CheckErr(err)
 	rootCmd.AddCommand(productionCobraCmd)
 

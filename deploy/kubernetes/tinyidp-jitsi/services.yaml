@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tinyidp
+spec:
+  selector:
+    app.kubernetes.io/name: tinyidp
+    app.kubernetes.io/component: identity-provider
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tinyidp-admin
+spec:
+  selector:
+    app.kubernetes.io/name: tinyidp
+    app.kubernetes.io/component: identity-provider
+  ports:
+    - name: admin
+      port: 9090
+      targetPort: admin

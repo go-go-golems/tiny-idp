@@ -10,12 +10,13 @@ const (
 	SchemaKindBoolean SchemaKind = "boolean"
 	SchemaKindInteger SchemaKind = "integer"
 	SchemaKindBytes   SchemaKind = "bytes"
+	SchemaKindArray   SchemaKind = "array"
 )
 
 // Valid reports whether k belongs to the Phase 0 schema vocabulary.
 func (k SchemaKind) Valid() bool {
 	switch k {
-	case SchemaKindObject, SchemaKindString, SchemaKindBoolean, SchemaKindInteger, SchemaKindBytes:
+	case SchemaKindObject, SchemaKindString, SchemaKindBoolean, SchemaKindInteger, SchemaKindBytes, SchemaKindArray:
 		return true
 	default:
 		return false
@@ -32,6 +33,8 @@ type Schema struct {
 	MaxLength  int                    `json:"maxLength,omitempty"`
 	Minimum    *int64                 `json:"minimum,omitempty"`
 	Maximum    *int64                 `json:"maximum,omitempty"`
+	Items      string                 `json:"items,omitempty"`
+	MaxItems   int                    `json:"maxItems,omitempty"`
 	Additional bool                   `json:"additional"`
 }
 

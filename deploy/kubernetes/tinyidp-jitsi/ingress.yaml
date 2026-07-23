@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tinyidp
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - idp-jitsi.yolo.scapegoat.dev
+      secretName: tinyidp-jitsi-tls
+  rules:
+    - host: idp-jitsi.yolo.scapegoat.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tinyidp
+                port:
+                  name: http

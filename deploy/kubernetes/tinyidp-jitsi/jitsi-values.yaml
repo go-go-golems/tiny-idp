@@ -1,0 +1,92 @@
+# Values for jitsi-contrib/jitsi-helm chart 2.22.0.
+# Secret values are supplied only through the VSO-created
+# tinyidp-jitsi-runtime Kubernetes Secret.
+publicURL: https://meet.yolo.scapegoat.dev
+tz: UTC
+enableAuth: true
+enableGuests: false
+
+xmpp:
+  domain: meet.yolo.scapegoat.dev
+
+websockets:
+  xmpp:
+    enabled: true
+  colibri:
+    enabled: true
+
+web:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: meet.yolo.scapegoat.dev
+        paths:
+          - /
+    tls:
+      - secretName: tinyidp-jitsi-meet-tls
+        hosts:
+          - meet.yolo.scapegoat.dev
+  extraEnvs:
+    ENABLE_PREJOIN_PAGE: "1"
+    ENABLE_WELCOME_PAGE: "1"
+    TOKEN_AUTH_URL: https://idp-jitsi.yolo.scapegoat.dev/integrations/jitsi/start?room={room}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+prosody:
+  jwt:
+    existingSecretName: tinyidp-jitsi-runtime
+  extraEnvs:
+    AUTH_TYPE: jwt
+    JWT_APP_ID: tinyidp-jitsi-prod
+    JWT_ACCEPTED_ISSUERS: tinyidp-jitsi-prod
+    JWT_ACCEPTED_AUDIENCES: tinyidp-jitsi-prod
+    JWT_ALLOW_EMPTY: "0"
+    JWT_AUTH_TYPE: token
+    JWT_SIGN_TYPE: HS256
+  metrics:
+    enabled: true
+    allowed_cidr: 10.42.0.0/16
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+jicofo:
+  xmpp:
+    existingSecretName: tinyidp-jitsi-runtime
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+jvb:
+  replicaCount: 1
+  xmpp:
+    existingSecretName: tinyidp-jitsi-runtime
+  useNodeIP: true
+  useHostPort: true
+  UDPPort: 10000
+  service:
+    enabled: false
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi

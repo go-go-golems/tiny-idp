@@ -23,7 +23,7 @@ const (
 	maxCarrySchemaBytes = 64 << 10
 )
 
-var identifierPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
+var identifierPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*(?:@v[1-9][0-9]*)?$`)
 
 // Validate deterministically checks all runtime-independent program invariants.
 func Validate(program Program) Diagnostics {
@@ -56,6 +56,16 @@ func Validate(program Program) Diagnostics {
 			}
 		} else if len(schema.Fields) != 0 {
 			add("schema.scalar_fields", path+".fields", "scalar schema must not define fields")
+		}
+		if schema.Kind == SchemaKindArray {
+			if schema.Items == "" || program.Schemas[schema.Items].ID == "" {
+				add("schema.array_items", path+".items", fmt.Sprintf("unknown schema %q", schema.Items))
+			}
+			if schema.MaxItems <= 0 || schema.MaxItems > 1024 {
+				add("schema.array_max_items", path+".maxItems", "must be between 1 and 1024")
+			}
+		} else if schema.Items != "" || schema.MaxItems != 0 {
+			add("schema.non_array_items", path+".items", "non-array schema must not define array items")
 		}
 	}
 	validateSchemaCycles(&diagnostics, program.Schemas)
@@ -303,6 +313,11 @@ func validateSchemaCycles(diagnostics *Diagnostics, schemas map[string]Schema) {
 				ref := schema.Fields[fieldName].Ref
 				if _, exists := schemas[ref]; exists {
 					visit(ref, append(stack, id))
+				}
+			}
+			if schema.Kind == SchemaKindArray {
+				if _, exists := schemas[schema.Items]; exists {
+					visit(schema.Items, append(stack, id))
 				}
 			}
 		}

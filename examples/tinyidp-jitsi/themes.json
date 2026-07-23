@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "defaultTheme": "jitsi",
+  "themes": {
+    "jitsi": {
+      "productName": "TinyIDP Meetings",
+      "stylesheet": "jitsi.css"
+    }
+  },
+  "clientThemes": {
+    "tinyidp-jitsi-local": "jitsi"
+  }
+}

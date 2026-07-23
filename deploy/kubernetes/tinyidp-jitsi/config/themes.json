@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "defaultTheme": "default",
+  "themes": {
+    "default": {
+      "productName": "TinyIDP Meetings"
+    }
+  },
+  "clientThemes": {
+    "tinyidp-jitsi-prod": "default"
+  }
+}

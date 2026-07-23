@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tinyidp-jitsi
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - vault-connection.yaml
+  - vault-auth.yaml
+  - runtime-secret.yaml
+  - image-pull-secret.yaml
+  - persistent-volume-claim.yaml
+  - deployment.yaml
+  - services.yaml
+  - ingress.yaml
+  - network-policy.yaml
+configMapGenerator:
+  - name: tinyidp-jitsi-config
+    files:
+      - clients.json=config/clients.json
+      - themes.json=config/themes.json
+      - open-signup.js=config/open-signup.js
+      - jitsi-policy.js=config/jitsi-policy.js
+generatorOptions:
+  disableNameSuffixHash: true
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: tinyidp-jitsi

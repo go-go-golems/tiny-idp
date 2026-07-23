@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-go-golems/glazed/pkg/cmds/schema"
+	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
+	jitsiplugin "github.com/go-go-golems/tiny-idp/internal/plugins/jitsi"
+	productionsection "github.com/go-go-golems/tiny-idp/internal/sections/production"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
@@ -51,7 +53,10 @@ func TestProductionHTTPHandlerServesOnlyTheRendererAssetsBelowStaticThemes(t *te
 		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = writer.Write([]byte("provider route: " + request.URL.Path))
 	})
-	handler := productionHTTPHandler(provider, assets, 1024)
+	handler, err := productionHTTPHandler(provider, assets, nil, "", nil, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	stylesheet := httptest.NewRecorder()
 	handler.ServeHTTP(stylesheet, httptest.NewRequest(http.MethodGet, "https://idp.example.test/static/themes/message-desk.css", nil))
@@ -70,7 +75,7 @@ func TestProductionHTTPHandlerServesOnlyTheRendererAssetsBelowStaticThemes(t *te
 }
 
 func TestParseProductionDurationsRejectsNonPositive(t *testing.T) {
-	settings := &serveProductionSettings{RateWindow: "1m", MaintenanceInterval: "15m", ReadHeaderTimeout: "5s", ReadTimeout: "15s", WriteTimeout: "30s", IdleTimeout: "1m", ShutdownTimeout: "0s"}
+	settings := &productionsection.Settings{RateWindow: "1m", MaintenanceInterval: "15m", ReadHeaderTimeout: "5s", ReadTimeout: "15s", WriteTimeout: "30s", IdleTimeout: "1m", ShutdownTimeout: "0s"}
 	if _, _, _, _, _, _, _, err := parseProductionDurations(settings); err == nil {
 		t.Fatal("expected zero shutdown timeout rejection")
 	}
@@ -87,20 +92,20 @@ func TestProductionListenerModesAreExplicitAndMutuallyExclusive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateProductionListenerSettings(direct, &serveProductionSettings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem"}); err != nil {
+	if err := validateProductionListenerSettings(direct, &productionsection.Settings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem"}); err != nil {
 		t.Fatalf("valid direct TLS settings rejected: %v", err)
 	}
-	if err := validateProductionListenerSettings(direct, &serveProductionSettings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
+	if err := validateProductionListenerSettings(direct, &productionsection.Settings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
 		t.Fatal("direct TLS accepted proxy CIDRs")
 	}
 	proxy, err := parseProductionListenerMode("trusted-proxy-http")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateProductionListenerSettings(proxy, &serveProductionSettings{Issuer: "https://idp.example.test/idp", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err != nil {
+	if err := validateProductionListenerSettings(proxy, &productionsection.Settings{Issuer: "https://idp.example.test/idp", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err != nil {
 		t.Fatalf("valid trusted proxy settings rejected: %v", err)
 	}
-	if err := validateProductionListenerSettings(proxy, &serveProductionSettings{Issuer: "http://idp.example.test", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
+	if err := validateProductionListenerSettings(proxy, &productionsection.Settings{Issuer: "http://idp.example.test", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
 		t.Fatal("trusted proxy accepted HTTP issuer")
 	}
 }
@@ -250,7 +255,7 @@ func TestProductionEmailChallengesRequireCompleteProgramBoundConfiguration(t *te
 	if err := os.WriteFile(keyPath, []byte("0123456789abcdef0123456789abcdef"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	settings := &serveProductionSettings{
+	settings := &productionsection.Settings{
 		EmailChallengeKeyFile: keyPath, EmailSMTPAddress: "mailcatcher:1025", EmailSMTPTLSMode: "private-plaintext",
 		EmailFromAddress: "accounts@example.test", EmailFromName: "TinyIDP", EmailSMTPConnectTimeout: "1s", EmailSMTPSendTimeout: "2s",
 	}
@@ -273,11 +278,15 @@ func TestProductionEmailChallengesRequireCompleteProgramBoundConfiguration(t *te
 }
 
 func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t *testing.T) {
-	command, err := NewServeProductionCommand()
+	registry, err := pluginapi.NewRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	section, ok := command.Schema.Get(schema.DefaultSlug)
+	command, err := NewServeProductionCommand(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	section, ok := command.Schema.Get(productionsection.Slug)
 	if !ok {
 		t.Fatal("default command section is unavailable")
 	}
@@ -302,6 +311,10 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	if !ok || chooser.Required {
 		t.Fatal("optional account-chooser flag is unavailable")
 	}
+	adminAddr, ok := section.GetDefinitions().Get("admin-addr")
+	if !ok || adminAddr.Default == nil || *adminAddr.Default != "127.0.0.1:9090" {
+		t.Fatalf("internal administration listener field = %#v, %v", adminAddr, ok)
+	}
 	for _, required := range []string{"clients-file", "theme-dir", "theme-catalog-file"} {
 		definition, ok := section.GetDefinitions().Get(required)
 		if !ok || !definition.Required {
@@ -310,5 +323,25 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	}
 	if _, legacy := section.GetDefinitions().Get("message-desk-origin"); legacy {
 		t.Fatal("legacy message-desk-origin production flag is still exposed")
+	}
+}
+
+func TestProductionCommandComposesCompiledPluginSections(t *testing.T) {
+	registry, err := pluginapi.NewRegistry(jitsiplugin.Definition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := NewServeProductionCommand(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	section, ok := command.Schema.Get(jitsiplugin.SectionSlug)
+	if !ok || section.GetPrefix() != "jitsi-" {
+		t.Fatalf("Jitsi section = %#v, %v", section, ok)
+	}
+	for _, name := range []string{"enabled", "public-origin", "shared-secret-file", "policy-program-file"} {
+		if _, ok := section.GetDefinitions().Get(name); !ok {
+			t.Fatalf("missing Jitsi field %q", name)
+		}
 	}
 }

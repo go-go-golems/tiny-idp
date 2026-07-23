@@ -1,0 +1,294 @@
+name: tinyidp-jitsi
+
+x-jitsi-environment: &jitsi-environment
+  TZ: UTC
+  PUBLIC_URL: https://meet.localhost:8443
+  XMPP_SERVER: prosody
+  XMPP_PORT: "5222"
+  XMPP_DOMAIN: meet.localhost
+  XMPP_AUTH_DOMAIN: auth.meet.localhost
+  XMPP_MUC_DOMAIN: muc.meet.localhost
+  XMPP_INTERNAL_MUC_DOMAIN: internal-muc.meet.localhost
+  XMPP_HIDDEN_DOMAIN: hidden.meet.localhost
+  XMPP_RECORDER_DOMAIN: recorder.meet.localhost
+  ENABLE_AUTH: "1"
+  ENABLE_GUESTS: "0"
+  AUTH_TYPE: jwt
+  JWT_APP_ID: tinyidp-jitsi-local
+  JWT_ACCEPTED_ISSUERS: tinyidp-jitsi-local
+  JWT_ACCEPTED_AUDIENCES: tinyidp-jitsi-local
+  JWT_ALLOW_EMPTY: "0"
+  JWT_AUTH_TYPE: token
+  JWT_SIGN_TYPE: HS256
+  ENABLE_XMPP_WEBSOCKET: "1"
+  ENABLE_COLIBRI_WEBSOCKET: "1"
+  JICOFO_AUTH_USER: focus
+  JVB_AUTH_USER: jvb
+  JVB_BREWERY_MUC: jvbbrewery
+
+services:
+  proxy:
+    image: caddy:2.10.2-alpine
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      idp-backend:
+        ipv4_address: 172.35.0.2
+      meet-backend:
+        ipv4_address: 172.36.0.2
+
+  ca-export:
+    image: alpine:3.22
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        source=/caddy-data/caddy/pki/authorities/local/root.crt
+        for attempt in $$(seq 1 60); do
+          if [ -s "$$source" ]; then
+            cp "$$source" /trust/caddy-local-root.crt
+            chmod 0444 /trust/caddy-local-root.crt
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "Caddy local root certificate was not generated" >&2
+        exit 1
+    volumes:
+      - caddy-data:/caddy-data:ro
+      - local-ca:/trust
+    depends_on:
+      proxy:
+        condition: service_started
+    restart: "no"
+    networks:
+      - idp-backend
+
+  idp:
+    build:
+      context: ../..
+      dockerfile: examples/tinyidp-shared-two-apps/Dockerfile.idp
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        mkdir -p /state/audit
+        if [ ! -s /state/token.key ]; then
+          dd if=/dev/urandom of=/state/token.key bs=32 count=1 status=none
+        fi
+        chmod 0600 /state/token.key
+        if ! tinyidp admin --db=/state/tinyidp.sqlite user get --login=admin@example.test >/dev/null 2>&1; then
+          tinyidp admin --db=/state/tinyidp.sqlite user create \
+            --login=admin@example.test \
+            --id=local-jitsi-admin \
+            --sub=local-jitsi-admin \
+            --email=admin@example.test \
+            --email-verified \
+            --name='Local Jitsi Administrator' \
+            --password-from-stdin </state/.secrets/local_admin_password
+        fi
+        if ! tinyidp admin --db=/state/tinyidp.sqlite user get --login=denied@example.test >/dev/null 2>&1; then
+          tinyidp admin --db=/state/tinyidp.sqlite user create \
+            --login=denied@example.test \
+            --id=local-jitsi-policy-denied \
+            --sub=local-jitsi-policy-denied \
+            --name='Local Jitsi Policy Denied' \
+            --password-from-stdin </state/.secrets/local_policy_denied_password
+        fi
+        exec tinyidp serve-production \
+          --addr=:8081 \
+          --admin-addr=:9090 \
+          --listener-mode=trusted-proxy-http \
+          --issuer=https://idp.localhost:8443 \
+          --clients-file=/config/clients.json \
+          --theme-dir=/config \
+          --theme-catalog-file=/config/themes.json \
+          --signup-program-file=/config/open-signup.js \
+          --db=/state/tinyidp.sqlite \
+          --audit-path=/state/audit/audit.jsonl \
+          --token-secret-file=/state/token.key \
+          --trusted-proxy-cidrs=172.35.0.0/24 \
+          --rate-limit=500 \
+          --account-chooser \
+          --jitsi-enabled \
+          --jitsi-public-origin=https://meet.localhost:8443 \
+          --jitsi-xmpp-domain=meet.localhost \
+          --jitsi-app-id=tinyidp-jitsi-local \
+          --jitsi-oidc-client-id=tinyidp-jitsi-local \
+          --jitsi-token-ttl=5m \
+          --jitsi-shared-secret-file=/state/.secrets/jitsi_shared_secret \
+          --jitsi-policy-program-file=/config/jitsi-policy.js \
+          --jitsi-policy-pool-size=2
+    depends_on:
+      ca-export:
+        condition: service_completed_successfully
+    environment:
+      HOME: /home/tinyidp
+    networks:
+      - idp-backend
+    volumes:
+      - idp-state:/state
+      - ./clients.json:/config/clients.json:ro
+      - ./themes.json:/config/themes.json:ro
+      - ./jitsi.css:/config/jitsi.css:ro
+      - ./open-signup.js:/config/open-signup.js:ro
+      - ./jitsi-policy.js:/config/jitsi-policy.js:ro
+    secrets:
+      - local_admin_password
+      - local_policy_denied_password
+      - jitsi_shared_secret
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1:9090/readyz >/dev/null
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  meet-web:
+    image: jitsi/web:stable-10978
+    environment:
+      <<: *jitsi-environment
+      DISABLE_HTTPS: "1"
+      ENABLE_HTTP_REDIRECT: "0"
+      ENABLE_PREJOIN_PAGE: "1"
+      ENABLE_WELCOME_PAGE: "1"
+      TOKEN_AUTH_URL: https://idp.localhost:8443/integrations/jitsi/start?room={room}
+      JVB_WS_DOMAIN: meet.localhost:8443
+      JVB_WS_SERVER_ID: jvb1
+    volumes:
+      - web-config:/config
+      - web-crontabs:/var/spool/cron/crontabs
+      - transcripts:/usr/share/jitsi-meet/transcripts
+    depends_on:
+      prosody:
+        condition: service_started
+      jvb:
+        condition: service_started
+    networks:
+      meet-backend:
+        aliases:
+          - meet-web
+
+  prosody:
+    image: jitsi/prosody:stable-10978
+    entrypoint:
+      - /bin/bash
+      - -ec
+    command:
+      - |
+        export JWT_APP_SECRET="$$(cat /run/secrets/jitsi_shared_secret)"
+        export JICOFO_AUTH_PASSWORD="$$(cat /run/secrets/jicofo_auth_password)"
+        export JVB_AUTH_PASSWORD="$$(cat /run/secrets/jvb_auth_password)"
+        exec /init
+    environment:
+      <<: *jitsi-environment
+      PROSODY_ENABLE_METRICS: "1"
+      PROSODY_METRICS_ALLOWED_CIDR: 172.36.0.0/24
+    secrets:
+      - jitsi_shared_secret
+      - jicofo_auth_password
+      - jvb_auth_password
+    volumes:
+      - prosody-config:/config
+      - prosody-plugins:/prosody-plugins-custom
+    networks:
+      meet-backend:
+        aliases:
+          - xmpp.meet.jitsi
+
+  jicofo:
+    image: jitsi/jicofo:stable-10978
+    entrypoint:
+      - /bin/bash
+      - -ec
+    command:
+      - |
+        export JICOFO_AUTH_PASSWORD="$$(cat /run/secrets/jicofo_auth_password)"
+        exec /init
+    environment:
+      <<: *jitsi-environment
+      JICOFO_ENABLE_HEALTH_CHECKS: "1"
+      JICOFO_ENABLE_REST: "1"
+    secrets:
+      - jicofo_auth_password
+    volumes:
+      - jicofo-config:/config
+    depends_on:
+      prosody:
+        condition: service_started
+    networks:
+      - meet-backend
+
+  jvb:
+    image: jitsi/jvb:stable-10978
+    entrypoint:
+      - /bin/bash
+      - -ec
+    command:
+      - |
+        export JVB_AUTH_PASSWORD="$$(cat /run/secrets/jvb_auth_password)"
+        exec /init
+    environment:
+      <<: *jitsi-environment
+      JVB_ADVERTISE_IPS: 127.0.0.1
+      JVB_DISABLE_STUN: "true"
+      JVB_PORT: "10000"
+      JVB_WS_DOMAIN: meet.localhost:8443
+      JVB_WS_SERVER_ID: jvb1
+      COLIBRI_REST_ENABLED: "true"
+    ports:
+      - "127.0.0.1:10000:10000/udp"
+    secrets:
+      - jvb_auth_password
+    volumes:
+      - jvb-config:/config
+    depends_on:
+      prosody:
+        condition: service_started
+    networks:
+      - meet-backend
+
+networks:
+  idp-backend:
+    ipam:
+      config:
+        - subnet: 172.35.0.0/24
+          ip_range: 172.35.0.128/25
+  meet-backend:
+    ipam:
+      config:
+        - subnet: 172.36.0.0/24
+          ip_range: 172.36.0.128/25
+
+volumes:
+  idp-state:
+  web-config:
+  web-crontabs:
+  transcripts:
+  prosody-config:
+  prosody-plugins:
+  jicofo-config:
+  jvb-config:
+  caddy-data:
+    external: true
+    name: tinyidp-local-caddy-pki
+  caddy-config:
+  local-ca:
+
+secrets:
+  local_admin_password:
+    file: ./runtime/secrets/local-admin-password.txt
+  local_policy_denied_password:
+    file: ./runtime/secrets/local-policy-denied-password.txt
+  jitsi_shared_secret:
+    file: ./runtime/secrets/jitsi-shared-secret.key
+  jicofo_auth_password:
+    file: ./runtime/secrets/jicofo-auth-password.key
+  jvb_auth_password:
+    file: ./runtime/secrets/jvb-auth-password.key
