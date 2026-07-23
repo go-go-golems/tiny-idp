@@ -125,6 +125,7 @@ type Identity struct {
 	PreferredUsername string
 	Groups            []string
 	Roles             []string
+	AuthTime          time.Time
 }
 
 type Completion struct {

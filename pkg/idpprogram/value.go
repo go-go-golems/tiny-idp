@@ -143,6 +143,23 @@ func validateJSONValue(schemas map[string]Schema, schema Schema, value any, stac
 		if schema.MaxLength > 0 && len(decoded) > schema.MaxLength {
 			return errors.Errorf("schema %q bytes exceed length %d", schema.ID, schema.MaxLength)
 		}
+	case SchemaKindArray:
+		items, ok := value.([]any)
+		if !ok {
+			return errors.Errorf("schema %q requires an array", schema.ID)
+		}
+		if schema.MaxItems > 0 && len(items) > schema.MaxItems {
+			return errors.Errorf("schema %q array exceeds item count %d", schema.ID, schema.MaxItems)
+		}
+		itemSchema, ok := schemas[schema.Items]
+		if !ok {
+			return errors.Errorf("schema %q references unknown item schema %q", schema.ID, schema.Items)
+		}
+		for index, item := range items {
+			if err := validateJSONValue(schemas, itemSchema, item, stack, publicOnly); err != nil {
+				return errors.Wrapf(err, "item %d", index)
+			}
+		}
 	default:
 		return errors.Errorf("schema %q has unsupported kind %q", schema.ID, schema.Kind)
 	}

@@ -148,7 +148,8 @@ func (b *Broker) Complete(ctx context.Context, request pluginapi.CompleteRequest
 		return pluginapi.Completion{}, &BrokerError{Code: CodeTokenValidation, Err: err}
 	}
 	var tokenClaims struct {
-		Nonce string `json:"nonce"`
+		Nonce    string `json:"nonce"`
+		AuthTime int64  `json:"auth_time"`
 	}
 	if err := idToken.Claims(&tokenClaims); err != nil || !b.transactions.nonceMatches(transaction.NonceHash, tokenClaims.Nonce) {
 		return pluginapi.Completion{}, &BrokerError{Code: CodeTokenValidation, Err: errors.New("ID token nonce was not accepted")}
@@ -183,6 +184,9 @@ func (b *Broker) Complete(ctx context.Context, request pluginapi.CompleteRequest
 		Subject: userInfo.Subject, Email: userInfo.Email, EmailVerified: userInfo.EmailVerified,
 		Name: userInfo.Name, PreferredUsername: userInfo.PreferredUsername,
 		Groups: append([]string(nil), userInfo.Groups...), Roles: append([]string(nil), userInfo.Roles...),
+	}
+	if tokenClaims.AuthTime > 0 {
+		identity.AuthTime = time.Unix(tokenClaims.AuthTime, 0).UTC()
 	}
 	return pluginapi.Completion{Identity: identity, PluginState: transaction.PluginState}, nil
 }
