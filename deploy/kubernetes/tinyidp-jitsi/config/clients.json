@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "clients": [
+    {
+      "id": "tinyidp-jitsi-prod",
+      "profile": "browser",
+      "redirectURIs": [
+        "https://idp-jitsi.yolo.scapegoat.dev/integrations/jitsi/callback"
+      ],
+      "postLogoutRedirectURIs": [
+        "https://meet.yolo.scapegoat.dev/"
+      ],
+      "allowedScopes": [
+        "email",
+        "openid",
+        "profile"
+      ]
+    }
+  ]
+}
