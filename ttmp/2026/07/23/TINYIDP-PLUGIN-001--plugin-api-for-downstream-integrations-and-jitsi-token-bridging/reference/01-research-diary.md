@@ -1619,3 +1619,234 @@ request rejected
         -> no meeting redirect
         -> no recursive audit attempt
 ```
+
+## Step 14: Publish the plugin host and prepare the GitOps deployment
+
+PR 18 passed every required repository check and merged as
+`2cc95aa7454bd67cc07c29c55d526513b04de700`. The main-branch publication
+workflow then produced the immutable image
+`ghcr.io/go-go-golems/tiny-idp:sha-2cc95aa`. I used those immutable identifiers
+to build the production Argo, Vault, and Hetzner deployment changes.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Carry the locally proven plugin and Jitsi stack
+through release, GitOps review, secret provisioning, and production rollout.
+
+**Inferred user intent:** Finish with a reproducible production deployment,
+not only source code and a local Compose demonstration.
+
+**Commit (infrastructure):** `60d11f2` — "Deploy TinyIDP-backed Jitsi through Argo CD"
+
+**Commit (infrastructure):** `6527960` — "Use the Vault CLI token store for Jitsi bootstrap"
+
+**Commit (infrastructure):** `608c1b3` — "Use the existing Goja Auth GHCR credential"
+
+### What I did
+
+- Waited for PR 18 CI and the main-branch image publication workflow.
+- Created an isolated infrastructure worktree from current `origin/main`.
+- Added a multi-source Argo Application that pins the TinyIDP source commit,
+  TinyIDP image tag, and Jitsi chart version independently.
+- Extended the `prod-apps` project with only the two required source
+  repositories and the `tinyidp-jitsi` destination namespace.
+- Added a least-privilege Vault policy and Kubernetes auth role.
+- Added an idempotent bootstrap script that uses the Vault CLI token store,
+  generates independent 256-bit credentials, and never prints secret bytes.
+- Added `10000/udp` to the Hetzner firewall for JVB media.
+- Rendered the exact inline Helm values and Kustomize source, then submitted
+  both renders and the Argo CRs to the live API with server-side dry-run.
+- Provisioned the production Vault policy, Kubernetes role, runtime record,
+  and image-pull record.
+- Opened and merged infrastructure PR 200 and applied the reviewed Terraform
+  plan.
+
+### Why
+
+- Argo must render immutable reviewed inputs; a mutable image tag or chart
+  revision would make production state non-reproducible.
+- Jitsi's browser media path requires a host UDP port that HTTP ingress cannot
+  proxy.
+- TinyIDP and Prosody must receive the same Jitsi signing secret while all
+  other credentials remain independent.
+
+### What worked
+
+- Terraform validated after installing the pinned provider.
+- The filtered Terraform plan showed one in-place firewall update: adding
+  `udp/10000`; no resource was created or destroyed.
+- The exact Argo values rendered 660 Helm lines; Kustomize rendered 557 lines.
+- The live API accepted the AppProject, Application, VSO resources, workloads,
+  ingress, NetworkPolicy, and ServiceMonitor in server-side dry-run.
+- Vault created runtime and image-pull records at version 1 without logging
+  their values.
+- Infrastructure PR 200 merged cleanly and Terraform reported
+  `0 added, 1 changed, 0 destroyed`.
+
+### What didn't work
+
+- The first `terraform validate` lacked the provider in the isolated worktree:
+  `Missing required provider registry.terraform.io/hetznercloud/hcloud`.
+  `terraform init -backend=false -input=false` installed the locked provider,
+  after which validation passed.
+- The first secret bootstrap assumed Message Desk had a Vault-managed image
+  pull record at `kv/apps/tiny-message-desk/prod/image-pull`. Vault returned
+  `No value found at kv/data/apps/tiny-message-desk/prod/image-pull`.
+  The existing deployment uses public images. The bootstrap now copies the
+  established Goja Auth GHCR record instead and the retry succeeded.
+
+### What I learned
+
+- This cluster intentionally has no app-of-apps discovery. A newly merged
+  `gitops/applications/*.yaml` file requires one initial `kubectl apply`; Argo
+  owns it thereafter.
+- The source application's existing image access model must be checked before
+  choosing it as a credential-copy source.
+
+### What was tricky to build
+
+- Multi-source Argo combines a Git Kustomize source and a Helm repository into
+  one ownership boundary. The AppProject must authorize both repositories
+  before the Application can render.
+- Secret creation had to be both idempotent and opaque: an existing record is
+  never rotated implicitly, and generated values never appear in stdout.
+
+### What warrants a second pair of eyes
+
+- Review the explicit external source repositories added to `prod-apps`.
+- Confirm the JVB host-port model remains appropriate if the cluster gains
+  additional nodes or JVB replicas.
+
+### What should be done in the future
+
+- Add an app-of-apps or ApplicationSet only as a separate infrastructure
+  project; it is outside this ticket.
+- Add a documented credential-copy source selector if several GHCR identities
+  become available.
+
+### Code review instructions
+
+- Review infrastructure PR 200, starting with
+  `gitops/applications/tinyidp-jitsi.yaml`, `main.tf`, and the scoped Vault
+  policy/role.
+- Re-run the filtered Terraform plan and both manifest render commands.
+- Confirm Vault metadata versions without reading secret data.
+
+### Technical details
+
+```text
+Argo Application/tinyidp-jitsi
+  source 1: tiny-idp.git @ 2cc95aa... (Kustomize)
+    image override: tiny-idp:sha-2cc95aa
+  source 2: jitsi-contrib Helm repository
+    chart: jitsi-meet 2.22.0
+
+Vault role tinyidp-jitsi
+  service account: tinyidp-jitsi
+  namespace:       tinyidp-jitsi
+  readable paths:  runtime, image-pull
+```
+
+## Step 15: Resolve the live WaitForFirstConsumer sync-wave deadlock
+
+The first live Argo reconciliation made Vault, Prosody, Jicofo, JVB, and the
+Jitsi web pod healthy, but TinyIDP did not start. Argo waited for the
+`tinyidp-state` PVC in wave 0 before applying the TinyIDP Deployment in wave 1.
+The cluster's `local-path` storage class deliberately leaves claims Pending
+until a consuming pod is scheduled, so those two correct behaviors formed an
+ordering deadlock.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Diagnose the live rollout from Argo and
+Kubernetes evidence and repair the durable manifest rather than patching the
+workload by hand.
+
+**Inferred user intent:** Ensure the production deployment can recreate itself
+from Git without undocumented manual ordering.
+
+**Commit (code):** `9e9befb` — "Fix Jitsi PVC sync wave deadlock"
+
+### What I did
+
+- Inspected the Argo operation state and all namespace workloads.
+- Confirmed Argo's exact message:
+  `waiting for healthy state of /PersistentVolumeClaim/tinyidp-state and 1 more resources`.
+- Confirmed the PVC remained Pending while all Jitsi workloads and both
+  VaultStaticSecrets were healthy.
+- Moved the PVC from wave 0 to wave 1, matching its TinyIDP consumer.
+- Rendered the updated Kustomize package and opened TinyIDP PR 19.
+
+### Why
+
+- A `WaitForFirstConsumer` claim and its first consumer must be created in the
+  same Argo wave. Otherwise Argo health ordering prevents the scheduling event
+  Kubernetes needs to bind the claim.
+- Manually applying the Deployment would unblock this one cluster but leave
+  disaster recovery and namespace recreation broken.
+
+### What worked
+
+- The updated Kustomize package renders successfully.
+- PR 19's reachable-vulnerability check passed while build/smoke and lint
+  continued.
+- The already-applied Jitsi and Vault resources remained healthy during the
+  source fix.
+
+### What didn't work
+
+- The first pre-push release gate in the clean worktree failed because frontend
+  dependencies were absent: `sh: 1: tsc: not found`. Installing the locked
+  pnpm dependencies fixed that environment prerequisite.
+- `go generate` changed an unrelated generated TypeScript declaration in the
+  temporary worktree. It was intentionally not staged in the focused fix.
+
+### What I learned
+
+- Server-side dry-run validates schemas and admission, but it cannot prove
+  storage-class binding or Argo health-wave liveness.
+- Sync waves encode runtime dependencies, not merely preferred presentation
+  order.
+
+### What was tricky to build
+
+- The Jitsi Helm objects have the default wave 0 and were allowed to start,
+  which made the overall namespace look mostly healthy. The missing TinyIDP
+  Deployment and Argo operation message were the decisive evidence.
+
+### What warrants a second pair of eyes
+
+- Verify the PVC and Deployment both carry wave 1 in the rendered source.
+- Confirm no future pre-TinyIDP migration Job requires the claim in an earlier
+  wave.
+
+### What should be done in the future
+
+- Complete PR 19 CI, merge it, update the Argo source pin, and verify the claim
+  binds and TinyIDP becomes ready.
+
+### Code review instructions
+
+- Review `deploy/kubernetes/tinyidp-jitsi/persistent-volume-claim.yaml`.
+- Run `kubectl kustomize deploy/kubernetes/tinyidp-jitsi`.
+- In a fresh namespace, observe that PVC and Deployment are applied together
+  and the local-path provisioner binds the claim.
+
+### Technical details
+
+```text
+broken:
+  wave 0: PVC (Pending, waits for Pod)
+  wave 1: Deployment (not applied, waits for PVC health)
+
+fixed:
+  wave 1: PVC + Deployment
+          -> scheduler selects node
+          -> local-path provisions PV
+          -> PVC Bound
+          -> TinyIDP starts
+```
