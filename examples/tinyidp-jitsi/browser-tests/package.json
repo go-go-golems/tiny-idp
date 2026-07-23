@@ -1,0 +1,14 @@
+{
+  "name": "tinyidp-jitsi-browser-tests",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "show-report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.50.0"
+  },
+  "packageManager": "pnpm@10.15.1"
+}

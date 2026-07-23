@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "clients": [
+    {
+      "id": "tinyidp-jitsi-local",
+      "profile": "browser",
+      "redirectURIs": [
+        "https://idp.localhost:8443/integrations/jitsi/callback"
+      ],
+      "postLogoutRedirectURIs": [
+        "https://meet.localhost:8443/"
+      ],
+      "allowedScopes": [
+        "email",
+        "openid",
+        "profile"
+      ]
+    }
+  ]
+}
