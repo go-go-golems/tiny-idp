@@ -627,7 +627,11 @@ func (p *Provider) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 	audiences, err := deviceAuthorizationAudiences(form)
 	if err != nil {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "invalid_resource"})
-		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "resource and audience must not be combined")
+		if errors.Is(err, errMixedResourceParameters) {
+			deviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "resource and audience must not be combined")
+		} else {
+			deviceAuthorizationError(w, http.StatusBadRequest, "invalid_target", "resource indicator is malformed")
+		}
 		return
 	}
 	if !client.AllowsAudience(audiences) {
@@ -690,11 +694,16 @@ func containsScope(scopes []string, wanted string) bool {
 	return false
 }
 
+var (
+	errMixedResourceParameters  = errors.New("resource and audience parameters are mutually exclusive")
+	errInvalidResourceIndicator = errors.New("invalid resource indicator")
+)
+
 func deviceAuthorizationAudiences(form url.Values) ([]string, error) {
 	legacy := fosite.GetAudiences(form)
 	resources := form["resource"]
 	if len(legacy) > 0 && len(resources) > 0 {
-		return nil, errors.New("ambiguous resource indicators")
+		return nil, errMixedResourceParameters
 	}
 	if len(resources) == 0 {
 		return legacy, nil
@@ -705,7 +714,7 @@ func deviceAuthorizationAudiences(form url.Values) ([]string, error) {
 		resource = strings.TrimSpace(resource)
 		parsed, err := url.Parse(resource)
 		if err != nil || !parsed.IsAbs() || parsed.User != nil || parsed.Fragment != "" {
-			return nil, errors.New("invalid resource indicator")
+			return nil, errInvalidResourceIndicator
 		}
 		if _, exists := seen[resource]; exists {
 			continue
@@ -714,7 +723,7 @@ func deviceAuthorizationAudiences(form url.Values) ([]string, error) {
 		result = append(result, resource)
 	}
 	if len(result) == 0 {
-		return nil, errors.New("empty resource indicator")
+		return nil, errInvalidResourceIndicator
 	}
 	return result, nil
 }
