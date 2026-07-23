@@ -140,3 +140,16 @@ func Readiness(ctx context.Context, runtimes []pluginapi.Runtime) idp.ReadinessR
 	}
 	return report
 }
+
+func CombineReadiness(core idp.ReadinessReport, plugins idp.ReadinessReport) idp.ReadinessReport {
+	return idp.ReadinessReport{
+		Ready:  core.Ready && plugins.Ready,
+		Checks: append(append([]idp.ReadinessCheck(nil), core.Checks...), plugins.Checks...),
+	}
+}
+
+type SystemClock struct{}
+
+func (SystemClock) Now() time.Time { return time.Now().UTC() }
+
+var _ pluginapi.Clock = SystemClock{}

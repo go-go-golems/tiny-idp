@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
+	jitsiplugin "github.com/go-go-golems/tiny-idp/internal/plugins/jitsi"
 	productionsection "github.com/go-go-golems/tiny-idp/internal/sections/production"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
@@ -51,7 +53,10 @@ func TestProductionHTTPHandlerServesOnlyTheRendererAssetsBelowStaticThemes(t *te
 		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = writer.Write([]byte("provider route: " + request.URL.Path))
 	})
-	handler := productionHTTPHandler(provider, assets, 1024)
+	handler, err := productionHTTPHandler(provider, assets, nil, "", nil, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	stylesheet := httptest.NewRecorder()
 	handler.ServeHTTP(stylesheet, httptest.NewRequest(http.MethodGet, "https://idp.example.test/static/themes/message-desk.css", nil))
@@ -273,7 +278,11 @@ func TestProductionEmailChallengesRequireCompleteProgramBoundConfiguration(t *te
 }
 
 func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t *testing.T) {
-	command, err := NewServeProductionCommand()
+	registry, err := pluginapi.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := NewServeProductionCommand(registry)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,5 +319,25 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	}
 	if _, legacy := section.GetDefinitions().Get("message-desk-origin"); legacy {
 		t.Fatal("legacy message-desk-origin production flag is still exposed")
+	}
+}
+
+func TestProductionCommandComposesCompiledPluginSections(t *testing.T) {
+	registry, err := pluginapi.NewRegistry(jitsiplugin.Definition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := NewServeProductionCommand(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	section, ok := command.Schema.Get(jitsiplugin.SectionSlug)
+	if !ok || section.GetPrefix() != "jitsi-" {
+		t.Fatalf("Jitsi section = %#v, %v", section, ok)
+	}
+	for _, name := range []string{"enabled", "public-origin", "shared-secret-file", "policy-program-file"} {
+		if _, ok := section.GetDefinitions().Get(name); !ok {
+			t.Fatalf("missing Jitsi field %q", name)
+		}
 	}
 }

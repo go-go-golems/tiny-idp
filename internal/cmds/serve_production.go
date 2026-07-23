@@ -3,7 +3,9 @@ package cmds
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,9 +18,14 @@ import (
 
 	"github.com/go-go-golems/glazed/pkg/cli"
 	"github.com/go-go-golems/glazed/pkg/cmds"
+	"github.com/go-go-golems/glazed/pkg/cmds/schema"
 	"github.com/go-go-golems/glazed/pkg/cmds/values"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
+	"github.com/go-go-golems/tiny-idp/internal/pluginhost"
+	"github.com/go-go-golems/tiny-idp/internal/pluginhost/oidcbroker"
 	"github.com/go-go-golems/tiny-idp/internal/productionconfig"
 	"github.com/go-go-golems/tiny-idp/internal/productionui"
 	productionsection "github.com/go-go-golems/tiny-idp/internal/sections/production"
@@ -36,11 +43,15 @@ import (
 
 type ServeProductionCommand struct {
 	*cmds.CommandDescription
+	registry *pluginapi.Registry
 }
 
 const maxProductionSignupProgramBytes = 256 << 10
 
-func NewServeProductionCommand() (*ServeProductionCommand, error) {
+func NewServeProductionCommand(registry *pluginapi.Registry) (*ServeProductionCommand, error) {
+	if registry == nil {
+		return nil, fmt.Errorf("plugin registry is required")
+	}
 	productionSettings, err := productionsection.NewSection()
 	if err != nil {
 		return nil, err
@@ -49,6 +60,15 @@ func NewServeProductionCommand() (*ServeProductionCommand, error) {
 	if err != nil {
 		return nil, err
 	}
+	sections := []schema.Section{productionSettings}
+	for _, definition := range registry.Definitions() {
+		section, sectionErr := definition.Section()
+		if sectionErr != nil {
+			return nil, sectionErr
+		}
+		sections = append(sections, section)
+	}
+	sections = append(sections, commandSettings)
 	description := cmds.NewCommandDescription(
 		"serve-production",
 		cmds.WithShort("Run the durable production embedding host"),
@@ -71,9 +91,9 @@ Example:
     --signup-program-file /etc/tinyidp/signup.js \
     --tls-cert /run/tls/tls.crt --tls-key /run/tls/tls.key
 `),
-		cmds.WithSections(productionSettings, commandSettings),
+		cmds.WithSections(sections...),
 	)
-	return &ServeProductionCommand{CommandDescription: description}, nil
+	return &ServeProductionCommand{CommandDescription: description, registry: registry}, nil
 }
 
 func (c *ServeProductionCommand) Run(ctx context.Context, vals *values.Values) error {
@@ -81,10 +101,14 @@ func (c *ServeProductionCommand) Run(ctx context.Context, vals *values.Values) e
 	if err != nil {
 		return err
 	}
-	return runProductionHost(ctx, settings)
+	prepared, err := pluginhost.Prepare(ctx, c.registry, vals)
+	if err != nil {
+		return err
+	}
+	return runProductionHost(ctx, settings, prepared)
 }
 
-func runProductionHost(ctx context.Context, settings *productionsection.Settings) error {
+func runProductionHost(ctx context.Context, settings *productionsection.Settings, prepared []pluginapi.Prepared) error {
 	if settings == nil {
 		return fmt.Errorf("settings are required")
 	}
@@ -126,6 +150,14 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 	}
 	clientCatalog, err := productionconfig.LoadClientCatalog(settings.ClientsFile)
 	if err != nil {
+		return err
+	}
+	clientSpecs := clientCatalog.Specs()
+	clients := make([]idpstore.Client, len(clientSpecs))
+	for index := range clientSpecs {
+		clients[index] = clientSpecs[index].Client
+	}
+	if err := pluginhost.ValidateClientRequirements(prepared, clients); err != nil {
 		return err
 	}
 	themeCatalog, err := productionui.LoadCatalog(settings.ThemeDir, settings.ThemeCatalogFile, clientCatalog)
@@ -210,24 +242,75 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 			},
 		},
 	})
+	if err != nil {
+		clearProductionSecret(secret)
+		_ = signupManager.Close(context.Background())
+		_ = audit.Close()
+		_ = store.Close()
+		return err
+	}
+	transactionManager, err := oidcbroker.NewTransactionManager(store.SQLDB(), secret, rand.Reader, time.Now)
 	clearProductionSecret(secret)
 	if err != nil {
+		_ = provider.Close(context.Background())
+		_ = signupManager.Close(context.Background())
+		_ = audit.Close()
+		_ = store.Close()
+		return err
+	}
+	broker, err := oidcbroker.New(ctx, settings.Issuer, provider.Handler(), transactionManager)
+	if err != nil {
+		_ = provider.Close(context.Background())
+		_ = signupManager.Close(context.Background())
+		_ = audit.Close()
+		_ = store.Close()
+		return err
+	}
+	runtimes, err := pluginhost.Build(ctx, prepared, pluginapi.RuntimeServices{
+		OIDC: broker, Secrets: pluginhost.FileSecretResolver{}, Audit: audit,
+		Logger: log.Raw(), Meter: otel.Meter("tinyidp/plugins"), Tracer: otel.Tracer("tinyidp/plugins"),
+		Clock: pluginhost.SystemClock{}, Random: rand.Reader,
+	})
+	if err != nil {
+		_ = provider.Close(context.Background())
 		_ = signupManager.Close(context.Background())
 		_ = audit.Close()
 		_ = store.Close()
 		return err
 	}
 	if _, err := provider.RunMaintenance(ctx); err != nil {
+		_ = pluginhost.Close(context.Background(), runtimes)
 		_ = provider.Close(context.Background())
 		_ = signupManager.Close(context.Background())
 		_ = audit.Close()
 		_ = store.Close()
 		return fmt.Errorf("initial maintenance: %w", err)
 	}
-	handler := productionHTTPHandler(provider.Handler(), themeCatalog.AssetsHandler(), settings.MaxRequestBytes)
+	issuerURL, err := url.Parse(settings.Issuer)
+	if err != nil {
+		_ = pluginhost.Close(context.Background(), runtimes)
+		_ = provider.Close(context.Background())
+		_ = signupManager.Close(context.Background())
+		_ = audit.Close()
+		_ = store.Close()
+		return err
+	}
+	readyPath := strings.TrimSuffix(issuerURL.Path, "/") + "/readyz"
+	handler, err := productionHTTPHandler(provider.Handler(), themeCatalog.AssetsHandler(), runtimes, readyPath, func(readinessCtx context.Context) idp.ReadinessReport {
+		return pluginhost.CombineReadiness(provider.Readiness(readinessCtx), pluginhost.Readiness(readinessCtx, runtimes))
+	}, settings.MaxRequestBytes)
+	if err != nil {
+		_ = pluginhost.Close(context.Background(), runtimes)
+		_ = provider.Close(context.Background())
+		_ = signupManager.Close(context.Background())
+		_ = audit.Close()
+		_ = store.Close()
+		return err
+	}
 	if listenerMode == productionListenerTrustedProxyHTTP {
 		publicOrigin, originErr := issuerOrigin(settings.Issuer)
 		if originErr != nil {
+			_ = pluginhost.Close(context.Background(), runtimes)
 			_ = provider.Close(context.Background())
 			_ = signupManager.Close(context.Background())
 			_ = audit.Close()
@@ -236,7 +319,9 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 		}
 		handler, originErr = idp.NewTrustedProxyHTTPHandler(idp.TrustedProxyHTTPConfig{PublicOrigin: publicOrigin, Resolver: proxyResolver}, handler)
 		if originErr != nil {
+			_ = pluginhost.Close(context.Background(), runtimes)
 			_ = provider.Close(context.Background())
+			_ = signupManager.Close(context.Background())
 			_ = audit.Close()
 			_ = store.Close()
 			return originErr
@@ -287,18 +372,33 @@ func runProductionHost(ctx context.Context, settings *productionsection.Settings
 		return httpServer.Shutdown(shutdownCtx)
 	})
 	runErr := group.Wait()
-	closeErr := errors.Join(provider.Close(context.Background()), signupManager.Close(context.Background()), audit.Close(), store.Close())
+	closeErr := errors.Join(pluginhost.Close(context.Background(), runtimes), provider.Close(context.Background()), signupManager.Close(context.Background()), audit.Close(), store.Close())
 	return errors.Join(runErr, closeErr)
 }
 
 // productionHTTPHandler keeps reviewed interaction assets on the provider's
 // own origin. Every OAuth/OIDC and form route remains owned by the embedded
 // provider handler.
-func productionHTTPHandler(providerHandler, assetsHandler http.Handler, maxRequestBytes int) http.Handler {
+func productionHTTPHandler(providerHandler, assetsHandler http.Handler, runtimes []pluginapi.Runtime, readyPath string, readiness func(context.Context) idp.ReadinessReport, maxRequestBytes int) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/static/themes/", assetsHandler)
+	if err := pluginhost.Mount(mux, runtimes); err != nil {
+		return nil, err
+	}
+	if readyPath != "" && readiness != nil {
+		mux.HandleFunc(readyPath, func(writer http.ResponseWriter, request *http.Request) {
+			report := readiness(request.Context())
+			writer.Header().Set("Content-Type", "application/json")
+			status := http.StatusOK
+			if !report.Ready {
+				status = http.StatusServiceUnavailable
+			}
+			writer.WriteHeader(status)
+			_ = json.NewEncoder(writer).Encode(report)
+		})
+	}
 	mux.Handle("/", providerHandler)
-	return http.MaxBytesHandler(mux, int64(maxRequestBytes))
+	return http.MaxBytesHandler(mux, int64(maxRequestBytes)), nil
 }
 
 func clearProductionSecret(secret []byte) {
