@@ -95,3 +95,20 @@ validation work, and prepared the updated guide for reMarkable delivery.
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/23/TINYIDP-PLUGIN-001--plugin-api-for-downstream-integrations-and-jitsi-token-bridging/design-doc/02-tinyidp-plugin-system-and-jitsi-integration-analysis-design-and-implementation-guide.md — Authoritative plugin system guide
+
+## 2026-07-23
+
+Step 9: repaired absent-collection policy input, added typed signup and account chooser intents, and made callback completion CSP-safe (commits ac161d3 and b4cedfa)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/plugins/jitsi/runtime.go — Browser completion boundary
+
+
+## 2026-07-23
+
+Step 10: added and validated the complete local Jitsi Compose stack, eight-case browser matrix, provider logout, Prosody enforcement, and two-browser connected media (commits e9c25b9, fe59277, and f552483)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-jitsi/compose.yaml — Local deployment

@@ -16,6 +16,10 @@ RelatedFiles:
       Note: |-
         Production parser middleware composition introduced in commit 294e343
         Registers the compiled-in Jitsi plugin with the production command (commit c6f98bd)
+    - Path: repo://examples/tinyidp-jitsi/browser-tests/tests/jitsi-plugin.spec.ts
+      Note: Eight-case browser, provider-logout, and media-connected conference matrix (commits e9c25b9, fe59277, and f552483)
+    - Path: repo://examples/tinyidp-jitsi/compose.yaml
+      Note: Complete validated local TinyIDP Jitsi Prosody Jicofo JVB stack (commit e9c25b9)
     - Path: repo://internal/cmds/serve_production.go
       Note: |-
         Production host now decodes the reusable section in commit 294e343
@@ -36,11 +40,14 @@ RelatedFiles:
     - Path: repo://internal/plugins/jitsi/definition.go
       Note: Defines typed Glazed configuration and prepared runtime requirements for Phase 5 (commit a0437f6)
     - Path: repo://internal/plugins/jitsi/policy.go
-      Note: Bounded versioned Jitsi policy executor from commit a5eecf1
+      Note: |-
+        Bounded versioned Jitsi policy executor from commit a5eecf1
+        Canonical empty role and group arrays for bounded policy input (commit ac161d3)
     - Path: repo://internal/plugins/jitsi/runtime.go
       Note: |-
         Implements Jitsi start and callback browser paths for Phase 5 (commit a0437f6)
         Records bounded Jitsi metrics and trace spans (commit 91f81f5)
+        Typed identity intents and CSP-safe completion transition (commit b4cedfa)
     - Path: repo://internal/plugins/jitsi/token.go
       Note: Implements exact bounded HS256 Jitsi token signing for Phase 5 (commit a0437f6)
     - Path: repo://internal/sections/production/section.go
@@ -57,6 +64,10 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
+
+
+
 
 
 
@@ -974,4 +985,253 @@ design-doc/01-*  initial option research
 design-doc/02-*  authoritative system and implementation guide
 tasks.md          live implementation status
 reference/01-*   chronological evidence and continuation record
+```
+
+## Step 9: Repair real-browser callback completion
+
+The first live browser login reached the plugin callback but failed before
+policy execution because an OIDC identity with no `groups` or `roles` encoded
+those fields as JSON `null`. The versioned Goja input schema correctly requires
+arrays. The identity conversion now canonicalizes absent collections to `[]`.
+
+The next browser run exposed a second boundary defect in Chromium 133. The
+authorization form POST completed on the server, but CSP `form-action` blocked
+the callback's cross-origin redirect to Jitsi. The callback now returns a
+cache-disabled, themed transition document with a meta refresh and fallback
+link. This preserves the strict CSP instead of adding the Jitsi origin to every
+provider form.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Exercise the actual plugin in a browser and
+repair integration defects until the OIDC, policy, signing, and Jitsi return
+path works.
+
+**Inferred user intent:** Prove that the implemented abstractions compose into
+a usable login and signup flow rather than relying only on unit tests.
+
+**Commit (code):** `ac161d3` — "fix(jitsi): encode absent identity groups as arrays"
+
+**Commit (code):** `b4cedfa` — "feat(jitsi): support identity intents and safe completion"
+
+### What I did
+
+- Ran the Jitsi prejoin and TinyIDP login flow with Playwright.
+- Traced the first callback failure to `PolicyInputFromIdentity`.
+- Added an empty-array regression test and canonical conversion helper.
+- Added typed `Registration` and `SelectAccount` broker intents.
+- Strictly mapped `intent=signup` and `prompt=select_account`; arbitrary OAuth
+  parameters remain forbidden.
+- Replaced the callback's cross-origin 303 with a no-store transition page.
+- Added runtime and broker tests for all new contracts.
+
+### Why
+
+- JSON `null` is not interchangeable with an array in a versioned schema.
+- Signup and account selection are host-owned OIDC intents and must not be
+  represented as an unreviewed parameter map.
+- Weakening CSP would broaden every authorization page. Terminating the form
+  navigation at a same-origin 200 document keeps the existing policy intact.
+
+### What worked
+
+- The focused plugin, broker, and policy suites passed.
+- The repository commit gate passed unit tests, golangci-lint, Glazed lint, and
+  the UI analyzer.
+- A real administrator login produced a room-bound token accepted by Prosody.
+
+### What didn't work
+
+- The first live callback failed with:
+  `validate lambda input: field "identity": field "groups": schema "jitsi.strings" requires an array`.
+- The first Playwright matrix showed:
+  `Refused to send form data to 'https://idp.localhost:8443/authorize' because it violates the following Content Security Policy directive: "form-action 'self' https://idp.localhost:8443".`
+- The first commit attempt failed lint with:
+  `internal/plugins/jitsi/runtime.go:168:1: named return "registration" with type "bool" found (nonamedreturns)`.
+  The helper now uses unnamed return values.
+
+### What I learned
+
+- Chromium evaluates the authorization form's navigation across redirects.
+  A same-origin callback that immediately redirects to another origin can
+  still be rejected by `form-action`.
+- Server audit success does not prove browser navigation success; both are
+  required evidence.
+
+### What was tricky to build
+
+- The completion page contains a short-lived JWT in its target URL. It must be
+  no-store, rendered through `html/template`, excluded from logs and audit, and
+  immediately leave the page while retaining a manual fallback.
+- Registration and account selection are mutually exclusive starts. The
+  plugin rejects duplicates, unknown values, and combinations before creating
+  a durable broker transaction.
+
+### What warrants a second pair of eyes
+
+- Review the transition document's handling of the token-bearing URL and
+  confirm the production reverse proxy preserves `Cache-Control: no-store` and
+  `Referrer-Policy: no-referrer`.
+- Confirm that future plugins use typed broker intents rather than adding a
+  generic authorization-parameter escape hatch.
+
+### What should be done in the future
+
+- If a future browser standard provides a cleaner navigation primitive under
+  the same CSP, reevaluate the meta-refresh transition with equivalent
+  cross-browser tests.
+
+### Code review instructions
+
+- Start with `internal/plugins/jitsi/runtime.go`, then
+  `internal/pluginapi/api.go` and `internal/pluginhost/oidcbroker/broker.go`.
+- Run
+  `go test ./internal/pluginapi ./internal/pluginhost/oidcbroker ./internal/plugins/jitsi -count=1`.
+
+### Technical details
+
+```text
+POST /authorize
+  -> 303 /integrations/jitsi/callback
+  -> 200 no-store transition document
+  -> meta refresh / explicit link
+  -> https://meet.localhost:8443/<room>?jwt=<token>
+```
+
+## Step 10: Run the complete local Jitsi deployment
+
+This step added and validated the complete local deployment requested by the
+ticket. The Compose project runs Caddy, TinyIDP, Jitsi Web, Prosody, Jicofo,
+and JVB with persistent state, protected local secrets, a reusable development
+CA, private service networks, and only the intended HTTPS and UDP host ports.
+
+The acceptance suite exercises failure and success paths through real browser
+navigation. Its final test creates two isolated browser contexts, authenticates
+both through TinyIDP, waits for both Jitsi conferences to report `connected`,
+and confirms both clients see two participants.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Provide a reproducible local Compose deployment
+and prove TinyIDP, Goja policy, Prosody token validation, Jicofo, and JVB work
+together.
+
+**Inferred user intent:** Leave an environment the user can start and validate
+without deploying Kubernetes.
+
+**Commit (code):** `e9c25b9` — "feat(example): add local TinyIDP Jitsi stack"
+
+**Commit (code):** `fe59277` — "test(jitsi): require connected media transports"
+
+**Commit (code):** `f552483` — "test(jitsi): verify provider logout reauthentication"
+
+### What I did
+
+- Added `examples/tinyidp-jitsi/compose.yaml` using pinned Jitsi
+  `stable-10978` images.
+- Added Caddy TLS, a persistent development CA, protected secret
+  initialization, and public-CA export.
+- Added deterministic normal and policy-denied local identities.
+- Added open signup and bounded Jitsi policy programs.
+- Added repeatable Compose smoke checks for service state, HTTPS, readiness,
+  plugin metrics, token-auth URL generation, and Prosody token mode.
+- Added eight Playwright scenarios: empty token, cancellation, policy denial,
+  malformed JWT, signup, account chooser, provider logout, and a two-browser
+  conference.
+- Verified the two-browser peer connections reached Jitsi's `connected` media
+  state and JVB created both endpoints.
+- Checked tasks `p3s5`, `p7s1`, and `p7s2`.
+
+### Why
+
+- A successful token unit test cannot prove that Jitsi transmits the token,
+  Prosody accepts it, or JVB establishes media transports.
+- Named volumes preserve iterative local state while the external CA volume
+  avoids repeatedly retrusting development certificates.
+- Jicofo and JVB passwords use printable 256-bit hex because arbitrary binary
+  bytes made their generated HOCON files unparsable.
+
+### What worked
+
+- `./examples/tinyidp-jitsi/scripts/02-smoke.sh` reported:
+  `OK: TinyIDP, Jitsi, Prosody token mode, HTTPS, readiness, and metrics are available`.
+- The final Playwright run reported `8 passed (14.4s)`.
+- Prosody rejected missing tokens and malformed tokens, then authenticated both
+  token-bearing browser sessions.
+- Jicofo created the conference, admitted two participants, and selected the
+  local videobridge for both.
+- JVB created two endpoints and both browser APIs reported media state
+  `connected`.
+
+### What didn't work
+
+- The first Compose start failed because TinyIDP attempted to read
+  `/root/.config/tinyidp/profiles.yaml`; setting the container `HOME` to the
+  unprivileged TinyIDP home fixed it.
+- The first generated Jicofo and JVB passwords contained binary control
+  characters. Jicofo reported:
+  `Expecting a value but got wrong token: 'control character 0x1d'`.
+  The initializer preserved the originals as
+  `.pre-printable-backup` files and generated 64-character hex replacements.
+- The initial browser matrix had four failed cases. Retained traces showed two
+  test assumptions and the CSP product defect recorded in Step 9. After the
+  product fix and assertion corrections, the original seven passed.
+- The first logout test requested `/end_session`, which is not the registered
+  provider endpoint and returned 404. It was corrected to `/end-session`; the
+  complete eight-case matrix then passed.
+
+### What I learned
+
+- Official Jitsi containers generate HOCON and shell-derived configuration, so
+  service credentials must be cryptographically strong and printable.
+- Jitsi conference `isJoined()` proves XMPP membership; the stronger
+  `APP.conference.getConnectionState() === "connected"` assertion is required
+  to prove the media transport.
+
+### What was tricky to build
+
+- Caddy must share two otherwise separated Docker networks while TinyIDP must
+  trust only the proxy subnet.
+- Prosody and TinyIDP must receive byte-for-byte identical Jitsi signing
+  material, while Jicofo and JVB must receive independent service passwords.
+- JVB must advertise `127.0.0.1` for a workstation browser while retaining its
+  container address internally.
+
+### What warrants a second pair of eyes
+
+- Review the local `127.0.0.1:10000/udp` candidate assumptions on non-Linux
+  Docker hosts.
+- Confirm the production manifests never reuse the local deterministic
+  identities or passwords.
+
+### What should be done in the future
+
+- Complete the Kubernetes and Vault Secrets Operator resources and coordinated
+  HS256 rotation runbook in Phase 6.
+- Run the same browser matrix against the GitOps deployment in Phase 7.3.
+
+### Code review instructions
+
+- Start with `examples/tinyidp-jitsi/README.md` and `compose.yaml`.
+- Run:
+  `./examples/tinyidp-jitsi/scripts/00-init-secrets.sh`
+  followed by the documented tmux Compose command,
+  `./examples/tinyidp-jitsi/scripts/02-smoke.sh`, and
+  `./examples/tinyidp-jitsi/scripts/03-browser-tests.sh`.
+
+### Technical details
+
+```text
+HTTPS :8443 -> Caddy
+  idp.localhost  -> TinyIDP :8081
+  meet.localhost -> Jitsi Web :80
+
+Jitsi Web -> Prosody :5280 / :5222
+Jicofo    -> Prosody :5222
+JVB       -> Prosody :5222
+Browser   -> JVB 127.0.0.1:10000/udp
 ```
