@@ -96,19 +96,25 @@ type RelyingPartyBroker interface {
 }
 
 type StartRequest struct {
-	ClientID    string
-	RedirectURI string
-	Scopes      []string
-	ReturnTo    string
+	PluginID       string
+	ClientID       string
+	CallbackPath   string
+	Scopes         []string
+	PluginState    []byte
+	BrowserBinding string
+	TTL            time.Duration
 }
 
 type StartResult struct {
 	AuthorizationURL string
+	State            string
 }
 
 type CompleteRequest struct {
-	State string
-	Code  string
+	PluginID       string
+	BrowserBinding string
+	State          string
+	Code           string
 }
 
 type Identity struct {
@@ -122,8 +128,8 @@ type Identity struct {
 }
 
 type Completion struct {
-	Identity Identity
-	ReturnTo string
+	Identity    Identity
+	PluginState []byte
 }
 
 type Clock interface {
