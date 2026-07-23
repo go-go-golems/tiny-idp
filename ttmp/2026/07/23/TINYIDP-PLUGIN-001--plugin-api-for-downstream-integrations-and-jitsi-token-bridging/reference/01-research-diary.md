@@ -1850,3 +1850,103 @@ fixed:
           -> PVC Bound
           -> TinyIDP starts
 ```
+
+## Step 16: Correct local-path ownership and mode ordering
+
+Once the PVC bound and the TinyIDP Pod was scheduled, its init container
+crash-looped before the application started. The error was not a storage
+provisioning failure: the script first changed the directory owner to TinyIDP's
+unprivileged UID and then tried to change its mode while holding only
+`CAP_CHOWN`. The capability was intentionally too narrow for that second
+operation.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Complete the production rollout by correcting
+the volume-permissions behavior, validating it against the actual local-path
+backend, and preserving an auditable implementation trail.
+
+**Inferred user intent:** The deployment must start securely from Git-managed
+state without adding broad Linux capabilities or relying on manual repair.
+
+**Commit (code):** `8f41210` — "Fix TinyIDP local-path state permissions"
+
+### What I did
+
+- Inspected the live Pod events and init-container failure.
+- Confirmed the exact error:
+  `chmod: /state: Operation not permitted` and
+  `chmod: /state/audit: Operation not permitted`.
+- Kept the init container's capability set at only `CHOWN`.
+- Moved `chmod 0700 /state /state/audit` before the recursive ownership
+  transfer to UID/GID 65532.
+- Added a deployment-contract validation assertion that rejects a future
+  chown-before-chmod ordering regression.
+- Rendered the Kustomize package and ran the deployment validator with the
+  pinned Jitsi Helm render.
+
+### Why
+
+- The directory must be mode-restricted before TinyIDP receives ownership.
+- Adding `CAP_FOWNER` would make the old order work but would broaden the
+  privileged init-container contract unnecessarily.
+
+### What worked
+
+- The ticket validator reported:
+  `OK: TinyIDP Kubernetes, VSO, and Jitsi shared-secret contracts are coherent`.
+- Kustomize rendered the updated deployment successfully.
+- The live PVC is `Bound`, proving the preceding Argo-wave fix allowed the
+  local-path provisioner to select a node and create storage.
+
+### What didn't work
+
+- Before this fix, the live Pod remained `Init:CrashLoopBackOff` even though
+  the claim had bound, because the post-chown chmod lacked inode-owner rights.
+
+### What I learned
+
+- Linux capabilities must be evaluated after each filesystem state change, not
+  only at container start. A capability set that can perform `chown` need not
+  be able to alter modes after ownership changes.
+
+### What was tricky to build
+
+- The local-path issue appeared only after the earlier WaitForFirstConsumer
+  deadlock was fixed. Schema validation and a rendered manifest cannot expose
+  this exact container/filesystem interaction; the live Pod event was the
+  authoritative evidence.
+
+### What warrants a second pair of eyes
+
+- Review that the recursive ownership transfer remains necessary for any
+  pre-existing TinyIDP SQLite and audit files on a restored PVC.
+- Confirm no future init step writes files after the ownership transfer.
+
+### What should be done in the future
+
+- Merge this focused fix, advance the Argo source pin, and verify the live
+  TinyIDP readiness probe and both public TLS endpoints.
+
+### Code review instructions
+
+- Start with `deploy/kubernetes/tinyidp-jitsi/deployment.yaml`.
+- Run `bash deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh` with the
+  rendered Helm file.
+- On the target cluster, observe the init container complete, the PVC remain
+  Bound, and the unprivileged TinyIDP container become Ready.
+
+### Technical details
+
+```text
+old order (fails with CAP_CHOWN only):
+  chown /state -> owner becomes 65532
+  chmod /state -> EPERM
+
+new order:
+  chmod /state -> permitted while initial owner
+  chown /state -> hand off to 65532
+  TinyIDP -> reads/writes private state directory
+```
