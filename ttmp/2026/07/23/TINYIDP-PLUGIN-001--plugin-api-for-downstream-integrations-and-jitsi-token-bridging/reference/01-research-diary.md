@@ -22,14 +22,21 @@ RelatedFiles:
       Note: Immutable registry validation from commit 513b7b9
     - Path: repo://internal/pluginhost/host.go
       Note: Preparation, client validation, routing, readiness, and cleanup from commit 513b7b9
+    - Path: repo://internal/pluginhost/oidcbroker/broker.go
+      Note: In-process OIDC relying-party broker from commit 4df3a9b
+    - Path: repo://internal/pluginhost/oidcbroker/transaction.go
+      Note: Encrypted durable one-time transaction manager from commit 4df3a9b
     - Path: repo://internal/sections/production/section.go
       Note: Canonical production Glazed section introduced in commit 294e343
+    - Path: repo://pkg/sqlitestore/migrations/015_integration_transactions.sql
+      Note: Durable integration transaction schema from commit 4df3a9b
 ExternalSources: []
 Summary: Chronological record of the preliminary TinyIDP plugin architecture research.
 LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -316,4 +323,112 @@ Definition -> Prepared -> Runtime
                          |
                          v
               close(runtime[n..0])
+```
+
+## Step 3: Add durable one-time OIDC brokerage
+
+This step implemented the host-owned relying-party protocol boundary. Pending
+transactions survive process restart in SQLite, but raw state, browser
+bindings, nonce values, PKCE verifiers, and plugin state are not stored in
+plaintext. Callback consumption is atomic and one-time.
+
+The broker uses the existing fail-closed in-process issuer transport for
+discovery, token exchange, JWKS retrieval, and userinfo. It validates the ID
+token signature, issuer, audience, expiry, and nonce before mapping the public
+identity contract.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Implement the durable OIDC broker as the
+security-critical core of Phase 3, retaining browser-path tests for the mounted
+Jitsi runtime.
+
+**Inferred user intent:** Reuse TinyIDP's real login/signup behavior without
+giving plugins session-store access or adding an unreliable public-ingress
+hairpin.
+
+**Commit (code):** `4df3a9b` — "feat(plugin): add durable OIDC relying-party broker"
+
+### What I did
+
+- Added SQLite migration 15 for integration transactions.
+- Added keyed state, nonce, and browser-binding hashes.
+- Added domain-separated AES-GCM boxes for PKCE verifier and plugin state.
+- Added expiry, plugin binding, browser binding, malformed-state, atomic
+  consumption, replay, and restart behavior.
+- Added OIDC discovery, authorization URL generation, PKCE S256, code
+  exchange, ID-token verification, nonce validation, and userinfo mapping.
+- Added stable external broker error codes with wrapped internal causes.
+- Checked tasks `p3s1` through `p3s4`; `p3s5` remains open for mounted browser
+  login/signup/session/cancellation validation.
+
+### Why
+
+- OAuth callback state is a durable security transaction, not process memory.
+- Plugins need a stable identity result, not access to browser cookies or
+  provider internals.
+
+### What worked
+
+- The complete broker, plugin host, plugin API, and SQLite suites passed.
+- Restart persistence, replay, expiry, wrong binding, wrong plugin, ciphertext,
+  PKCE, nonce, JWT verification, and userinfo tests passed.
+- Repository pre-commit tests and lint passed.
+
+### What didn't work
+
+- The first broker test exposed only `id_token_rejected`, because public errors
+  deliberately omit verifier details. After inspecting the wrapped cause, the
+  exact failure was:
+  `oidc: token is expired (Token Expiry: 2026-07-23 08:05:00 -0400 EDT)`.
+- The transaction manager used an injected test clock while the OIDC verifier
+  used `time.Now`. Passing the same injected clock into `oidc.Config.Now`
+  fixed the inconsistency without disabling expiry checks.
+- The first commit gate rejected a helper named `clear`:
+  `function clear has same name as predeclared identifier (predeclared)`.
+  It was renamed to `zeroBytes`.
+
+### What I learned
+
+- The repository already contained a bounded, exact-origin
+  `InProcessIssuerTransport`; the broker did not need another handler
+  transport.
+- All components evaluating the same protocol transaction must share one clock.
+
+### What was tricky to build
+
+- State must be consumed before exchanging the authorization code to prohibit
+  retries and replay. This means a transient token-exchange failure requires a
+  fresh browser start, which is the intended fail-closed behavior.
+- Error classification must remain stable for themed pages while wrapped
+  causes remain available to logs and tests.
+
+### What warrants a second pair of eyes
+
+- Review the domain-separated key derivation and AEAD associated data.
+- Review whether deriving transaction keys from the production token secret is
+  operationally preferable to introducing a distinct mounted key before host
+  integration.
+
+### What should be done in the future
+
+- Add transaction retention to the maintenance policy when the broker is wired
+  into the production host.
+
+### Code review instructions
+
+- Start with `internal/pluginhost/oidcbroker/transaction.go`, then
+  `broker.go`, and finally migration 15.
+- Run:
+  `go test ./internal/pluginhost/oidcbroker ./internal/pluginapi ./internal/pluginhost ./pkg/sqlitestore -count=1`.
+
+### Technical details
+
+```text
+raw state -> keyed hash -> SQLite primary key
+verifier  -> AES-GCM(state hash + "pkce")
+app state -> AES-GCM(state hash + "plugin-state")
+callback  -> SELECT + conditional UPDATE consumed_at -> commit once
 ```

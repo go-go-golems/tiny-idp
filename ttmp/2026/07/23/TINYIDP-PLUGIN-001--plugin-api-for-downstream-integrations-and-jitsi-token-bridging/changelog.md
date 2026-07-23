@@ -44,3 +44,11 @@ Step 2: implemented and tested the compiled-in plugin API, immutable registry, l
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/pluginhost/host.go — Plugin host kernel
+
+## 2026-07-23
+
+Step 3: implemented the encrypted durable one-time OIDC broker, PKCE/nonce validation, in-process exchange, and SQLite migration (commit 4df3a9b).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/pluginhost/oidcbroker/broker.go — OIDC broker core

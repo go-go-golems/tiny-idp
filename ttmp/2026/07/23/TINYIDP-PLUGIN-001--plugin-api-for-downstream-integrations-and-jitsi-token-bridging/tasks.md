@@ -25,10 +25,10 @@
 
 ## Phase 3 — OIDC relying-party broker
 
-- [ ] Define the broker, identity, completion, transaction, and stable error contracts. <!-- t:p3s1 -->
-- [ ] Add durable encrypted one-time integration transactions and the SQLite migration. <!-- t:p3s2 -->
-- [ ] Implement state, nonce, PKCE S256, browser binding, expiry, replay protection, and atomic consumption. <!-- t:p3s3 -->
-- [ ] Implement the provider-backed in-process HTTP transport, code exchange, ID-token validation, and userinfo mapping. <!-- t:p3s4 -->
+- [x] Define the broker, identity, completion, transaction, and stable error contracts. <!-- t:p3s1 -->
+- [x] Add durable encrypted one-time integration transactions and the SQLite migration. <!-- t:p3s2 -->
+- [x] Implement state, nonce, PKCE S256, browser binding, expiry, replay protection, and atomic consumption. <!-- t:p3s3 -->
+- [x] Implement the provider-backed in-process HTTP transport, code exchange, ID-token validation, and userinfo mapping. <!-- t:p3s4 -->
 - [ ] Validate plugin OIDC client requirements and test login, signup, session, cancellation, replay, expiry, and restart paths. <!-- t:p3s5 -->
 
 ## Phase 4 — Jitsi Goja policy
