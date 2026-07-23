@@ -120,3 +120,11 @@ Step 11: added and live-API-validated the Kubernetes, Vault Secrets Operator, pi
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/README.md — Production deployment contract and validation procedure
+
+## 2026-07-23
+
+Step 12: merged current main, added generated Logcopter package areas, isolated parallel administration listeners, and passed the complete Go suite (commits 947c47c and 3a80254)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go — Parallel production-process listener isolation

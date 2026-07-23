@@ -66,12 +66,15 @@ RelatedFiles:
       Note: Array schema contract required by typed roles and groups in commit a5eecf1
     - Path: repo://pkg/sqlitestore/migrations/015_integration_transactions.sql
       Note: Durable integration transaction schema from commit 4df3a9b
+    - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go
+      Note: Allocates an isolated administration listener for each parallel process harness (commit 3a80254)
 ExternalSources: []
 Summary: Chronological record of the preliminary TinyIDP plugin architecture research.
 LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -1400,4 +1403,123 @@ Traefik -> TinyIDP :8081
 Monitoring -> TinyIDP admin :9090
 Browser -> Jitsi Web HTTPS
 Browser -> JVB host UDP/10000
+```
+
+## Step 12: Rebase the post-merge work and repair the release gate
+
+The original branch was merged as PR 17 before the later plugin implementation
+commits existed. I merged current `origin/main`, created the fresh
+`feat/tinyidp-plugin-jitsi` branch, and ran the repository's actual release and
+test gates rather than assuming the earlier local acceptance run covered the
+new package graph.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Make the completed plugin implementation
+publishable and ensure all repository-wide consumers remain safe.
+
+**Inferred user intent:** Leave a branch that can pass CI, publish an immutable
+TinyIDP image, and become the input to the GitOps deployment.
+
+**Commit (code):** `947c47c` — "chore(plugin): add generated package loggers"
+
+**Commit (code):** `3a80254` — "test(production): allocate isolated admin listener"
+
+### What I did
+
+- Fetched and merged current `origin/main` after confirming PR 17 was already
+  merged.
+- Created `feat/tinyidp-plugin-jitsi` for the complete post-merge change set.
+- Ran the pre-push gate and inspected the generated source it left behind.
+- Added the six missing Logcopter package-area files for the new packages.
+- Ran `make logcopter-check`.
+- Gave every two-process production harness instance its own allocated
+  administration listener and passed it through `--admin-addr`.
+- Reran the focused process harness and provider-clock introspection tests
+  outside the restricted socket sandbox.
+
+### Why
+
+- GoReleaser runs `go generate ./...`; generated package loggers must be
+  committed or the release gate dirties the tree and CI's generated-source
+  check fails.
+- `serve-production` now owns a second listener. A fixed default port is useful
+  for an operator but cannot be shared by independently running parallel test
+  processes.
+
+### What worked
+
+- `make logcopter-check` passed with all six new generated package loggers.
+- Pre-commit fast tests, golangci-lint, Glazed lint, and the IDP UI analyzer
+  passed for both repair commits.
+- The focused process-harness and introspection tests passed:
+  `ok .../01-two-process-harness 11.427s` and
+  `ok .../internal/fositeadapter 0.493s`.
+- The subsequent repository-wide `go test ./...` completed successfully,
+  including `internal/fositeadapter` in 25.053s and the two-process harness in
+  10.062s.
+
+### What didn't work
+
+- The first repository-wide run observed a provider-clock expiry test still
+  active at the exact boundary. It passed immediately in the focused rerun and
+  is unrelated to the plugin packages.
+- More importantly, two parallel two-process tests failed after TinyIDP logged:
+  `serve production administration listener: listen tcp 127.0.0.1:9090: bind: address already in use`.
+- The first focused rerun was executed in the restricted sandbox and every
+  `net.Listen` failed with `socket: operation not permitted`. The same exact
+  command passed with the required socket permission.
+- The first push did not create a remote ref because its pre-push release/test
+  gate found these issues and generated the missing source files.
+
+### What I learned
+
+- Adding an administration listener changes the concurrency contract even when
+  the public listener already uses an ephemeral port.
+- Generated-source checks must be run after introducing packages, not only
+  after modifying existing packages.
+- A passing local Compose stack and focused plugin suites do not replace the
+  repository-wide process harness.
+
+### What was tricky to build
+
+- The process harness restarts the same TinyIDP during a test, so the admin
+  address must be stable within one harness while remaining unique across
+  parallel harnesses.
+- The pre-push commands run in parallel. A truncated terminal view can show the
+  successful lint job while the release or full-test job prevents the push.
+
+### What warrants a second pair of eyes
+
+- Review whether `admin-addr` should remain a fixed operator default or require
+  explicit configuration in all production invocations.
+- The provider-clock test uses an artificial clock but Fosite may compare a
+  persisted timestamp at second precision. Its isolated pass suggests timing
+  sensitivity worth a separate focused review if CI reproduces it.
+
+### What should be done in the future
+
+- Complete one clean pre-push run. (The full suite completed in this step.)
+- Push the new branch and open the image-producing PR.
+- Do not deploy until the merged immutable image tag is available.
+
+### Code review instructions
+
+- Review the generated `logcopter.go` files as mechanical outputs.
+- Review the harness change at
+  `ttmp/2026/07/18/.../scripts/01-two-process-harness/two_process_test.go`.
+- Run `make logcopter-check` and the focused command recorded above.
+
+### Technical details
+
+```text
+parallel harness A:
+  public 127.0.0.1:<ephemeral-A>
+  admin  127.0.0.1:<ephemeral-B>
+
+parallel harness B:
+  public 127.0.0.1:<ephemeral-C>
+  admin  127.0.0.1:<ephemeral-D>
 ```
