@@ -32,6 +32,14 @@ tinyidp admin --db ./tinyidp.db client create \
   --grant-type authorization_code --grant-type refresh_token \
   --require-pkce
 
+# Register an introspection-only resource server. Omitting --grant-type is
+# permitted only with --can-introspect and prevents this client obtaining tokens.
+tinyidp admin --db ./tinyidp.db client create \
+  --id resource-api \
+  --secret-file /run/secrets/resource-api \
+  --can-introspect \
+  --audience https://api.example.test
+
 tinyidp admin --db ./tinyidp.db client list
 tinyidp admin --db ./tinyidp.db client get --id web-app
 tinyidp admin --db ./tinyidp.db client disable --id web-app

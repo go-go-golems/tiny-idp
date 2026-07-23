@@ -65,7 +65,6 @@ func newAdminClientCreateCommand(dbPath *string) *cobra.Command {
 	cmd.Flags().DurationVar(&refreshTTL, "refresh-token-ttl", 30*24*time.Hour, "Refresh token TTL")
 	cmd.MarkFlagsMutuallyExclusive("secret", "secret-file", "generate-secret")
 	_ = cmd.MarkFlagRequired("id")
-	_ = cmd.MarkFlagRequired("grant-type")
 	return cmd
 }
 

@@ -22,7 +22,7 @@ func (c Client) Validate(mode Mode) error {
 	} else if mode == ProductionMode && len(c.SecretHash) == 0 {
 		return ErrConfidentialMissingSecret
 	}
-	if len(c.AllowedGrantTypes) == 0 {
+	if len(c.AllowedGrantTypes) == 0 && !c.CanIntrospect {
 		return ErrClientMissingGrantTypes
 	}
 	if c.CanIntrospect && c.Public {
