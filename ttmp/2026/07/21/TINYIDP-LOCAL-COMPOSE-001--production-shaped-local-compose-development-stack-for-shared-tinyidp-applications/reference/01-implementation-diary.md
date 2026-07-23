@@ -3454,7 +3454,7 @@ state before claiming completion.
 exercise the cookie and one-time-capability boundaries that users will actually
 encounter across the two applications.
 
-**Commit (code):** `91cf302` — "test: complete browser UX matrix coverage"
+**Commit (code):** `28ee07a` — "test: complete browser UX matrix coverage"
 
 ### What I did
 
