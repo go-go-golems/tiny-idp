@@ -36,3 +36,11 @@ Step 1: composed production settings through the shared Glazed source chain and 
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/sections/production/section.go — Reusable production section
+
+## 2026-07-23
+
+Step 2: implemented and tested the compiled-in plugin API, immutable registry, lifecycle, scoped routing, client requirements, and readiness aggregation (commit 513b7b9).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/pluginhost/host.go — Plugin host kernel

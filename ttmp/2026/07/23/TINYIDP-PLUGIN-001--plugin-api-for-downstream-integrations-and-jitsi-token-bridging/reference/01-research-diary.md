@@ -16,6 +16,12 @@ RelatedFiles:
       Note: Production parser middleware composition introduced in commit 294e343
     - Path: repo://internal/cmds/serve_production.go
       Note: Production host now decodes the reusable section in commit 294e343
+    - Path: repo://internal/pluginapi/api.go
+      Note: Trusted plugin authority and lifecycle contracts from commit 513b7b9
+    - Path: repo://internal/pluginapi/registry.go
+      Note: Immutable registry validation from commit 513b7b9
+    - Path: repo://internal/pluginhost/host.go
+      Note: Preparation, client validation, routing, readiness, and cleanup from commit 513b7b9
     - Path: repo://internal/sections/production/section.go
       Note: Canonical production Glazed section introduced in commit 294e343
 ExternalSources: []
@@ -24,6 +30,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 # Research diary
@@ -218,4 +225,95 @@ defaults < profiles < config < environment < arguments < flags
 config key: production.addr
 environment: TINYIDP_ADDR
 flag:        --addr
+```
+
+## Step 2: Build the compiled-in plugin kernel
+
+This step established the trusted Go boundary that integrations use. The
+registry is immutable and validates identity, API version, section slug, and
+field prefix collisions before parsing. Prepared plugins declare reviewed
+OIDC client requirements, and runtime construction closes already-built
+resources in reverse order on partial failure.
+
+The host now also owns scoped route mounting, security headers, and readiness
+aggregation. Plugins receive their derived path and cannot acquire the root
+router.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Implement Phase 2 as an independently testable,
+compiled-in host kernel before introducing protocol state.
+
+**Inferred user intent:** Keep extension mechanics professional and bounded so
+the Jitsi integration does not become special-case server wiring.
+
+**Commit (code):** `513b7b9` — "feat(plugin): add compiled-in host kernel"
+
+### What I did
+
+- Added the descriptor, definition, prepared, runtime, runtime-service, OIDC
+  broker, secret resolver, identity, and requirement contracts.
+- Added deterministic registry validation and defensive slice copies.
+- Added prepare/build/close lifecycle functions and reverse cleanup.
+- Added exact public-client, authorization-code, PKCE, redirect, and scope
+  requirement validation.
+- Added derived `/integrations/<id>/` mounting, host security headers, and
+  fail-closed readiness aggregation.
+- Checked tasks `p2s1` through `p2s4`.
+
+### Why
+
+- Trusted mechanics and untrusted policy require different authority
+  boundaries.
+- Registry and client errors must fail before the public listener starts.
+
+### What worked
+
+- `go test ./internal/pluginapi ./internal/pluginhost -count=1` passed.
+- The repository pre-commit tests, lint, Glazed analyzer, and UI analyzer
+  passed.
+
+### What didn't work
+
+- N/A.
+
+### What I learned
+
+- Existing `idp.ReadinessCheck` and Glazed `Section.GetPrefix` provide the host
+  primitives directly; no duplicate health or schema model is needed.
+
+### What was tricky to build
+
+- Partial construction must close only successfully built runtimes, in reverse
+  order, while preserving both the build error and cleanup errors.
+- Requirements are validated against exact reviewed client properties rather
+  than merely checking that a client ID exists.
+
+### What warrants a second pair of eyes
+
+- Review the authority surface in `RuntimeServices`; every added field expands
+  what all compiled integrations can do.
+- Review whether the fixed CSP is sufficient for every host-rendered plugin
+  error page before adding any script or remote asset allowance.
+
+### What should be done in the future
+
+- Keep the API internal until the Jitsi implementation proves the contracts.
+
+### Code review instructions
+
+- Start with `internal/pluginapi/api.go`, then
+  `internal/pluginhost/host.go`.
+- Run `go test ./internal/pluginapi ./internal/pluginhost -count=1`.
+
+### Technical details
+
+```text
+Definition -> Prepared -> Runtime
+                      failure
+                         |
+                         v
+              close(runtime[n..0])
 ```

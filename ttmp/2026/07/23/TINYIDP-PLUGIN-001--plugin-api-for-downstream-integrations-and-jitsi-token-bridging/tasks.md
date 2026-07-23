@@ -18,10 +18,10 @@
 
 ## Phase 2 — Plugin kernel
 
-- [ ] Implement descriptor validation and the immutable compiled-in registry. <!-- t:p2s1 -->
-- [ ] Implement prepare/build phases, client requirements, reverse cleanup, and compile-time interface assertions. <!-- t:p2s2 -->
-- [ ] Mount derived scoped routes and extract common production HTTP security middleware. <!-- t:p2s3 -->
-- [ ] Compose plugin readiness into host readiness. <!-- t:p2s4 -->
+- [x] Implement descriptor validation and the immutable compiled-in registry. <!-- t:p2s1 -->
+- [x] Implement prepare/build phases, client requirements, reverse cleanup, and compile-time interface assertions. <!-- t:p2s2 -->
+- [x] Mount derived scoped routes and extract common production HTTP security middleware. <!-- t:p2s3 -->
+- [x] Compose plugin readiness into host readiness. <!-- t:p2s4 -->
 
 ## Phase 3 — OIDC relying-party broker
 
