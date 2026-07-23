@@ -16,6 +16,16 @@ grep -q 'path: /readyz' "${rendered}"
 grep -q 'path: /healthz' "${rendered}"
 grep -q 'kind: NetworkPolicy' "${rendered}"
 
+# The init container deliberately retains only CAP_CHOWN. It must set modes
+# before transferring ownership to TinyIDP's unprivileged UID; otherwise it
+# loses permission to chmod the just-chowned local-path directory.
+chmod_line="$(rg -n 'chmod 0700 /state /state/audit' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
+chown_line="$(rg -n 'chown -R 65532:65532 /state' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
+if [[ -z "${chmod_line}" || -z "${chown_line}" || "${chmod_line}" -ge "${chown_line}" ]]; then
+  echo "TinyIDP state permissions must chmod before chown" >&2
+  exit 1
+fi
+
 if grep -Eq 'JWT_APP_SECRET:[[:space:]]+[^[:space:]]' "${deploy_dir}/jitsi-values.yaml"; then
   echo "JWT_APP_SECRET must not be stored in Helm values" >&2
   exit 1
