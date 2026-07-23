@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-go-golems/glazed/pkg/cmds/schema"
+	productionsection "github.com/go-go-golems/tiny-idp/internal/sections/production"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 	"github.com/go-go-golems/tiny-idp/pkg/idpaccounts"
 	"github.com/go-go-golems/tiny-idp/pkg/idpemailchallenge"
@@ -70,7 +70,7 @@ func TestProductionHTTPHandlerServesOnlyTheRendererAssetsBelowStaticThemes(t *te
 }
 
 func TestParseProductionDurationsRejectsNonPositive(t *testing.T) {
-	settings := &serveProductionSettings{RateWindow: "1m", MaintenanceInterval: "15m", ReadHeaderTimeout: "5s", ReadTimeout: "15s", WriteTimeout: "30s", IdleTimeout: "1m", ShutdownTimeout: "0s"}
+	settings := &productionsection.Settings{RateWindow: "1m", MaintenanceInterval: "15m", ReadHeaderTimeout: "5s", ReadTimeout: "15s", WriteTimeout: "30s", IdleTimeout: "1m", ShutdownTimeout: "0s"}
 	if _, _, _, _, _, _, _, err := parseProductionDurations(settings); err == nil {
 		t.Fatal("expected zero shutdown timeout rejection")
 	}
@@ -87,20 +87,20 @@ func TestProductionListenerModesAreExplicitAndMutuallyExclusive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateProductionListenerSettings(direct, &serveProductionSettings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem"}); err != nil {
+	if err := validateProductionListenerSettings(direct, &productionsection.Settings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem"}); err != nil {
 		t.Fatalf("valid direct TLS settings rejected: %v", err)
 	}
-	if err := validateProductionListenerSettings(direct, &serveProductionSettings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
+	if err := validateProductionListenerSettings(direct, &productionsection.Settings{TLSCertFile: "cert.pem", TLSKeyFile: "key.pem", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
 		t.Fatal("direct TLS accepted proxy CIDRs")
 	}
 	proxy, err := parseProductionListenerMode("trusted-proxy-http")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateProductionListenerSettings(proxy, &serveProductionSettings{Issuer: "https://idp.example.test/idp", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err != nil {
+	if err := validateProductionListenerSettings(proxy, &productionsection.Settings{Issuer: "https://idp.example.test/idp", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err != nil {
 		t.Fatalf("valid trusted proxy settings rejected: %v", err)
 	}
-	if err := validateProductionListenerSettings(proxy, &serveProductionSettings{Issuer: "http://idp.example.test", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
+	if err := validateProductionListenerSettings(proxy, &productionsection.Settings{Issuer: "http://idp.example.test", TrustedProxyCIDRs: []string{"10.42.0.0/24"}}); err == nil {
 		t.Fatal("trusted proxy accepted HTTP issuer")
 	}
 }
@@ -250,7 +250,7 @@ func TestProductionEmailChallengesRequireCompleteProgramBoundConfiguration(t *te
 	if err := os.WriteFile(keyPath, []byte("0123456789abcdef0123456789abcdef"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	settings := &serveProductionSettings{
+	settings := &productionsection.Settings{
 		EmailChallengeKeyFile: keyPath, EmailSMTPAddress: "mailcatcher:1025", EmailSMTPTLSMode: "private-plaintext",
 		EmailFromAddress: "accounts@example.test", EmailFromName: "TinyIDP", EmailSMTPConnectTimeout: "1s", EmailSMTPSendTimeout: "2s",
 	}
@@ -277,7 +277,7 @@ func TestProductionCommandRequiresSignupProgramAndDropsLegacyRegistrationFlag(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	section, ok := command.Schema.Get(schema.DefaultSlug)
+	section, ok := command.Schema.Get(productionsection.Slug)
 	if !ok {
 		t.Fatal("default command section is unavailable")
 	}

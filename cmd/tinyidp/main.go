@@ -75,7 +75,14 @@ func main() {
 
 	productionCmd, err := cmds.NewServeProductionCommand()
 	cobra.CheckErr(err)
-	productionCobraCmd, err := cli.BuildCobraCommand(productionCmd)
+	productionCobraCmd, err := cli.BuildCobraCommand(productionCmd,
+		cli.WithParserConfig(cli.CobraParserConfig{
+			AppName:           "tinyidp",
+			ConfigPlanBuilder: cmds.ConfigFilePlanBuilder,
+			MiddlewaresFunc:   cmds.ProfileMiddlewaresFunc("tinyidp", cmds.ConfigFilePlanBuilder),
+		}),
+		cli.WithProfileSettingsSection(),
+	)
 	cobra.CheckErr(err)
 	rootCmd.AddCommand(productionCobraCmd)
 
