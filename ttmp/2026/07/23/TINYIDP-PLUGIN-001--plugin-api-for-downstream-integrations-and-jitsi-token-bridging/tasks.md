@@ -47,8 +47,8 @@
 ## Phase 6 — Observability and deployment
 
 - [x] Add OpenTelemetry meters and traces plus the internal health, readiness, and Prometheus listener. <!-- t:p6s1 -->
-- [ ] Add Kubernetes configuration, probes, NetworkPolicy, ConfigMaps, and Vault Secrets Operator mounts. <!-- t:p6s2 -->
-- [ ] Configure Prosody token mode and document coordinated HS256 rotation. <!-- t:p6s3 -->
+- [x] Add Kubernetes configuration, probes, NetworkPolicy, ConfigMaps, and Vault Secrets Operator mounts. <!-- t:p6s2 -->
+- [x] Configure Prosody token mode and document coordinated HS256 rotation. <!-- t:p6s3 -->
 
 ## Phase 7 — End-to-end validation
 

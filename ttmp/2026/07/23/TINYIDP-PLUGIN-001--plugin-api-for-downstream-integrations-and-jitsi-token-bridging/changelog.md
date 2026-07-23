@@ -112,3 +112,11 @@ Step 10: added and validated the complete local Jitsi Compose stack, eight-case 
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/examples/tinyidp-jitsi/compose.yaml — Local deployment
+
+## 2026-07-23
+
+Step 11: added and live-API-validated the Kubernetes, Vault Secrets Operator, pinned Jitsi Helm, Prosody token-mode, NetworkPolicy, and coordinated HS256 rotation contract (commit 7f6425d)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/README.md — Production deployment contract and validation procedure

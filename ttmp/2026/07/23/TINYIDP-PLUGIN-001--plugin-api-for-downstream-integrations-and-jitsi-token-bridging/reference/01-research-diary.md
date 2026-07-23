@@ -16,6 +16,14 @@ RelatedFiles:
       Note: |-
         Production parser middleware composition introduced in commit 294e343
         Registers the compiled-in Jitsi plugin with the production command (commit c6f98bd)
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/README.md
+      Note: Production Kubernetes, VSO, and pinned Jitsi Helm deployment contract
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/jitsi-values.yaml
+      Note: Prosody token mode and Jitsi runtime configuration
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/rotation-runbook.md
+      Note: Ordered HS256 rotation and rollback procedure
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/runtime-secret.yaml
+      Note: Shared Vault-backed runtime Secret and coordinated restart targets
     - Path: repo://examples/tinyidp-jitsi/browser-tests/tests/jitsi-plugin.spec.ts
       Note: Eight-case browser, provider-logout, and media-connected conference matrix (commits e9c25b9, fe59277, and f552483)
     - Path: repo://examples/tinyidp-jitsi/compose.yaml
@@ -64,6 +72,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -1234,4 +1243,161 @@ Jitsi Web -> Prosody :5280 / :5222
 Jicofo    -> Prosody :5222
 JVB       -> Prosody :5222
 Browser   -> JVB 127.0.0.1:10000/udp
+```
+
+## Step 11: Encode the Kubernetes, Vault, and Prosody deployment contract
+
+This step translates the locally proven Compose topology into production-shaped
+Kubernetes artifacts without placing any credential bytes in Git. TinyIDP is
+managed with Kustomize. Jitsi remains on the upstream
+`jitsi-contrib/jitsi-helm` chart at version 2.22.0. Vault Secrets Operator
+materializes one runtime Secret that is mounted by TinyIDP and consumed as
+environment variables by Prosody, Jicofo, and JVB.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Complete the remaining deployment phase after
+the local Compose proof, preserving the ticket's security and operational
+contracts.
+
+**Inferred user intent:** Make the plugin implementation deployable through the
+existing k3s, Argo CD, and Vault platform without weakening secret handling or
+reimplementing Jitsi packaging.
+
+**Commit (code):** `7f6425d` — "feat(deploy): add TinyIDP Jitsi Kubernetes contract"
+
+### What I did
+
+- Inspected the Hetzner k3s repository's Argo CD, VaultConnection, VaultAuth,
+  VaultStaticSecret, image-pull transformation, and workload conventions.
+- Inspected pinned upstream Jitsi Helm chart 2.22.0 and rendered it locally.
+- Added Kustomize resources for the namespace, service account, VSO resources,
+  TinyIDP PVC, deployment, public and administration Services, ingress, and
+  NetworkPolicies.
+- Added reviewed production OIDC client, signup workflow, and Jitsi policy
+  ConfigMap inputs.
+- Added Jitsi Helm values for token-only authentication, matching issuer,
+  audience, application ID, XMPP domain, host UDP/10000, metrics, probes, and
+  resource bounds.
+- Added an explicit five-key Vault contract and separate transformed GHCR
+  image-pull Secret.
+- Added a coordinated HS256 rotation runbook and a repeatable cross-manifest
+  validator.
+
+### Why
+
+- TinyIDP and Prosody must receive byte-identical `JWT_APP_SECRET` material,
+  while the TinyIDP continuation key and XMPP service credentials must remain
+  independent.
+- The upstream chart already has `existingSecretName` seams for Prosody,
+  Jicofo, and JVB. Using those seams avoids forking the chart and avoids
+  secret-bearing Helm values.
+- HS256 Prosody configuration accepts one active verification secret. Rotation
+  therefore requires an ordered admission pause rather than an unsafe rolling
+  overlap.
+
+### What worked
+
+- `kubectl kustomize deploy/kubernetes/tinyidp-jitsi` rendered 557 lines.
+- Helm 3.18.4 rendered chart 2.22.0 into 660 lines.
+- The rendered chart contains the expected external Secret references,
+  `hostPort: 10000`, exact JWT issuer/audience/application values, and the
+  TinyIDP token-auth URL.
+- `scripts/validate.sh` reported:
+  `OK: TinyIDP Kubernetes, VSO, and Jitsi shared-secret contracts are coherent`.
+- A read-only cluster call confirmed the configured target is the healthy
+  single-node `k3s-demo-1` cluster running Kubernetes 1.34.5+k3s1.
+- The repeatable server-side dry-run helper validated every rendered TinyIDP,
+  VSO, NetworkPolicy, Jitsi, Prosody, ServiceMonitor, and ingress object against
+  the live API without creating resources.
+- Live selectors confirm the pod CIDR is within `10.42.0.0/16`, Traefik carries
+  `app.kubernetes.io/name=traefik`, and the monitoring namespace carries its
+  standard metadata name label.
+
+### What didn't work
+
+- The first server-side dry-run could not resolve the Tailscale Kubernetes API
+  hostname inside the restricted sandbox:
+  `dial udp 127.0.0.53:53: socket: operation not permitted`.
+- Retrying read-only with approved network access reached the cluster, but
+  `kubectl apply --dry-run=server` does not persist the Namespace object before
+  validating later documents. Every namespaced resource therefore reported:
+  `namespaces "tinyidp-jitsi" not found`.
+- After those two consecutive failures, I stopped that debugging path as
+  required by the repository guidelines instead of attempting another ad hoc
+  workaround.
+- The Hetzner Terraform firewall currently allows UDP/TCP 40000–40100 for the
+  earlier MiroTalk work but does not allow Jitsi's configured UDP/10000.
+  Deployment cannot claim working media until the GitOps/infrastructure change
+  opens that port and the external two-browser test passes.
+
+### What I learned
+
+- VSO `rolloutRestartTargets` can coordinate all four secret consumers, but
+  target names must match the Helm release's rendered resource names exactly.
+- With release name `jitsi`, chart 2.22.0 renders
+  `jitsi-jitsi-meet-prosody`, `jitsi-jitsi-meet-jicofo`, and
+  `jitsi-jitsi-meet-jvb-0`.
+- Kubernetes server-side dry-run over a multi-document file does not model
+  Argo CD sync-wave persistence for a Namespace prerequisite.
+
+### What was tricky to build
+
+- The TinyIDP image runs as UID/GID 65532 with a read-only root filesystem.
+  Persistent SQLite and audit state therefore need an explicit ownership
+  initialization step without broad runtime privileges.
+- The runtime Secret is intentionally shared as an object but its keys have
+  different consumers. TinyIDP mounts only its two allowed keys as files;
+  Jitsi components receive only the environment keys their upstream templates
+  read.
+- VSO restart target names are coupled to the Helm release name. The validator
+  cross-checks them against the pinned rendered chart.
+
+### What warrants a second pair of eyes
+
+- Confirm `10.42.0.0/16` is still the production pod CIDR and that Traefik's
+  live pod labels match the NetworkPolicy selector.
+- Confirm host UDP/10000 is permitted by both the Hetzner firewall and host
+  firewall before deployment.
+- Review whether the monitoring namespace uses the exact
+  `kubernetes.io/metadata.name: monitoring` selector assumed by the admin-port
+  NetworkPolicy.
+
+### What should be done in the future
+
+- Validate the resources against the live API after creating a temporary
+  dry-run-independent Namespace validation context. (Completed in this step.)
+- Move the proven resources into the GitOps repository, provision the Vault
+  policy and records, and replace the placeholder TinyIDP image with the
+  immutable post-merge SHA.
+- Run the local browser matrix against the resulting public deployment.
+
+### Code review instructions
+
+- Start with `deploy/kubernetes/tinyidp-jitsi/README.md`, then inspect
+  `runtime-secret.yaml`, `deployment.yaml`, `jitsi-values.yaml`, and
+  `rotation-runbook.md`.
+- Render the Kustomize resources and pinned upstream chart exactly as shown in
+  the README.
+- Run `deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh` with the rendered
+  Helm file path.
+- Verify that neither rendered file contains secret values.
+
+### Technical details
+
+```text
+Vault KV v2
+  -> VaultStaticSecret/tinyidp-jitsi-runtime
+      -> TinyIDP file: TINYIDP_TOKEN_SECRET
+      -> TinyIDP file: JWT_APP_SECRET
+      -> Prosody env:  JWT_APP_SECRET
+      -> Jicofo env:   JICOFO_AUTH_PASSWORD
+      -> JVB env:      JVB_AUTH_USER + JVB_AUTH_PASSWORD
+
+Traefik -> TinyIDP :8081
+Monitoring -> TinyIDP admin :9090
+Browser -> Jitsi Web HTTPS
+Browser -> JVB host UDP/10000
 ```
