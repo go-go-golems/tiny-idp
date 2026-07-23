@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
 	"github.com/go-go-golems/tiny-idp/pkg/idpscript"
 )
 
@@ -82,6 +83,31 @@ func TestPolicyAllowsAndDeniesWithTypedResults(t *testing.T) {
 	stats := executor.Stats()
 	if stats.Invocations != 2 || stats.Allowed != 1 || stats.Denied != 1 || stats.Failures != 0 || !executor.Ready() {
 		t.Fatalf("stats = %#v", stats)
+	}
+}
+
+func TestPolicyInputFromIdentityUsesEmptyJSONArrays(t *testing.T) {
+	input := PolicyInputFromIdentity(pluginapi.Identity{
+		Subject: "user-123",
+		Name:    "Test User",
+	}, "jitsi", "engineering", "meet.example.test")
+	if input.Identity.Roles == nil || input.Identity.Groups == nil {
+		t.Fatalf("empty collections must be arrays: roles=%#v groups=%#v", input.Identity.Roles, input.Identity.Groups)
+	}
+
+	source := policySource(`ctx => A.result.complete({kind:"complete", claims:{
+      displayName:ctx.input.identity.displayName,
+      includeEmail:false,
+      moderator:ctx.input.identity.roles.includes("meeting-organizer"),
+    }})`, "")
+	executor, err := NewPolicyExecutor(context.Background(), source, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer executor.Close(context.Background())
+	decision, err := executor.Authorize(context.Background(), input)
+	if err != nil || !decision.Allowed || decision.DisplayName != "Test User" {
+		t.Fatalf("decision = %#v, %v", decision, err)
 	}
 }
 

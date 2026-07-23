@@ -206,9 +206,16 @@ func PolicyInputFromIdentity(identity pluginapi.Identity, integrationID, room, t
 		Identity: PolicyIdentity{
 			Subject: identity.Subject, DisplayName: displayName, PreferredUsername: identity.PreferredUsername,
 			Email: identity.Email, EmailVerified: identity.EmailVerified,
-			Roles: append([]string(nil), identity.Roles...), Groups: append([]string(nil), identity.Groups...), AuthTime: authTime,
+			Roles: cloneStringsAsArray(identity.Roles), Groups: cloneStringsAsArray(identity.Groups), AuthTime: authTime,
 		},
 	}
+}
+
+func cloneStringsAsArray(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values...)
 }
 
 func policySchemas() map[string]idpprogram.Schema {
