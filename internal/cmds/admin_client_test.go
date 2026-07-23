@@ -33,13 +33,6 @@ func TestResolveClientSecretFile(t *testing.T) {
 	if _, err := resolveClientSecret("", symlink, false); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("symlink error = %v", err)
 	}
-	tooLongSecret := filepath.Join(t.TempDir(), "too-long-secret")
-	if err := os.WriteFile(tooLongSecret, make([]byte, 73), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := resolveClientSecret("", tooLongSecret, false); err == nil || !strings.Contains(err.Error(), "72 bytes") {
-		t.Fatalf("long secret error = %v", err)
-	}
 	large := filepath.Join(t.TempDir(), "large")
 	if err := os.WriteFile(large, make([]byte, 4097), 0o600); err != nil {
 		t.Fatal(err)

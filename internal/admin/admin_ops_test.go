@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,19 @@ import (
 	idpstore "github.com/go-go-golems/tiny-idp/pkg/idpstore"
 	"github.com/go-go-golems/tiny-idp/pkg/sqlitestore"
 )
+
+func TestServiceClientRejectsSecretBeyondBcryptLimit(t *testing.T) {
+	ctx := context.Background()
+	st := memory.New()
+	svc, err := admin.NewService(st, admin.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = svc.CreateClient(ctx, admin.CreateClientRequest{ID: "resource", Secret: strings.Repeat("x", 73), AllowedScopes: []string{"openid"}, AllowedGrantTypes: []string{idpstore.GrantAuthorizationCode}})
+	if err == nil || !strings.Contains(err.Error(), "72 bytes") {
+		t.Fatalf("CreateClient() error = %v", err)
+	}
+}
 
 func TestServiceClientLifecycle(t *testing.T) {
 	ctx := context.Background()

@@ -63,6 +63,9 @@ func (s *Service) CreateClient(ctx context.Context, req CreateClientRequest) (id
 		if secret == "" {
 			return idpstore.Client{}, SecretResult{}, fmt.Errorf("client secret is required for confidential clients")
 		}
+		if len([]byte(secret)) > 72 {
+			return idpstore.Client{}, SecretResult{}, fmt.Errorf("client secret must not exceed 72 bytes")
+		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
 		if err != nil {
 			return idpstore.Client{}, SecretResult{}, err

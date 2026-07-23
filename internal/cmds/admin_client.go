@@ -105,9 +105,6 @@ func resolveClientSecret(value, path string, generate bool) (string, error) {
 	if secret == "" {
 		return "", errors.New("client secret file is empty")
 	}
-	if len([]byte(secret)) > 72 {
-		return "", errors.New("client secret must not exceed 72 bytes")
-	}
 	return secret, nil
 }
 
