@@ -26,8 +26,12 @@ RelatedFiles:
       Note: In-process OIDC relying-party broker from commit 4df3a9b
     - Path: repo://internal/pluginhost/oidcbroker/transaction.go
       Note: Encrypted durable one-time transaction manager from commit 4df3a9b
+    - Path: repo://internal/plugins/jitsi/policy.go
+      Note: Bounded versioned Jitsi policy executor from commit a5eecf1
     - Path: repo://internal/sections/production/section.go
       Note: Canonical production Glazed section introduced in commit 294e343
+    - Path: repo://pkg/idpprogram/schema.go
+      Note: Array schema contract required by typed roles and groups in commit a5eecf1
     - Path: repo://pkg/sqlitestore/migrations/015_integration_transactions.sql
       Note: Durable integration transaction schema from commit 4df3a9b
 ExternalSources: []
@@ -36,6 +40,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -431,4 +436,97 @@ raw state -> keyed hash -> SQLite primary key
 verifier  -> AES-GCM(state hash + "pkce")
 app state -> AES-GCM(state hash + "plugin-state")
 callback  -> SELECT + conditional UPDATE consumed_at -> commit once
+```
+
+## Step 4: Implement bounded Jitsi policy execution
+
+This step added the versioned `integration.jitsi.authorize@v1` Goja contract.
+The native boundary constructs identity input, validates nested objects and
+bounded string arrays, accepts only typed allow/deny results, and exposes no
+capabilities or effects in version one.
+
+A warmed `idpscript.Pool` supplies isolation, deadlines, saturation behavior,
+interruption, replacement, readiness, shutdown, and operational counters.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Implement and exercise all Phase 4 policy
+contracts without giving JavaScript HTTP, signing, storage, or ambient module
+authority.
+
+**Inferred user intent:** Let deployments express meeting policy in JavaScript
+while retaining a professional native mechanics and security core.
+
+**Commit (code):** `a5eecf1` — "feat(jitsi): add bounded Goja authorization policy"
+
+### What I did
+
+- Added the TypeScript input/result declarations and Go codecs.
+- Added bounded array schemas to `idpprogram` for roles and groups.
+- Added a terminal `@vN` identifier suffix for versioned handlers.
+- Added compile-time provider/handler validation, a warmed pool, readiness,
+  counters, and shutdown.
+- Tested allow, deny, malformed output, forbidden capabilities, timeout,
+  interruption replacement, saturation, and declarations.
+- Checked tasks `p4s1` through `p4s3`.
+
+### Why
+
+- The design requires typed `string[]` identity fields and the exact
+  `integration.jitsi.authorize@v1` contract.
+- JavaScript decides claims and access; it must not mint tokens or control
+  protocol transitions.
+
+### What worked
+
+- Focused policy, program, scripting, broker, and repository commit gates
+  passed.
+
+### What didn't work
+
+- The initial compile rejected `@v1` with
+  `lambda.id_mismatch at lambdas.integration.jitsi.authorize@v1`.
+  The identifier grammar now permits only one terminal positive version suffix.
+- The first commit gate found exhaustive-switch, predeclared-name, and
+  capitalized-error issues; correcting all enumerated outcomes, renaming
+  `max`, and normalizing error strings resolved them.
+- Go still requires a terminal return after the lint-exhaustive switch; that
+  was added as an unreachable fail-closed guard.
+
+### What I learned
+
+- The existing scripting pool already supplies the operational behavior the
+  plugin needs; a plugin-specific VM scheduler would duplicate mature code.
+
+### What was tricky to build
+
+- The schema model previously had no arrays. Adding them required runtime item
+  validation, item counts, schema-reference validation, and cycle traversal.
+- A deny outcome carries its stable diagnostic in the native outcome code,
+  while an allow outcome carries typed claim data in its validated value.
+
+### What warrants a second pair of eyes
+
+- Review array-schema limits and whether 64 roles/groups is the correct
+  production bound.
+- Review the two-code public denial allowlist before deployment.
+
+### What should be done in the future
+
+- Add capabilities only as separately versioned, typed native services.
+
+### Code review instructions
+
+- Start with `internal/plugins/jitsi/policy.go`, then the array additions in
+  `pkg/idpprogram`.
+- Run `go test ./internal/plugins/jitsi ./pkg/idpprogram ./pkg/idpscript -count=1`.
+
+### Technical details
+
+```text
+OIDC identity -> validated PolicyInput -> bounded Goja worker
+    complete(claims) -> native Decision{Allowed:true}
+    deny(code)       -> allowlisted public diagnostic
 ```

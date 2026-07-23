@@ -52,3 +52,11 @@ Step 3: implemented the encrypted durable one-time OIDC broker, PKCE/nonce valid
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/pluginhost/oidcbroker/broker.go — OIDC broker core
+
+## 2026-07-23
+
+Step 4: implemented the bounded versioned Jitsi Goja authorization policy, TypeScript contract, array schemas, pool lifecycle, and failure tests (commit a5eecf1).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/plugins/jitsi/policy.go — Jitsi Goja policy

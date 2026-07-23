@@ -33,9 +33,9 @@
 
 ## Phase 4 — Jitsi Goja policy
 
-- [ ] Define `integration.jitsi.authorize@v1` JSON schemas, TypeScript declarations, and deterministic fixtures. <!-- t:p4s1 -->
-- [ ] Implement the bounded Jitsi policy executor, warmed pool, readiness, metrics, and shutdown. <!-- t:p4s2 -->
-- [ ] Add policy allow, deny, malformed output, timeout, saturation, interruption, and capability tests. <!-- t:p4s3 -->
+- [x] Define `integration.jitsi.authorize@v1` JSON schemas, TypeScript declarations, and deterministic fixtures. <!-- t:p4s1 -->
+- [x] Implement the bounded Jitsi policy executor, warmed pool, readiness, metrics, and shutdown. <!-- t:p4s2 -->
+- [x] Add policy allow, deny, malformed output, timeout, saturation, interruption, and capability tests. <!-- t:p4s3 -->
 
 ## Phase 5 — Jitsi runtime
 
