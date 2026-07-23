@@ -77,6 +77,9 @@ func TestDeviceAuthorizationAudienceCompatibilityRejectsAmbiguousInputs(t *testi
 	if _, err := deviceAuthorizationAudiences(url.Values{"resource": {resource}, "audience": {resource}}); !errors.Is(err, errMixedResourceParameters) {
 		t.Fatalf("combined resource and audience error = %v", err)
 	}
+	if _, err := deviceAuthorizationAudiences(url.Values{"resource": {resource}, "audience": {""}}); !errors.Is(err, errMixedResourceParameters) {
+		t.Fatalf("resource plus empty audience error = %v", err)
+	}
 	if _, err := deviceAuthorizationAudiences(url.Values{"resource": {"relative"}}); !errors.Is(err, errInvalidResourceIndicator) {
 		t.Fatalf("relative resource error = %v", err)
 	}
@@ -102,6 +105,7 @@ func TestDeviceAuthorizationRejectsMalformedUnauthorizedAndInvalidScopeRequests(
 		{name: "invalid audience", method: http.MethodPost, contentType: "application/x-www-form-urlencoded", body: "client_id=device-cli&scope=openid&audience=https%3A%2F%2Fother.example.test%2Fapi", wantCode: "invalid_target"},
 		{name: "malformed resource", method: http.MethodPost, contentType: "application/x-www-form-urlencoded", body: "client_id=device-cli&scope=openid&resource=relative", wantCode: "invalid_target"},
 		{name: "mixed resource forms", method: http.MethodPost, contentType: "application/x-www-form-urlencoded", body: "client_id=device-cli&scope=openid&resource=https%3A%2F%2Finbox.example.test%2Fapi&audience=https%3A%2F%2Finbox.example.test%2Fapi", wantCode: "invalid_request"},
+		{name: "resource with empty legacy audience", method: http.MethodPost, contentType: "application/x-www-form-urlencoded", body: "client_id=device-cli&scope=openid&resource=https%3A%2F%2Finbox.example.test%2Fapi&audience=", wantCode: "invalid_request"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

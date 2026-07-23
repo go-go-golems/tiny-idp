@@ -701,11 +701,12 @@ var (
 
 func deviceAuthorizationAudiences(form url.Values) ([]string, error) {
 	legacy := fosite.GetAudiences(form)
-	resources := form["resource"]
-	if len(legacy) > 0 && len(resources) > 0 {
+	resources, resourcePresent := form["resource"]
+	_, audiencePresent := form["audience"]
+	if audiencePresent && resourcePresent {
 		return nil, errMixedResourceParameters
 	}
-	if len(resources) == 0 {
+	if !resourcePresent {
 		return legacy, nil
 	}
 	result := make([]string, 0, len(resources))
