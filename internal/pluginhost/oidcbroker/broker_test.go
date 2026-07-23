@@ -92,7 +92,7 @@ func TestBrokerStartAndCompleteUsesPKCENonceAndUserInfo(t *testing.T) {
 	started, err := broker.Start(ctx, pluginapi.StartRequest{
 		PluginID: "jitsi", ClientID: "jitsi-client", CallbackPath: "/integrations/jitsi/callback",
 		Scopes: []string{"openid", "profile", "email"}, PluginState: []byte(`{"room":"engineering"}`),
-		BrowserBinding: "browser-one", TTL: 10 * time.Minute,
+		BrowserBinding: "browser-one", Registration: true, SelectAccount: true, TTL: 10 * time.Minute,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +104,9 @@ func TestBrokerStartAndCompleteUsesPKCENonceAndUserInfo(t *testing.T) {
 	expectedNonce = authorizationURL.Query().Get("nonce")
 	expectedChallenge = authorizationURL.Query().Get("code_challenge")
 	if authorizationURL.Path != "/authorize" || authorizationURL.Query().Get("state") != started.State ||
-		authorizationURL.Query().Get("code_challenge_method") != "S256" {
+		authorizationURL.Query().Get("code_challenge_method") != "S256" ||
+		authorizationURL.Query().Get("tinyidp_signup") != "1" ||
+		authorizationURL.Query().Get("prompt") != "select_account" {
 		t.Fatalf("authorization URL = %s", authorizationURL)
 	}
 	completion, err := broker.Complete(ctx, pluginapi.CompleteRequest{

@@ -102,6 +102,8 @@ type StartRequest struct {
 	Scopes         []string
 	PluginState    []byte
 	BrowserBinding string
+	Registration   bool
+	SelectAccount  bool
 	TTL            time.Duration
 }
 

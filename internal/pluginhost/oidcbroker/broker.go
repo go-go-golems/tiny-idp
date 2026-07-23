@@ -99,6 +99,12 @@ func (b *Broker) Start(ctx context.Context, request pluginapi.StartRequest) (plu
 		"code_challenge":        {created.PKCEChallenge},
 		"code_challenge_method": {"S256"},
 	}
+	if request.Registration {
+		parameters.Set("tinyidp_signup", "1")
+	}
+	if request.SelectAccount {
+		parameters.Set("prompt", "select_account")
+	}
 	authorizationURL := b.endpoint.AuthURL
 	separator := "?"
 	if strings.Contains(authorizationURL, "?") {

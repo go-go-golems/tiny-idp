@@ -135,6 +135,11 @@ func (r *Runtime) start(writer http.ResponseWriter, request *http.Request) {
 		r.reject(request.Context(), writer, "invalid_room", nil)
 		return
 	}
+	registration, selectAccount, ok := startIntent(request.URL.Query())
+	if !ok {
+		r.reject(request.Context(), writer, "invalid_start_intent", nil)
+		return
+	}
 	binding, err := r.browserBinding(writer, request)
 	if err != nil {
 		r.reject(request.Context(), writer, "authentication_start_failed", err)
@@ -145,7 +150,8 @@ func (r *Runtime) start(writer http.ResponseWriter, request *http.Request) {
 		PluginID: r.descriptor.ID, ClientID: r.settings.OIDCClientID,
 		CallbackPath: r.descriptor.RoutePrefix() + "callback",
 		Scopes:       []string{"openid", "profile", "email"}, PluginState: state,
-		BrowserBinding: binding, TTL: 10 * time.Minute,
+		BrowserBinding: binding, Registration: registration, SelectAccount: selectAccount,
+		TTL: 10 * time.Minute,
 	})
 	if err != nil {
 		reasonClass = "oauth"
@@ -157,6 +163,23 @@ func (r *Runtime) start(writer http.ResponseWriter, request *http.Request) {
 		attribute.String("plugin", "jitsi"), attribute.String("operation", "start"), attribute.String("outcome", "accepted"),
 	))
 	http.Redirect(writer, request, result.AuthorizationURL, http.StatusSeeOther)
+}
+
+func startIntent(query url.Values) (bool, bool, bool) {
+	intent := query["intent"]
+	if len(intent) > 1 || (len(intent) == 1 && intent[0] != "" && intent[0] != "signup") {
+		return false, false, false
+	}
+	prompt := query["prompt"]
+	if len(prompt) > 1 || (len(prompt) == 1 && prompt[0] != "" && prompt[0] != "select_account") {
+		return false, false, false
+	}
+	registration := len(intent) == 1 && intent[0] == "signup"
+	selectAccount := len(prompt) == 1 && prompt[0] == "select_account"
+	if registration && selectAccount {
+		return false, false, false
+	}
+	return registration, selectAccount, true
 }
 
 func (r *Runtime) callback(writer http.ResponseWriter, request *http.Request) {
@@ -265,7 +288,7 @@ func (r *Runtime) callback(writer http.ResponseWriter, request *http.Request) {
 		attribute.String("plugin", "jitsi"), attribute.String("outcome", "accepted"),
 	))
 	target := r.settings.PublicOrigin + "/" + url.PathEscape(pluginState.Room) + "?jwt=" + url.QueryEscape(token)
-	http.Redirect(writer, request, target, http.StatusSeeOther)
+	r.renderMeetingTransition(writer, target)
 }
 
 func (r *Runtime) observe(ctx context.Context, operation, outcome, reasonClass string, elapsed time.Duration) {
@@ -318,6 +341,22 @@ var errorPage = template.Must(template.New("jitsi-error").Parse(`<!doctype html>
 <body><main class="identity workflow"><header><p class="kicker">Jitsi / identity</p>
 <h1>Meeting access was not completed</h1></header><p role="alert">{{.}}</p>
 <p><a href="/">Return to the meeting site</a></p></main></body></html>`))
+
+var meetingTransitionPage = template.Must(template.New("jitsi-transition").Parse(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="0; url={{.}}">
+<title>Continue to the meeting</title><link rel="stylesheet" href="/static/themes/jitsi.css"></head>
+<body><main class="identity workflow"><header><p class="kicker">Jitsi / identity</p>
+<h1>Continue to the meeting</h1></header>
+<p>Your identity was accepted and the meeting token was issued.</p>
+<p><a href="{{.}}">Enter the meeting</a></p></main></body></html>`))
+
+func (r *Runtime) renderMeetingTransition(writer http.ResponseWriter, target string) {
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(http.StatusOK)
+	_ = meetingTransitionPage.Execute(writer, target)
+}
 
 func (r *Runtime) renderError(writer http.ResponseWriter, status int, reason string) {
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
