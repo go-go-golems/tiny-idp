@@ -151,6 +151,25 @@ test("a remembered session reaches the account chooser", async ({ page }) => {
   await expect(page.getByLabel("Local Jitsi Administrator")).toBeVisible();
 });
 
+test("provider logout clears the TinyIDP session before a new meeting login", async ({ page }) => {
+  const firstRoom = `logout-seed-${Date.now()}`;
+  await page.goto(`${meetOrigin}/${firstRoom}`);
+  await clickPrejoin(page, "Logout Administrator");
+  await completeLogin(page);
+  await expect(page).toHaveURL(new RegExp(`^${meetOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/${firstRoom}\\?jwt=`));
+
+  const postLogout = encodeURIComponent(`${meetOrigin}/`);
+  await page.goto(`${idpOrigin}/end-session?client_id=tinyidp-jitsi-local&post_logout_redirect_uri=${postLogout}`);
+  await expect(page).toHaveURL(`${meetOrigin}/`);
+
+  const secondRoom = `logout-proof-${Date.now()}`;
+  await page.goto(`${meetOrigin}/${secondRoom}`);
+  await clickPrejoin(page, "Logout Proof");
+  await expect(page).toHaveURL(new RegExp(`^${idpOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/authorize`));
+  await expect(page.getByLabel("Login")).toBeVisible();
+  await expect(page.getByLabel("Password")).toBeVisible();
+});
+
 test("two independently authenticated browsers join the same JVB conference", async ({ browser }) => {
   const room = `two-browser-${Date.now()}`;
   const firstContext = await newMediaContext(browser);
