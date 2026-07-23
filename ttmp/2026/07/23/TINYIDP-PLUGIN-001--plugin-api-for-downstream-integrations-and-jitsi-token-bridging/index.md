@@ -22,10 +22,10 @@ ExternalSources:
     - https://github.com/jitsi-contrib/jitsi-oidc-adapter
     - https://pkg.go.dev/plugin
     - https://github.com/hashicorp/go-plugin
-Summary: Exploratory architecture research for compiled-in TinyIDP plugins, Glazed configuration, bounded Goja policy, and production operations.
-LastUpdated: 2026-07-23T16:32:24.782740888-04:00
-WhatFor: ""
-WhenToUse: ""
+Summary: Design and implementation workspace for compiled-in TinyIDP plugins, Glazed configuration, bounded Goja policy, Jitsi token bridging, and production operations.
+LastUpdated: 2026-07-23T18:15:00-04:00
+WhatFor: Define, implement, and validate the TinyIDP plugin host and its first Jitsi integration.
+WhenToUse: Use when changing plugin APIs, production composition, Jitsi authentication, Goja integration policy, or plugin deployment and observability.
 ---
 
 
@@ -35,9 +35,10 @@ WhenToUse: ""
 
 ## Overview
 
-This ticket explores how TinyIDP could host optional downstream integrations,
-using a Jitsi token bridge as the first concrete plugin. It is currently an
-option-selection notebook, not the final implementation guide.
+This ticket defines and implements how TinyIDP hosts optional downstream
+integrations, using a Jitsi token bridge as the first concrete plugin. The
+first design document preserves the initial option research. The second is the
+authoritative, intern-facing analysis, design, and implementation guide.
 
 The plugin would authenticate a TinyIDP browser identity, optionally invoke a
 bounded Goja policy, mint a narrowly scoped Jitsi JWT, and redirect the browser

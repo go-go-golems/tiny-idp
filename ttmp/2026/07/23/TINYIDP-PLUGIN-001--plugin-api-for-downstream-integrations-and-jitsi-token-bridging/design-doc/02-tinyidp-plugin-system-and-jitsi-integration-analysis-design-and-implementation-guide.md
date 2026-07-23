@@ -31,7 +31,7 @@ ExternalSources:
     - https://pkg.go.dev/plugin
     - https://github.com/hashicorp/go-plugin
 Summary: Intern-facing system guide for a compiled-in TinyIDP plugin API, Glazed configuration, OIDC browser brokerage, bounded Goja policy, Jitsi JWT issuance, observability, testing, and Kubernetes deployment.
-LastUpdated: 2026-07-23T17:05:00-04:00
+LastUpdated: 2026-07-23T18:15:00-04:00
 WhatFor: Use this guide to understand and implement the TinyIDP plugin host and its first Jitsi integration.
 WhenToUse: Read before changing production command configuration, adding integration routes, exposing identity to plugins, adding Jitsi signing, or implementing plugin observability.
 ---
@@ -1233,6 +1233,15 @@ Rejected. OIDC and Jitsi tokens have different issuer, audience, claims, lifetim
 Rejected. Jitsi's supported token modules validate locally. Introspection would create synchronous latency and availability coupling.
 
 ## 17. Implementation Plan
+
+The ticket checklist is the live source of task status. At the time of this
+revision, production Glazed composition, the plugin kernel, the durable OIDC
+broker, the bounded Jitsi policy, the Jitsi runtime, and the internal
+observability listener are implemented. Kubernetes resources, coordinated
+Prosody deployment documentation, and end-to-end browser and conference
+validation remain. The phases below describe the complete implementation path
+so that a new engineer can understand both the work already present and the
+work still required.
 
 ### Phase 1: Production Glazed composition
 

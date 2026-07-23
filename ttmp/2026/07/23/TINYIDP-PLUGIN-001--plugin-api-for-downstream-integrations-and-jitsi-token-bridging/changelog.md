@@ -85,3 +85,13 @@ Step 7: added the internal administration listener, Prometheus exporter, and bou
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/observability/prometheus.go — Internal health readiness and Prometheus surface
+
+## 2026-07-23
+
+Reconciled the ticket overview and authoritative intern-facing guide with the
+implemented plugin phases, clarified the remaining deployment and end-to-end
+validation work, and prepared the updated guide for reMarkable delivery.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/ttmp/2026/07/23/TINYIDP-PLUGIN-001--plugin-api-for-downstream-integrations-and-jitsi-token-bridging/design-doc/02-tinyidp-plugin-system-and-jitsi-integration-analysis-design-and-implementation-guide.md — Authoritative plugin system guide

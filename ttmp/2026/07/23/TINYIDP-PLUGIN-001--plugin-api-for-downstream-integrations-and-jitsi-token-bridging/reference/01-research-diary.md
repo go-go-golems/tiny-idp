@@ -891,3 +891,87 @@ public :8443                  internal :9090
   /integrations/jitsi/*         /readyz -> core + plugin checks
                                 /metrics -> private Prometheus registry
 ```
+
+## Step 8: Reconcile and publish the authoritative implementation guide
+
+This step reconciled the ticket overview and the long-form guide with the
+implementation that now exists. The guide remains useful as a design
+specification, but it now distinguishes completed host/runtime work from the
+Kubernetes, Prosody, and browser-validation tasks that remain.
+
+The editorial pass also made the second design document explicitly
+authoritative. This prevents a new intern from mistaking the earlier
+option-selection note for the current system contract.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, this is great i can already tell. Create  a detailed analysis / design / implementation guide that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and the nupload to remarkable."
+
+**Assistant interpretation:** Finalize the detailed plugin/Jitsi guide in the
+existing ticket, make it suitable for an unfamiliar implementer, and deliver
+the resulting document to reMarkable.
+
+**Inferred user intent:** Preserve the architecture and implementation
+knowledge in a durable teaching document before continuing deployment work.
+
+### What I did
+
+- Reviewed the complete 1,300-line system guide and its section structure.
+- Updated the ticket overview so it points readers to the authoritative guide.
+- Added an explicit implementation-status note before the phased plan.
+- Updated the changelog and this diary before validation and upload.
+
+### Why
+
+- The ticket overview still described the workspace as an option notebook,
+  although the design had been selected and most runtime phases implemented.
+- A new intern needs to know which document is normative and which tasks remain.
+
+### What worked
+
+- The existing guide already covered system context, API contracts,
+  configuration, lifecycle, security, Goja policy, Jitsi claims, Prosody,
+  observability, Kubernetes, testing, decisions, alternatives, and file
+  references.
+- The live `tasks.md` checklist provided a precise source for implementation
+  status.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The long-form guide had already evolved beyond its original research note,
+  but the ticket landing page had not been updated to reflect that transition.
+
+### What was tricky to build
+
+- The document describes both target architecture and implemented behavior.
+  The status paragraph had to distinguish those without rewriting historical
+  phases as if no code existed.
+
+### What warrants a second pair of eyes
+
+- Confirm the remaining Kubernetes and Prosody deployment guidance against the
+  final manifests when Phase 6 is completed.
+
+### What should be done in the future
+
+- Update the implementation-status paragraph after Phases 6 and 7 are checked.
+
+### Code review instructions
+
+- Begin with the executive summary and request-path diagram, then verify the
+  API sketches against `internal/pluginapi`, `internal/pluginhost`, and
+  `internal/plugins/jitsi`.
+- Run `docmgr doctor --ticket TINYIDP-PLUGIN-001 --stale-after 30`.
+
+### Technical details
+
+```text
+design-doc/01-*  initial option research
+design-doc/02-*  authoritative system and implementation guide
+tasks.md          live implementation status
+reference/01-*   chronological evidence and continuation record
+```
