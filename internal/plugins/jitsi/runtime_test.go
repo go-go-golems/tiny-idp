@@ -3,6 +3,7 @@ package jitsi
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,12 @@ import (
 	"github.com/go-go-golems/tiny-idp/internal/pluginapi"
 	"github.com/go-go-golems/tiny-idp/pkg/idp"
 )
+
+type failingAuditSink struct{}
+
+func (failingAuditSink) Emit(context.Context, idp.Event) error {
+	return errors.New("audit storage unavailable")
+}
 
 type fakeBroker struct {
 	started pluginapi.StartRequest
@@ -206,5 +213,43 @@ func TestRuntimeRendersStableHTMLForInputAndCancellationErrors(t *testing.T) {
 			strings.Contains(response.Body.String(), "access_denied") {
 			t.Fatalf("%s response = %d %q", target, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestRuntimeFailsClosedWhenRejectionAuditCannotBeDelivered(t *testing.T) {
+	now := time.Now()
+	signer, err := NewSigner(
+		[]byte("0123456789abcdef0123456789abcdef"),
+		"app",
+		"meet.example.test",
+		5*time.Minute,
+		fixedClock{now},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := newRuntime(
+		Settings{OIDCClientID: "jitsi-client"},
+		pluginapi.RuntimeServices{
+			Audit: failingAuditSink{}, Logger: zerolog.Nop(), Clock: fixedClock{now},
+		},
+		signer,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
+
+	response := httptest.NewRecorder()
+	runtime.Handler().ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/start?room=../admin", nil),
+	)
+	if response.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(response.Body.String(), "No meeting token was issued.") ||
+		strings.Contains(response.Body.String(), "audit_delivery_failed") ||
+		strings.Contains(response.Body.String(), "invalid_room") {
+		t.Fatalf("audit failure response = %d %q", response.Code, response.Body.String())
 	}
 }

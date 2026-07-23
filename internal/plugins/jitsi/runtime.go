@@ -328,10 +328,18 @@ func (r *Runtime) reject(ctx context.Context, writer http.ResponseWriter, reason
 		event = event.Err(err)
 	}
 	event.Str("plugin", "jitsi").Str("reason", reason).Msg("Jitsi integration request rejected")
-	_ = r.services.Audit.Emit(ctx, idp.Event{
+	if auditErr := r.services.Audit.Emit(ctx, idp.Event{
 		Time: r.services.Clock.Now().UTC(), Name: "integration.jitsi.rejected",
 		ClientID: r.settings.OIDCClientID, Result: "rejected", Reason: reason,
-	})
+	}); auditErr != nil {
+		r.services.Logger.Error().
+			Err(auditErr).
+			Str("plugin", "jitsi").
+			Str("reason", reason).
+			Msg("Jitsi rejection audit delivery failed")
+		r.renderError(writer, http.StatusServiceUnavailable, "audit_delivery_failed")
+		return
+	}
 	r.renderError(writer, http.StatusBadRequest, reason)
 }
 
