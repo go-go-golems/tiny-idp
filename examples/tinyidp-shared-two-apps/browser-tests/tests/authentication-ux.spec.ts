@@ -104,6 +104,23 @@ async function loginToMessageDesk(page: Page, login = "admin@example.test", pass
   await expect(page.getByText("SIGNED IN")).toBeVisible();
 }
 
+async function loginToGojaAuth(page: Page, login = "admin@example.test", password = "local-admin-password-2026!"): Promise<void> {
+  await page.goto(`${gojaOrigin}/auth/login?return_to=/`);
+  if (page.url().startsWith(idpOrigin)) {
+    const loginField = page.getByLabel("Login");
+    if (await loginField.isVisible()) {
+      await loginField.fill(login);
+      await page.getByLabel("Password").fill(password);
+      await page.getByRole("button", { name: /continue|sign in|approve/i }).first().click();
+    }
+    if (page.url().startsWith(idpOrigin)) {
+      await page.getByRole("button", { name: /approve|continue/i }).first().click();
+    }
+  }
+  await expect(page).toHaveURL(new RegExp(`^${gojaOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+  await expect(page.locator("#session-status")).toContainText("Logged in");
+}
+
 test.beforeEach(async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", error => pageErrors.push(error.message));
@@ -180,6 +197,25 @@ test("remembered TinyIDP session can submit the first add-account signup step", 
   await submitIdentity(page, "Playwright Add Account", email);
   await expect(page.getByLabel("Email verification code")).toBeVisible();
   await expectMessageDeskTheme(page);
+});
+
+test("Message Desk local logout leaves the TinyIDP and Goja Auth sessions usable", async ({ page }) => {
+  await loginToMessageDesk(page);
+  await loginToGojaAuth(page);
+  const beforeLogout = await page.request.get(`${gojaOrigin}/auth/session`);
+  expect(beforeLogout.ok()).toBe(true);
+  expect((await beforeLogout.json()).email).toBe("admin@example.test");
+
+  await page.goto(messageOrigin);
+  await expect(page.getByText("SIGNED IN")).toBeVisible();
+  await page.getByRole("button", { name: "Log out of Message Desk" }).click();
+  await expect(page.getByText("GUEST MODE")).toBeVisible();
+
+  const afterLogout = await page.request.get(`${gojaOrigin}/auth/session`);
+  expect(afterLogout.ok()).toBe(true);
+  expect((await afterLogout.json()).email).toBe("admin@example.test");
+  await page.goto(gojaOrigin);
+  await expect(page.locator("#session-status")).toContainText("Logged in");
 });
 
 test("logging out everywhere clears Message Desk and TinyIDP browser sessions", async ({ page, context }) => {
@@ -442,6 +478,37 @@ test("invited Goja signup verifies email and establishes an application session"
   const response = await page.request.get(`${gojaOrigin}/auth/session`);
   expect(response.ok()).toBe(true);
   expect((await response.json()).email).toBe(email);
+});
+
+test("a consumed Goja signup invitation remains a themed non-revealing field error", async ({ page }) => {
+  const suffix = Date.now();
+  const invitation = await issueSignupInvitation("goja-auth-host-demo");
+  const firstEmail = `playwright-goja-consume-first-${suffix}@example.test`;
+  await beginGojaSignup(page);
+  await page.getByLabel("Display name").fill(`Goja Consume First ${suffix}`);
+  await page.getByLabel("Email").fill(firstEmail);
+  await page.getByLabel("Invite code").fill(invitation);
+  await page.getByRole("button", {name: "Create account"}).click();
+  await page.getByLabel("Email verification code").fill(await latestEmailCode(page, firstEmail));
+  await page.getByRole("button", {name: /create account|continue/i}).click();
+  await page.getByLabel("Password", {exact: true}).fill("playwright consumed invitation password 2026!");
+  await page.getByLabel("Confirm password").fill("playwright consumed invitation password 2026!");
+  await page.getByRole("button", {name: "Create account"}).click();
+  if (page.url().startsWith(idpOrigin)) {
+    await page.getByRole("button", {name: /approve|continue/i}).first().click();
+  }
+  await expect(page).toHaveURL(new RegExp(`^${gojaOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+
+  await beginGojaSignup(page);
+  await page.getByLabel("Display name").fill(`Goja Consume Replay ${suffix}`);
+  await page.getByLabel("Email").fill(`playwright-goja-consume-replay-${suffix}@example.test`);
+  const replayedInvitation = page.getByLabel("Invite code");
+  await replayedInvitation.fill(invitation);
+  await page.getByRole("button", {name: "Create account"}).click();
+  await expect(page.getByText("This value could not be accepted.")).toBeVisible();
+  await expect(replayedInvitation).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByLabel("Email verification code")).toHaveCount(0);
+  await expectGojaAuthTheme(page);
 });
 
 for (const invitationCase of [
