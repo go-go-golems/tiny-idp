@@ -33,6 +33,15 @@ async function participantCount(page: Page): Promise<number> {
   });
 }
 
+async function mediaConnected(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const application = (window as typeof window & {
+      APP?: { conference?: { getConnectionState(): string } };
+    }).APP;
+    return application?.conference?.getConnectionState() === "connected";
+  });
+}
+
 async function completeLogin(page: Page): Promise<void> {
   await expect(page).toHaveURL(new RegExp(`^${idpOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/authorize`));
   await page.getByLabel("Login").fill(adminLogin);
@@ -151,6 +160,8 @@ test("two independently authenticated browsers join the same JVB conference", as
     const second = await authenticateAndJoin(secondContext, room, "Second Browser");
     await expect.poll(() => participantCount(first), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
     await expect.poll(() => participantCount(second), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => mediaConnected(first), { timeout: 30_000 }).toBe(true);
+    await expect.poll(() => mediaConnected(second), { timeout: 30_000 }).toBe(true);
   } finally {
     await firstContext.close();
     await secondContext.close();
