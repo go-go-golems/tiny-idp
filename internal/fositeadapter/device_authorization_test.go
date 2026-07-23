@@ -33,7 +33,7 @@ func TestDeviceAuthorizationCreatesHashedGrantAndNoStoreResponse(t *testing.T) {
 	provider, store, sink := newDeviceAuthorizationProvider(t, func() (string, string, error) { return "device-code-one", "ABCD-EFGH", nil }, now)
 	server := httptest.NewServer(provider.Handler())
 	defer server.Close()
-	response, err := http.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}, "audience": {"https://inbox.example.test/api"}})
+	response, err := http.PostForm(server.URL+"/device_authorization", url.Values{"client_id": {"device-cli"}, "scope": {"openid profile"}, "resource": {"https://inbox.example.test/api"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +60,24 @@ func TestDeviceAuthorizationCreatesHashedGrantAndNoStoreResponse(t *testing.T) {
 		if strings.Contains(serialized, body.DeviceCode) || strings.Contains(serialized, body.UserCode) {
 			t.Fatalf("audit event leaked device material: %#v", event)
 		}
+	}
+}
+
+func TestDeviceAuthorizationAudienceCompatibilityRejectsAmbiguousInputs(t *testing.T) {
+	resource := "https://inbox.example.test/api"
+	got, err := deviceAuthorizationAudiences(url.Values{"resource": {resource}})
+	if err != nil || len(got) != 1 || got[0] != resource {
+		t.Fatalf("RFC 8707 resource = %#v, %v", got, err)
+	}
+	got, err = deviceAuthorizationAudiences(url.Values{"audience": {resource}})
+	if err != nil || len(got) != 1 || got[0] != resource {
+		t.Fatalf("legacy audience = %#v, %v", got, err)
+	}
+	if _, err := deviceAuthorizationAudiences(url.Values{"resource": {resource}, "audience": {resource}}); err == nil {
+		t.Fatal("combined resource and audience accepted")
+	}
+	if _, err := deviceAuthorizationAudiences(url.Values{"resource": {"relative"}}); err == nil {
+		t.Fatal("relative resource accepted")
 	}
 }
 

@@ -328,7 +328,7 @@ curl -sS -X POST http://localhost:5556/token \
   -d device_code="$(echo "$DEVICE_JSON" | jq -r .device_code)" | jq .
 ```
 
-Polling before approval returns `authorization_pending`; polling too quickly returns `slow_down`; denied, expired, mismatched, unknown, or already-used device codes return the corresponding OAuth error. Strict discovery advertises `device_authorization_endpoint` and the device grant type only because this full path is implemented. See `tinyidp help tutorial-device-authorization` and the device ticket's operator runbook before enabling a client in production.
+Polling before approval returns `authorization_pending`; polling too quickly returns `slow_down`; denied, expired, mismatched, unknown, or already-used device codes return the corresponding OAuth error. Strict device authorization accepts repeatable RFC 8707 `resource` indicators and persists them as the token audience after approval. The earlier `audience` parameter remains accepted for compatibility, but combining `resource` and `audience` is rejected as ambiguous. Strict discovery advertises `device_authorization_endpoint` and the device grant type only because this full path is implemented. See `tinyidp help tutorial-device-authorization` and the device ticket's operator runbook before enabling a client in production.
 
 ## Clients (mock engine builtins)
 

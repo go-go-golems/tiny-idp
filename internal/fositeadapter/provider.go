@@ -624,7 +624,12 @@ func (p *Provider) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_scope", "requested scope is not allowed")
 		return
 	}
-	audiences := fosite.GetAudiences(form)
+	audiences, err := deviceAuthorizationAudiences(form)
+	if err != nil {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "invalid_resource"})
+		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "resource and audience must not be combined")
+		return
+	}
 	if !client.AllowsAudience(audiences) {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "invalid_audience"})
 		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_target", "requested audience is not allowed")
@@ -683,6 +688,35 @@ func containsScope(scopes []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func deviceAuthorizationAudiences(form url.Values) ([]string, error) {
+	legacy := fosite.GetAudiences(form)
+	resources := form["resource"]
+	if len(legacy) > 0 && len(resources) > 0 {
+		return nil, errors.New("ambiguous resource indicators")
+	}
+	if len(resources) == 0 {
+		return legacy, nil
+	}
+	result := make([]string, 0, len(resources))
+	seen := map[string]struct{}{}
+	for _, resource := range resources {
+		resource = strings.TrimSpace(resource)
+		parsed, err := url.Parse(resource)
+		if err != nil || !parsed.IsAbs() || parsed.User != nil || parsed.Fragment != "" {
+			return nil, errors.New("invalid resource indicator")
+		}
+		if _, exists := seen[resource]; exists {
+			continue
+		}
+		seen[resource] = struct{}{}
+		result = append(result, resource)
+	}
+	if len(result) == 0 {
+		return nil, errors.New("empty resource indicator")
+	}
+	return result, nil
 }
 
 func deviceAuthorizationError(w http.ResponseWriter, status int, code, description string) {
