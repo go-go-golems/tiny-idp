@@ -60,3 +60,20 @@ Step 4: implemented the bounded versioned Jitsi Goja authorization policy, TypeS
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/plugins/jitsi/policy.go — Jitsi Goja policy
+
+## 2026-07-23
+
+Step 5: implemented the complete Jitsi token bridge runtime (commit a0437f6)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/plugins/jitsi/runtime.go — Browser OIDC policy signing redirect and audit runtime
+
+
+## 2026-07-23
+
+Step 6: wired compiled plugins into serve-production with lifecycle and readiness composition (commit c6f98bd)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/internal/cmds/serve_production.go — Production preparation build mounting readiness and cleanup

@@ -39,10 +39,10 @@
 
 ## Phase 5 — Jitsi runtime
 
-- [ ] Implement the Jitsi Glazed section, typed settings, strict validation, and secret resolution. <!-- t:p5s1 -->
-- [ ] Implement exact HS256 Jitsi claim construction and token signing. <!-- t:p5s2 -->
-- [ ] Implement start and callback handlers, safe redirects, themed errors, structured logs, and durable audit. <!-- t:p5s3 -->
-- [ ] Add wrong-secret, expired-token, wrong-app, wrong-domain, wrong-room, privacy, and redaction tests. <!-- t:p5s4 -->
+- [x] Implement the Jitsi Glazed section, typed settings, strict validation, and secret resolution. <!-- t:p5s1 -->
+- [x] Implement exact HS256 Jitsi claim construction and token signing. <!-- t:p5s2 -->
+- [x] Implement start and callback handlers, safe redirects, themed errors, structured logs, and durable audit. <!-- t:p5s3 -->
+- [x] Add wrong-secret, expired-token, wrong-app, wrong-domain, wrong-room, privacy, and redaction tests. <!-- t:p5s4 -->
 
 ## Phase 6 — Observability and deployment
 

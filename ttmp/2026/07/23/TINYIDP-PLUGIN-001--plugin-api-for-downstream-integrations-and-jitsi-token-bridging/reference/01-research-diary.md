@@ -13,9 +13,13 @@ Intent: long-term
 Owners: []
 RelatedFiles:
     - Path: repo://cmd/tinyidp/main.go
-      Note: Production parser middleware composition introduced in commit 294e343
+      Note: |-
+        Production parser middleware composition introduced in commit 294e343
+        Registers the compiled-in Jitsi plugin with the production command (commit c6f98bd)
     - Path: repo://internal/cmds/serve_production.go
-      Note: Production host now decodes the reusable section in commit 294e343
+      Note: |-
+        Production host now decodes the reusable section in commit 294e343
+        Builds mounts observes and closes plugin runtimes in production (commit c6f98bd)
     - Path: repo://internal/pluginapi/api.go
       Note: Trusted plugin authority and lifecycle contracts from commit 513b7b9
     - Path: repo://internal/pluginapi/registry.go
@@ -26,8 +30,14 @@ RelatedFiles:
       Note: In-process OIDC relying-party broker from commit 4df3a9b
     - Path: repo://internal/pluginhost/oidcbroker/transaction.go
       Note: Encrypted durable one-time transaction manager from commit 4df3a9b
+    - Path: repo://internal/plugins/jitsi/definition.go
+      Note: Defines typed Glazed configuration and prepared runtime requirements for Phase 5 (commit a0437f6)
     - Path: repo://internal/plugins/jitsi/policy.go
       Note: Bounded versioned Jitsi policy executor from commit a5eecf1
+    - Path: repo://internal/plugins/jitsi/runtime.go
+      Note: Implements Jitsi start and callback browser paths for Phase 5 (commit a0437f6)
+    - Path: repo://internal/plugins/jitsi/token.go
+      Note: Implements exact bounded HS256 Jitsi token signing for Phase 5 (commit a0437f6)
     - Path: repo://internal/sections/production/section.go
       Note: Canonical production Glazed section introduced in commit 294e343
     - Path: repo://pkg/idpprogram/schema.go
@@ -40,6 +50,11 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
+
+
+
+
 
 
 
@@ -529,4 +544,226 @@ while retaining a professional native mechanics and security core.
 OIDC identity -> validated PolicyInput -> bounded Goja worker
     complete(claims) -> native Decision{Allowed:true}
     deny(code)       -> allowlisted public diagnostic
+```
+
+## Step 5: Implement the Jitsi token bridge runtime
+
+This step turned the policy contract into a complete integration runtime. The
+runtime owns the browser start and callback handlers, delegates OIDC protocol
+mechanics to the host broker, invokes the bounded policy, signs an exact
+short-lived Jitsi token, and redirects the browser only to the configured
+Jitsi public origin.
+
+The implementation keeps the shared signing secret out of Glazed values. The
+configuration contains only an owner-only file path, and secret bytes are
+resolved during runtime construction and cleared during shutdown.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Implement the complete Phase 5 Jitsi plugin
+configuration, signing, browser handlers, errors, audit, and adversarial tests.
+
+**Inferred user intent:** Produce a usable first plugin whose JavaScript seam
+controls policy without weakening the native protocol and signing boundary.
+
+**Commit (code):** `a0437f6` — "feat(jitsi): add token bridge runtime"
+
+### What I did
+
+- Added the `plugin-jitsi` Glazed section with typed settings and strict
+  cross-field validation.
+- Added bounded owner-only secret-file resolution.
+- Implemented exact HS256 Jitsi claims for issuer, audience, subject domain,
+  room, timestamps, and `context.user`.
+- Added `/start` and `/callback` handlers, secure browser-binding cookies,
+  safe redirect construction, themed HTML errors, and non-secret audit.
+- Added tests for invalid configuration, wrong secrets, expired tokens,
+  incorrect application/domain/room claims, privacy, redaction, callback
+  failures, policy denial, and closed runtime behavior.
+- Checked Phase 5 tasks `p5s1` through `p5s4`.
+
+### Why
+
+- Jitsi and Prosody need a narrowly scoped application token rather than a
+  general TinyIDP ID token.
+- Token construction and secret access are privileged native mechanics; Goja
+  should return only a validated authorization decision and claim inputs.
+
+### What worked
+
+- Jitsi runtime, signing, configuration, policy, plugin host, and broker tests
+  passed.
+- The runtime can use either the bounded Goja policy or the fail-closed native
+  default without changing the HTTP and signing mechanics.
+- The signer rejects closed, expired, wrong-secret, wrong-application,
+  wrong-domain, and wrong-room cases.
+
+### What didn't work
+
+- The first lint pass rejected a local variable named `copy` because it
+  shadows a predeclared identifier. Renaming it to `candidate` resolved the
+  commit gate.
+
+### What I learned
+
+- A fixed maximum token lifetime of ten minutes makes policy output easier to
+  reason about and limits the impact of a leaked browser URL.
+- Treating the public origin as a parsed, canonical URL allows every redirect
+  to be constructed from reviewed components instead of accepting a script- or
+  request-provided destination.
+
+### What was tricky to build
+
+- Jitsi claim names overlap with ordinary JWT conventions but have
+  deployment-specific meanings. The signer must bind `iss` and `aud` to the
+  configured application ID, `sub` to the XMPP domain, and `room` to exactly
+  one normalized room.
+- Error rendering must preserve a useful browser experience without exposing
+  OAuth state, tokens, secret paths, or wrapped internal errors.
+
+### What warrants a second pair of eyes
+
+- Compare the exact claim set with the Prosody token-auth module version used
+  by the deployment.
+- Review whether ten minutes is the desired maximum for every production
+  deployment and whether coordinated HS256 rotation needs an overlap window.
+
+### What should be done in the future
+
+- Exercise the token against a real Prosody instance rather than only the
+  independent verifier in the Go test suite.
+
+### Code review instructions
+
+- Start with `internal/plugins/jitsi/definition.go`, then `runtime.go`, and
+  finally `token.go`.
+- Run `go test ./internal/plugins/jitsi -count=1`.
+
+### Technical details
+
+```text
+GET /start?room=R
+  -> broker.Begin(plugin=jitsi, state={room:R})
+  -> TinyIDP login/signup
+  -> GET /callback?code=...&state=...
+  -> broker.Complete()
+  -> policy.authorize(identity, R)
+  -> signer.Sign(identity, R, claims)
+  -> 303 https://meet.example/R?jwt=<short-lived token>
+```
+
+## Step 6: Wire plugins into the production host
+
+This step integrated the compiled registry into `tinyidp serve-production`.
+Plugin sections now participate in command construction before source parsing,
+prepared plugins declare their exact OIDC clients, and runtimes are built only
+after the provider and durable transaction manager exist.
+
+Lifecycle handling closes plugin runtimes in reverse order on partial startup
+failure and normal shutdown. The public handler mounts only derived plugin
+prefixes and composes plugin readiness with the provider readiness result.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Complete production composition so enabling the
+Jitsi section creates a validated, mounted, lifecycle-managed plugin.
+
+**Inferred user intent:** Make the plugin implementation reachable through the
+real production binary rather than leaving it as an isolated package.
+
+**Commit (code):** `c6f98bd` — "feat(plugin): wire Jitsi into production host"
+
+### What I did
+
+- Constructed an immutable registry containing the Jitsi definition in
+  `cmd/tinyidp/main.go`.
+- Required `serve-production` construction to receive that registry and
+  compose its Glazed sections.
+- Prepared plugins before opening the listener and validated every declared
+  OIDC client against the reviewed production catalog.
+- Constructed the durable transaction manager and in-process OIDC broker from
+  host-owned provider services.
+- Built and mounted plugin runtimes with scoped secret resolution, audit,
+  logging, clock, randomness, meter, and tracer services.
+- Added reverse cleanup on every failure path and combined readiness.
+- Added production command tests for plugin section composition.
+
+### Why
+
+- Definitions must contribute fields before Glazed resolves profiles, config
+  files, environment, arguments, and flags.
+- Plugins must authenticate through public OIDC semantics while avoiding a
+  fragile public-ingress hairpin inside the process.
+- A runtime that fails after another plugin starts must not leak goroutines,
+  handles, or secret-bearing objects.
+
+### What worked
+
+- The host integration commit passed the repository pre-commit test and lint
+  gates.
+- Focused `internal/plugins/jitsi` and `internal/pluginhost` tests passed again
+  during the continuation audit.
+
+### What didn't work
+
+- Running the broader command suite inside the restricted workspace sandbox
+  failed at an existing `httptest.NewServer` call:
+  `httptest: failed to listen on a port: listen tcp6 [::1]:0: socket: operation not permitted`.
+  This is a sandbox socket restriction; the same package passed in the
+  repository commit gate outside that restriction.
+
+### What I learned
+
+- The existing in-process issuer transport is also the correct production
+  broker transport: it preserves full OAuth/OIDC validation without relying on
+  cluster DNS or ingress.
+- Plugin client requirements provide an early, exact contract between
+  deployment configuration and runtime behavior.
+
+### What was tricky to build
+
+- The token secret is cleared after provider construction, while the durable
+  integration transaction manager also needs key material. The manager must be
+  constructed before clearing the host buffer and must derive domain-separated
+  keys rather than retaining the raw slice.
+- Every failure branch after runtime construction needs the same reverse-close
+  semantics as graceful shutdown.
+
+### What warrants a second pair of eyes
+
+- Review the transaction-key derivation from the core token secret versus
+  provisioning a distinct protected integration-transaction key.
+- Audit every early return after `BuildAll` to ensure reverse cleanup remains
+  complete as the production command evolves.
+
+### What should be done in the future
+
+- Add the dedicated internal observability listener and validate the mounted
+  runtime through Docker Compose and a real Prosody token-auth deployment.
+
+### Code review instructions
+
+- Start with `cmd/tinyidp/main.go`, then
+  `internal/cmds/serve_production.go`, especially plugin preparation,
+  construction, mounting, readiness, and cleanup.
+- Run
+  `go test ./internal/cmds ./internal/pluginhost ./internal/plugins/jitsi -count=1`
+  in an environment that permits loopback listeners.
+
+### Technical details
+
+```text
+registry sections
+    -> Glazed source resolution
+    -> PrepareAll(values)
+    -> validate required OIDC clients
+    -> construct provider + broker
+    -> BuildAll(host services)
+    -> MountAll(/integrations/<id>/)
+    -> serve
+    -> CloseAll(reverse order)
 ```
