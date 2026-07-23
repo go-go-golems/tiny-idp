@@ -1,7 +1,10 @@
 package cmds
 
 import (
+	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/spf13/cobra"
 
@@ -21,7 +24,7 @@ func newAdminClientCommand(dbPath *string) *cobra.Command {
 }
 
 func newAdminClientCreateCommand(dbPath *string) *cobra.Command {
-	var id, secret string
+	var id, secret, secretFile string
 	var public, generateSecret, requirePKCE, canIntrospect bool
 	var redirectURIs, scopes, grantTypes, audiences, postLogout []string
 	var accessTTL, idTTL, refreshTTL time.Duration
@@ -29,12 +32,16 @@ func newAdminClientCreateCommand(dbPath *string) *cobra.Command {
 		Use:   "create",
 		Short: "Create an OAuth client",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			resolvedSecret, err := resolveClientSecret(secret, secretFile, generateSecret)
+			if err != nil {
+				return err
+			}
 			svc, closeFn, err := openAdminService(*dbPath)
 			if err != nil {
 				return err
 			}
 			defer closeFn()
-			client, secretResult, err := svc.CreateClient(cmd.Context(), admin.CreateClientRequest{ID: id, Public: public, Secret: secret, GenerateSecret: generateSecret, RedirectURIs: redirectURIs, PostLogoutRedirectURIs: postLogout, AllowedScopes: scopes, AllowedGrantTypes: grantTypes, AllowedAudiences: audiences, CanIntrospect: canIntrospect, RequirePKCE: requirePKCE, AccessTokenTTL: accessTTL, IDTokenTTL: idTTL, RefreshTokenTTL: refreshTTL})
+			client, secretResult, err := svc.CreateClient(cmd.Context(), admin.CreateClientRequest{ID: id, Public: public, Secret: resolvedSecret, GenerateSecret: generateSecret, RedirectURIs: redirectURIs, PostLogoutRedirectURIs: postLogout, AllowedScopes: scopes, AllowedGrantTypes: grantTypes, AllowedAudiences: audiences, CanIntrospect: canIntrospect, RequirePKCE: requirePKCE, AccessTokenTTL: accessTTL, IDTokenTTL: idTTL, RefreshTokenTTL: refreshTTL})
 			if err != nil {
 				return err
 			}
@@ -43,7 +50,8 @@ func newAdminClientCreateCommand(dbPath *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&id, "id", "", "Client ID")
 	cmd.Flags().BoolVar(&public, "public", false, "Create a public client")
-	cmd.Flags().StringVar(&secret, "secret", "", "Client secret (prefer --generate-secret outside tests)")
+	cmd.Flags().StringVar(&secret, "secret", "", "Client secret (prefer --secret-file or --generate-secret outside tests)")
+	cmd.Flags().StringVar(&secretFile, "secret-file", "", "File containing the client secret")
 	cmd.Flags().BoolVar(&generateSecret, "generate-secret", false, "Generate a one-time client secret")
 	cmd.Flags().StringArrayVar(&redirectURIs, "redirect-uri", nil, "Allowed redirect URI (repeatable)")
 	cmd.Flags().StringArrayVar(&postLogout, "post-logout-redirect-uri", nil, "Allowed post-logout redirect URI (repeatable)")
@@ -55,9 +63,40 @@ func newAdminClientCreateCommand(dbPath *string) *cobra.Command {
 	cmd.Flags().DurationVar(&accessTTL, "access-token-ttl", time.Hour, "Access token TTL")
 	cmd.Flags().DurationVar(&idTTL, "id-token-ttl", time.Hour, "ID token TTL")
 	cmd.Flags().DurationVar(&refreshTTL, "refresh-token-ttl", 30*24*time.Hour, "Refresh token TTL")
+	cmd.MarkFlagsMutuallyExclusive("secret", "secret-file", "generate-secret")
 	_ = cmd.MarkFlagRequired("id")
-	_ = cmd.MarkFlagRequired("grant-type")
 	return cmd
+}
+
+func resolveClientSecret(value, path string, generate bool) (string, error) {
+	selected := 0
+	if value != "" {
+		selected++
+	}
+	if path != "" {
+		selected++
+	}
+	if generate {
+		selected++
+	}
+	if selected > 1 {
+		return "", errors.New("--secret, --secret-file, and --generate-secret are mutually exclusive")
+	}
+	if path == "" {
+		return value, nil
+	}
+	data, err := readClientSecretFile(path)
+	if err != nil {
+		return "", err
+	}
+	secret := strings.TrimSpace(string(data))
+	if secret == "" {
+		return "", errors.New("client secret file is empty")
+	}
+	if err := admin.ValidateClientSecret(secret); err != nil {
+		return "", err
+	}
+	return secret, nil
 }
 
 func newAdminClientListCommand(dbPath *string) *cobra.Command {

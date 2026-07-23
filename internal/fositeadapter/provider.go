@@ -624,7 +624,16 @@ func (p *Provider) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_scope", "requested scope is not allowed")
 		return
 	}
-	audiences := fosite.GetAudiences(form)
+	audiences, err := deviceAuthorizationAudiences(form)
+	if err != nil {
+		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "invalid_resource"})
+		if errors.Is(err, errMixedResourceParameters) {
+			deviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "resource and audience must not be combined")
+		} else {
+			deviceAuthorizationError(w, http.StatusBadRequest, "invalid_target", "resource indicator is malformed")
+		}
+		return
+	}
 	if !client.AllowsAudience(audiences) {
 		p.recordAudit(r.Context(), idp.Event{Time: p.now(), Name: "device.authorization.rejected", ClientID: clientID, Result: "rejected", Reason: "invalid_audience"})
 		deviceAuthorizationError(w, http.StatusBadRequest, "invalid_target", "requested audience is not allowed")
@@ -683,6 +692,41 @@ func containsScope(scopes []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+var (
+	errMixedResourceParameters  = errors.New("resource and audience parameters are mutually exclusive")
+	errInvalidResourceIndicator = errors.New("invalid resource indicator")
+)
+
+func deviceAuthorizationAudiences(form url.Values) ([]string, error) {
+	legacy := fosite.GetAudiences(form)
+	resources, resourcePresent := form["resource"]
+	_, audiencePresent := form["audience"]
+	if audiencePresent && resourcePresent {
+		return nil, errMixedResourceParameters
+	}
+	if !resourcePresent {
+		return legacy, nil
+	}
+	result := make([]string, 0, len(resources))
+	seen := map[string]struct{}{}
+	for _, resource := range resources {
+		resource = strings.TrimSpace(resource)
+		parsed, err := url.Parse(resource)
+		if err != nil || !parsed.IsAbs() || parsed.User != nil || parsed.Fragment != "" {
+			return nil, errInvalidResourceIndicator
+		}
+		if _, exists := seen[resource]; exists {
+			continue
+		}
+		seen[resource] = struct{}{}
+		result = append(result, resource)
+	}
+	if len(result) == 0 {
+		return nil, errInvalidResourceIndicator
+	}
+	return result, nil
 }
 
 func deviceAuthorizationError(w http.ResponseWriter, status int, code, description string) {

@@ -74,12 +74,15 @@ func TestClientGrantCapabilitiesRequireExplicitKnownUniqueValues(t *testing.T) {
 }
 
 func TestClientAudienceAndIntrospectionCapabilitiesFailClosed(t *testing.T) {
-	client := Client{ID: "resource", SecretHash: []byte("hash"), AllowedGrantTypes: []string{GrantAuthorizationCode}, AllowedAudiences: []string{"https://api.example.test"}, CanIntrospect: true}
+	client := Client{ID: "resource", SecretHash: []byte("hash"), AllowedAudiences: []string{"https://api.example.test"}, CanIntrospect: true}
 	if err := client.Validate(ProductionMode); err != nil {
 		t.Fatalf("valid resource client rejected: %v", err)
 	}
 	if !client.AllowsAudience([]string{"https://api.example.test"}) || client.AllowsAudience([]string{"https://other.example.test"}) {
 		t.Fatal("audience capability did not fail closed")
+	}
+	if client.AllowsGrantType(GrantAuthorizationCode) || client.AllowsGrantType(GrantDeviceCode) {
+		t.Fatal("introspection-only resource client gained a token grant")
 	}
 	public := client
 	public.Public = true
