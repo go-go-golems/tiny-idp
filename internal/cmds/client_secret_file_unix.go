@@ -13,7 +13,7 @@ import (
 const maxClientSecretFileBytes = 4096
 
 func readClientSecretFile(path string) ([]byte, error) {
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		if err == unix.ELOOP {
 			return nil, errors.New("client secret file must be regular and not a symlink")

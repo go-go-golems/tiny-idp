@@ -1,3 +1,5 @@
+//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
+
 package cmds
 
 import (
@@ -5,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestResolveClientSecretFile(t *testing.T) {
@@ -46,5 +51,27 @@ func TestResolveClientSecretFile(t *testing.T) {
 	}
 	if _, err := resolveClientSecret("", large, false); err == nil || !strings.Contains(err.Error(), "large") {
 		t.Fatalf("large file error = %v", err)
+	}
+}
+
+func TestResolveClientSecretFileRejectsFIFOWithoutBlocking(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secret.fifo")
+	if err := unix.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := resolveClientSecret("", path, false)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "regular") {
+			t.Fatalf("FIFO error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("FIFO secret file blocked instead of being rejected")
 	}
 }

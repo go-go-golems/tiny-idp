@@ -98,6 +98,73 @@ func TestClientAudienceAndIntrospectionCapabilitiesFailClosed(t *testing.T) {
 	}
 }
 
+func TestClientProfilePrimitiveCombinations(t *testing.T) {
+	profiles := []struct {
+		name       string
+		client     Client
+		grant      string
+		audience   string
+		introspect bool
+	}{
+		{
+			name: "public browser authorization-code client",
+			client: Client{
+				ID:                "browser-app",
+				Public:            true,
+				RequirePKCE:       true,
+				RedirectURIs:      []string{"https://app.example.test/callback"},
+				AllowedScopes:     []string{"openid", "profile"},
+				AllowedGrantTypes: []string{GrantAuthorizationCode, GrantRefreshToken},
+			},
+			grant: GrantAuthorizationCode,
+		},
+		{
+			name: "public device client with resource audience",
+			client: Client{
+				ID:                "device-cli",
+				Public:            true,
+				RequirePKCE:       true,
+				AllowedScopes:     []string{"openid", "profile"},
+				AllowedAudiences:  []string{"https://api.example.test"},
+				AllowedGrantTypes: []string{GrantDeviceCode},
+			},
+			grant:    GrantDeviceCode,
+			audience: "https://api.example.test",
+		},
+		{
+			name: "confidential introspection-only resource server",
+			client: Client{
+				ID:               "resource-api",
+				SecretHash:       []byte("hash"),
+				AllowedAudiences: []string{"https://api.example.test"},
+				CanIntrospect:    true,
+			},
+			audience:   "https://api.example.test",
+			introspect: true,
+		},
+	}
+
+	for _, profile := range profiles {
+		t.Run(profile.name, func(t *testing.T) {
+			if err := profile.client.Validate(ProductionMode); err != nil {
+				t.Fatalf("profile rejected: %v", err)
+			}
+			if profile.grant != "" && !profile.client.AllowsGrantType(profile.grant) {
+				t.Fatalf("expected %q grant", profile.grant)
+			}
+			if profile.grant == "" && profile.client.AllowsGrantType(GrantAuthorizationCode) {
+				t.Fatal("introspection-only profile gained an authorization-code grant")
+			}
+			if profile.audience != "" && !profile.client.AllowsAudience([]string{profile.audience}) {
+				t.Fatalf("expected %q audience", profile.audience)
+			}
+			if profile.client.CanIntrospect != profile.introspect {
+				t.Fatalf("CanIntrospect = %t, want %t", profile.client.CanIntrospect, profile.introspect)
+			}
+		})
+	}
+}
+
 func TestParseScopesAndClaims(t *testing.T) {
 	scopes := ParseScopes("openid email profile email")
 	if len(scopes) != 3 {
