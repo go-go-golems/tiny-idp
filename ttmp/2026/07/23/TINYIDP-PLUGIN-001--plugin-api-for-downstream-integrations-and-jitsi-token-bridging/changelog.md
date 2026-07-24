@@ -177,3 +177,13 @@ bits on an already UID-65532-owned persistent state directory (commit 1c0e0e6).
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/deployment.yaml — Existing-PVC repair capability
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh — Capability and order invariant
+
+## 2026-07-24
+
+Step 18: made the state initializer restart-safe by reacquiring ownership of
+the top-level directory before traversing it (commit 8144cfe).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/deployment.yaml — Restart-safe state repair sequence
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh — Restart-order invariant
