@@ -55,3 +55,8 @@
 - [x] Validate local login, signup, account chooser, policy denial, cancellation, logout, and Jitsi redirects with Playwright. <!-- t:p7s1 -->
 - [x] Validate Prosody token enforcement and a two-browser media-connected conference. <!-- t:p7s2 -->
 - [ ] Deploy through GitOps and verify Argo CD health, logs, metrics, audit, and absence of sensitive data. <!-- t:p7s3 -->
+- [ ] Phase 8A: repair the production Jitsi theme bundle and load it through the authoritative TinyIDP catalog code. <!-- t:guls -->
+- [ ] Phase 8B: implement fresh-state, retained-state restart, and negative-input local lifecycle harnesses against the rendered production bundle. <!-- t:qvvn -->
+- [ ] Phase 8C: create and run an isolated manual crib-k3s fast-track overlay with explicit kubeconfig guards. <!-- t:czfx -->
+- [ ] Phase 8D: switch the crib fast track from an ephemeral Kubernetes Secret to the shared-Vault VSO path and validate refresh. <!-- t:0a1g -->
+- [ ] Phase 8E: promote the crib-proven revision to Hetzner GitOps and complete readiness, restart, browser/media, audit, metrics, and redacted-log evidence. <!-- t:o450 -->

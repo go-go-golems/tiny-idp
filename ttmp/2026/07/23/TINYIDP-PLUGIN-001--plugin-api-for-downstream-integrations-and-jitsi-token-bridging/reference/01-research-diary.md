@@ -84,12 +84,15 @@ RelatedFiles:
       Note: Durable integration transaction schema from commit 4df3a9b
     - Path: repo://ttmp/2026/07/18/TINYIDP-K3S-MSGDESK-PROD-001--production-k3s-deployment-of-standalone-tiny-idp-and-message-desk/scripts/01-two-process-harness/two_process_test.go
       Note: Allocates an isolated administration listener for each parallel process harness (commit 3a80254)
+    - Path: repo://ttmp/2026/07/23/TINYIDP-PLUGIN-001--plugin-api-for-downstream-integrations-and-jitsi-token-bridging/design-doc/03-tinyidp-and-jitsi-deployment-validation-architecture-local-lifecycle-harness-crib-k3s-fast-track-and-hetzner-promotion-guide.md
+      Note: Step 22 records the evidence and decisions behind this validation and promotion design
 ExternalSources: []
 Summary: Chronological record of the preliminary TinyIDP plugin architecture research.
 LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -2497,4 +2500,172 @@ Secret handoff:
 
 Argo evidence required:
   spec source revision == active operation revision == new ReplicaSet manifest
+```
+
+## Step 22: Design a production-faithful local and crib-k3s validation path
+
+**Date:** 2026-07-24
+
+This step returned to the incomplete Hetzner rollout and analyzed why the
+successful local Jitsi stack did not prevent repeated production startup
+failures. The decisive finding is artifact divergence: Compose exercised a
+complete local CSS/theme bundle and root-oriented container setup, while the
+production Kustomization generated a CSS-less ConfigMap and introduced
+non-root Kubernetes storage and Secret-projection contracts.
+
+The resulting design adds explicit gates rather than treating “local tests” as
+one undifferentiated claim. Semantic configuration loading, exact manifest
+rendering, a two-run local container lifecycle, an isolated crib-k3s fast
+track, and immutable Hetzner promotion each prove a different layer.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Let's return to deploying jitsi and tiny-idp to hetzner-k3s, and assess where we are at, and why we are struggling so much with rights and config, when I imagine that all of that could be tested locally.
+
+Read the project report too since that will help you find your marks. We can also assess for example deploying things to crib-k3s locally in a sort of fast track manual k3s mode to test things, potentially?
+
+Create  a detailed analysis / design / implementation guide that is for a new intern, explaining all the parts of the system needed to understand what it is, with prose paragraphs and bullet point sand pseudocode and diagrams and api references and file references. It should be very clear and technical. Store in the ticket and the nupload to remarkable.
+
+
+tore in the current ticket."
+
+**Assistant interpretation:** Reconstruct the current rollout from the project
+report and ticket evidence, explain the slow permission/configuration failure
+sequence, evaluate crib-k3s as a faster manual integration target, and write an
+intern-facing implementation guide in the existing ticket before uploading it
+to reMarkable.
+
+**Inferred user intent:** Establish a repeatable development and promotion
+system that catches TinyIDP/Jitsi production lifecycle defects before they
+consume Hetzner GitOps iterations.
+
+**Commit (code):** N/A — analysis, design, and ticket bookkeeping only.
+
+### What I did
+
+- Re-read the project report, ticket task list, Steps 17–21 of this diary,
+  production Kustomize manifests, local Compose example, browser suite, and
+  Hetzner Argo Application.
+- Compared the local and production theme bundles and found that local
+  `themes.json` declares `jitsi.css`, while production declares no stylesheet
+  and does not generate any CSS ConfigMap key.
+- Inspected crib-k3s documentation, kubeconfig, Traefik/TLS model, local-path
+  storage, Argo applications, monitoring/logging, and shared Vault Secrets
+  Operator integration.
+- Created design document 03 with five validation gates, architecture and
+  sequence diagrams, pseudocode, test matrices, file references, review
+  criteria, and phased implementation tasks.
+- Added ticket tasks for the theme repair, local lifecycle harness, crib
+  fast-track overlay, crib VSO proof, and final Hetzner promotion.
+
+### Why
+
+- Compose proves the application behavior but not Kubernetes ownership,
+  projection, storage, or Argo behavior.
+- Direct production iteration mixed deterministic startup defects with public
+  networking, Vault, and GitOps state, making each feedback cycle slow and
+  harder to classify.
+- crib-k3s already supplies the relevant k3s, Traefik, local-path, VSO,
+  logging, and monitoring substrate without using the Hetzner production
+  namespace.
+
+### What worked
+
+- The project report accurately identified the current live boundary and made
+  it possible to resume without repeating the permission investigation.
+- Direct file comparison exposed the exact local/production theme mismatch.
+- crib-k3s has an explicit kubeconfig and a sufficiently production-shaped
+  platform for an isolated manual fast track.
+- `docmgr validate frontmatter` accepted the new 821-line design guide.
+
+### What didn't work
+
+- An unqualified live inspection command targeted the default Hetzner
+  kubeconfig at `https://k3s-demo-1.tail879302.ts.net:6443` and did not return
+  within the working interval. The command was terminated rather than allowed
+  to block:
+
+  ```text
+  kubectl get nodes -o wide
+  ```
+
+- Adding Kubernetes `--request-timeout=8s` did not provide a reliable outer
+  bound for the observed connection/DNS path. The guide therefore requires an
+  explicit kubeconfig and an outer `timeout` command for harness operations.
+- The existing shell validator passed the production theme bundle because it
+  checks YAML structure and selected strings, not `productionui.LoadCatalog`
+  semantics.
+
+### What I learned
+
+- The local Compose stack and production Kustomization are separate deployment
+  profiles. Passing one does not establish that the other contains the same
+  invariant policy and presentation assets.
+- The shortest useful inner loop is not a full Jitsi cluster. It is the exact
+  rendered ConfigMap plus the restricted init process plus TinyIDP startup,
+  executed twice against retained state.
+- crib-k3s should first test a normal ephemeral Kubernetes Secret, then test
+  VSO separately. This distinguishes Secret projection and pod lifecycle from
+  Vault authentication and refresh.
+
+### What was tricky to build
+
+- The design needed to preserve production fidelity without making every local
+  test depend on Vault, cert-manager, Argo, and public DNS. The solution
+  separates those boundaries into gates and states precisely what each gate
+  does and does not prove.
+- Manual crib application must not collide with Argo ownership. The design
+  uses a dedicated namespace, explicit kubeconfig guard, dedicated field
+  manager, environment-only overlay, and reviewed cleanup.
+- The local and production client catalogs legitimately differ in URLs and
+  client IDs, while CSS and Goja policy should not drift. The guide therefore
+  separates invariant assets from environment-specific data rather than
+  requiring byte equality for every file.
+
+### What warrants a second pair of eyes
+
+- Confirm crib has sufficient free CPU/memory and no existing JVB host-port
+  10000 conflict before deploying the full stack.
+- Confirm the crib Pod CIDR and JVB advertised address instead of copying
+  Hetzner values.
+- Review whether the production CSS should be copied from the local asset
+  first or moved to a canonical shared location immediately.
+- Review the proposed manual-field-manager boundary so no crib Argo
+  Application can prune or adopt fast-track resources.
+
+### What should be done in the future
+
+- Implement ticket tasks `guls`, `qvvn`, `czfx`, `0a1g`, and `o450` in order.
+- Check task `p7s3` only after the Hetzner readiness, restart, browser/media,
+  audit, metrics, and redacted-log evidence is complete.
+
+### Code review instructions
+
+- Begin with design document 03, Sections 3–8.
+- Compare:
+  - `examples/tinyidp-jitsi/themes.json`
+  - `examples/tinyidp-jitsi/jitsi.css`
+  - `deploy/kubernetes/tinyidp-jitsi/config/themes.json`
+  - `deploy/kubernetes/tinyidp-jitsi/kustomization.yaml`
+- Confirm the proposed lifecycle harness consumes rendered production data and
+  retains state between its first and second runs.
+- Confirm every crib command names
+  `/home/manuel/code/wesen/crib-k3s/kubeconfig.yaml`.
+
+### Technical details
+
+```text
+Gate 0: authoritative semantic loaders
+Gate 1: exact Kustomize + Helm render
+Gate 2: restricted init + UID-65532 TinyIDP, run twice
+Gate 3: manual isolated crib-k3s namespace, then VSO
+Gate 4: immutable Hetzner Argo promotion and public E2E
+```
+
+```text
+Current deterministic blocker:
+  production themes.json: stylesheet absent
+  production ConfigMap:   jitsi.css absent
+  local themes.json:      stylesheet = jitsi.css
+  local mount:            jitsi.css present
 ```

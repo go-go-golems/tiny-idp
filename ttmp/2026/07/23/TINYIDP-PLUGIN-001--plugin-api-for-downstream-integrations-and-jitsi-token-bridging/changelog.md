@@ -205,3 +205,12 @@ Step 21: Retrospective incident record for production rollout mishaps
 
 - /tmp/tinyidp-jitsi-audit-reclaim/ttmp/2026/07/23/TINYIDP-PLUGIN-001--plugin-api-for-downstream-integrations-and-jitsi-token-bridging/reference/01-research-diary.md — Detailed retrospective incident register
 
+
+## 2026-07-24
+
+Step 22: assessed the incomplete Hetzner TinyIDP/Jitsi rollout, identified local/production artifact divergence, and added an intern-facing local lifecycle, crib-k3s fast-track, and immutable promotion guide with phased tasks.
+
+### Related Files
+
+- /tmp/tinyidp-jitsi-audit-reclaim/ttmp/2026/07/23/TINYIDP-PLUGIN-001--plugin-api-for-downstream-integrations-and-jitsi-token-bridging/design-doc/03-tinyidp-and-jitsi-deployment-validation-architecture-local-lifecycle-harness-crib-k3s-fast-track-and-hetzner-promotion-guide.md — Authoritative validation architecture and implementation plan
+
