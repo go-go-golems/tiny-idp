@@ -214,3 +214,13 @@ Step 22: assessed the incomplete Hetzner TinyIDP/Jitsi rollout, identified local
 
 - /tmp/tinyidp-jitsi-audit-reclaim/ttmp/2026/07/23/TINYIDP-PLUGIN-001--plugin-api-for-downstream-integrations-and-jitsi-token-bridging/design-doc/03-tinyidp-and-jitsi-deployment-validation-architecture-local-lifecycle-harness-crib-k3s-fast-track-and-hetzner-promotion-guide.md — Authoritative validation architecture and implementation plan
 
+
+## 2026-07-24
+
+Step 23: published the embedded Glazed writing-and-deploying-plugins tutorial with Jitsi as the worked example and added a load-by-slug regression test (commit a782f44).
+
+### Related Files
+
+- /tmp/tinyidp-jitsi-audit-reclaim/cmd/tinyidp/doc/doc_test.go — Protects help discoverability and frontmatter loading
+- /tmp/tinyidp-jitsi-audit-reclaim/cmd/tinyidp/doc/pages/tutorial-writing-and-deploying-plugins.md — Shipped plugin authoring, Goja policy, testing, and deployment guidance
+

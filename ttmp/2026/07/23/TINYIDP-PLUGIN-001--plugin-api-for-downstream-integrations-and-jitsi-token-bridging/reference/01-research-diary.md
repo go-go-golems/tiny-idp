@@ -12,6 +12,10 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/tinyidp/doc/doc_test.go
+      Note: Regression test proving the plugin tutorial is embedded and queryable by its stable slug
+    - Path: repo://cmd/tinyidp/doc/pages/tutorial-writing-and-deploying-plugins.md
+      Note: Embedded Glazed tutorial that makes the compiled plugin lifecycle and deployment model discoverable in the CLI
     - Path: repo://cmd/tinyidp/main.go
       Note: |-
         Production parser middleware composition introduced in commit 294e343
@@ -92,6 +96,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -2668,4 +2673,147 @@ Current deterministic blocker:
   production ConfigMap:   jitsi.css absent
   local themes.json:      stylesheet = jitsi.css
   local mount:            jitsi.css present
+```
+
+## Step 23: Publish an embedded plugin authoring and deployment tutorial
+
+**Date:** 2026-07-24
+
+This step converted the ticket-only plugin knowledge into discoverable CLI
+documentation. The new Glazed tutorial explains the actual version 1 boundary:
+plugins are first-party Go implementations compiled into TinyIDP, while Goja
+may provide a bounded typed policy inside a plugin but does not dynamically
+install the plugin.
+
+The tutorial uses Jitsi as the complete worked example and follows a plugin
+from descriptor and Glazed section through preparation, OIDC requirements,
+runtime services, scoped routes, Goja policy, readiness, shutdown, testing,
+Kubernetes deployment, and immutable Argo promotion.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, write."
+
+**Follow-up prompt (verbatim):** "commit and push. you are allowed to write to the cache."
+
+**Assistant interpretation:** Add and publish the missing embedded Glazed help
+entry for writing and deploying TinyIDP plugins, including a regression test
+that proves it is loaded and queryable by slug.
+
+**Inferred user intent:** Make the new plugin model usable without requiring an
+implementer to discover and read the long docmgr ticket first.
+
+**Commit (code):** `a782f44` — "docs: add TinyIDP plugin authoring tutorial"
+
+### What I did
+
+- Read the authoritative Glazed help authoring pages through
+  `glaze help how-to-write-good-documentation-pages` and
+  `glaze help writing-help-entries`.
+- Audited the plugin API, registry, host lifecycle, Jitsi definition, Jitsi
+  runtime and policy, production command composition, and deployment README.
+- Added
+  `cmd/tinyidp/doc/pages/tutorial-writing-and-deploying-plugins.md`.
+- Added `cmd/tinyidp/doc/doc_test.go` to load the embedded help system and
+  resolve `writing-and-deploying-plugins` as a Tutorial.
+- Ran the real CLI help command and the focused plugin/help test suite.
+- Added and checked ticket task `pctt`.
+
+### Why
+
+- The existing ticket documents explain the design, but they are not shipped
+  in the TinyIDP binary and are not discoverable through `tinyidp help`.
+- Plugin authors need one operational path connecting the Go interfaces,
+  Glazed configuration, optional Goja policy, tests, and production deployment.
+- A load-by-slug regression test catches malformed frontmatter, embed
+  omissions, and accidental slug changes.
+
+### What worked
+
+- `go run ./cmd/tinyidp help writing-and-deploying-plugins` rendered the new
+  tutorial through the actual embedded Glazed help system.
+- The help test confirmed the slug, Tutorial section type, and key content.
+- The focused help/plugin suite passed with a writable task-specific Go cache.
+- The pre-commit test and lint hooks passed before commit `a782f44`.
+
+### What didn't work
+
+- The first focused test attempt used the sandbox-visible default Go build
+  cache and failed for the two command packages:
+
+  ```text
+  # ./cmd/tinyidp/doc
+  open /home/manuel/.cache/go-build/99/99ebf8d78493aa27d1c899f31112b23ac7ed85d2e0af7f504f7d84005c7bc580-d: read-only file system
+  FAIL	./cmd/tinyidp/doc [setup failed]
+  FAIL	github.com/go-go-golems/tiny-idp/cmd/tinyidp [setup failed]
+  ```
+
+- The plugin API and host packages in the same command passed. Re-running with
+  `GOCACHE=/tmp/tinyidp-plugin-help-go-cache` made the complete focused suite
+  pass. The user subsequently confirmed that writing the normal cache is also
+  authorized.
+
+### What I learned
+
+- TinyIDP's embedded help wiring was already complete. Adding a Markdown page
+  under `cmd/tinyidp/doc/pages` was sufficient for runtime discovery.
+- The most important documentation boundary is that `internal/pluginapi` is
+  intentionally first-party and compiled-in. Describing it generically as an
+  external plugin SDK would promise behavior the repository does not support.
+- Jitsi is a useful tutorial because it exercises every current seam: Glazed,
+  OIDC broker, secret resolver, audit, metrics, tracing, Goja, readiness,
+  scoped HTTP, Kubernetes, Vault, and Argo.
+
+### What was tricky to build
+
+- The page needed to teach reusable plugin architecture without presenting an
+  incomplete generic implementation as copy-paste-ready. It therefore uses
+  exact interface and Jitsi excerpts, then points to the complete working
+  source by responsibility.
+- Goja had to be described as an optional policy boundary rather than a richer
+  configuration file or a dynamic plugin loader.
+- Deployment guidance had to connect application tests to restart-safe PVC and
+  owner-private Secret behavior discovered during the current rollout.
+
+### What warrants a second pair of eyes
+
+- Review every generic code excerpt against future changes to
+  `internal/pluginapi`; the discoverability test does not detect semantic API
+  drift inside prose.
+- Review whether the version 1 plugin API should remain under `internal` before
+  telling external repositories to implement plugins.
+- Review the deployment section after the Jitsi production theme/lifecycle
+  fixes land so its claims remain synchronized with the working manifest.
+
+### What should be done in the future
+
+- If the plugin API changes, update this help page in the same commit as the
+  interface and Jitsi reference implementation.
+- If an external plugin SDK is approved, write a new versioned tutorial rather
+  than adding an adapter or compatibility promise to this version 1 page.
+
+### Code review instructions
+
+- Run:
+
+  ```text
+  go run ./cmd/tinyidp help writing-and-deploying-plugins
+  go test ./cmd/tinyidp/doc ./cmd/tinyidp ./internal/pluginapi ./internal/pluginhost/... ./internal/plugins/jitsi -count=1
+  ```
+
+- Review the page alongside:
+  - `internal/pluginapi/api.go`
+  - `internal/pluginhost/host.go`
+  - `internal/plugins/jitsi/definition.go`
+  - `internal/plugins/jitsi/policy.go`
+  - `cmd/tinyidp/main.go`
+
+### Technical details
+
+```text
+Help slug:   writing-and-deploying-plugins
+Page type:   Tutorial
+Command tag: serve-production
+Worked app:  internal/plugins/jitsi
+Test:        TestPluginTutorialIsEmbeddedAndDiscoverable
 ```

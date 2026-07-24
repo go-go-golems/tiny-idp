@@ -60,3 +60,4 @@
 - [ ] Phase 8C: create and run an isolated manual crib-k3s fast-track overlay with explicit kubeconfig guards. <!-- t:czfx -->
 - [ ] Phase 8D: switch the crib fast track from an ephemeral Kubernetes Secret to the shared-Vault VSO path and validate refresh. <!-- t:0a1g -->
 - [ ] Phase 8E: promote the crib-proven revision to Hetzner GitOps and complete readiness, restart, browser/media, audit, metrics, and redacted-log evidence. <!-- t:o450 -->
+- [x] Publish an embedded Glazed tutorial for writing, testing, configuring, and deploying compiled-in TinyIDP plugins. <!-- t:pctt -->
