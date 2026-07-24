@@ -33,8 +33,8 @@ spec:
             - -ec
             - |
               mkdir -p /state/audit
-              chown -R 65532:65532 /state
               chmod 0700 /state /state/audit
+              chown -R 65532:65532 /state
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

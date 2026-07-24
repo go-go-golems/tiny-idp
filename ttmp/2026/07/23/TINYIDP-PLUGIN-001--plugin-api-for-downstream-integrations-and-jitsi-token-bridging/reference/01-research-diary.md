@@ -18,12 +18,16 @@ RelatedFiles:
         Registers the compiled-in Jitsi plugin with the production command (commit c6f98bd)
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/README.md
       Note: Production Kubernetes, VSO, and pinned Jitsi Helm deployment contract
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/deployment.yaml
+      Note: Local-path permission ordering repair commit d2ec228
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/jitsi-values.yaml
       Note: Prosody token mode and Jitsi runtime configuration
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/rotation-runbook.md
       Note: Ordered HS256 rotation and rollback procedure
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/runtime-secret.yaml
       Note: Shared Vault-backed runtime Secret and coordinated restart targets
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh
+      Note: Regression guard for ownership and mode ordering commit d2ec228
     - Path: repo://examples/tinyidp-jitsi/browser-tests/tests/jitsi-plugin.spec.ts
       Note: Eight-case browser, provider-logout, and media-connected conference matrix (commits e9c25b9, fe59277, and f552483)
     - Path: repo://examples/tinyidp-jitsi/compose.yaml
@@ -74,6 +78,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -1849,4 +1854,82 @@ fixed:
           -> local-path provisions PV
           -> PVC Bound
           -> TinyIDP starts
+```
+
+## Step 16: Correct local-path ownership and mode ordering
+
+After the PVC bound, the TinyIDP Pod reached its init container but could not
+start the application. The container first handed `/state` to the unprivileged
+TinyIDP UID and then attempted chmod with only `CAP_CHOWN`, which correctly
+failed on the now non-owned directory.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Correct and validate the production
+volume-permission initializer without weakening its least-privilege contract.
+
+**Inferred user intent:** TinyIDP must recreate cleanly from Git on the
+cluster's local-path storage.
+
+**Commit (code):** `d2ec228` — "Fix TinyIDP local-path state permissions"
+
+### What I did
+
+- Inspected the live event and captured `chmod: /state: Operation not permitted`.
+- Moved `chmod 0700 /state /state/audit` before `chown -R 65532:65532 /state`.
+- Kept the init container limited to `CAP_CHOWN`; no `CAP_FOWNER` was added.
+- Added a validator assertion that fails if a future manifest reverses this
+  ordering.
+- Ran the Kubernetes contract validator and rendered the Kustomize package.
+
+### Why
+
+- Mode restriction is required before handing the state tree to TinyIDP.
+- Capability expansion would conceal an ordering error and widen the
+  privileged init-container boundary.
+
+### What worked
+
+- The Kubernetes contract validator passed.
+- The local-path claim is Bound, establishing that the preceding wave fix
+  allowed the volume to be provisioned and mounted.
+
+### What didn't work
+
+- The prior live Pod entered `Init:CrashLoopBackOff` after its successful
+  ownership transfer, because `chmod` was no longer authorized.
+
+### What I learned
+
+- Filesystem capability requirements depend on the state created by prior
+  commands within the same init container.
+
+### What was tricky to build
+
+- This is a runtime interaction between a real PVC and a restricted Linux
+  capability set; manifest schema validation alone cannot expose it.
+
+### What warrants a second pair of eyes
+
+- Review that all state files restored from backup remain safe under the
+  recursive ownership transfer.
+
+### What should be done in the future
+
+- Merge this fix, advance Argo's immutable source pin, and prove TinyIDP
+  readiness plus the public authentication/browser paths.
+
+### Code review instructions
+
+- Review `deploy/kubernetes/tinyidp-jitsi/deployment.yaml` and its validator.
+- Run `bash deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh` with the
+  rendered Helm file.
+
+### Technical details
+
+```text
+old: chmod after chown -> EPERM with CAP_CHOWN only
+new: chmod before chown -> private mode, then safe unprivileged hand-off
 ```
