@@ -22,6 +22,7 @@ RelatedFiles:
       Note: |-
         Local-path permission ordering repair commit d2ec228
         Existing-volume CAP_CHOWN and CAP_FOWNER repair commit 1c0e0e6
+        Restart-safe existing-state ownership repair commit 8144cfe
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/jitsi-values.yaml
       Note: Prosody token mode and Jitsi runtime configuration
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/rotation-runbook.md
@@ -32,6 +33,7 @@ RelatedFiles:
       Note: |-
         Regression guard for ownership and mode ordering commit d2ec228
         Existing-volume capability invariant commit 1c0e0e6
+        Restart-safe order invariant commit 8144cfe
     - Path: repo://examples/tinyidp-jitsi/browser-tests/tests/jitsi-plugin.spec.ts
       Note: Eight-case browser, provider-logout, and media-connected conference matrix (commits e9c25b9, fe59277, and f552483)
     - Path: repo://examples/tinyidp-jitsi/compose.yaml
@@ -82,6 +84,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -2019,4 +2022,90 @@ state and without giving the long-running IDP process privileges.
 new PVC:            chmod -> chown
 previously owned PVC: FOWNER permits chmod, CHOWN restores UID/GID
 main TinyIDP:       UID 65532, no capabilities
+```
+
+## Step 18: Make initialization restart-safe after a successful run
+
+The review of PR 21 identified the remaining state-transition case: after a
+successful run, `/state` is UID 65532 and mode 0700. CHOWN and FOWNER alone do
+not grant directory search permission, so an initializer that starts with
+`mkdir -p /state/audit` would fail before it can perform any repair.
+
+### Prompt Context
+
+**User prompt (verbatim):** "you need to take care of proper sync waves for argo.  or are we not blocked on the PVC?"
+
+**Assistant interpretation:** Confirm the PVC wave is fixed, then address the
+new review finding so repeated Argo rollouts and Pod restarts remain safe.
+
+**Inferred user intent:** The live deployment must be idempotent, not merely
+able to bootstrap once from an empty persistent volume.
+
+**Commit (code):** `8144cfe` — "Make TinyIDP state initialization restart-safe"
+
+### What I did
+
+- Retrieved the unresolved inline review thread from PR 21.
+- Confirmed the PVC is no longer blocked: it is Bound and shares sync wave 1
+  with the TinyIDP Deployment.
+- Changed the initialization sequence to take ownership of `/state` itself
+  before traversing it, restore mode, create/repair the audit directory, and
+  only then hand the full tree back to UID/GID 65532.
+- Updated the static contract validator to assert the complete ordering.
+- Rendered Kustomize and ran the Kubernetes/Jitsi contract validator.
+
+### Why
+
+- `CAP_FOWNER` permits mode repair but does not bypass DAC search permission on
+  a 0700 directory owned by UID 65532.
+- Reacquiring ownership of the final `/state` path requires no traversal of
+  that directory; once root owns it, normal traversal and repair are possible.
+
+### What worked
+
+- The rendered initializer has the explicit order:
+  `chown 0:0 /state`, `chmod /state`, `mkdir audit`, `chmod audit`, recursive
+  hand-off.
+- The deployment contract validator passed.
+
+### What didn't work
+
+- The prior PR 21 sequence would have crash-looped on its next restart even
+  though it could repair the currently mounted volume's mode bits.
+
+### What I learned
+
+- Persistent-volume initialization must model both fresh and previously
+  successful states. Linux ownership capabilities and directory traversal are
+  separate authorization checks.
+
+### What was tricky to build
+
+- The operation on `/state` must be deliberately non-recursive first. A
+  recursive operation or child creation would need traversal before the repair
+  has restored it.
+
+### What warrants a second pair of eyes
+
+- Review the ordering validator and confirm no future state-preparation command
+  is inserted before `chown 0:0 /state`.
+
+### What should be done in the future
+
+- Merge, advance the immutable Argo source pin, and prove the real Pod starts;
+  then perform a second rollout to exercise the already-owned state case.
+
+### Code review instructions
+
+- Review the `initialize-state-permissions` script in the deployment.
+- Run the validator and inspect the rendered command sequence.
+
+### Technical details
+
+```text
+previous state: /state owner=65532 mode=0700
+chown 0:0 /state: final-path metadata repair; no /state traversal
+chmod 0700 /state: root is now owner; traversal restored
+prepare audit child
+chown -R 65532:65532 /state: final TinyIDP hand-off
 ```
