@@ -167,3 +167,13 @@ container capabilities (commit d2ec228).
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/deployment.yaml — Private state initialization
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh — Ordering invariant guard
+
+## 2026-07-24
+
+Step 17: added the narrowly scoped FOWNER capability required to repair mode
+bits on an already UID-65532-owned persistent state directory (commit 1c0e0e6).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/deployment.yaml — Existing-PVC repair capability
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh — Capability and order invariant

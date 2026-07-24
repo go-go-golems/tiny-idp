@@ -16,13 +16,17 @@ grep -q 'path: /readyz' "${rendered}"
 grep -q 'path: /healthz' "${rendered}"
 grep -q 'kind: NetworkPolicy' "${rendered}"
 
-# The init container deliberately retains only CAP_CHOWN. It must set modes
-# before transferring ownership to TinyIDP's unprivileged UID; otherwise it
-# loses permission to chmod the just-chowned local-path directory.
+# The init container repairs persisted state. It must set modes before
+# transferring ownership on a new volume and retain FOWNER for already-owned
+# restored volumes from an earlier TinyIDP run.
 chmod_line="$(rg -n 'chmod 0700 /state /state/audit' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
 chown_line="$(rg -n 'chown -R 65532:65532 /state' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
 if [[ -z "${chmod_line}" || -z "${chown_line}" || "${chmod_line}" -ge "${chown_line}" ]]; then
   echo "TinyIDP state permissions must chmod before chown" >&2
+  exit 1
+fi
+if ! rg -q 'add: \[CHOWN, FOWNER\]' "${deploy_dir}/deployment.yaml"; then
+  echo "TinyIDP state permissions require CHOWN and FOWNER for existing PVC state" >&2
   exit 1
 fi
 
