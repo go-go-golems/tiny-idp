@@ -18,13 +18,15 @@ grep -q 'kind: NetworkPolicy' "${rendered}"
 
 # The init container repairs persisted state. It must reacquire ownership of
 # /state itself before traversing a UID-65532, mode-0700 directory from a
-# previous run; FOWNER then repairs an existing audit child if necessary.
-reacquire_line="$(rg -n 'chown 0:0 /state' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
+# previous run. It must likewise reclaim an existing private audit child
+# before the final recursive ownership handoff descends into it.
+reacquire_line="$(rg -n '^\s*chown 0:0 /state$' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
+audit_reacquire_line="$(rg -n '^\s*chown 0:0 /state/audit$' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
 mkdir_line="$(rg -n 'mkdir -p /state/audit' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
 chmod_line="$(rg -n 'chmod 0700 /state/audit' "${deploy_dir}/deployment.yaml" | tail -n1 | cut -d: -f1)"
 chown_line="$(rg -n 'chown -R 65532:65532 /state' "${deploy_dir}/deployment.yaml" | cut -d: -f1)"
-if [[ -z "${reacquire_line}" || -z "${mkdir_line}" || -z "${chmod_line}" || -z "${chown_line}" || "${reacquire_line}" -ge "${mkdir_line}" || "${mkdir_line}" -ge "${chmod_line}" || "${chmod_line}" -ge "${chown_line}" ]]; then
-  echo "TinyIDP state permissions must reacquire ownership before traversal and hand off last" >&2
+if [[ -z "${reacquire_line}" || -z "${audit_reacquire_line}" || -z "${mkdir_line}" || -z "${chmod_line}" || -z "${chown_line}" || "${reacquire_line}" -ge "${audit_reacquire_line}" || "${audit_reacquire_line}" -ge "${mkdir_line}" || "${mkdir_line}" -ge "${chmod_line}" || "${chmod_line}" -ge "${chown_line}" ]]; then
+  echo "TinyIDP state permissions must reclaim private state and audit directories before handoff" >&2
   exit 1
 fi
 if ! rg -q 'add: \[CHOWN, FOWNER\]' "${deploy_dir}/deployment.yaml"; then

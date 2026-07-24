@@ -34,10 +34,13 @@ spec:
             - |
               # /state may already be UID 65532 and mode 0700 from a prior
               # successful run. Take ownership of the directory itself before
-              # traversing it, then restore its private mode and hand the
-              # complete tree back to TinyIDP after preparation.
+              # traversing it. An existing audit child can also be private,
+              # so reclaim that direct child before a recursive handoff.
               chown 0:0 /state
               chmod 0700 /state
+              if [ -e /state/audit ]; then
+                chown 0:0 /state/audit
+              fi
               mkdir -p /state/audit
               chmod 0700 /state/audit
               chown -R 65532:65532 /state
