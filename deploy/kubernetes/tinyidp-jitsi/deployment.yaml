@@ -44,6 +44,10 @@ spec:
               mkdir -p /state/audit
               chmod 0700 /state/audit
               chown -R 65532:65532 /state
+              cp /run/tinyidp-source-secrets/token-secret /run/tinyidp-runtime-secrets/token-secret
+              cp /run/tinyidp-source-secrets/jitsi-shared-secret /run/tinyidp-runtime-secrets/jitsi-shared-secret
+              chown 65532:65532 /run/tinyidp-runtime-secrets/token-secret /run/tinyidp-runtime-secrets/jitsi-shared-secret
+              chmod 0400 /run/tinyidp-runtime-secrets/token-secret /run/tinyidp-runtime-secrets/jitsi-shared-secret
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -57,6 +61,11 @@ spec:
           volumeMounts:
             - name: state
               mountPath: /state
+            - name: source-runtime-secret
+              mountPath: /run/tinyidp-source-secrets
+              readOnly: true
+            - name: prepared-runtime-secret
+              mountPath: /run/tinyidp-runtime-secrets
       containers:
         - name: tinyidp
           image: ghcr.io/go-go-golems/tiny-idp:sha-REPLACE_WITH_MERGED_COMMIT
@@ -73,7 +82,7 @@ spec:
             - --signup-program-file=/config/open-signup.js
             - --db=/state/tinyidp.sqlite
             - --audit-path=/state/audit/audit.jsonl
-            - --token-secret-file=/run/tinyidp-secrets/token-secret
+            - --token-secret-file=/run/tinyidp-runtime-secrets/token-secret
             - --trusted-proxy-cidrs=10.42.0.0/16
             - --rate-limit=100
             - --account-chooser
@@ -83,7 +92,7 @@ spec:
             - --jitsi-app-id=tinyidp-jitsi-prod
             - --jitsi-oidc-client-id=tinyidp-jitsi-prod
             - --jitsi-token-ttl=5m
-            - --jitsi-shared-secret-file=/run/tinyidp-secrets/jitsi-shared-secret
+            - --jitsi-shared-secret-file=/run/tinyidp-runtime-secrets/jitsi-shared-secret
             - --jitsi-policy-program-file=/config/jitsi-policy.js
             - --jitsi-policy-pool-size=4
           env:
@@ -129,8 +138,8 @@ spec:
             - name: config
               mountPath: /config
               readOnly: true
-            - name: runtime-secret
-              mountPath: /run/tinyidp-secrets
+            - name: prepared-runtime-secret
+              mountPath: /run/tinyidp-runtime-secrets
               readOnly: true
             - name: state
               mountPath: /state
@@ -138,7 +147,7 @@ spec:
         - name: config
           configMap:
             name: tinyidp-jitsi-config
-        - name: runtime-secret
+        - name: source-runtime-secret
           secret:
             secretName: tinyidp-jitsi-runtime
             defaultMode: 0400
@@ -147,6 +156,9 @@ spec:
                 path: token-secret
               - key: JWT_APP_SECRET
                 path: jitsi-shared-secret
+        - name: prepared-runtime-secret
+          emptyDir:
+            medium: Memory
         - name: state
           persistentVolumeClaim:
             claimName: tinyidp-state
