@@ -2109,3 +2109,74 @@ chmod 0700 /state: root is now owner; traversal restored
 prepare audit child
 chown -R 65532:65532 /state: final TinyIDP hand-off
 ```
+
+## Step 19: Repair a private audit child during live persistent-volume recovery
+
+**Date:** 2026-07-23
+
+### Prompt Context
+
+**User prompt (verbatim):** Review comments reporting that a persistent
+`/state` directory and its audit child can prevent later init-container runs.
+
+**Assistant interpretation:** Validate the merged parent-directory repair on
+the live local-path PVC, then correct any remaining restart path using the
+least privilege already granted to the initializer.
+
+### What I did
+
+- Advanced the Argo Application to the parent-directory repair revision and
+  observed the real init-container failure rather than assuming the static
+  ordering test covered it.
+- Read the terminating container output: `chown: /state/audit: Permission
+  denied`.
+- Identified the missing state: after a successful run, both `/state` and the
+  existing `/state/audit` child may be UID/GID 65532 and mode 0700.
+- Added a guarded, non-recursive `chown 0:0 /state/audit` after reclaiming
+  `/state` and before `mkdir -p` plus the final recursive handoff.
+- Extended the manifest validator to require this direct-child reclaim in the
+  correct order.
+- Ran the validator and a disposable two-pass BusyBox experiment with exactly
+  `CAP_CHOWN` and `CAP_FOWNER`; it demonstrated both paths can be reclaimed
+  and then handed back as `65532:65532`, mode 0700.
+
+### Why
+
+Changing the metadata of the `/state` path itself does not require entering
+that directory. Once the initializer owns `/state`, it can name its direct
+`audit` child, but a recursive `chown -R` still cannot enter a private child
+owned by UID 65532. Reclaiming that known child first makes the final recursive
+handoff safe without adding broad DAC-override capability.
+
+### What worked
+
+- Live cluster log isolated the exact failed path.
+- `deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh` passed with the new
+  ordering contract.
+- Capability-matched two-pass experiment showed the pre-handoff state as:
+  `0:0 700 /state` and `0:0 700 /state/audit`.
+
+### What didn't work
+
+- The previous parent-only repair still left an existing private audit child
+  inaccessible to the final recursive ownership operation.
+- The first validator expression matched both parent and child `chown` lines;
+  anchoring the expressions made the ordering assertion unambiguous.
+
+### What I learned
+
+Persistent-volume repair must account for every private directory the script
+will recursively traverse. `CAP_CHOWN` permits ownership changes to a named
+path, but it does not confer permission to search a descendant directory.
+
+### What should be done in the future
+
+- Merge this focused correction, advance the immutable Argo source pin, and
+  verify both the initial ready rollout and a deliberate second Pod restart.
+
+### Code review instructions
+
+- Check that the script reclaims only `/state` and the known `/state/audit`
+  path before its final handoff.
+- Confirm no `CAP_DAC_OVERRIDE` or broader privilege was added.
+- Run the Kubernetes/Jitsi manifest validator.
