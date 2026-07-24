@@ -157,3 +157,13 @@ and moved the PVC beside its Deployment consumer (commit 9e9befb, PR 19).
 ### Related Files
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/persistent-volume-claim.yaml — PVC/consumer sync-wave invariant
+
+## 2026-07-23
+
+Step 16: corrected local-path mode/ownership ordering without widening init
+container capabilities (commit d2ec228).
+
+### Related Files
+
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/deployment.yaml — Private state initialization
+- /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh — Ordering invariant guard
