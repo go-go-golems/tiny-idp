@@ -2180,3 +2180,32 @@ path, but it does not confer permission to search a descendant directory.
   path before its final handoff.
 - Confirm no `CAP_DAC_OVERRIDE` or broader privilege was added.
 - Run the Kubernetes/Jitsi manifest validator.
+
+## Step 20: Materialize owner-private runtime secrets for an unprivileged pod
+
+**Date:** 2026-07-23
+
+### What I did
+
+- Followed the successful persistent-volume init fix through the live Pod.
+- Captured the subsequent server startup rejection: the projected Kubernetes
+  Secret did not satisfy TinyIDP's owner-private secret-file contract.
+- Changed the existing root-only init container to copy both runtime secrets
+  into a memory-backed `emptyDir`, then `chown` them to UID/GID 65532 and
+  `chmod` them 0400.
+- Mounted only the prepared copy into the unprivileged TinyIDP container.
+- Added static validation for the copy, ownership, mode, and new token path.
+
+### Why
+
+Kubernetes Secret projection cannot set the file UID to the application user.
+With pod `fsGroup`, the source projection is group-readable, which TinyIDP
+correctly rejects. A root-only initializer can read that source and make an
+owner-private copy without relaxing TinyIDP's secret validation or granting
+the long-running process extra privilege.
+
+### Validation
+
+`deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh` passed, and rendered
+Kustomize output confirms the source Secret is init-container-only while the
+server receives only the memory-backed prepared-secret mount.
