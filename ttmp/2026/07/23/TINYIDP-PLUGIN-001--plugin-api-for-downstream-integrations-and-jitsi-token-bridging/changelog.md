@@ -196,3 +196,12 @@ Step 20: Materialize owner-private runtime secrets for an unprivileged pod (comm
 
 - /tmp/tinyidp-jitsi-audit-reclaim/deploy/kubernetes/tinyidp-jitsi/deployment.yaml — Strict secret ownership handoff
 
+
+## 2026-07-23
+
+Step 21: Retrospective incident record for production rollout mishaps
+
+### Related Files
+
+- /tmp/tinyidp-jitsi-audit-reclaim/ttmp/2026/07/23/TINYIDP-PLUGIN-001--plugin-api-for-downstream-integrations-and-jitsi-token-bridging/reference/01-research-diary.md — Detailed retrospective incident register
+

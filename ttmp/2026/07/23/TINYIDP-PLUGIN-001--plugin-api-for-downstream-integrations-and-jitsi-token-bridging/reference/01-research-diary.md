@@ -18,12 +18,15 @@ RelatedFiles:
         Registers the compiled-in Jitsi plugin with the production command (commit c6f98bd)
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/README.md
       Note: Production Kubernetes, VSO, and pinned Jitsi Helm deployment contract
+    - Path: repo://deploy/kubernetes/tinyidp-jitsi/config/themes.json
+      Note: Current unresolved production theme catalog contract documented in Step 21
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/deployment.yaml
       Note: |-
         Local-path permission ordering repair commit d2ec228
         Existing-volume CAP_CHOWN and CAP_FOWNER repair commit 1c0e0e6
         Restart-safe existing-state ownership repair commit 8144cfe
         Copies projected runtime secrets into an owner-private in-memory handoff volume (commit f8074f0)
+        Persistent-state and private-secret mishap chronology documented in Step 21
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/jitsi-values.yaml
       Note: Prosody token mode and Jitsi runtime configuration
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/rotation-runbook.md
@@ -36,6 +39,7 @@ RelatedFiles:
         Existing-volume capability invariant commit 1c0e0e6
         Restart-safe order invariant commit 8144cfe
         Locks down the private secret handoff contract (commit f8074f0)
+        Validator coverage gaps and preventive follow-ups documented in Step 21
     - Path: repo://examples/tinyidp-jitsi/browser-tests/tests/jitsi-plugin.spec.ts
       Note: Eight-case browser, provider-logout, and media-connected conference matrix (commits e9c25b9, fe59277, and f552483)
     - Path: repo://examples/tinyidp-jitsi/compose.yaml
@@ -86,6 +90,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -2290,4 +2295,206 @@ VSO Kubernetes Secret (source, init only)
       v
 emptyDir medium=Memory (server only)
   /run/tinyidp-runtime-secrets/{token-secret,jitsi-shared-secret}
+```
+
+## Step 21: Retrospective incident record for the production rollout
+
+**Date:** 2026-07-23
+
+This retrospective records the mishaps encountered while taking the TinyIDP
+and Jitsi deployment from rendered manifests to a live local-path PVC. The
+failures were not one defect: they exposed independent contracts at the Argo,
+Linux filesystem, Kubernetes Secret, TinyIDP startup, and agent-worktree
+boundaries.
+
+The immediate operational result is an explicit incident trail for a reviewer
+or future implementer. It separates confirmed runtime behavior from the
+assumptions that initially looked plausible but were incomplete.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Update your diary (retroactively too if necessary) to have a detail write up of all your mishaps."
+
+**Assistant interpretation:** Backfill a candid, technical record of every
+meaningful implementation and operational failure, including exact symptoms,
+cause, remediation, and prevention.
+
+**Inferred user intent:** Make the diary useful for review and future work by
+preserving the real debugging history instead of presenting a cleaned-up
+success-only narrative.
+
+**Commit (code):** N/A — documentation and ticket bookkeeping only.
+
+### What I did
+
+- Re-read the diary skill and audited the recent entries against its required
+  prose, prompt-context, failure, review, and follow-up sections.
+- Backfilled Step 20 into the prescribed format and related its material files
+  to the ticket with absolute paths.
+- Collected this chronological incident register from live Pod logs, Argo
+  operation state, rendered manifests, CI output, and local Git/tool output.
+
+### Why
+
+The initial manifests passed structural validation but had not been exercised
+against an already-owned local-path volume, Kubernetes projected-secret UID
+semantics, or the current `serve-production` validation contract. Each gap
+only became visible after the preceding one was repaired.
+
+### What worked
+
+- Static Kubernetes validation caught ordering and mount-path drift once its
+  checks were expanded with each discovered contract.
+- Live Pod logs precisely identified every startup boundary after the init
+  phase completed.
+- Immutable TinyIDP source pins plus separate GitOps PRs made each deployment
+  revision attributable and reversible.
+- The owner-private secret handoff preserved the non-root server and avoided
+  adding `CAP_DAC_OVERRIDE` or a direct group-readable Secret mount.
+
+### What didn't work
+
+1. **PVC sync-wave deadlock.** The PVC was initially in Argo sync wave 0 while
+   local-path used `WaitForFirstConsumer`; the Deployment was in a later wave,
+   so no consumer could schedule to bind the claim. The remedy was to place
+   the PVC and Deployment in the same wave. Evidence after repair:
+   `persistentvolumeclaim/tinyidp-state   Bound ... local-path`.
+
+2. **First permission initializer was not restart-safe.** The initial script
+   performed `mkdir -p /state/audit`, `chown -R`, then `chmod`. On a mounted
+   volume already owned by UID 65532, the init container failed before repair
+   with directory-access errors. Reordering alone then produced
+   `chmod: /state: Operation not permitted`, proving `CAP_CHOWN` does not
+   authorize mode changes to another owner.
+
+3. **`CAP_FOWNER` was necessary but insufficient.** Adding `FOWNER` allowed
+   mode repair but did not bypass DAC search permission for a UID-65532,
+   mode-0700 `/state`. The review correctly identified that root with only
+   `CHOWN`/`FOWNER` cannot traverse a private directory it does not own.
+   The safe sequence became non-recursive `chown 0:0 /state` before traversal.
+
+4. **A private audit child still blocked recursive handoff.** Parent recovery
+   succeeded, but the live init log then reported:
+   `chown: /state/audit: Permission denied`.
+   An existing `0700` `/state/audit` child was still UID 65532, so
+   `chown -R` could not descend into it. The correction reclaims the known
+   direct child before `mkdir -p` and final recursive handoff. A two-pass
+   BusyBox experiment with only `CHOWN` and `FOWNER` confirmed the pre-handoff
+   metadata as `0:0 700 /state` and `0:0 700 /state/audit`.
+
+5. **Stale production command contract: missing theme directory.** Once the
+   initializer succeeded, TinyIDP stopped with:
+   `required field(s) missing: production.theme-dir`.
+   The manifest had a catalog path but omitted `--theme-dir=/config`; the
+   validated correction adds that explicit reviewed root.
+
+6. **Projected Secret mode was not owner-private to the application UID.**
+   The next exact failure was:
+   `Error: token secret file must be regular and owner-only (0600 or 0400)`.
+   `defaultMode: 0400` did not set UID 65532; pod `fsGroup` also made the
+   source projection group-readable. The root init now copies only the two
+   necessary values into a memory-backed volume and makes them `65532:65532`,
+   `0400` before server start.
+
+7. **Argo continued a stale retry operation after a source pin changed.**
+   Application `spec.sources[0].targetRevision` was correctly updated to
+   `e8e7e3f...`, but `status.operationState` was still retrying an old
+   `efb4911...` sync and did not create a new ReplicaSet. Clearing the stale
+   operation and forcing a hard refresh caused ReplicaSet `tinyidp-6d44879f86`
+   to be created from the new source.
+
+8. **The current Jitsi theme catalog is incomplete.** After the private-secret
+   handoff succeeded, the server reached production UI loading and rejected
+   the catalog with:
+   `Error: theme "default" stylesheet must be a CSS basename`.
+   The deployed `config/themes.json` names a default theme but provides no
+   `stylesheet`, and the same config directory has no CSS file. This is the
+   current unresolved blocker; no speculative correction was made after the
+   repository's two-fix debugging limit was reached.
+
+9. **Fresh-worktree tooling assumptions caused avoidable friction.** The
+   required pre-push GoReleaser gate initially failed with
+   `sh: 1: tsc: not found` because the clean worktree lacked frontend
+   dependencies. `pnpm install --frozen-lockfile` fixed the environment.
+   The gate also rewrote unrelated
+   `cmd/tinyidp-xapp/app/types/xgoja-modules.d.ts`; that generated drift was
+   inspected and explicitly restored rather than staged. A mistaken push to a
+   branch name not yet created produced
+   `error: src refspec fix/tinyidp-jitsi-theme-dir does not match any`; creating
+   the branch before pushing corrected it.
+
+10. **Linked worktree and tool-transient failures were handled without data
+    loss.** `gh pr merge` attempted to use local `main` and emitted
+    `fatal: 'main' is already used by worktree`; GitHub had still merged the
+    PR, so subsequent verification used `gh pr view` and a ref-only fetch.
+    One `apply_patch` attempt failed with a transient `bwrap` remount error;
+    retrying the same patch succeeded. Neither event changed deployment code.
+
+### What I learned
+
+- A local-path PVC deployment must prove at least three states: empty volume,
+  persisted owner-private parent, and persisted owner-private child.
+- Linux capabilities are narrowly scoped: ownership mutation, mode mutation,
+  and directory search are separate checks.
+- Kubernetes Secret projection is not a substitute for an owner-private
+  handoff when the consuming process is non-root and validates UID/mode.
+- A source pin is not enough evidence of deployment: Argo's active operation
+  revision and the resulting ReplicaSet must also be checked.
+- `serve-production` configuration needs a rendered-and-started integration
+  check; schema-required fields and catalog semantics may evolve separately.
+
+### What was tricky to build
+
+The difficult part was preserving least privilege while repairing a volume
+whose previous successful execution deliberately made it private. The init
+container needed precisely enough authority to reclaim known paths, but not a
+broad override capability. The same pattern recurred for Secret handoff: the
+server must be able to read its files without seeing the group-readable source
+projection.
+
+### What warrants a second pair of eyes
+
+- Review the complete init script ordering for both `/state` and
+  `/state/audit`, plus the distinction between source and prepared Secret
+  mounts.
+- Review Argo retry behavior when immutable source revisions are advanced
+  during a failed automated sync.
+- Review the missing Jitsi theme asset/catalog together; the stylesheet must
+  be a local CSS basename and must be present in the reviewed theme directory.
+
+### What should be done in the future
+
+- Add a production-start smoke that renders this exact Jitsi manifest and
+  launches `serve-production` with representative mounted-file metadata.
+- Add an explicit two-run filesystem test to the manifest validation harness.
+- Complete the current theme catalog/stylesheet contract, then resume live
+  readiness, restart, browser, audit, metrics, and redacted-log validation.
+
+### Code review instructions
+
+- Read Steps 17–21 together, then inspect:
+  - `deploy/kubernetes/tinyidp-jitsi/deployment.yaml`
+  - `deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh`
+  - `deploy/kubernetes/tinyidp-jitsi/config/themes.json`
+- Reproduce manifest checks with:
+  `bash deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh`.
+- For live evidence, inspect the current Pod's previous container log and
+  Argo `status.operationState.operation.sync.revisions` rather than relying
+  only on Application spec.
+
+### Technical details
+
+```text
+Persistent-state recovery:
+  chown 0:0 /state
+  chown 0:0 /state/audit        # only if it already exists
+  mkdir -p /state/audit
+  chown -R 65532:65532 /state   # final handoff
+
+Secret handoff:
+  projected Secret (init only) -> tmpfs emptyDir (server only)
+  chown 65532:65532 + chmod 0400
+
+Argo evidence required:
+  spec source revision == active operation revision == new ReplicaSet manifest
 ```
