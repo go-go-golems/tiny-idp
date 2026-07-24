@@ -15,6 +15,7 @@ grep -q 'path: jitsi-shared-secret' "${rendered}"
 grep -q 'path: /readyz' "${rendered}"
 grep -q 'path: /healthz' "${rendered}"
 grep -q 'kind: NetworkPolicy' "${rendered}"
+grep -q -- '--theme-dir=/config' "${deploy_dir}/deployment.yaml"
 
 # The init container repairs persisted state. It must reacquire ownership of
 # /state itself before traversing a UID-65532, mode-0700 directory from a

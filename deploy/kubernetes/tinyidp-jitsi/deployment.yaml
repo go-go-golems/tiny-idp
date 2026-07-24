@@ -68,6 +68,7 @@ spec:
             - --listener-mode=trusted-proxy-http
             - --issuer=https://idp-jitsi.yolo.scapegoat.dev
             - --clients-file=/config/clients.json
+            - --theme-dir=/config
             - --theme-catalog-file=/config/themes.json
             - --signup-program-file=/config/open-signup.js
             - --db=/state/tinyidp.sqlite
