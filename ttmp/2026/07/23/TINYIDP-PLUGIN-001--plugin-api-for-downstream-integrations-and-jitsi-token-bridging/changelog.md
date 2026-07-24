@@ -187,3 +187,12 @@ the top-level directory before traversing it (commit 8144cfe).
 
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/deployment.yaml — Restart-safe state repair sequence
 - /home/manuel/workspaces/2026-07-07/prod-tiny-idp/tiny-idp/deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh — Restart-order invariant
+
+## 2026-07-23
+
+Step 20: Materialize owner-private runtime secrets for an unprivileged pod (commit f8074f0)
+
+### Related Files
+
+- /tmp/tinyidp-jitsi-audit-reclaim/deploy/kubernetes/tinyidp-jitsi/deployment.yaml — Strict secret ownership handoff
+

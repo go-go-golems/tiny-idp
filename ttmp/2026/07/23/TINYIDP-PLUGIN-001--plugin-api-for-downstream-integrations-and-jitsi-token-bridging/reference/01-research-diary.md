@@ -23,6 +23,7 @@ RelatedFiles:
         Local-path permission ordering repair commit d2ec228
         Existing-volume CAP_CHOWN and CAP_FOWNER repair commit 1c0e0e6
         Restart-safe existing-state ownership repair commit 8144cfe
+        Copies projected runtime secrets into an owner-private in-memory handoff volume (commit f8074f0)
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/jitsi-values.yaml
       Note: Prosody token mode and Jitsi runtime configuration
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/rotation-runbook.md
@@ -34,6 +35,7 @@ RelatedFiles:
         Regression guard for ownership and mode ordering commit d2ec228
         Existing-volume capability invariant commit 1c0e0e6
         Restart-safe order invariant commit 8144cfe
+        Locks down the private secret handoff contract (commit f8074f0)
     - Path: repo://examples/tinyidp-jitsi/browser-tests/tests/jitsi-plugin.spec.ts
       Note: Eight-case browser, provider-logout, and media-connected conference matrix (commits e9c25b9, fe59277, and f552483)
     - Path: repo://examples/tinyidp-jitsi/compose.yaml
@@ -84,6 +86,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -2185,6 +2188,28 @@ path, but it does not confer permission to search a descendant directory.
 
 **Date:** 2026-07-23
 
+The repaired state initializer reached the TinyIDP server, proving the local-path
+PVC sequence works. Startup then correctly stopped at a separate security
+boundary: Kubernetes' projected Secret is not owner-private to the non-root
+application user.
+
+This step retains TinyIDP's strict secret-file invariant instead of weakening
+it. The existing, short-lived root init container materializes precisely two
+runtime files in a memory-backed volume, then the server receives only those
+UID-65532, mode-0400 copies.
+
+### Prompt Context
+
+**User prompt (verbatim):** "continue"
+
+**Assistant interpretation:** Continue the production deployment through
+observed startup failures, preserving the platform's least-privilege design.
+
+**Inferred user intent:** Deliver a genuinely working production TinyIDP/Jitsi
+deployment, with runtime security properties verified rather than bypassed.
+
+**Commit (code):** `f8074f0` — "fix: prepare private runtime secrets for TinyIDP"
+
 ### What I did
 
 - Followed the successful persistent-volume init fix through the live Pod.
@@ -2209,3 +2234,60 @@ the long-running process extra privilege.
 `deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh` passed, and rendered
 Kustomize output confirms the source Secret is init-container-only while the
 server receives only the memory-backed prepared-secret mount.
+
+### What didn't work
+
+- Mounting the VSO-managed Kubernetes Secret directly at
+  `/run/tinyidp-secrets` caused startup to fail with the exact error:
+  `Error: token secret file must be regular and owner-only (0600 or 0400)`.
+- The projected volume's `defaultMode: 0400` alone is insufficient because
+  Kubernetes cannot assign its file owner to UID 65532; `fsGroup` also makes
+  the projection group-readable.
+
+### What I learned
+
+`defaultMode` controls only mode bits, not the file UID. Applications that
+require both a non-root process and a cryptographically strict owner-private
+secret contract need a deliberate handoff boundary rather than a direct
+projected Secret mount.
+
+### What was tricky to build
+
+The source Secret must remain readable by the root init container while being
+invisible to the main container. The solution uses two distinct volumes and
+mount paths: a read-only source projection for the init phase, and an in-memory
+prepared volume for the main phase. The final server gets no mount to the
+source volume, so it cannot accidentally use a group-readable fallback.
+
+### What warrants a second pair of eyes
+
+- Confirm only `token-secret` and `jitsi-shared-secret` are copied; no future
+  secret key should be added implicitly to the handoff script.
+- Confirm the init container retains no broader capabilities than `CHOWN` and
+  `FOWNER`, and the server remains UID/GID 65532 with a read-only root
+  filesystem.
+
+### What should be done in the future
+
+- After deployment, inspect the live prepared files' ownership and mode using
+  non-sensitive metadata only, then confirm a deliberate Pod restart repeats
+  the handoff successfully.
+
+### Code review instructions
+
+- Begin with `deploy/kubernetes/tinyidp-jitsi/deployment.yaml`, specifically
+  `initialize-state-permissions`, `prepared-runtime-secret`, and the server
+  `volumeMounts`/secret-file flags.
+- Run `bash deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh` and inspect
+  `kubectl kustomize deploy/kubernetes/tinyidp-jitsi` for the two-volume split.
+
+### Technical details
+
+```text
+VSO Kubernetes Secret (source, init only)
+  /run/tinyidp-source-secrets/{token-secret,jitsi-shared-secret}
+      | cp, chown 65532:65532, chmod 0400
+      v
+emptyDir medium=Memory (server only)
+  /run/tinyidp-runtime-secrets/{token-secret,jitsi-shared-secret}
+```
