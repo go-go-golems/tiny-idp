@@ -19,7 +19,9 @@ RelatedFiles:
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/README.md
       Note: Production Kubernetes, VSO, and pinned Jitsi Helm deployment contract
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/deployment.yaml
-      Note: Local-path permission ordering repair commit d2ec228
+      Note: |-
+        Local-path permission ordering repair commit d2ec228
+        Existing-volume CAP_CHOWN and CAP_FOWNER repair commit 1c0e0e6
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/jitsi-values.yaml
       Note: Prosody token mode and Jitsi runtime configuration
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/rotation-runbook.md
@@ -27,7 +29,9 @@ RelatedFiles:
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/runtime-secret.yaml
       Note: Shared Vault-backed runtime Secret and coordinated restart targets
     - Path: repo://deploy/kubernetes/tinyidp-jitsi/scripts/validate.sh
-      Note: Regression guard for ownership and mode ordering commit d2ec228
+      Note: |-
+        Regression guard for ownership and mode ordering commit d2ec228
+        Existing-volume capability invariant commit 1c0e0e6
     - Path: repo://examples/tinyidp-jitsi/browser-tests/tests/jitsi-plugin.spec.ts
       Note: Eight-case browser, provider-logout, and media-connected conference matrix (commits e9c25b9, fe59277, and f552483)
     - Path: repo://examples/tinyidp-jitsi/compose.yaml
@@ -78,6 +82,7 @@ LastUpdated: 2026-07-23T16:32:32.222501884-04:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 
@@ -1932,4 +1937,86 @@ cluster's local-path storage.
 ```text
 old: chmod after chown -> EPERM with CAP_CHOWN only
 new: chmod before chown -> private mode, then safe unprivileged hand-off
+```
+
+## Step 17: Repair permissions on already-owned persistent state
+
+The reordered initializer was correct for a fresh volume but the live PVC had
+already been changed to UID 65532 by the earlier failed startup. The root init
+container retained `CAP_CHOWN` but lacked the separate `CAP_FOWNER` permission
+needed to repair mode bits on that pre-existing non-owned directory.
+
+### Prompt Context
+
+**User prompt (verbatim):** "how do we do the CAP_FOWNER / CAP_CHOWN thiing?"
+
+**Assistant interpretation:** Explain and implement the minimal Kubernetes
+capability configuration needed to recover the existing TinyIDP state volume.
+
+**Inferred user intent:** Recover production safely without deleting identity
+state and without giving the long-running IDP process privileges.
+
+**Commit (code):** `1c0e0e6` — "Repair TinyIDP permissions on existing PVCs"
+
+### What I did
+
+- Kept the fresh-volume `chmod` before `chown` invariant.
+- Added only `FOWNER` alongside the existing `CHOWN` capability to the
+  root-only, short-lived init container.
+- Updated the validator to require both capabilities and the safe command
+  ordering.
+- Rendered the Kustomize package and ran the shared Kubernetes/Jitsi contract
+  validator.
+
+### Why
+
+- `CHOWN` changes ownership but does not grant authority to chmod an inode
+  owned by UID 65532. `FOWNER` supplies exactly that repair authority.
+- Recreating the PVC would discard the TinyIDP database and audit state.
+- The main TinyIDP container remains non-root with all capabilities dropped.
+
+### What worked
+
+- The deployment contract validator passed and the rendered init container
+  contains only `CHOWN` and `FOWNER` in addition to `drop: [ALL]`.
+
+### What didn't work
+
+- The live container logs from the prior terminated instance had already been
+  removed by containerd, but the live Pod specification still proved it had
+  only `CHOWN`, and the preceding failure plus persisted ownership established
+  the required capability boundary.
+
+### What I learned
+
+- Recovery behavior for a persistent volume must account for partial mutation
+  by a failed previous initializer, not only the fresh-volume case.
+
+### What was tricky to build
+
+- The desired minimal authority changes across the two idempotence states:
+  fresh directories need ordering; restored or previously initialized
+  directories also need FOWNER to repair modes.
+
+### What warrants a second pair of eyes
+
+- Confirm the init container remains the only process receiving either Linux
+  capability and that its mounted volume remains limited to `/state`.
+
+### What should be done in the future
+
+- Merge this focused repair, advance Argo's pinned TinyIDP source, then prove
+  readiness and browser admission against the currently Bound PVC.
+
+### Code review instructions
+
+- Review the init-container `securityContext` in the Jitsi deployment.
+- Run the deployment validator and inspect the rendered capability list.
+
+### Technical details
+
+```text
+new PVC:            chmod -> chown
+previously owned PVC: FOWNER permits chmod, CHOWN restores UID/GID
+main TinyIDP:       UID 65532, no capabilities
 ```
